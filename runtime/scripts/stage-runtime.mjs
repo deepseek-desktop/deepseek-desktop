@@ -34,6 +34,10 @@ function runCapture(command, args, cwd) {
   return result.stdout.trim();
 }
 
+function powershellLiteral(value) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
 function runPnpm(args, cwd) {
   const pnpmCli = process.env.npm_execpath;
   if (!pnpmCli) throw new Error("pnpm executable is unavailable; run this script through the package manager");
@@ -123,14 +127,13 @@ async function stageOfficialNode(target, sidecar, licenseDestination) {
     await rm(extracted, { recursive: true, force: true });
     await mkdir(extracted, { recursive: true });
     if (process.platform === "win32") {
+      const expandArchive = `Expand-Archive -LiteralPath ${powershellLiteral(archive)} -DestinationPath ${powershellLiteral(extracted)} -Force`;
       run("powershell.exe", [
         "-NoLogo",
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force",
-        archive,
-        extracted
+        expandArchive
       ], cacheRoot);
     } else {
       run("tar", ["-xf", archive, "-C", extracted], cacheRoot);
