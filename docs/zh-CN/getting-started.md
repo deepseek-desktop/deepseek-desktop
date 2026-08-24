@@ -31,7 +31,7 @@ DeepSeek Harness Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建�
 
 Desktop Shell 完整提供简体中文、繁体中文和英文。固定的 Harness `0.1.1-rc.2` 上游界面目前只提供 `zh` 和 `en`：启动 Runtime 时，桌面语言桥会将简体中文和繁体中文映射为上游中文，将英文映射为上游英文，并通过原子更新 `dsh/settings.yaml` 保留其他设置与注释。繁体中文用户看到的 Harness 工作区仍是上游简体中文；工程不会为了制造“全繁体”表象而直接改写上游构建产物。
 
-桌面端只创建一个操作系统窗口。Runtime 就绪后，受管 Harness 作为无 Tauri 权限的隔离子 WebView 覆盖常驻 Shell 并占满窗口内容区，不再保留重复的 Logo、状态和管理按钮。通过系统原生“视图”菜单可在“Harness 工作台”（`Command/Ctrl+1`）和“桌面管理”（`Command/Ctrl+2`）之间切换；运行状态、诊断、更新和关于页面都在原窗口内显示。Harness 输入框和可编辑区域会关闭系统拼写检查、自动纠错、自动首字母大写和写作建议，确保 Provider ID、API 地址、模型名、代码和普通对话均按原文输入，不被 WebView 擅自替换。该策略只设置浏览器输入属性，不读取或改写输入值。
+桌面端只创建一个操作系统窗口。Runtime 就绪后，受管 Harness 作为无 Tauri 权限的隔离子 WebView 覆盖常驻 Shell 并占满窗口内容区，不再保留重复的 Logo、状态和管理按钮。通过系统原生“视图”菜单可在“工作台”（`Command/Ctrl+1`）和“桌面管理”（`Command/Ctrl+2`）之间切换；运行状态、诊断、更新和关于页面都在原窗口内显示。Harness 输入框和可编辑区域会关闭系统拼写检查、自动纠错、自动首字母大写和写作建议，确保 Provider ID、API 地址、模型名、代码和普通对话均按原文输入，不被 WebView 擅自替换。该策略只设置浏览器输入属性，不读取或改写输入值。
 
 ## Runtime 生命周期
 

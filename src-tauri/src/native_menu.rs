@@ -123,7 +123,7 @@ fn labels(locale: &str) -> MenuLabels {
             copy: "複製",
             paste: "貼上",
             select_all: "全選",
-            workbench: "Harness 工作臺",
+            workbench: "工作臺",
             management: "桌面管理",
             #[cfg(target_os = "macos")]
             fullscreen: "進入全螢幕",
@@ -145,7 +145,7 @@ fn labels(locale: &str) -> MenuLabels {
             copy: "Copy",
             paste: "Paste",
             select_all: "Select All",
-            workbench: "Harness Workbench",
+            workbench: "Workbench",
             management: "Desktop Management",
             #[cfg(target_os = "macos")]
             fullscreen: "Enter Full Screen",
@@ -167,7 +167,7 @@ fn labels(locale: &str) -> MenuLabels {
             copy: "复制",
             paste: "粘贴",
             select_all: "全选",
-            workbench: "Harness 工作台",
+            workbench: "工作台",
             management: "桌面管理",
             #[cfg(target_os = "macos")]
             fullscreen: "进入全屏幕",
@@ -188,8 +188,8 @@ mod tests {
 
     #[test]
     fn provides_complete_surface_labels_for_all_supported_locales() {
-        assert_eq!(labels("zh-CN").workbench, "Harness 工作台");
-        assert_eq!(labels("zh-TW").workbench, "Harness 工作臺");
+        assert_eq!(labels("zh-CN").workbench, "工作台");
+        assert_eq!(labels("zh-TW").workbench, "工作臺");
         assert_eq!(labels("en-US").management, "Desktop Management");
     }
 }
