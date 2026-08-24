@@ -3,7 +3,7 @@
 [![Community Build](https://github.com/spring-open/deepseek-harness-desktop/actions/workflows/community-build.yml/badge.svg)](https://github.com/spring-open/deepseek-harness-desktop/actions/workflows/community-build.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-DeepSeek Harness Desktop is an independent, unofficial community distribution built on the locked DeepSeek Harness Runtime. It does not require a separate Node.js, pnpm, Rust, or SpringOpen Application installation at runtime. This project is not endorsed by or affiliated with DeepSeek.
+DeepSeek Harness Desktop is an independent, unofficial community distribution built on the locked DeepSeek Harness Runtime. It does not require a separate Node.js, pnpm, Rust, or framework application installation at runtime. This project is not endorsed by or affiliated with DeepSeek.
 
 Version `0.1.0-community.4` is the community edition. The macOS artifact uses a complete ad-hoc signature but has no Apple Developer ID identity or notarization; other current artifacts are unsigned. The desktop-owned source is Apache-2.0, while the packaged Harness, Node.js, and npm dependencies retain their own license notices.
 

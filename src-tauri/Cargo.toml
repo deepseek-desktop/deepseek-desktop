@@ -2,7 +2,7 @@
 name = "deepseek-harness-desktop"
 version = "0.1.0-community.4"
 description = "Self-contained local desktop shell for DeepSeek Harness"
-authors = ["SpringOpen Contributors"]
+authors = ["DeepSeek Harness Desktop Contributors"]
 license = "Apache-2.0"
 edition = "2024"
 rust-version = "1.98"

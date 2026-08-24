@@ -307,10 +307,10 @@ impl RuntimeSupervisor {
         self.prepare_profile(&runtime_dir)?;
         let node = self.node_binary()?;
         let dsh_entry = runtime_dir.join("node_modules/@deepseek-ai/dsh/lib/bin.js");
-        let parent_watch = runtime_dir
-            .join("node_modules/@springopen/deepseek-harness-desktop-bundle/parent-watch.cjs");
-        let locale_sync = runtime_dir
-            .join("node_modules/@springopen/deepseek-harness-desktop-bundle/locale-sync.cjs");
+        let parent_watch =
+            runtime_dir.join("node_modules/deepseek-harness-desktop-bundle/parent-watch.cjs");
+        let locale_sync =
+            runtime_dir.join("node_modules/deepseek-harness-desktop-bundle/locale-sync.cjs");
         if !dsh_entry.is_file() {
             return self.fail(
                 &workspace,
@@ -625,7 +625,7 @@ impl RuntimeSupervisor {
 
     fn prepare_profile(&self, runtime_dir: &Path) -> DesktopResult<()> {
         let profile = self.paths.dsh_home.join("profiles/desktop-web");
-        let modules = profile.join("node_modules/@springopen");
+        let modules = profile.join("node_modules");
         fs::create_dir_all(&modules)?;
         let manifest = serde_json::json!({
             "name": "deepseek-harness-desktop-web-profile",
@@ -634,7 +634,7 @@ impl RuntimeSupervisor {
             "dsh": { "profile": { "bundles": [
                 "@deepseek-ai/dsh-base",
                 "@deepseek-ai/dsh-web-app",
-                "@springopen/deepseek-harness-desktop-bundle"
+                "deepseek-harness-desktop-bundle"
             ] } }
         });
         fs::write(
@@ -654,7 +654,7 @@ impl RuntimeSupervisor {
             "deepseek-harness-desktop-bundle",
             "deepseek-harness-credentials-vault",
         ] {
-            let source = runtime_dir.join("node_modules/@springopen").join(package);
+            let source = runtime_dir.join("node_modules").join(package);
             let target = modules.join(package);
             if target.exists() {
                 fs::remove_dir_all(&target)?;

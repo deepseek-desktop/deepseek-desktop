@@ -3,4 +3,4 @@
 
 - insert:
     - id: desktop-credentials-vault
-      name: '@springopen/deepseek-harness-credentials-vault'
+      name: 'deepseek-harness-credentials-vault'

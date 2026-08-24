@@ -17,6 +17,6 @@ Harassment, threats, discrimination, personal attacks, deliberate disruption, an
 
 ## Enforcement
 
-Report unacceptable behavior privately to the SpringOpen maintainers through the organization profile. Maintainers may remove content, restrict participation, or take other proportionate action. Reports will be handled as confidentially as practical.
+Report unacceptable behavior privately to the project maintainers through the repository owner profile. Maintainers may remove content, restrict participation, or take other proportionate action. Reports will be handled as confidentially as practical.
 
 This policy applies in project spaces and when representing the project in public spaces.

@@ -38,23 +38,21 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
     let about = AboutMetadataBuilder::new()
         .name(Some(APP_NAME))
         .version(Some(env!("CARGO_PKG_VERSION")))
-        .copyright(Some("Copyright 2026 SpringOpen Contributors"))
+        .copyright(Some("Copyright 2026 DeepSeek Harness Desktop Contributors"))
         .license(Some("Apache-2.0"))
         .build();
 
-    let mut application = SubmenuBuilder::new(app, APP_NAME)
+    let application = SubmenuBuilder::new(app, APP_NAME)
         .about_with_text(labels.about, Some(about))
         .separator();
     #[cfg(target_os = "macos")]
-    {
-        application = application
-            .services()
-            .separator()
-            .hide()
-            .hide_others()
-            .show_all()
-            .separator();
-    }
+    let application = application
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator();
     let application = application.quit().build().map_err(desktop_error)?;
 
     let file = SubmenuBuilder::new(app, labels.file)
@@ -79,13 +77,11 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
         .accelerator("CmdOrCtrl+2")
         .build(app)
         .map_err(desktop_error)?;
-    let mut view = SubmenuBuilder::new(app, labels.view)
+    let view = SubmenuBuilder::new(app, labels.view)
         .item(&workbench)
         .item(&management);
     #[cfg(target_os = "macos")]
-    {
-        view = view.separator().fullscreen_with_text(labels.fullscreen);
-    }
+    let view = view.separator().fullscreen_with_text(labels.fullscreen);
     let view = view.build().map_err(desktop_error)?;
     let window = SubmenuBuilder::new(app, labels.window)
         .minimize_with_text(labels.minimize)

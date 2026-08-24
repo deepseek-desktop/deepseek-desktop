@@ -6,7 +6,7 @@ Security fixes are applied to the latest community release. Pre-release and olde
 
 ## Reporting a vulnerability
 
-Do not open a public issue for a suspected vulnerability. Use GitHub's private vulnerability reporting for this repository, or contact the SpringOpen maintainers privately through the organization profile.
+Do not open a public issue for a suspected vulnerability. Use GitHub's private vulnerability reporting for this repository, or contact the project maintainers privately through the repository owner profile.
 
 Include the affected version, platform, reproduction steps, impact, and any suggested mitigation. Do not include real API keys, OAuth grants, workspace content, or other secrets.
 

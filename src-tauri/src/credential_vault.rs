@@ -17,7 +17,7 @@ use uuid::Uuid;
 use crate::error::{DesktopError, DesktopResult};
 use crate::settings::write_json_atomic;
 
-const SERVICE: &str = "com.springopen.deepseek-harness-desktop.credentials.vault.v1";
+const SERVICE: &str = "deepseekharness.desktop.credentials.vault.v1";
 const DATA_DIR_ENV: &str = "DEEPSEEK_HARNESS_DESKTOP_DATA_DIR";
 const SESSION_FILE: &str = "credential-session.json";
 const VAULT_FILE: &str = "credential-vault.json";

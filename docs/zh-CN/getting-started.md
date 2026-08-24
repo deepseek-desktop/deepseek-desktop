@@ -1,6 +1,6 @@
 # DeepSeek Harness Desktop
 
-DeepSeek Harness Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、非官方社区桌面发行版。它将 Vue 桌面 Shell、Tauri 2 原生主程序、固定版本 Node.js 和 Harness Runtime 打包在一起，不依赖 SpringOpen Application，也不要求用户预装 Node.js、pnpm 或 Rust。本项目与 DeepSeek 不存在隶属、合作或官方背书关系。
+DeepSeek Harness Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、非官方社区桌面发行版。它将 Vue 桌面 Shell、Tauri 2 原生主程序、固定版本 Node.js 和 Harness Runtime 打包在一起，不依赖其他框架应用，也不要求用户预装 Node.js、pnpm 或 Rust。本项目与 DeepSeek 不存在隶属、合作或官方背书关系。
 
 桌面 Shell、应用程序和安装包统一使用固定上游提交中的 Harness 侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 
@@ -56,7 +56,7 @@ DeepSeek Harness Desktop 使用系统应用数据目录，不向安装目录写�
 | `diagnostics/` | 用户主动导出的脱敏诊断文档 |
 | `updates/` | 未来签名更新的临时目录 |
 
-macOS 默认位于 `~/Library/Application Support/com.springopen.deepseek-harness-desktop/`；Windows 和 Linux 使用 Tauri 对应的平台应用数据目录。
+macOS 默认位于 `~/Library/Application Support/deepseekharness.desktop/`；Windows 和 Linux 使用 Tauri 对应的平台应用数据目录。
 
 加密凭据库以当前操作系统用户的数据目录权限作为本地信任边界：它可以避免密钥以明文出现在配置、日志、诊断或备份预览中，也不会触发反复授权弹窗；但已经控制同一操作系统用户账户的恶意程序仍可能读取应用数据。不要在多人共用同一系统账户的设备上保存生产密钥。
 
@@ -77,7 +77,7 @@ macOS 默认位于 `~/Library/Application Support/com.springopen.deepseek-harnes
 
 当前社区版构建默认并强制关闭自动更新。工程已保留 Tauri Updater 和 GitHub Releases 签名检查实现，但只有安装包签名、Updater 私钥、公钥、Apple/Windows 证书全部就绪，Stable 构建门禁才允许继续；社区版配置不会请求更新地址或安装未签名产物。
 
-卸载应用不会自动删除工作区或应用数据。需要完全清理时，先卸载 DeepSeek Harness Desktop，再由用户主动删除系统应用数据目录。曾安装 `0.1.0-community.1` 的 macOS 用户还可以在“钥匙串访问”中删除旧的 `com.springopen.dshdesktop.credentials` 条目；新版不会再读取这些旧条目。
+卸载应用不会自动删除工作区或应用数据。需要完全清理时，先卸载 DeepSeek Harness Desktop，再由用户主动删除系统应用数据目录。新版只使用社区版内置的本地加密凭据库，不访问系统钥匙串。
 
 ## 开发者验证
 

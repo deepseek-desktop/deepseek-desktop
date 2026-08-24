@@ -188,7 +188,7 @@ function createSpdx(target, inventory, createdAt) {
     dataLicense: "CC0-1.0",
     SPDXID: "SPDXRef-DOCUMENT",
     name: `DeepSeek-Harness-Desktop-Runtime-${target}`,
-    documentNamespace: `https://springopen.local/deepseek-harness-desktop/${lock.desktopVersion}/sbom/${target}/${lock.harness.commit}`,
+    documentNamespace: `https://deepseek-harness-desktop.local/${lock.desktopVersion}/sbom/${target}/${lock.harness.commit}`,
     creationInfo: {
       created: createdAt,
       creators: ["Tool: DeepSeek Harness Desktop runtime staging"]
@@ -216,7 +216,7 @@ if (process.versions.node !== lock.node.version) {
 const output = join(runtimeRoot, "staging", target);
 await rm(output, { recursive: true, force: true });
 await mkdir(dirname(output), { recursive: true });
-runPnpm(["--filter", "@springopen/deepseek-harness-desktop-runtime", "deploy", "--prod", "--legacy", output], runtimeRoot);
+runPnpm(["--filter", "deepseek-harness-desktop-runtime", "deploy", "--prod", "--legacy", output], runtimeRoot);
 
 // pnpm writes the wall-clock pruning time into this install-only metadata file.
 // Node does not consume it at runtime, so omit it from the distributable closure.

@@ -17,10 +17,10 @@ importers:
       '@deepseek-ai/dsh':
         specifier: 0.1.1-rc.2
         version: 0.1.1-rc.2(f2ec21a2b88de24ccbb3802cec2245ee)
-      '@springopen/deepseek-harness-credentials-vault':
+      deepseek-harness-credentials-vault:
         specifier: workspace:*
         version: link:packages/credentials-vault
-      '@springopen/deepseek-harness-desktop-bundle':
+      deepseek-harness-desktop-bundle:
         specifier: workspace:*
         version: link:packages/desktop-bundle
       react:
@@ -41,7 +41,7 @@ importers:
 
   packages/desktop-bundle:
     dependencies:
-      '@springopen/deepseek-harness-credentials-vault':
+      deepseek-harness-credentials-vault:
         specifier: workspace:*
         version: link:../credentials-vault
       yaml:

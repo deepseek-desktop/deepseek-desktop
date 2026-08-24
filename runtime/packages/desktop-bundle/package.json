@@ -1,5 +1,5 @@
 {
-  "name": "@springopen/deepseek-harness-desktop-bundle",
+  "name": "deepseek-harness-desktop-bundle",
   "version": "0.1.0-community.4",
   "private": true,
   "license": "Apache-2.0",
@@ -11,7 +11,7 @@
     }
   },
   "dependencies": {
-    "@springopen/deepseek-harness-credentials-vault": "workspace:*",
+    "deepseek-harness-credentials-vault": "workspace:*",
     "yaml": "2.9.0"
   }
 }
