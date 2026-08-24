@@ -39,6 +39,7 @@ jobs:
       - run: pnpm test:e2e
 
   native-build:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: shell-quality
     strategy:
       fail-fast: false
