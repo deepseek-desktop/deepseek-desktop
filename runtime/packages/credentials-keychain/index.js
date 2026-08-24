@@ -5,6 +5,8 @@ import { CredentialProvider, parseCredentialKey } from "@deepseek-ai/dsh-credent
 
 const HELPER_ARGUMENT = "--keychain-helper";
 const HELPER_SESSION = readFileSync(0, "utf8").trim();
+const OPERATIONS = Symbol("operations");
+const CLOSED = Symbol("closed");
 
 if (!HELPER_SESSION) {
   throw new Error("credentials-keychain: desktop credential session is unavailable");
@@ -31,16 +33,24 @@ function callHelper(request) {
     child.stderr.on("data", chunk => { stderr += chunk; });
     child.once("error", reject);
     child.once("close", code => {
-      if (code !== 0) {
-        reject(new Error(`credentials-keychain: helper failed with code ${String(code)}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
-        return;
-      }
       try {
         const response = JSON.parse(stdout);
-        if (!response.ok) throw new Error(response.error?.message ?? "keychain operation failed");
+        if (!response.ok) {
+          const helperCode = response.error?.code ?? "keychain-failed";
+          const message = response.error?.message ?? "keychain operation failed";
+          throw new Error(`credentials-keychain: ${helperCode}: ${message}`);
+        }
+        if (code !== 0) {
+          throw new Error(`credentials-keychain: helper exited with code ${String(code)}`);
+        }
         resolve(response.value);
       } catch (error) {
-        reject(error);
+        if (error instanceof SyntaxError) {
+          const detail = stderr.trim() ? `: ${stderr.trim()}` : "";
+          reject(new Error(`credentials-keychain: invalid helper response (code ${String(code)})${detail}`));
+        } else {
+          reject(error);
+        }
       }
     });
     child.stdin.end(`${JSON.stringify({ ...request, session: HELPER_SESSION })}\n`);
@@ -48,20 +58,20 @@ function callHelper(request) {
 }
 
 export class KeychainCredentialProvider extends CredentialProvider {
-  #operations = Promise.resolve();
-  #closed = false;
+  [OPERATIONS] = Promise.resolve();
+  [CLOSED] = false;
 
   async *[Service.init]() {
     yield async () => {
-      this.#closed = true;
-      await this.#operations;
+      this[CLOSED] = true;
+      await this[OPERATIONS];
     };
   }
 
-  #enqueue(operation) {
-    if (this.#closed) return Promise.reject(new Error("credentials-keychain: provider is disposed"));
-    const task = this.#operations.then(operation);
-    this.#operations = task.then(() => undefined, () => undefined);
+  enqueue(operation) {
+    if (this[CLOSED]) return Promise.reject(new Error("credentials-keychain: provider is disposed"));
+    const task = this[OPERATIONS].then(operation);
+    this[OPERATIONS] = task.then(() => undefined, () => undefined);
     return task;
   }
 
@@ -77,12 +87,12 @@ export class KeychainCredentialProvider extends CredentialProvider {
 
   async set(ref, value) {
     if (!value) throw new Error(`credentials-keychain: an empty value cannot be stored for "${ref}"; use unset`);
-    await this.#enqueue(() => callHelper({ operation: "set-ref", key: ref, value }));
+    await this.enqueue(() => callHelper({ operation: "set-ref", key: ref, value }));
     this.notifyUpdated(ref);
   }
 
   async unset(ref) {
-    await this.#enqueue(() => callHelper({ operation: "delete-ref", key: ref }));
+    await this.enqueue(() => callHelper({ operation: "delete-ref", key: ref }));
     this.notifyUpdated(ref);
   }
 
@@ -104,7 +114,7 @@ export class KeychainCredentialProvider extends CredentialProvider {
   }
 
   async modifyRecord(key, mutate) {
-    return this.#enqueue(async () => {
+    return this.enqueue(async () => {
       const current = await this.readRecord(key);
       const next = await mutate(current);
       if (next === undefined) return current;
@@ -115,7 +125,7 @@ export class KeychainCredentialProvider extends CredentialProvider {
   }
 
   async deleteRecord(key) {
-    await this.#enqueue(() => callHelper({ operation: "delete-record", key }));
+    await this.enqueue(() => callHelper({ operation: "delete-record", key }));
     this.notifyRecordUpdated(key);
   }
 }

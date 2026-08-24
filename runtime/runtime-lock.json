@@ -75,6 +75,8 @@
   ],
   "patches": [
     "@springopen/dsh-desktop-bundle@0.1.0-community.1",
-    "@springopen/dsh-credentials-keychain@0.1.0-community.1"
+    "@springopen/dsh-credentials-keychain@0.1.0-community.1",
+    "@deepseek-ai/dsh-client-ui-settings-models@0.1.1-rc.2:provider-credential-rollback",
+    "@deepseek-ai/dsh-user-approval@0.1.1-rc.2:desktop-policy-context"
   ]
 }

@@ -1,0 +1,66 @@
+diff --git a/lib/client.js b/lib/client.js
+index fff5f43f9aa239e2c0524103e77398e0988bb7e0..70c0e23e4ccbcce08db235581b79922649961183 100644
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -1100,11 +1100,7 @@ window.__ModuleLoader__.load({
+ 			const [models, setModels] = (0, react.useState)([]);
+ 			const [busy, setBusy] = (0, react.useState)(false);
+ 			const [failure, setFailure] = (0, react.useState)(void 0);
+-			/**
+-			* The profile write landed. Only the key write can still be outstanding, so
+-			* the fields that describe the provider are settled and the retry path is
+-			* the credential alone.
+-			*/
++			/** Whether a failed credential write could not roll its profile back. */
+ 			const [committed, setCommitted] = (0, react.useState)(false);
+ 			const disabled = props.readOnly || busy;
+ 			/** Everything but the key stops being editable once the provider exists. */
+@@ -1120,6 +1116,7 @@ window.__ModuleLoader__.load({
+ 			const createOnce = async () => {
+ 				const keyRef = deriveKeyRef(route);
+ 				const storesKey = keyValue.length > 0;
++				let profileRevision;
+ 				if (!committed) {
+ 					const profile = {
+ 						...displayName.length === 0 ? {} : { displayName },
+@@ -1138,14 +1135,34 @@ window.__ModuleLoader__.load({
+ 						expectedRevision: openedAt
+ 					});
+ 					if (!response.result.ok) return response.result.error.message;
+-					setCommitted(true);
++					profileRevision = response.result.value.revision;
+ 				}
+ 				if (storesKey) {
+-					const stored = await api.credentials.set({
+-						ref: keyRef,
+-						value: keyValue
+-					});
+-					if (!stored.result.ok) return stored.result.error.message;
++					let failure;
++					try {
++						const stored = await api.credentials.set({
++							ref: keyRef,
++							value: keyValue
++						});
++						if (!stored.result.ok) failure = stored.result.error.message;
++					} catch (error) {
++						failure = messageOf(error);
++					}
++					if (failure !== void 0) {
++						if (profileRevision !== void 0) {
++							try {
++								const rollback = await api.settings.mutate({
++									ns: NS$1,
++									ops: [{ op: "unset", path: ["providers", route] }],
++									expectedRevision: profileRevision
++								});
++								if (!rollback.result.ok) setCommitted(true);
++							} catch {
++								setCommitted(true);
++							}
++						}
++						return failure;
++					}
+ 				}
+ 			};
+ 			const create = async () => {

@@ -195,7 +195,7 @@ impl RuntimeSupervisor {
             );
         }
         let helper = std::env::current_exe()?;
-        let credential_session = RuntimeSession::create()?;
+        let credential_session = RuntimeSession::create(&self.paths.data_dir)?;
         let mut command = Command::new(node);
         command
             .arg("--require")

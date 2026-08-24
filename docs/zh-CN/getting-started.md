@@ -27,7 +27,7 @@ DSH Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、�
 4. 打开 Harness 的模型设置，选择 Provider，并写入 API Key 或 OAuth grant。
 5. 创建会话并开始任务。模型未配置或外部 Provider 不可用时，Runtime 仍可进入设置和诊断页面，但真实模型请求不会被伪造成成功。
 
-模型凭据由桌面专用 Credential Provider 写入操作系统密钥库。Keychain 不可用时会明确失败，不会降级写入 `.credentials.yaml`、`.env`、日志或前端存储。
+模型凭据由桌面专用 Credential Provider 写入操作系统密钥库。Keychain 不可用时会明确失败，不会降级写入 `.credentials.yaml`、`.env`、日志或前端存储。新增自定义 Provider 时，如果凭据写入失败，桌面 Runtime 会回滚本次新增的 Provider 配置，修复密钥库后可以直接重试，不会把失败的首次提交误报为 Provider ID 重复。
 
 Desktop Shell 完整提供简体中文、繁体中文和英文。固定的 Harness `0.1.1-rc.2` 上游界面目前只提供 `zh` 和 `en`：启动 Runtime 时，桌面语言桥会将简体中文和繁体中文映射为上游中文，将英文映射为上游英文，并通过原子更新 `dsh/settings.yaml` 保留其他设置与注释。繁体中文用户看到的 Harness 工作区仍是上游简体中文；工程不会为了制造“全繁体”表象而直接改写上游构建产物。
 
@@ -46,6 +46,7 @@ DSH Desktop 使用系统应用数据目录，不向安装目录写运行数据�
 | `settings.json` | Shell 语言、主题、工作区和更新通道 |
 | `dsh/` | Harness profile、会话、设置和插件数据 |
 | `credential-index.json` | 仅保存非敏感 record 索引，不保存密钥明文 |
+| `credential-session.json` | 仅保存当前 Runtime 短期授权 token 的 SHA-256 摘要，不保存 token 或模型凭据 |
 | `logs/` | 10 MB 单文件、最多 5 个轮转文件 |
 | `backups/` | 设置更新前的最近备份 |
 | `diagnostics/` | 用户主动导出的脱敏诊断文档 |
@@ -57,7 +58,7 @@ macOS 默认位于 `~/Library/Application Support/com.springopen.dshdesktop/`；
 
 ## 诊断与隐私
 
-诊断页面只在用户主动操作时导出状态、版本和最近日志。导出前会遮蔽 Authorization、API Key、Cookie、password、secret、Bearer token 和工作区路径。Credential Provider 调用 helper 时还必须携带每次 Runtime 启动生成的短期会话；该会话只通过 Runtime 标准输入交付，不进入命令参数、环境变量或日志。Agent Shell、工具子进程和 Harness WebView 均不能直接读取桌面主程序中的明文凭据。
+诊断页面只在用户主动操作时导出状态、版本和最近日志。导出前会遮蔽 Authorization、API Key、Cookie、password、secret、Bearer token 和工作区路径。Credential Provider 调用 helper 时还必须携带每次 Runtime 启动生成的短期会话；真实 token 只通过 Runtime 标准输入交付，应用数据目录仅保存用于校验的 SHA-256 摘要，不进入命令参数、环境变量或日志。Agent Shell、工具子进程和 Harness WebView 均不能直接读取桌面主程序中的明文凭据。
 
 出现启动失败时依次检查：
 

@@ -24,7 +24,7 @@ Harness CredentialProvider
   -> operating-system keychain
 ```
 
-The Harness WebView has no Tauri capability. It may navigate only within a managed loopback origin. A per-Runtime credential session is delivered through the Runtime standard input and is required by every helper request. Secrets and helper sessions are never passed through command arguments, environment values, WebView IPC, or diagnostic exports.
+The Harness WebView has no Tauri capability. It may navigate only within a managed loopback origin. A per-Runtime credential session is delivered through the Runtime standard input and is required by every helper request. Only its SHA-256 authorization digest is stored in the application data directory; the token and model credentials are never passed through command arguments, environment values, WebView IPC, or diagnostic exports. Native keychain backends are selected explicitly for macOS, Windows, and Linux so packaged builds never fall back to an in-memory test store.
 
 ## Toolchain
 

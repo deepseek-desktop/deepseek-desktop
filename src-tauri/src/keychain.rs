@@ -9,6 +9,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use keyring::{Entry, Error as KeyringError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::error::{DesktopError, DesktopResult};
@@ -16,18 +17,32 @@ use crate::settings::write_json_atomic;
 
 const SERVICE: &str = "com.springopen.dshdesktop.credentials";
 const DATA_DIR_ENV: &str = "DSH_DESKTOP_DATA_DIR";
-const SESSION_NAMESPACE: &str = "session";
-const SESSION_KEY: &str = "runtime";
+const SESSION_FILE: &str = "credential-session.json";
 
 pub struct RuntimeSession {
     token: String,
+    path: PathBuf,
+    digest: String,
 }
 
 impl RuntimeSession {
-    pub fn create() -> DesktopResult<Self> {
+    pub fn create(data_dir: &Path) -> DesktopResult<Self> {
         let token = Uuid::new_v4().to_string();
-        set_secret(SESSION_NAMESPACE, SESSION_KEY, &token)?;
-        Ok(Self { token })
+        let digest = session_digest(&token);
+        let path = data_dir.join(SESSION_FILE);
+        write_json_atomic(
+            &path,
+            &SessionAuthorization {
+                version: 1,
+                digest: digest.clone(),
+            },
+        )?;
+        restrict_session_file(&path)?;
+        Ok(Self {
+            token,
+            path,
+            digest,
+        })
     }
 
     pub fn token(&self) -> &str {
@@ -37,8 +52,19 @@ impl RuntimeSession {
 
 impl Drop for RuntimeSession {
     fn drop(&mut self) {
-        let _ = delete_secret(SESSION_NAMESPACE, SESSION_KEY);
+        let current = read_session_authorization(&self.path).ok().flatten();
+        if current.as_ref().is_some_and(|authorization| {
+            constant_time_eq(authorization.digest.as_bytes(), self.digest.as_bytes())
+        }) {
+            let _ = fs::remove_file(&self.path);
+        }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct SessionAuthorization {
+    version: u8,
+    digest: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,20 +163,46 @@ fn execute(request: HelperRequest) -> DesktopResult<Value> {
         .map(PathBuf::from)
         .ok_or_else(|| DesktopError::Keychain(format!("{DATA_DIR_ENV} is not configured")))?;
     let store = SystemSecretStore;
-    validate_session(&store, &request)?;
+    validate_session_at(&data_dir, &request)?;
     execute_with(&store, &data_dir, request)
 }
 
-fn validate_session(store: &dyn SecretStore, request: &HelperRequest) -> DesktopResult<()> {
+fn validate_session_at(data_dir: &Path, request: &HelperRequest) -> DesktopResult<()> {
     let provided = request.session.as_deref().unwrap_or_default();
-    let expected = store
-        .get(SESSION_NAMESPACE, SESSION_KEY)?
+    let expected = read_session_authorization(&data_dir.join(SESSION_FILE))?
+        .filter(|authorization| authorization.version == 1)
+        .map(|authorization| authorization.digest)
         .unwrap_or_default();
-    if provided.is_empty() || !constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
+    let provided_digest = session_digest(provided);
+    if provided.is_empty() || !constant_time_eq(provided_digest.as_bytes(), expected.as_bytes()) {
         return Err(DesktopError::Keychain(
             "credential helper session is not authorized".to_owned(),
         ));
     }
+    Ok(())
+}
+
+fn session_digest(token: &str) -> String {
+    format!("{:x}", Sha256::digest(token.as_bytes()))
+}
+
+fn read_session_authorization(path: &Path) -> DesktopResult<Option<SessionAuthorization>> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Some(serde_json::from_str(&text)?)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(unix)]
+fn restrict_session_file(path: &Path) -> DesktopResult<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn restrict_session_file(_path: &Path) -> DesktopResult<()> {
     Ok(())
 }
 
@@ -398,16 +450,49 @@ mod tests {
     }
 
     #[test]
-    fn rejects_an_unauthorized_helper_session() {
-        let store = MemorySecretStore::default();
-        store
-            .set(SESSION_NAMESPACE, SESSION_KEY, "expected-session")
-            .unwrap();
+    fn authorizes_only_the_current_runtime_session_without_storing_its_token() {
+        let data_dir = temporary_data_dir("runtime-session");
+        let session = RuntimeSession::create(&data_dir).unwrap();
+        let authorization = fs::read_to_string(data_dir.join(SESSION_FILE)).unwrap();
+        assert!(!authorization.contains(session.token()));
+
         let mut request = request(Operation::DescribeRef, "DEEPSEEK_API_KEY", None);
         request.session = Some("unexpected-session".to_owned());
-        assert!(validate_session(&store, &request).is_err());
-        request.session = Some("expected-session".to_owned());
-        assert!(validate_session(&store, &request).is_ok());
+        assert!(validate_session_at(&data_dir, &request).is_err());
+        request.session = Some(session.token().to_owned());
+        assert!(validate_session_at(&data_dir, &request).is_ok());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(data_dir.join(SESSION_FILE))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+
+        drop(session);
+        assert!(!data_dir.join(SESSION_FILE).exists());
+        fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[test]
+    fn dropping_an_old_runtime_session_preserves_the_new_session() {
+        let data_dir = temporary_data_dir("runtime-session-restart");
+        let first = RuntimeSession::create(&data_dir).unwrap();
+        let second = RuntimeSession::create(&data_dir).unwrap();
+        let mut request = request(Operation::DescribeRef, "DEEPSEEK_API_KEY", None);
+        request.session = Some(second.token().to_owned());
+
+        drop(first);
+        assert!(data_dir.join(SESSION_FILE).exists());
+        assert!(validate_session_at(&data_dir, &request).is_ok());
+
+        drop(second);
+        assert!(!data_dir.join(SESSION_FILE).exists());
+        fs::remove_dir_all(data_dir).unwrap();
     }
 
     #[test]

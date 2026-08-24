@@ -28,7 +28,9 @@
     "runtime:stage": "node runtime/scripts/stage-runtime.mjs",
     "runtime:verify": "node runtime/scripts/verify-runtime.mjs",
     "runtime:smoke": "node runtime/scripts/smoke-runtime.mjs",
+    "runtime:test-credentials": "node runtime/scripts/test-credentials-keychain.mjs",
     "runtime:test-locale": "node runtime/scripts/test-locale-sync.mjs",
+    "keychain:smoke": "node scripts/smoke-keychain-helper.mjs",
     "release:check": "node scripts/check-release-gates.mjs",
     "rust:test": "node scripts/with-rust.mjs cargo test --manifest-path src-tauri/Cargo.toml",
     "rust:check": "node scripts/with-rust.mjs cargo check --manifest-path src-tauri/Cargo.toml",
@@ -36,7 +38,7 @@
     "tauri": "tauri",
     "tauri:dev": "node scripts/with-pnpm.mjs runtime:stage && node scripts/with-rust.mjs tauri dev",
     "tauri:build": "node scripts/with-pnpm.mjs runtime:stage && node scripts/with-rust.mjs tauri build",
-    "verify": "node scripts/with-pnpm.mjs check:i18n && node scripts/with-pnpm.mjs test && node scripts/with-pnpm.mjs typecheck && node scripts/with-pnpm.mjs runtime:test-locale && node scripts/with-pnpm.mjs runtime:stage && node scripts/with-pnpm.mjs runtime:verify && node scripts/with-pnpm.mjs rust:test && node scripts/with-pnpm.mjs rust:clippy"
+    "verify": "node scripts/with-pnpm.mjs check:i18n && node scripts/with-pnpm.mjs test && node scripts/with-pnpm.mjs typecheck && node scripts/with-pnpm.mjs runtime:test-locale && node scripts/with-pnpm.mjs runtime:test-credentials && node scripts/with-pnpm.mjs runtime:stage && node scripts/with-pnpm.mjs runtime:verify && node scripts/with-pnpm.mjs rust:test && node scripts/with-pnpm.mjs rust:clippy"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
