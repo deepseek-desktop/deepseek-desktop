@@ -22,13 +22,13 @@ function hostTarget() {
 }
 
 function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, stdio: "inherit", shell: process.platform === "win32" });
+  const result = spawnSync(command, args, { cwd, stdio: "inherit" });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} exited with code ${String(result.status)}`);
 }
 
 function runCapture(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8", shell: process.platform === "win32" });
+  const result = spawnSync(command, args, { cwd, encoding: "utf8" });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} exited with code ${String(result.status)}: ${result.stderr || result.stdout}`);
   return result.stdout.trim();
@@ -112,7 +112,7 @@ async function downloadVerified(url, destination, expectedSha256) {
 async function stageOfficialNode(target, sidecar, licenseDestination) {
   const artifact = lock.node.artifacts[target];
   if (!artifact) throw new Error(`Node artifact is not locked for ${target}`);
-  const cacheRoot = resolve(desktopRoot, "../../target/dsh-desktop-runtime-cache/node", target);
+  const cacheRoot = resolve(desktopRoot, "target/dsh-desktop-runtime-cache/node", target);
   const archive = join(cacheRoot, artifact.archive);
   await downloadVerified(`${lock.node.sourceUrl}${artifact.archive}`, archive, artifact.sha256);
   const extracted = join(cacheRoot, "extracted");
@@ -122,7 +122,19 @@ async function stageOfficialNode(target, sidecar, licenseDestination) {
   if (!prepared) {
     await rm(extracted, { recursive: true, force: true });
     await mkdir(extracted, { recursive: true });
-    run("tar", ["-xf", archive, "-C", extracted], cacheRoot);
+    if (process.platform === "win32") {
+      run("powershell.exe", [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force",
+        archive,
+        extracted
+      ], cacheRoot);
+    } else {
+      run("tar", ["-xf", archive, "-C", extracted], cacheRoot);
+    }
     await writeFile(marker, `${artifact.sha256}\n`);
   }
   const archiveRoot = artifact.archive.replace(/\.tar\.gz$|\.zip$/u, "");
