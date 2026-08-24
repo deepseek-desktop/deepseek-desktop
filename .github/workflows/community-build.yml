@@ -76,7 +76,9 @@ jobs:
       - if: runner.os == 'macOS'
         run: node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }}
       - if: runner.os == 'Linux'
-        run: node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }}
+        run: node scripts/with-rust.mjs tauri build --bundles deb
+      - if: runner.os == 'Linux'
+        run: node scripts/with-rust.mjs tauri build --bundles appimage --verbose
         env:
           NO_STRIP: "1"
       - if: runner.os == 'Windows'
