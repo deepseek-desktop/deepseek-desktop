@@ -73,9 +73,26 @@ jobs:
       - run: pnpm rust:test
       - run: pnpm rust:clippy
       - run: pnpm build
-      - run: node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }}
+      - if: runner.os == 'macOS'
+        run: node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }}
+      - if: runner.os == 'Linux'
+        run: node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }}
         env:
-          NO_STRIP: ${{ runner.os == 'Linux' && '1' || '' }}
+          NO_STRIP: "1"
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          subst R: "$env:GITHUB_WORKSPACE"
+          $exitCode = 1
+          try {
+            Set-Location R:\
+            node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }}
+            $exitCode = $LASTEXITCODE
+          } finally {
+            Set-Location $env:GITHUB_WORKSPACE
+            subst R: /D
+          }
+          exit $exitCode
       - uses: actions/upload-artifact@v7
         with:
           name: dsh-desktop-${{ matrix.name }}-unsigned-community
