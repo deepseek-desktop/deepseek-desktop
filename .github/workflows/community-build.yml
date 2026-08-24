@@ -3,7 +3,7 @@ name: Community Build
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
