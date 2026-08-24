@@ -7,6 +7,8 @@ DSH Desktop is an independent, unofficial community distribution built on the lo
 
 Version `0.1.0-community.1` is the community edition. The macOS artifact uses a complete ad-hoc signature but has no Apple Developer ID identity or notarization; other current artifacts are unsigned. The desktop-owned source is Apache-2.0, while the packaged Harness, Node.js, and npm dependencies retain their own license notices.
 
+Installers are published on the [GitHub Releases page](https://github.com/spring-open/deepseek-harness-desktop/releases). Verify the downloaded file against the accompanying `SHA256SUMS` before installation.
+
 ## Architecture
 
 ```text
@@ -65,7 +67,7 @@ The Desktop Shell ships `zh-CN`, `zh-TW`, and `en-US`. The locked Harness releas
 
 Current community builds do not carry a trusted publisher identity and automatic updates are disabled. macOS artifacts use a complete ad-hoc Bundle signature but are not signed with Apple Developer ID and are not notarized. `pnpm release:check community` documents that boundary. A future stable build must pass `pnpm release:check stable`, provide updater, Apple, and Windows signing material, and complete native clean-machine acceptance before it may be published.
 
-The CI matrix builds macOS arm64/x64, Windows x64, and Linux x64 artifacts. A successful build on one platform is not evidence that another platform has passed installation acceptance.
+The CI matrix builds macOS arm64/x64, Windows x64, and Linux x64 artifacts. macOS arm64 and Windows x64 have also passed real installation, launch, graceful-exit, orphan-process, uninstall, and reinstall acceptance on local test systems; the Windows x64 acceptance ran on Windows 11 ARM64 through its system compatibility layer. A successful build on one platform is not evidence that another platform has passed installation acceptance.
 
 The whale mark is the DeepSeek Harness favicon from the locked upstream commit and is used only to identify the bundled Runtime. DeepSeek Harness and its brand assets belong to their respective owner; this community distribution does not imply official endorsement.
 

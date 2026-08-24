@@ -80,7 +80,28 @@ jobs:
       - run: pnpm rust:clippy
       - run: pnpm build
       - if: runner.os == 'macOS'
-        run: node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }} --verbose
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in 1 2; do
+            log="$RUNNER_TEMP/tauri-dmg-attempt-$attempt.log"
+            status=0
+            node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }} --verbose 2>&1 | tee "$log" || status=$?
+            if [ "$status" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 2 ] || ! grep -q 'hdiutil: detach: timeout' "$log"; then
+              exit "$status"
+            fi
+            echo '::warning::Transient DMG detach timeout detected; cleaning the temporary image and retrying once.'
+            for volume in /Volumes/dmg.*; do
+              [ -d "$volume" ] || continue
+              hdiutil detach "$volume" -force || true
+            done
+            find src-tauri/target/release/bundle/macos -maxdepth 1 -name 'rw.*.dmg' -delete
+            find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -delete
+            sleep 5
+          done
       - if: runner.os == 'Linux'
         run: node scripts/with-rust.mjs tauri build --bundles deb
       - if: runner.os == 'Linux'

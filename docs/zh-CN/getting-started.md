@@ -12,7 +12,7 @@ DSH Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、�
 | --- | --- | --- |
 | macOS arm64 | `.dmg` | 本机完整构建与运行验收 |
 | macOS x64 | `.dmg` | CI 原生构建，等待对应机器安装验收 |
-| Windows x64 | NSIS `.exe` | CI 原生构建，等待对应机器安装验收 |
+| Windows x64 | NSIS `.exe` | CI 原生构建；已在 Windows 11 ARM64 的系统 x64 兼容层完成安装、启动、退出、卸载与重装验收 |
 | Linux x64 | AppImage / `.deb` | CI 原生构建，等待对应发行版安装验收 |
 
 当前社区版产物名称和发布说明必须明确带有 `community` / `unsigned`；其中 macOS 的 `unsigned` 表示没有 Apple Developer ID 身份签名和公证，不代表应用 Bundle 缺少本地 ad-hoc 完整性签名。社区版不能作为已认证 Stable 版本对外宣传。
