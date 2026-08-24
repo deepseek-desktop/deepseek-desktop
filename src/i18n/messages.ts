@@ -35,6 +35,7 @@ export const messages = {
         outputClosed: "Runtime 在就绪前关闭了输出通道。",
         healthCheckFailed: "Runtime 本地健康检查失败。",
         credentialChannelFailed: "系统密钥库通信通道启动失败。",
+        taskFailed: "Runtime 管理任务异常终止，请重试或导出诊断信息。",
         restartLimitReached: "Runtime 已达到自动恢复次数上限。"
       }
     },
@@ -80,6 +81,7 @@ export const messages = {
         outputClosed: "Runtime 在就緒前關閉了輸出通道。",
         healthCheckFailed: "Runtime 本機健康檢查失敗。",
         credentialChannelFailed: "系統鑰匙圈通訊通道啟動失敗。",
+        taskFailed: "Runtime 管理工作異常終止，請重試或匯出診斷資訊。",
         restartLimitReached: "Runtime 已達自動復原次數上限。"
       }
     },
@@ -125,6 +127,7 @@ export const messages = {
         outputClosed: "The runtime closed its output before it became ready.",
         healthCheckFailed: "The local runtime health check failed.",
         credentialChannelFailed: "The system keychain channel could not start.",
+        taskFailed: "The runtime management task stopped unexpectedly. Retry or export diagnostics.",
         restartLimitReached: "The runtime reached its automatic recovery limit."
       }
     },

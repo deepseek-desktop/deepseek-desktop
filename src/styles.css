@@ -113,6 +113,7 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
 
 @media (prefers-color-scheme: dark) {
   :root { color: #e4ebee; background: #101719; }
+  .brand-mark { filter: brightness(0) invert(1); }
   .desktop-shell { background-color: #11191b; background-image: linear-gradient(rgba(60, 181, 157, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 181, 157, 0.05) 1px, transparent 1px); }
   .topbar, .side-nav { background: rgba(18, 27, 30, 0.94); border-color: #2b373b; }
   .feature-grid div, .model-step, .workspace-picker, .runtime-panel, .plain-list { background: #182226; border-color: #2c3a3e; }

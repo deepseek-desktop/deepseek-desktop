@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -95,6 +95,16 @@ impl RuntimeSupervisor {
     pub fn stop(&self) -> DesktopResult<RuntimeStatus> {
         let _operation = self.lock_operation()?;
         self.stop_locked(true)
+    }
+
+    pub fn task_failed(&self, message: &str) -> DesktopResult<RuntimeStatus> {
+        let status = self.status()?;
+        self.fail(
+            status.workspace.as_deref().unwrap_or_default(),
+            status.restart_count,
+            "runtime-task-failed",
+            message,
+        )
     }
 
     pub fn open_runtime(&self) -> DesktopResult<()> {
@@ -389,7 +399,7 @@ impl RuntimeSupervisor {
             .path()
             .resource_dir()
             .map_err(|error| DesktopError::Other(error.to_string()))?;
-        Ok(resource_dir
+        Ok(node_compatible_path(&resource_dir)
             .join("runtime/staging")
             .join(env!("DSH_DESKTOP_TARGET")))
     }
@@ -500,15 +510,18 @@ impl RuntimeSupervisor {
     }
 
     fn lock_inner(&self) -> DesktopResult<MutexGuard<'_, RuntimeInner>> {
-        self.inner
+        Ok(self
+            .inner
             .lock()
-            .map_err(|_| DesktopError::Other("runtime state lock is poisoned".to_owned()))
+            .unwrap_or_else(std::sync::PoisonError::into_inner))
     }
 
     fn lock_operation(&self) -> DesktopResult<MutexGuard<'_, ()>> {
-        self.operation
-            .try_lock()
-            .map_err(|_| DesktopError::RuntimeBusy)
+        match self.operation.try_lock() {
+            Ok(operation) => Ok(operation),
+            Err(TryLockError::Poisoned(error)) => Ok(error.into_inner()),
+            Err(TryLockError::WouldBlock) => Err(DesktopError::RuntimeBusy),
+        }
     }
 
     fn start_monitor(supervisor: &Arc<Self>) {
@@ -639,6 +652,12 @@ impl ManagedChild {
     }
 }
 
+impl Drop for ManagedChild {
+    fn drop(&mut self) {
+        self.terminate();
+    }
+}
+
 #[cfg(unix)]
 fn configure_process_group(command: &mut Command) {
     use std::os::unix::process::CommandExt;
@@ -655,6 +674,45 @@ fn validate_workspace(workspace: &str) -> DesktopResult<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn node_compatible_path(path: &Path) -> PathBuf {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+    let units = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    PathBuf::from(OsString::from_wide(&strip_windows_verbatim_prefix(&units)))
+}
+
+#[cfg(not(windows))]
+fn node_compatible_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
+}
+
+#[cfg(any(test, windows))]
+fn strip_windows_verbatim_prefix(path: &[u16]) -> Vec<u16> {
+    const BACKSLASH: u16 = b'\\' as u16;
+    const QUESTION_MARK: u16 = b'?' as u16;
+    const VERBATIM_PREFIX: [u16; 4] = [BACKSLASH, BACKSLASH, QUESTION_MARK, BACKSLASH];
+    const UNC: [u16; 3] = [b'U' as u16, b'N' as u16, b'C' as u16];
+
+    if path.starts_with(&VERBATIM_PREFIX)
+        && path.len() >= 8
+        && path[4..7]
+            .iter()
+            .zip(UNC)
+            .all(|(actual, expected)| *actual == expected || *actual == expected + 32)
+        && path[7] == BACKSLASH
+    {
+        let mut normalized = vec![BACKSLASH, BACKSLASH];
+        normalized.extend_from_slice(&path[8..]);
+        return normalized;
+    }
+    if path.starts_with(&VERBATIM_PREFIX) {
+        return path[VERBATIM_PREFIX.len()..].to_vec();
+    }
+    path.to_vec()
+}
+
 fn parse_ready_url(line: &str) -> Option<String> {
     let start = line.find(READY_PREFIX)?;
     let value = line[start + "dsh web: ".len()..]
@@ -666,6 +724,7 @@ fn parse_ready_url(line: &str) -> Option<String> {
 }
 
 fn health_check(url: &str) -> DesktopResult<()> {
+    install_crypto_provider()?;
     let client = reqwest::blocking::Client::builder()
         .timeout(HEALTH_TIMEOUT)
         .build()
@@ -679,6 +738,19 @@ fn health_check(url: &str) -> DesktopResult<()> {
             "runtime health check returned {}",
             response.status()
         )));
+    }
+    Ok(())
+}
+
+pub fn install_crypto_provider() -> DesktopResult<()> {
+    if rustls::crypto::CryptoProvider::get_default().is_some() {
+        return Ok(());
+    }
+    let installed = rustls::crypto::ring::default_provider().install_default();
+    if installed.is_err() && rustls::crypto::CryptoProvider::get_default().is_none() {
+        return Err(DesktopError::Other(
+            "could not install the Rustls crypto provider".to_owned(),
+        ));
     }
     Ok(())
 }
@@ -763,6 +835,8 @@ impl Drop for WindowsJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
 
     #[test]
     fn parses_only_managed_ready_urls() {
@@ -772,5 +846,46 @@ mod tests {
         );
         assert_eq!(parse_ready_url("dsh web: http://localhost:43127"), None);
         assert_eq!(parse_ready_url("noise"), None);
+    }
+
+    #[test]
+    fn installs_crypto_provider_and_checks_loopback_runtime() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
+        });
+
+        install_crypto_provider().unwrap();
+        health_check(&format!("http://{address}")).unwrap();
+        server.join().unwrap();
+        assert!(rustls::crypto::CryptoProvider::get_default().is_some());
+    }
+
+    #[test]
+    fn strips_windows_verbatim_prefixes_for_node_module_loading() {
+        for (source, expected) in [
+            (
+                r"\\?\C:\Program Files\DSH Desktop\runtime",
+                r"C:\Program Files\DSH Desktop\runtime",
+            ),
+            (
+                r"\\?\UNC\server\share\DSH Desktop\runtime",
+                r"\\server\share\DSH Desktop\runtime",
+            ),
+            (
+                r"C:\Users\developer\DSH Desktop\runtime",
+                r"C:\Users\developer\DSH Desktop\runtime",
+            ),
+        ] {
+            let normalized =
+                strip_windows_verbatim_prefix(&source.encode_utf16().collect::<Vec<_>>());
+            assert_eq!(String::from_utf16(normalized.as_slice()).unwrap(), expected);
+        }
     }
 }

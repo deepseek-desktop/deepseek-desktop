@@ -77,25 +77,31 @@ async fn runtime_start(
     workspace: String,
 ) -> DesktopResult<RuntimeStatus> {
     let supervisor = Arc::clone(&state.supervisor);
-    tauri::async_runtime::spawn_blocking(move || supervisor.start(workspace))
-        .await
-        .map_err(|error| DesktopError::Other(error.to_string()))?
+    let recovery = Arc::clone(&supervisor);
+    match tauri::async_runtime::spawn_blocking(move || supervisor.start(workspace)).await {
+        Ok(result) => result,
+        Err(error) => recovery.task_failed(&error.to_string()),
+    }
 }
 
 #[tauri::command]
 async fn runtime_restart(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus> {
     let supervisor = Arc::clone(&state.supervisor);
-    tauri::async_runtime::spawn_blocking(move || supervisor.restart())
-        .await
-        .map_err(|error| DesktopError::Other(error.to_string()))?
+    let recovery = Arc::clone(&supervisor);
+    match tauri::async_runtime::spawn_blocking(move || supervisor.restart()).await {
+        Ok(result) => result,
+        Err(error) => recovery.task_failed(&error.to_string()),
+    }
 }
 
 #[tauri::command]
 async fn runtime_stop(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus> {
     let supervisor = Arc::clone(&state.supervisor);
-    tauri::async_runtime::spawn_blocking(move || supervisor.stop())
-        .await
-        .map_err(|error| DesktopError::Other(error.to_string()))?
+    let recovery = Arc::clone(&supervisor);
+    match tauri::async_runtime::spawn_blocking(move || supervisor.stop()).await {
+        Ok(result) => result,
+        Err(error) => recovery.task_failed(&error.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -168,6 +174,7 @@ pub fn run_keychain_helper() -> i32 {
 }
 
 pub fn run() {
+    runtime::install_crypto_provider().expect("failed to initialize the Rustls crypto provider");
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
             |app, arguments, working_directory| {

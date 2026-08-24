@@ -6,8 +6,8 @@ other third parties. Their licenses and notices are preserved in
 runtime/THIRD_PARTY_NOTICES.md and in the generated runtime licenses and SPDX
 SBOM files distributed with each desktop artifact.
 
-The application icon is derived without modification from the DeepSeek Harness
-favicon at the Runtime commit locked by this repository. DeepSeek Harness and
-its brand assets are owned by their respective owner. DSH Desktop is an
-independent community distribution and is not endorsed by or affiliated with
-DeepSeek.
+The application icon uses the DeepSeek Harness sidebar fish geometry and
+primary ink color from the Runtime commit locked by this repository. DeepSeek
+Harness and its brand assets are owned by their respective owner. DSH Desktop
+is an independent community distribution and is not endorsed by or affiliated
+with DeepSeek.

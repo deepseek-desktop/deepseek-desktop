@@ -55,6 +55,7 @@ const runtimeErrorKeys: Record<string, string> = {
   "runtime-output-closed": "runtime.errors.outputClosed",
   "runtime-health-check-failed": "runtime.errors.healthCheckFailed",
   "runtime-credential-channel-failed": "runtime.errors.credentialChannelFailed",
+  "runtime-task-failed": "runtime.errors.taskFailed",
   "restart-limit-reached": "runtime.errors.restartLimitReached"
 };
 const runtimeDescription = computed(() => {

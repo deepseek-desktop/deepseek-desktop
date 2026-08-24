@@ -69,6 +69,6 @@ Current community builds do not carry a trusted publisher identity and automatic
 
 The CI matrix builds macOS arm64/x64, Windows x64, and Linux x64 artifacts. macOS arm64 and Windows x64 have also passed real installation, launch, graceful-exit, orphan-process, uninstall, and reinstall acceptance on local test systems; the Windows x64 acceptance ran on Windows 11 ARM64 through its system compatibility layer. A successful build on one platform is not evidence that another platform has passed installation acceptance.
 
-The whale mark is the DeepSeek Harness favicon from the locked upstream commit and is used only to identify the bundled Runtime. DeepSeek Harness and its brand assets belong to their respective owner; this community distribution does not imply official endorsement.
+The fish mark uses the exact DeepSeek Harness sidebar geometry and primary ink color from the locked upstream commit. It is used only to identify the bundled Runtime. DeepSeek Harness and its brand assets belong to their respective owner; this community distribution does not imply official endorsement.
 
 Chinese installation, configuration, data-directory, security, and troubleshooting guidance is available in [docs/zh-CN/getting-started.md](docs/zh-CN/getting-started.md).
