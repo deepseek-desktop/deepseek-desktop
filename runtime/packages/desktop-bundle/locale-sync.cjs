@@ -26,7 +26,7 @@ document.setIn(["locale", "preference"], harnessLocale);
 let descriptor;
 try {
   writeFileSync(temporaryPath, document.toString(), { encoding: "utf8", mode: 0o600 });
-  descriptor = openSync(temporaryPath, "r");
+  descriptor = openSync(temporaryPath, "r+");
   fsyncSync(descriptor);
   closeSync(descriptor);
   descriptor = undefined;
