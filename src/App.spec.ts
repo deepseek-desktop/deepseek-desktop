@@ -2,7 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { exportDiagnostics, openHarness, startRuntime } from "./desktop";
+import { chooseWorkspace, exportDiagnostics, openHarness, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
@@ -80,13 +80,23 @@ describe("DeepSeek Harness Desktop shell", () => {
     expect(wrapper.text()).toContain("Diagnostics");
   });
 
-  it("keeps launch disabled until a workspace is selected", async () => {
+  it("does not advance past workspace selection until a directory is selected", async () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
     const continueButton = () => wrapper.findAll("button").find(button => button.text() === "继续");
     await continueButton()?.trigger("click");
+    expect(wrapper.text()).toContain("选择工作区");
+    expect(continueButton()?.attributes("disabled")).toBeDefined();
     await continueButton()?.trigger("click");
-    expect(wrapper.findAll("button").find(button => button.text() === "启动工作台")?.attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("选择工作区");
+    expect(wrapper.findAll("button").find(button => button.text() === "启动工作台")).toBeUndefined();
+
+    vi.mocked(chooseWorkspace).mockResolvedValue("/tmp/dsh-workspace");
+    await wrapper.findAll("button").find(button => button.text() === "选择目录")?.trigger("click");
+    await flushPromises();
+    expect(continueButton()?.attributes("disabled")).toBeUndefined();
+    await continueButton()?.trigger("click");
+    expect(wrapper.text()).toContain("配置模型");
   });
 
   it("retries an early failure with the persisted workspace", async () => {

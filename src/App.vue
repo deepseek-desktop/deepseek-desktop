@@ -78,6 +78,7 @@ const updateDescription = computed(() => {
   return t(messageKey, { version: update.value.availableVersion || "" });
 });
 const canStart = computed(() => Boolean(settings.value.workspace) && !busy.value);
+const canContinueOnboarding = computed(() => onboardingStep.value !== 1 || Boolean(settings.value.workspace));
 
 async function persistSettings(): Promise<void> {
   settings.value = await saveSettings(settings.value);
@@ -271,7 +272,7 @@ onBeforeUnmount(() => {
 
           <footer class="actions">
             <button v-if="onboardingStep > 0" class="button secondary" @click="onboardingStep -= 1">{{ t("common.back") }}</button>
-            <button v-if="onboardingStep < 2" class="button primary" @click="onboardingStep += 1">{{ t("common.continue") }}</button>
+            <button v-if="onboardingStep < 2" class="button primary" :disabled="!canContinueOnboarding" @click="onboardingStep += 1">{{ t("common.continue") }}</button>
             <button v-else class="button primary" :disabled="!canStart" @click="launch">{{ t("onboarding.start") }}</button>
           </footer>
         </template>

@@ -8,6 +8,9 @@ test("onboarding, language switching, and status views fully load", async ({ pag
   await expect(page.getByRole("heading", { name: "欢迎使用 DeepSeek Harness Desktop" })).toBeVisible();
   await page.getByLabel("切换语言").selectOption("en-US");
   await expect(page.getByRole("heading", { name: "Welcome to DeepSeek Harness Desktop" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "Choose a workspace" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue" })).toBeDisabled();
 
   await page.getByRole("button", { name: /Runtime/ }).click();
   await expect(page.getByRole("heading", { name: "Ready to start" })).toBeVisible();
