@@ -7,12 +7,12 @@ import process from "node:process";
 import { parse } from "yaml";
 
 const script = resolve(import.meta.dirname, "../packages/desktop-bundle/locale-sync.cjs");
-const root = await mkdtemp(join(tmpdir(), "dsh-desktop-locale-"));
+const root = await mkdtemp(join(tmpdir(), "deepseek-harness-desktop-locale-"));
 const settings = join(root, "settings.yaml");
 
 function run(locale) {
   return spawnSync(process.execPath, [script], {
-    env: { DSH_HOME: root, DSH_DESKTOP_LOCALE: locale },
+    env: { DSH_HOME: root, DEEPSEEK_HARNESS_DESKTOP_LOCALE: locale },
     encoding: "utf8"
   });
 }

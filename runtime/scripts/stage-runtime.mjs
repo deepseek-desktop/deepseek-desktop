@@ -143,7 +143,7 @@ async function downloadVerified(url, destination, expectedSha256) {
 async function stageOfficialNode(target, sidecar, licenseDestination) {
   const artifact = lock.node.artifacts[target];
   if (!artifact) throw new Error(`Node artifact is not locked for ${target}`);
-  const cacheRoot = resolve(desktopRoot, "target/dsh-desktop-runtime-cache/node", target);
+  const cacheRoot = resolve(desktopRoot, "target/deepseek-harness-desktop-runtime-cache/node", target);
   const archive = join(cacheRoot, artifact.archive);
   await downloadVerified(`${lock.node.sourceUrl}${artifact.archive}`, archive, artifact.sha256);
   const extracted = join(cacheRoot, "extracted");
@@ -187,8 +187,8 @@ function createSpdx(target, inventory, createdAt) {
     spdxVersion: "SPDX-2.3",
     dataLicense: "CC0-1.0",
     SPDXID: "SPDXRef-DOCUMENT",
-    name: `DSH-Desktop-Runtime-${target}`,
-    documentNamespace: `https://springopen.local/dsh-desktop/${lock.desktopVersion}/sbom/${target}/${lock.harness.commit}`,
+    name: `DeepSeek-Harness-Desktop-Runtime-${target}`,
+    documentNamespace: `https://springopen.local/deepseek-harness-desktop/${lock.desktopVersion}/sbom/${target}/${lock.harness.commit}`,
     creationInfo: {
       created: createdAt,
       creators: ["Tool: DeepSeek Harness Desktop runtime staging"]
@@ -216,7 +216,7 @@ if (process.versions.node !== lock.node.version) {
 const output = join(runtimeRoot, "staging", target);
 await rm(output, { recursive: true, force: true });
 await mkdir(dirname(output), { recursive: true });
-runPnpm(["--filter", "@springopen/dsh-desktop-runtime", "deploy", "--prod", "--legacy", output], runtimeRoot);
+runPnpm(["--filter", "@springopen/deepseek-harness-desktop-runtime", "deploy", "--prod", "--legacy", output], runtimeRoot);
 
 // pnpm writes the wall-clock pruning time into this install-only metadata file.
 // Node does not consume it at runtime, so omit it from the distributable closure.

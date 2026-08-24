@@ -64,7 +64,7 @@ impl Diagnostics {
         settings: &DesktopSettings,
     ) -> DesktopResult<PathBuf> {
         let filename = format!(
-            "dsh-desktop-diagnostics-{}.json",
+            "deepseek-harness-desktop-diagnostics-{}.json",
             Utc::now().format("%Y%m%dT%H%M%SZ")
         );
         let path = self.paths.diagnostics_dir.join(filename);
@@ -82,7 +82,7 @@ impl Diagnostics {
             generated_at: Utc::now().to_rfc3339(),
             desktop_version: env!("CARGO_PKG_VERSION"),
             harness_version: "0.1.1-rc.2",
-            target: env!("DSH_DESKTOP_TARGET"),
+            target: env!("DEEPSEEK_HARNESS_DESKTOP_TARGET"),
             status: redacted_status,
             settings: redacted_settings,
             recent_log: self.read_tail(),
@@ -199,8 +199,10 @@ mod tests {
 
     #[test]
     fn redacts_registered_workspace_and_data_paths() {
-        let root =
-            std::env::temp_dir().join(format!("dsh-desktop-diagnostics-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!(
+            "deepseek-harness-desktop-diagnostics-{}",
+            std::process::id()
+        ));
         let paths = AppPaths {
             data_dir: root.join("data"),
             dsh_home: root.join("data/dsh"),

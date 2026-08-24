@@ -1,5 +1,5 @@
-const expectedParent = Number.parseInt(process.env.DSH_DESKTOP_PARENT_PID || "", 10);
-delete process.env.DSH_DESKTOP_PARENT_PID;
+const expectedParent = Number.parseInt(process.env.DEEPSEEK_HARNESS_DESKTOP_PARENT_PID || "", 10);
+delete process.env.DEEPSEEK_HARNESS_DESKTOP_PARENT_PID;
 
 if (!Number.isInteger(expectedParent) || expectedParent <= 1) {
   throw new Error("desktop runtime parent is unavailable");

@@ -7,7 +7,7 @@ const rootResult = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding
 if (rootResult.status !== 0) throw new Error("could not locate the repository root");
 const projectRoot = rootResult.stdout.trim();
 const desktopRoot = resolve(import.meta.dirname, "..");
-const toolchainRoot = resolve(process.env.DSH_DESKTOP_TOOLCHAIN_DIR || join(projectRoot, "target/dsh-desktop-toolchain"));
+const toolchainRoot = resolve(process.env.DEEPSEEK_HARNESS_DESKTOP_TOOLCHAIN_DIR || join(projectRoot, "target/deepseek-harness-desktop-toolchain"));
 const cargoHome = join(toolchainRoot, "cargo");
 const rustupHome = join(toolchainRoot, "rustup");
 const executableSuffix = process.platform === "win32" ? ".exe" : "";

@@ -246,7 +246,7 @@ mod tests {
     fn resolves_an_explicit_workspace_argument() {
         let current = std::env::current_dir().unwrap();
         let arguments = vec![
-            "dsh-desktop".to_owned(),
+            "deepseek-harness-desktop".to_owned(),
             "--workspace".to_owned(),
             ".".to_owned(),
         ];

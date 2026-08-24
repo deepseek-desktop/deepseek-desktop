@@ -34,7 +34,7 @@ The Harness WebView has no Tauri capability. It may navigate only within a manag
 - Tauri CLI `2.11.4`
 - DeepSeek Harness `0.1.1-rc.2` at `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`
 
-Rust is installed under the repository `target/dsh-desktop-toolchain/` by `scripts/with-rust.mjs`; no global Rust installation is changed.
+Rust is installed under the repository `target/deepseek-harness-desktop-toolchain/` by `scripts/with-rust.mjs`; no global Rust installation is changed.
 
 ## Development
 
@@ -57,9 +57,9 @@ corepack pnpm@11.7.0 tauri:dev
 
 `runtime/runtime-lock.json` is the source of truth for upstream artifacts. Runtime staging is generated on the native target and is never committed.
 
-The staging command downloads the target-specific official Node.js archive into the repository `target/` cache, verifies its locked SHA-256, removes install-only wall-clock metadata and non-target native artifacts, and emits deterministic `runtime-manifest.json`, `licenses.json`, and `sbom.spdx.json` files. The allowed `node-pty` and Koffi native assets for every target are pinned in `runtime/runtime-lock.json`. Set `DSH_DESKTOP_SMOKE_CYCLES=100` when running `runtime:smoke` for the release stability gate; the smoke also verifies parent-death cleanup on Unix.
+The staging command downloads the target-specific official Node.js archive into the repository `target/` cache, verifies its locked SHA-256, removes install-only wall-clock metadata and non-target native artifacts, and emits deterministic `runtime-manifest.json`, `licenses.json`, and `sbom.spdx.json` files. The allowed `node-pty` and Koffi native assets for every target are pinned in `runtime/runtime-lock.json`. Set `DEEPSEEK_HARNESS_DESKTOP_SMOKE_CYCLES=100` when running `runtime:smoke` for the release stability gate; the smoke also verifies parent-death cleanup on Unix.
 
-`DSH_DESKTOP_DATA_DIR` may be set for an isolated launch test. End users do not need it; without the override, Tauri's platform application-data directory is used.
+`DEEPSEEK_HARNESS_DESKTOP_DATA_DIR` may be set for an isolated launch test. End users do not need it; without the override, Tauri's platform application-data directory is used.
 
 The Desktop Shell ships `zh-CN`, `zh-TW`, and `en-US`. The locked Harness release currently ships only `zh` and `en`, so the startup bridge maps both Chinese desktop locales to upstream `zh` and English to `en`. It atomically updates the Harness settings document without discarding unrelated settings or comments. This is an explicit upstream capability boundary, not an untracked patch to generated Harness assets.
 

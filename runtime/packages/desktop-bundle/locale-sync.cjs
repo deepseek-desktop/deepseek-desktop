@@ -8,7 +8,7 @@ const localeMap = {
   "en-US": "en"
 };
 
-const desktopLocale = process.env.DSH_DESKTOP_LOCALE;
+const desktopLocale = process.env.DEEPSEEK_HARNESS_DESKTOP_LOCALE;
 const harnessLocale = localeMap[desktopLocale];
 const dshHome = process.env.DSH_HOME;
 

@@ -13,8 +13,8 @@ if (!HELPER_SESSION) {
 }
 
 function helperPath() {
-  const path = process.env.DSH_DESKTOP_HELPER_PATH;
-  if (!path) throw new Error("credentials-vault: DSH_DESKTOP_HELPER_PATH is not configured");
+  const path = process.env.DEEPSEEK_HARNESS_DESKTOP_HELPER_PATH;
+  if (!path) throw new Error("credentials-vault: DEEPSEEK_HARNESS_DESKTOP_HELPER_PATH is not configured");
   return path;
 }
 

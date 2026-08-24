@@ -1,5 +1,5 @@
 {
-  "name": "@springopen/dsh-desktop-runtime",
+  "name": "@springopen/deepseek-harness-desktop-runtime",
   "version": "0.1.0-community.3",
   "private": true,
   "license": "Apache-2.0",
@@ -10,8 +10,8 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.1.1-rc.2",
-    "@springopen/dsh-desktop-bundle": "workspace:*",
-    "@springopen/dsh-credentials-vault": "workspace:*",
+    "@springopen/deepseek-harness-desktop-bundle": "workspace:*",
+    "@springopen/deepseek-harness-credentials-vault": "workspace:*",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   }

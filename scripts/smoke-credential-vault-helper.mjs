@@ -12,7 +12,7 @@ await stat(binary);
 const dataDir = resolve("target", `credential-vault-helper-smoke-${process.pid}-${Date.now()}`);
 const session = randomUUID();
 const digest = createHash("sha256").update(session).digest("hex");
-const key = `DSH_DESKTOP_SMOKE_${randomUUID()}`;
+const key = `DEEPSEEK_HARNESS_DESKTOP_SMOKE_${randomUUID()}`;
 const syntheticSecret = `not-a-real-secret-${randomUUID()}`;
 await mkdir(dataDir, { recursive: true });
 await writeFile(
@@ -23,7 +23,7 @@ await writeFile(
 
 async function request(operation, value) {
   const child = spawn(binary, ["--credential-vault-helper"], {
-    env: { ...process.env, DSH_DESKTOP_DATA_DIR: dataDir },
+    env: { ...process.env, DEEPSEEK_HARNESS_DESKTOP_DATA_DIR: dataDir },
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
   });

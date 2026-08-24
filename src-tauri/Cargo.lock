@@ -717,6 +717,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "deepseek-harness-desktop"
+version = "0.1.0-community.3"
+dependencies = [
+ "base64 0.22.1",
+ "chacha20poly1305",
+ "chrono",
+ "fs2",
+ "getrandom 0.3.4",
+ "libc",
+ "reqwest",
+ "rfd",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "thiserror 2.0.20",
+ "url",
+ "uuid",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "defmt"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -902,33 +929,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "dsh-desktop"
-version = "0.1.0-community.3"
-dependencies = [
- "base64 0.22.1",
- "chacha20poly1305",
- "chrono",
- "fs2",
- "getrandom 0.3.4",
- "libc",
- "reqwest",
- "rfd",
- "rustls",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "thiserror 2.0.20",
- "url",
- "uuid",
- "windows-sys 0.61.2",
 ]
 
 [[package]]

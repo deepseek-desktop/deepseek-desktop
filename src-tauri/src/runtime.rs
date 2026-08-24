@@ -202,10 +202,10 @@ impl RuntimeSupervisor {
         self.prepare_profile(&runtime_dir)?;
         let node = self.node_binary()?;
         let dsh_entry = runtime_dir.join("node_modules/@deepseek-ai/dsh/lib/bin.js");
-        let parent_watch =
-            runtime_dir.join("node_modules/@springopen/dsh-desktop-bundle/parent-watch.cjs");
-        let locale_sync =
-            runtime_dir.join("node_modules/@springopen/dsh-desktop-bundle/locale-sync.cjs");
+        let parent_watch = runtime_dir
+            .join("node_modules/@springopen/deepseek-harness-desktop-bundle/parent-watch.cjs");
+        let locale_sync = runtime_dir
+            .join("node_modules/@springopen/deepseek-harness-desktop-bundle/locale-sync.cjs");
         if !dsh_entry.is_file() {
             return self.fail(
                 &workspace,
@@ -422,13 +422,13 @@ impl RuntimeSupervisor {
     }
 
     fn runtime_dir(&self) -> DesktopResult<PathBuf> {
-        if let Some(path) = std::env::var_os("DSH_DESKTOP_RUNTIME_DIR") {
+        if let Some(path) = std::env::var_os("DEEPSEEK_HARNESS_DESKTOP_RUNTIME_DIR") {
             return Ok(PathBuf::from(path));
         }
         if cfg!(debug_assertions) {
             return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../runtime/staging")
-                .join(env!("DSH_DESKTOP_TARGET")));
+                .join(env!("DEEPSEEK_HARNESS_DESKTOP_TARGET")));
         }
         let resource_dir = self
             .app
@@ -437,11 +437,11 @@ impl RuntimeSupervisor {
             .map_err(|error| DesktopError::Other(error.to_string()))?;
         Ok(node_compatible_path(&resource_dir)
             .join("runtime/staging")
-            .join(env!("DSH_DESKTOP_TARGET")))
+            .join(env!("DEEPSEEK_HARNESS_DESKTOP_TARGET")))
     }
 
     fn node_binary(&self) -> DesktopResult<PathBuf> {
-        if let Some(path) = std::env::var_os("DSH_DESKTOP_NODE_PATH") {
+        if let Some(path) = std::env::var_os("DEEPSEEK_HARNESS_DESKTOP_NODE_PATH") {
             return Ok(PathBuf::from(path));
         }
         let suffix = if cfg!(windows) { ".exe" } else { "" };
@@ -452,7 +452,11 @@ impl RuntimeSupervisor {
         if cfg!(debug_assertions) {
             let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("binaries")
-                .join(format!("node-{}{}", env!("DSH_DESKTOP_TARGET"), suffix));
+                .join(format!(
+                    "node-{}{}",
+                    env!("DEEPSEEK_HARNESS_DESKTOP_TARGET"),
+                    suffix
+                ));
             if development.is_file() {
                 return Ok(development);
             }
@@ -492,18 +496,21 @@ impl RuntimeSupervisor {
         );
         environment.insert("DSH_TELEMETRY_DISABLED".to_owned(), "true".to_owned());
         environment.insert(
-            "DSH_DESKTOP_PARENT_PID".to_owned(),
+            "DEEPSEEK_HARNESS_DESKTOP_PARENT_PID".to_owned(),
             std::process::id().to_string(),
         );
         environment.insert(
-            "DSH_DESKTOP_HELPER_PATH".to_owned(),
+            "DEEPSEEK_HARNESS_DESKTOP_HELPER_PATH".to_owned(),
             helper.to_string_lossy().into_owned(),
         );
         environment.insert(
-            "DSH_DESKTOP_DATA_DIR".to_owned(),
+            "DEEPSEEK_HARNESS_DESKTOP_DATA_DIR".to_owned(),
             self.paths.data_dir.to_string_lossy().into_owned(),
         );
-        environment.insert("DSH_DESKTOP_LOCALE".to_owned(), self.settings.get()?.locale);
+        environment.insert(
+            "DEEPSEEK_HARNESS_DESKTOP_LOCALE".to_owned(),
+            self.settings.get()?.locale,
+        );
         Ok(environment)
     }
 
@@ -512,13 +519,13 @@ impl RuntimeSupervisor {
         let modules = profile.join("node_modules/@springopen");
         fs::create_dir_all(&modules)?;
         let manifest = serde_json::json!({
-            "name": "dsh-profile-desktop-web",
+            "name": "deepseek-harness-desktop-web-profile",
             "private": true,
             "dependencies": {},
             "dsh": { "profile": { "bundles": [
                 "@deepseek-ai/dsh-base",
                 "@deepseek-ai/dsh-web-app",
-                "@springopen/dsh-desktop-bundle"
+                "@springopen/deepseek-harness-desktop-bundle"
             ] } }
         });
         fs::write(
@@ -534,7 +541,10 @@ impl RuntimeSupervisor {
                 "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n",
             )?;
         }
-        for package in ["dsh-desktop-bundle", "dsh-credentials-vault"] {
+        for package in [
+            "deepseek-harness-desktop-bundle",
+            "deepseek-harness-credentials-vault",
+        ] {
             let source = runtime_dir.join("node_modules/@springopen").join(package);
             let target = modules.join(package);
             if target.exists() {

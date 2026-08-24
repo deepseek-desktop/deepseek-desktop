@@ -56,11 +56,11 @@ DeepSeek Harness Desktop 使用系统应用数据目录，不向安装目录写�
 | `diagnostics/` | 用户主动导出的脱敏诊断文档 |
 | `updates/` | 未来签名更新的临时目录 |
 
-macOS 默认位于 `~/Library/Application Support/com.springopen.dshdesktop/`；Windows 和 Linux 使用 Tauri 对应的平台应用数据目录。
+macOS 默认位于 `~/Library/Application Support/com.springopen.deepseek-harness-desktop/`；Windows 和 Linux 使用 Tauri 对应的平台应用数据目录。
 
 加密凭据库以当前操作系统用户的数据目录权限作为本地信任边界：它可以避免密钥以明文出现在配置、日志、诊断或备份预览中，也不会触发反复授权弹窗；但已经控制同一操作系统用户账户的恶意程序仍可能读取应用数据。不要在多人共用同一系统账户的设备上保存生产密钥。
 
-开发者执行隔离启动验收时可以临时设置 `DSH_DESKTOP_DATA_DIR`，把测试数据写入指定目录。正式启动无需设置该变量，默认目录会自动创建，不增加用户配置负担。
+开发者执行隔离启动验收时可以临时设置 `DEEPSEEK_HARNESS_DESKTOP_DATA_DIR`，把测试数据写入指定目录。正式启动无需设置该变量，默认目录会自动创建，不增加用户配置负担。
 
 ## 诊断与隐私
 
@@ -81,7 +81,7 @@ macOS 默认位于 `~/Library/Application Support/com.springopen.dshdesktop/`；
 
 ## 开发者验证
 
-完整构建命令、Runtime lock、测试入口和发行门禁见仓库根目录 `README.md`。本地验证至少包括三语 parity、语言桥保真测试、Vue 单测、Playwright Shell E2E、Rust 单测、Runtime manifest 校验、真实 Harness readiness smoke 和目标平台安装包构建。连续启停验收使用 `DSH_DESKTOP_SMOKE_CYCLES=100 corepack pnpm@11.7.0 runtime:smoke`。
+完整构建命令、Runtime lock、测试入口和发行门禁见仓库根目录 `README.md`。本地验证至少包括三语 parity、语言桥保真测试、Vue 单测、Playwright Shell E2E、Rust 单测、Runtime manifest 校验、真实 Harness readiness smoke 和目标平台安装包构建。连续启停验收使用 `DEEPSEEK_HARNESS_DESKTOP_SMOKE_CYCLES=100 corepack pnpm@11.7.0 runtime:smoke`。
 
 需要主动生成当前电脑对应的桌面安装包时，在仓库根目录执行：
 

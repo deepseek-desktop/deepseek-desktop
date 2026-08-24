@@ -68,28 +68,28 @@ const staging = join(runtimeRoot, "staging", target);
 const nodeSuffix = process.platform === "win32" ? ".exe" : "";
 const node = join(desktopRoot, "src-tauri", "binaries", `node-${target}${nodeSuffix}`);
 const dsh = join(staging, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
-const parentWatch = join(staging, "node_modules", "@springopen", "dsh-desktop-bundle", "parent-watch.cjs");
-const localeSync = join(staging, "node_modules", "@springopen", "dsh-desktop-bundle", "locale-sync.cjs");
+const parentWatch = join(staging, "node_modules", "@springopen", "deepseek-harness-desktop-bundle", "parent-watch.cjs");
+const localeSync = join(staging, "node_modules", "@springopen", "deepseek-harness-desktop-bundle", "locale-sync.cjs");
 await Promise.all([stat(node), stat(dsh), stat(parentWatch), stat(localeSync)]);
 
-const smokeRoot = resolve(desktopRoot, "../../target/dsh-desktop-runtime-smoke");
+const smokeRoot = resolve(desktopRoot, "../../target/deepseek-harness-desktop-runtime-smoke");
 const dshHome = join(smokeRoot, "home");
 const profile = join(dshHome, "profiles", "desktop-web");
 const scopedModules = join(profile, "node_modules", "@springopen");
 await rm(smokeRoot, { recursive: true, force: true });
 await mkdir(scopedModules, { recursive: true });
 await writeFile(join(profile, "package.json"), `${JSON.stringify({
-  name: "dsh-profile-desktop-web",
+  name: "deepseek-harness-desktop-web-profile",
   private: true,
   dsh: { profile: { bundles: [
     "@deepseek-ai/dsh-base",
     "@deepseek-ai/dsh-web-app",
-    "@springopen/dsh-desktop-bundle"
+    "@springopen/deepseek-harness-desktop-bundle"
   ] } }
 }, null, 2)}\n`);
 await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
 await writeFile(join(profile, "pnpm-workspace.yaml"), "packages:\n  - .\n\nnodeLinker: hoisted\n");
-for (const name of ["dsh-desktop-bundle", "dsh-credentials-vault"]) {
+for (const name of ["deepseek-harness-desktop-bundle", "deepseek-harness-credentials-vault"]) {
   await cp(join(staging, "node_modules", "@springopen", name), join(scopedModules, name), { recursive: true });
 }
 
@@ -100,10 +100,10 @@ const environment = {
   LANG: process.env.LANG,
   DSH_HOME: dshHome,
   DSH_TELEMETRY_DISABLED: "true",
-  DSH_DESKTOP_HELPER_PATH: process.execPath,
-  DSH_DESKTOP_DATA_DIR: join(smokeRoot, "data"),
-  DSH_DESKTOP_PARENT_PID: String(process.pid),
-  DSH_DESKTOP_LOCALE: "zh-TW",
+  DEEPSEEK_HARNESS_DESKTOP_HELPER_PATH: process.execPath,
+  DEEPSEEK_HARNESS_DESKTOP_DATA_DIR: join(smokeRoot, "data"),
+  DEEPSEEK_HARNESS_DESKTOP_PARENT_PID: String(process.pid),
+  DEEPSEEK_HARNESS_DESKTOP_LOCALE: "zh-TW",
   NO_PROXY: "127.0.0.1,localhost",
   no_proxy: "127.0.0.1,localhost"
 };
@@ -115,16 +115,16 @@ const dump = spawnSync(node, ["--require", parentWatch, "--require", localeSync,
   encoding: "utf8"
 });
 if (dump.status !== 0) throw new Error(`profile composition failed: ${dump.stderr || dump.stdout}`);
-if (!dump.stdout.includes("@springopen/dsh-credentials-vault")) {
+if (!dump.stdout.includes("@springopen/deepseek-harness-credentials-vault")) {
   throw new Error("desktop encrypted credential provider is absent from the composed profile");
 }
 if (!/locale:\s+preference: zh/u.test(await readFile(join(dshHome, "settings.yaml"), "utf8"))) {
   throw new Error("desktop locale bridge did not persist the mapped Harness locale");
 }
 
-const cycles = Number.parseInt(process.env.DSH_DESKTOP_SMOKE_CYCLES || "1", 10);
+const cycles = Number.parseInt(process.env.DEEPSEEK_HARNESS_DESKTOP_SMOKE_CYCLES || "1", 10);
 if (!Number.isInteger(cycles) || cycles < 1 || cycles > 1_000) {
-  throw new Error(`DSH_DESKTOP_SMOKE_CYCLES must be between 1 and 1000, got ${process.env.DSH_DESKTOP_SMOKE_CYCLES}`);
+  throw new Error(`DEEPSEEK_HARNESS_DESKTOP_SMOKE_CYCLES must be between 1 and 1000, got ${process.env.DEEPSEEK_HARNESS_DESKTOP_SMOKE_CYCLES}`);
 }
 
 async function runCycle(index) {
@@ -195,10 +195,10 @@ const child = spawn(node, ["--require", parentWatch, "--require", localeSync, ds
     LANG: process.env.LANG,
     DSH_HOME: dshHome,
     DSH_TELEMETRY_DISABLED: "true",
-    DSH_DESKTOP_HELPER_PATH: process.execPath,
-    DSH_DESKTOP_DATA_DIR: dataDir,
-    DSH_DESKTOP_PARENT_PID: String(process.pid),
-    DSH_DESKTOP_LOCALE: "zh-TW",
+    DEEPSEEK_HARNESS_DESKTOP_HELPER_PATH: process.execPath,
+    DEEPSEEK_HARNESS_DESKTOP_DATA_DIR: dataDir,
+    DEEPSEEK_HARNESS_DESKTOP_PARENT_PID: String(process.pid),
+    DEEPSEEK_HARNESS_DESKTOP_LOCALE: "zh-TW",
     NO_PROXY: "127.0.0.1,localhost",
     no_proxy: "127.0.0.1,localhost"
   },

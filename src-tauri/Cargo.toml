@@ -1,5 +1,5 @@
 [package]
-name = "dsh-desktop"
+name = "deepseek-harness-desktop"
 version = "0.1.0-community.3"
 description = "Self-contained local desktop shell for DeepSeek Harness"
 authors = ["SpringOpen Contributors"]
@@ -8,11 +8,11 @@ edition = "2024"
 rust-version = "1.98"
 
 [lib]
-name = "dsh_desktop_lib"
+name = "deepseek_harness_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "dsh-desktop"
+name = "deepseek-harness-desktop"
 path = "src/main.rs"
 
 [build-dependencies]
