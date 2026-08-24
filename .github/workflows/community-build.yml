@@ -164,11 +164,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          find release-assets -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            | sed 's#  release-assets/#  #' \
-            > release-assets/SHA256SUMS
+          mapfile -d '' assets < <(
+            find release-assets -type f ! -name SHA256SUMS -print0 | sort -z
+          )
+          test "${#assets[@]}" -gt 0
+
+          declare -A asset_names=()
+          : > release-assets/SHA256SUMS
+          for asset in "${assets[@]}"; do
+            asset_name="$(basename "$asset")"
+            if [[ -n "${asset_names[$asset_name]:-}" ]]; then
+              echo "Duplicate release asset name: $asset_name" >&2
+              exit 1
+            fi
+            asset_names[$asset_name]=1
+            checksum="$(sha256sum "$asset")"
+            printf '%s  %s\n' "${checksum%% *}" "$asset_name" >> release-assets/SHA256SUMS
+          done
           test -s release-assets/SHA256SUMS
       - name: Publish community release
         env:
@@ -177,7 +189,9 @@ jobs:
         run: |
           set -euo pipefail
           product_name="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
-          gh release create "$GITHUB_REF_NAME" release-assets/* \
+          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
+          test "${#assets[@]}" -gt 1
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$product_name ${GITHUB_REF_NAME#v}" \
             --notes-file .github/release-notes-community.md \
