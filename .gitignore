@@ -12,6 +12,7 @@ src-tauri/gen/schemas/
 coverage/
 playwright-report/
 test-results/
+/release/
 
 # Local configuration and secrets
 .env
