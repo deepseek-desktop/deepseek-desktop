@@ -74,7 +74,7 @@ jobs:
       - run: pnpm rust:clippy
       - run: pnpm build
       - if: runner.os == 'macOS'
-        run: node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }}
+        run: node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }} --verbose
       - if: runner.os == 'Linux'
         run: node scripts/with-rust.mjs tauri build --bundles deb
       - if: runner.os == 'Linux'
