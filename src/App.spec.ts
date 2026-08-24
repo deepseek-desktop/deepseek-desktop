@@ -28,7 +28,7 @@ vi.mock("./desktop", () => ({
   chooseWorkspace: vi.fn(async () => null),
   exportDiagnostics: vi.fn(async () => ""),
   getAbout: vi.fn(async () => ({
-    desktopVersion: "0.1.0-community.2",
+    desktopVersion: "0.1.0-community.3",
     harnessVersion: "0.1.1-rc.2",
     harnessCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
     nodeVersion: "24.16.0",
@@ -44,7 +44,7 @@ vi.mock("./desktop", () => ({
   stopRuntime: vi.fn(async () => ({ ...runtime }))
 }));
 
-describe("DSH Desktop shell", () => {
+describe("DeepSeek Harness Desktop shell", () => {
   beforeEach(() => {
     Object.assign(settings, {
       schemaVersion: 1,
@@ -70,11 +70,11 @@ describe("DSH Desktop shell", () => {
   it("loads onboarding and switches all visible navigation to English", async () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
-    expect(wrapper.text()).toContain("欢迎使用 DSH Desktop");
+    expect(wrapper.text()).toContain("欢迎使用 DeepSeek Harness Desktop");
 
     await wrapper.get("select").setValue("en-US");
     await flushPromises();
-    expect(wrapper.text()).toContain("Welcome to DSH Desktop");
+    expect(wrapper.text()).toContain("Welcome to DeepSeek Harness Desktop");
     expect(wrapper.text()).toContain("Runtime");
     expect(wrapper.text()).toContain("Diagnostics");
   });

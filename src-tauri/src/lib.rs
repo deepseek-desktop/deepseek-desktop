@@ -228,7 +228,7 @@ pub fn run() {
 
     let app = builder
         .build(tauri::generate_context!())
-        .expect("failed to build DSH Desktop");
+        .expect("failed to build DeepSeek Harness Desktop");
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. })
             && let Some(state) = app_handle.try_state::<AppState>()

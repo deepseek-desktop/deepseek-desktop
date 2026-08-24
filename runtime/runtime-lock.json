@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "sourceDateEpoch": 1787313817,
-  "desktopVersion": "0.1.0-community.2",
+  "desktopVersion": "0.1.0-community.3",
   "harness": {
     "version": "0.1.1-rc.2",
     "tag": "dsh-v0.1.1-rc.2",
@@ -74,8 +74,8 @@
     "x86_64-unknown-linux-gnu"
   ],
   "patches": [
-    "@springopen/dsh-desktop-bundle@0.1.0-community.2",
-    "@springopen/dsh-credentials-vault@0.1.0-community.2",
+    "@springopen/dsh-desktop-bundle@0.1.0-community.3",
+    "@springopen/dsh-credentials-vault@0.1.0-community.3",
     "@deepseek-ai/dsh-client-runtime@0.1.1-rc.2:neutral-auth-failure",
     "@deepseek-ai/dsh-client-ui-conversation@0.1.1-rc.2:hide-system-policy-context",
     "@deepseek-ai/dsh-client-ui-settings-models@0.1.1-rc.2:provider-credential-rollback",

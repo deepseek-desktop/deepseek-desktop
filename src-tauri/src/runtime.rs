@@ -166,7 +166,7 @@ impl RuntimeSupervisor {
         let managed_origin = url.clone();
         let app = self.app.clone();
         tauri::WebviewWindowBuilder::new(&self.app, "harness", tauri::WebviewUrl::External(url))
-            .title("DSH Desktop")
+            .title("DeepSeek Harness Desktop")
             .inner_size(1280.0, 820.0)
             .min_inner_size(900.0, 620.0)
             .center()
@@ -939,16 +939,16 @@ mod tests {
     fn strips_windows_verbatim_prefixes_for_node_module_loading() {
         for (source, expected) in [
             (
-                r"\\?\C:\Program Files\DSH Desktop\runtime",
-                r"C:\Program Files\DSH Desktop\runtime",
+                r"\\?\C:\Program Files\DeepSeek Harness Desktop\runtime",
+                r"C:\Program Files\DeepSeek Harness Desktop\runtime",
             ),
             (
-                r"\\?\UNC\server\share\DSH Desktop\runtime",
-                r"\\server\share\DSH Desktop\runtime",
+                r"\\?\UNC\server\share\DeepSeek Harness Desktop\runtime",
+                r"\\server\share\DeepSeek Harness Desktop\runtime",
             ),
             (
-                r"C:\Users\developer\DSH Desktop\runtime",
-                r"C:\Users\developer\DSH Desktop\runtime",
+                r"C:\Users\developer\DeepSeek Harness Desktop\runtime",
+                r"C:\Users\developer\DeepSeek Harness Desktop\runtime",
             ),
         ] {
             let normalized =

@@ -1,6 +1,6 @@
 {
   "name": "@springopen/dsh-desktop",
-  "version": "0.1.0-community.2",
+  "version": "0.1.0-community.3",
   "private": true,
   "description": "Standalone community desktop distribution for DeepSeek Harness",
   "repository": {

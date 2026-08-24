@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping improve DSH Desktop.
+Thank you for helping improve DeepSeek Harness Desktop.
 
 ## Before opening a change
 

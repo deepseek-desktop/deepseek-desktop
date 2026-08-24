@@ -94,7 +94,8 @@ jobs:
           set -euo pipefail
           node scripts/with-rust.mjs tauri build --bundles app --verbose
 
-          app="src-tauri/target/release/bundle/macos/DSH Desktop.app"
+          product_name="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
+          app="src-tauri/target/release/bundle/macos/${product_name}.app"
           version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
           case "${{ matrix.target }}" in
             aarch64-apple-darwin) architecture="aarch64" ;;
@@ -103,17 +104,17 @@ jobs:
           esac
 
           staging="$RUNNER_TEMP/dsh-desktop-dmg"
-          output="src-tauri/target/release/bundle/dmg/DSH Desktop_${version}_${architecture}.dmg"
+          output="src-tauri/target/release/bundle/dmg/${product_name}_${version}_${architecture}.dmg"
           if [ -e "$staging" ]; then
             find "$staging" -depth -delete
           fi
           mkdir -p "$staging" "$(dirname "$output")"
-          ditto "$app" "$staging/DSH Desktop.app"
+          ditto "$app" "$staging/${product_name}.app"
           ln -s /Applications "$staging/Applications"
-          codesign --verify --deep --strict "$staging/DSH Desktop.app"
+          codesign --verify --deep --strict "$staging/${product_name}.app"
           hdiutil create \
             -srcfolder "$staging" \
-            -volname "DSH Desktop" \
+            -volname "$product_name" \
             -fs HFS+ \
             -format UDZO \
             -ov "$output"
@@ -175,9 +176,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          product_name="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
           gh release create "$GITHUB_REF_NAME" release-assets/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "DSH Desktop ${GITHUB_REF_NAME#v}" \
+            --title "$product_name ${GITHUB_REF_NAME#v}" \
             --notes-file .github/release-notes-community.md \
             --prerelease \
             --verify-tag

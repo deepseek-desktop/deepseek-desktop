@@ -1,10 +1,10 @@
-# DSH Desktop
+# DeepSeek Harness Desktop
 
-DSH Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、非官方社区桌面发行版。它将 Vue 桌面 Shell、Tauri 2 原生主程序、固定版本 Node.js 和 Harness Runtime 打包在一起，不依赖 SpringOpen Application，也不要求用户预装 Node.js、pnpm 或 Rust。本项目与 DeepSeek 不存在隶属、合作或官方背书关系。
+DeepSeek Harness Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、非官方社区桌面发行版。它将 Vue 桌面 Shell、Tauri 2 原生主程序、固定版本 Node.js 和 Harness Runtime 打包在一起，不依赖 SpringOpen Application，也不要求用户预装 Node.js、pnpm 或 Rust。本项目与 DeepSeek 不存在隶属、合作或官方背书关系。
 
 桌面 Shell、应用程序和安装包统一使用固定上游提交中的 Harness 侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 
-当前版本为 `0.1.0-community.2`。它是可本地完整使用的社区版；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
+当前版本为 `0.1.0-community.3`。它是可本地完整使用的社区版；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
 
 工程源码位于仓库根目录。Runtime 使用锁定的 npm 生产依赖闭包，并从 `runtime/runtime-lock.json` 指定的 Node.js 官方归档下载、校验 SHA-256 后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
@@ -21,7 +21,7 @@ DSH Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、�
 
 ## 首次使用
 
-1. 启动 DSH Desktop，选择界面语言。
+1. 启动 DeepSeek Harness Desktop，选择界面语言。
 2. 选择一个明确的工作区。Agent 的文件操作和命令执行以该目录为边界。
 3. 启动本地工作台。主程序会在 `127.0.0.1` 上申请随机端口，不需要填写端口。
 4. 打开 Harness 的模型设置，选择 Provider，并写入 API Key 或 OAuth grant。
@@ -41,7 +41,7 @@ Runtime 状态包括 `idle`、`starting`、`ready`、`stopping`、`recovering` �
 
 ## 数据目录
 
-DSH Desktop 使用系统应用数据目录，不向安装目录写运行数据：
+DeepSeek Harness Desktop 使用系统应用数据目录，不向安装目录写运行数据：
 
 | 内容 | 说明 |
 | --- | --- |
@@ -77,7 +77,7 @@ macOS 默认位于 `~/Library/Application Support/com.springopen.dshdesktop/`；
 
 当前社区版构建默认并强制关闭自动更新。工程已保留 Tauri Updater 和 GitHub Releases 签名检查实现，但只有安装包签名、Updater 私钥、公钥、Apple/Windows 证书全部就绪，Stable 构建门禁才允许继续；社区版配置不会请求更新地址或安装未签名产物。
 
-卸载应用不会自动删除工作区或应用数据。需要完全清理时，先卸载 DSH Desktop，再由用户主动删除系统应用数据目录。曾安装 `0.1.0-community.1` 的 macOS 用户还可以在“钥匙串访问”中删除旧的 `com.springopen.dshdesktop.credentials` 条目；新版不会再读取这些旧条目。
+卸载应用不会自动删除工作区或应用数据。需要完全清理时，先卸载 DeepSeek Harness Desktop，再由用户主动删除系统应用数据目录。曾安装 `0.1.0-community.1` 的 macOS 用户还可以在“钥匙串访问”中删除旧的 `com.springopen.dshdesktop.credentials` 条目；新版不会再读取这些旧条目。
 
 ## 开发者验证
 
@@ -91,4 +91,4 @@ corepack pnpm@11.7.0 package:community
 
 该命令会自动安装锁定依赖，执行社区版发行门禁、单元测试、端到端测试、Runtime 校验和真实 readiness smoke，再构建当前操作系统及 CPU 架构对应的安装包。结果统一输出到 `release/<版本>/`，同时生成 `BUILD-INFO.json` 和 `SHA256SUMS`。macOS 会额外校验应用签名结构和 DMG 完整性。
 
-单台电脑只生成当前平台安装包。维护者推送与工程版本完全一致的标签（例如 `v0.1.0-community.2`）后，GitHub 工作流会分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。
+单台电脑只生成当前平台安装包。维护者推送与工程版本完全一致的标签（例如 `v0.1.0-community.3`）后，GitHub 工作流会分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。

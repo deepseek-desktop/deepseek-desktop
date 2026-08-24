@@ -1,6 +1,11 @@
 # Changelog
 
-All notable changes to DSH Desktop are documented in this file.
+All notable changes to DeepSeek Harness Desktop are documented in this file.
+
+## 0.1.0-community.3 - 2026-08-25
+
+- Rename the user-facing product and installers from DSH Desktop to DeepSeek Harness Desktop while preserving stable internal identifiers and application data.
+- Derive local and GitHub release package names from the Tauri product configuration instead of duplicating the product name in build scripts.
 
 ## 0.1.0-community.2 - 2026-08-25
 

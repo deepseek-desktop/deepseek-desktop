@@ -191,7 +191,7 @@ function createSpdx(target, inventory, createdAt) {
     documentNamespace: `https://springopen.local/dsh-desktop/${lock.desktopVersion}/sbom/${target}/${lock.harness.commit}`,
     creationInfo: {
       created: createdAt,
-      creators: ["Tool: DSH Desktop runtime staging"]
+      creators: ["Tool: DeepSeek Harness Desktop runtime staging"]
     },
     packages: inventory.map((item, index) => ({
       SPDXID: `SPDXRef-Package-${index + 1}`,

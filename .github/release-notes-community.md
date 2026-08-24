@@ -1,4 +1,4 @@
-# DSH Desktop Community Edition
+# DeepSeek Harness Desktop Community Edition
 
 This release is an independent, unofficial community distribution of the locked DeepSeek Harness Runtime.
 

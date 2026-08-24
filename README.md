@@ -1,11 +1,11 @@
-# DSH Desktop
+# DeepSeek Harness Desktop
 
 [![Community Build](https://github.com/spring-open/deepseek-harness-desktop/actions/workflows/community-build.yml/badge.svg)](https://github.com/spring-open/deepseek-harness-desktop/actions/workflows/community-build.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-DSH Desktop is an independent, unofficial community distribution built on the locked DeepSeek Harness Runtime. It does not require a separate Node.js, pnpm, Rust, or SpringOpen Application installation at runtime. This project is not endorsed by or affiliated with DeepSeek.
+DeepSeek Harness Desktop is an independent, unofficial community distribution built on the locked DeepSeek Harness Runtime. It does not require a separate Node.js, pnpm, Rust, or SpringOpen Application installation at runtime. This project is not endorsed by or affiliated with DeepSeek.
 
-Version `0.1.0-community.2` is the community edition. The macOS artifact uses a complete ad-hoc signature but has no Apple Developer ID identity or notarization; other current artifacts are unsigned. The desktop-owned source is Apache-2.0, while the packaged Harness, Node.js, and npm dependencies retain their own license notices.
+Version `0.1.0-community.3` is the community edition. The macOS artifact uses a complete ad-hoc signature but has no Apple Developer ID identity or notarization; other current artifacts are unsigned. The desktop-owned source is Apache-2.0, while the packaged Harness, Node.js, and npm dependencies retain their own license notices.
 
 Installers are published on the [GitHub Releases page](https://github.com/spring-open/deepseek-harness-desktop/releases). Verify the downloaded file against the accompanying `SHA256SUMS` before installation.
 
@@ -73,7 +73,7 @@ corepack pnpm@11.7.0 package:community
 
 The command installs the locked root and Runtime dependencies, runs the community release gate, unit and end-to-end tests, Runtime verification and smoke checks, builds the native installer, validates the macOS signature and DMG when applicable, and writes the final files to `release/<version>/` with `BUILD-INFO.json` and `SHA256SUMS`.
 
-One host builds only its native target. Cross-platform GitHub Releases are created from a matching annotated version tag such as `v0.1.0-community.2`; the release workflow publishes only after the macOS arm64/x64, Windows x64, and Linux x64 jobs all succeed.
+One host builds only its native target. Cross-platform GitHub Releases are created from a matching annotated version tag such as `v0.1.0-community.3`; the release workflow publishes only after the macOS arm64/x64, Windows x64, and Linux x64 jobs all succeed.
 
 ## Release Boundary
 

@@ -8,11 +8,13 @@ const root = resolve(import.meta.dirname, "..");
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const tauriConfig = JSON.parse(await readFile(join(root, "src-tauri/tauri.conf.json"), "utf8"));
 const version = packageJson.version;
+const productName = tauriConfig.productName;
 const pnpmVersion = packageJson.packageManager?.replace(/^pnpm@/, "");
 
 if (!version || version !== tauriConfig.version) {
   throw new Error("package.json and tauri.conf.json must use the same version");
 }
+if (!productName) throw new Error("tauri.conf.json must declare productName");
 if (!pnpmVersion) throw new Error("packageManager must declare a pinned pnpm version");
 
 const targets = {
@@ -105,7 +107,7 @@ if (process.platform === "darwin") {
     try {
       run("hdiutil", ["attach", "-nobrowse", "-readonly", "-mountpoint", mountPoint, artifact]);
       mounted = true;
-      run("codesign", ["--verify", "--deep", "--strict", join(mountPoint, "DSH Desktop.app")]);
+      run("codesign", ["--verify", "--deep", "--strict", join(mountPoint, `${productName}.app`)]);
     } finally {
       if (mounted) run("hdiutil", ["detach", mountPoint]);
       await rm(mountPoint, { recursive: true, force: true });
