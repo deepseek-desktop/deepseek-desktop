@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { DesktopAbout, DesktopSettings, RuntimeStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopSettings, DesktopSurface, RuntimeStatus, UpdateStatus } from "./contracts";
 
 const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 
@@ -100,4 +100,9 @@ export async function exportDiagnostics(): Promise<string> {
 export async function onRuntimeStatus(handler: (status: RuntimeStatus) => void): Promise<UnlistenFn> {
   if (!inTauri()) return () => undefined;
   return listen<RuntimeStatus>("runtime://status", event => handler(event.payload));
+}
+
+export async function onDesktopSurface(handler: (surface: DesktopSurface) => void): Promise<UnlistenFn> {
+  if (!inTauri()) return () => undefined;
+  return listen<DesktopSurface>("desktop://surface", event => handler(event.payload));
 }

@@ -2,7 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { exportDiagnostics, startRuntime } from "./desktop";
+import { exportDiagnostics, openHarness, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
@@ -38,6 +38,7 @@ vi.mock("./desktop", () => ({
   getRuntimeStatus: vi.fn(async () => ({ ...runtime })),
   getSettings: vi.fn(async () => ({ ...settings })),
   onRuntimeStatus: vi.fn(async () => () => undefined),
+  onDesktopSurface: vi.fn(async () => () => undefined),
   openHarness: vi.fn(),
   saveSettings: vi.fn(async value => value),
   startRuntime: vi.fn(),
@@ -128,7 +129,8 @@ describe("DeepSeek Harness Desktop shell", () => {
     await flushPromises();
 
     expect(startRuntime).toHaveBeenCalledWith(settings.workspace);
-    expect(wrapper.text()).toContain("Runtime 已就绪");
+    expect(openHarness).toHaveBeenCalledOnce();
+    expect(wrapper.text()).toContain("运行状态");
   });
 
   it("clears diagnostics notices when leaving the diagnostics view", async () => {

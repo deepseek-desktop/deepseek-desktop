@@ -2,6 +2,7 @@ mod contracts;
 mod credential_vault;
 mod diagnostics;
 mod error;
+mod native_menu;
 mod runtime;
 mod settings;
 mod updater;
@@ -15,6 +16,7 @@ use error::{DesktopError, DesktopResult};
 use runtime::RuntimeSupervisor;
 use settings::{AppPaths, SettingsStore};
 use tauri::{Manager, State};
+use tauri_plugin_opener::OpenerExt;
 
 struct AppState {
     settings: Arc<SettingsStore>,
@@ -105,8 +107,11 @@ async fn runtime_stop(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus
 }
 
 #[tauri::command]
-fn runtime_open(state: State<'_, AppState>) -> DesktopResult<()> {
-    state.supervisor.open_runtime()
+async fn runtime_open(state: State<'_, AppState>) -> DesktopResult<()> {
+    let supervisor = Arc::clone(&state.supervisor);
+    tauri::async_runtime::spawn_blocking(move || supervisor.open_runtime())
+        .await
+        .map_err(|error| DesktopError::Other(error.to_string()))?
 }
 
 #[tauri::command]
@@ -116,10 +121,13 @@ fn settings_get(state: State<'_, AppState>) -> DesktopResult<DesktopSettings> {
 
 #[tauri::command]
 fn settings_update(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     settings: DesktopSettings,
 ) -> DesktopResult<DesktopSettings> {
-    state.settings.update(settings)
+    let settings = state.settings.update(settings)?;
+    native_menu::install(&app, &settings.locale)?;
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -187,6 +195,33 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            native_menu::WORKBENCH_MENU_ID => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let supervisor = Arc::clone(&state.supervisor);
+                    thread::spawn(move || {
+                        if supervisor.open_runtime().is_err() {
+                            let _ = supervisor.show_management();
+                        }
+                    });
+                }
+            }
+            native_menu::MANAGEMENT_MENU_ID => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let supervisor = Arc::clone(&state.supervisor);
+                    thread::spawn(move || {
+                        let _ = supervisor.show_management();
+                    });
+                }
+            }
+            native_menu::DOCUMENTATION_MENU_ID => {
+                let _ = app.opener().open_url(
+                    "https://github.com/spring-open/deepseek-harness-desktop#readme",
+                    None::<&str>,
+                );
+            }
+            _ => {}
+        })
         .setup(|app| {
             let app_handle = app.handle().clone();
             let paths = AppPaths::resolve(&app_handle)?;
@@ -198,11 +233,25 @@ pub fn run() {
                 Arc::clone(&settings),
                 Arc::clone(&diagnostics),
             );
+            if let Some(window) = app.get_window("main") {
+                let surface = Arc::clone(&supervisor);
+                window.on_window_event(move |event| {
+                    if matches!(
+                        event,
+                        tauri::WindowEvent::Resized(_)
+                            | tauri::WindowEvent::ScaleFactorChanged { .. }
+                    ) {
+                        let _ = surface.sync_surface_layout();
+                    }
+                });
+            }
             app.manage(AppState {
                 settings,
                 diagnostics,
                 supervisor,
             });
+            let locale = app.state::<AppState>().settings.get()?.locale;
+            native_menu::install(app.handle(), &locale)?;
             let arguments = env::args().collect::<Vec<_>>();
             let working_directory = env::current_dir().unwrap_or_default();
             accept_workspace_argument(

@@ -13,6 +13,7 @@ Installers are published on the [GitHub Releases page](https://github.com/spring
 
 ```text
 Vue desktop shell
+  -> one native window with isolated Shell and Harness webviews
   -> typed Tauri commands and redacted runtime events
 Rust runtime supervisor
   -> target-specific Node sidecar
@@ -24,7 +25,7 @@ Harness CredentialProvider
   -> local encrypted credential vault
 ```
 
-The Harness WebView has no Tauri capability. It may navigate only within a managed loopback origin. A per-Runtime credential session is delivered through the Runtime standard input and is required by every helper request. Only its SHA-256 authorization digest is stored in the application data directory; the token and model credentials are never passed through command arguments, environment values, WebView IPC, or diagnostic exports. macOS, Windows, and Linux use the same XChaCha20-Poly1305 encrypted vault in the user-scoped application data directory. The vault uses authenticated encryption, atomic replacement, cross-process locking, and private Unix file modes; it never falls back to `.env`, YAML, browser storage, or plaintext credential files.
+The desktop uses one native window. When the Runtime is ready, Harness fills the window content area in an isolated child WebView above the resident Shell surface instead of reserving a duplicate in-window toolbar. The native **View** menu switches between **Harness Workbench** (`Cmd/Ctrl+1`) and **Desktop Management** (`Cmd/Ctrl+2`). Settings, diagnostics, updates, and Runtime recovery therefore remain available without opening another operating-system window or covering Harness content. Capability matching is scoped to the `main` Shell WebView label, so the embedded Harness WebView receives no Tauri capability. It may navigate only within a managed loopback origin. A per-Runtime credential session is delivered through the Runtime standard input and is required by every helper request. Only its SHA-256 authorization digest is stored in the application data directory; the token and model credentials are never passed through command arguments, environment values, WebView IPC, or diagnostic exports. macOS, Windows, and Linux use the same XChaCha20-Poly1305 encrypted vault in the user-scoped application data directory. The vault uses authenticated encryption, atomic replacement, cross-process locking, and private Unix file modes; it never falls back to `.env`, YAML, browser storage, or plaintext credential files.
 
 ## Toolchain
 

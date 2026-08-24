@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -62,6 +63,7 @@ pub struct RuntimeSupervisor {
     diagnostics: Arc<Diagnostics>,
     operation: Mutex<()>,
     inner: Mutex<RuntimeInner>,
+    workbench_visible: AtomicBool,
 }
 
 struct RuntimeInner {
@@ -95,6 +97,7 @@ impl RuntimeSupervisor {
                 process: None,
                 manual_stop: false,
             }),
+            workbench_visible: AtomicBool::new(false),
         });
         Self::start_monitor(&supervisor);
         supervisor
@@ -151,38 +154,140 @@ impl RuntimeSupervisor {
                 "runtime URL is outside the managed loopback origin".to_owned(),
             ));
         }
-        if let Some(window) = self.app.get_webview_window("harness") {
-            window
-                .show()
-                .map_err(|error| DesktopError::Other(error.to_string()))?;
-            window
-                .set_focus()
-                .map_err(|error| DesktopError::Other(error.to_string()))?;
-            window
+        if let Some(webview) = self.app.get_webview("harness") {
+            webview
                 .navigate(url)
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
+            self.workbench_visible.store(true, Ordering::Release);
+            self.layout_workbench()?;
+            webview
+                .show()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            webview
+                .set_focus()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            self.emit_surface("workbench");
             return Ok(());
         }
         let managed_origin = url.clone();
         let app = self.app.clone();
-        tauri::WebviewWindowBuilder::new(&self.app, "harness", tauri::WebviewUrl::External(url))
-            .title("DeepSeek Harness Desktop")
-            .inner_size(1280.0, 820.0)
-            .min_inner_size(900.0, 620.0)
-            .center()
-            .initialization_script(DISABLE_TEXT_ASSISTANCE_SCRIPT)
-            .on_navigation(move |candidate| {
-                let managed = candidate.scheme() == managed_origin.scheme()
-                    && candidate.host_str() == managed_origin.host_str()
-                    && candidate.port_or_known_default() == managed_origin.port_or_known_default();
-                if !managed && matches!(candidate.scheme(), "http" | "https") {
-                    let _ = app.opener().open_url(candidate.as_str(), None::<&str>);
-                }
-                managed
-            })
-            .build()
+        let main_window = self
+            .app
+            .get_window("main")
+            .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
+        let (position, size) = self.workbench_bounds(&main_window)?;
+        let builder =
+            tauri::webview::WebviewBuilder::new("harness", tauri::WebviewUrl::External(url))
+                .initialization_script(DISABLE_TEXT_ASSISTANCE_SCRIPT)
+                .on_navigation(move |candidate| {
+                    let managed = candidate.scheme() == managed_origin.scheme()
+                        && candidate.host_str() == managed_origin.host_str()
+                        && candidate.port_or_known_default()
+                            == managed_origin.port_or_known_default();
+                    if !managed && matches!(candidate.scheme(), "http" | "https") {
+                        let _ = app.opener().open_url(candidate.as_str(), None::<&str>);
+                    }
+                    managed
+                });
+        self.workbench_visible.store(true, Ordering::Release);
+        self.layout_workbench()?;
+        let webview = match main_window.add_child(builder, position, size) {
+            Ok(webview) => webview,
+            Err(error) => {
+                self.workbench_visible.store(false, Ordering::Release);
+                let _ = self.layout_management();
+                return Err(DesktopError::Other(error.to_string()));
+            }
+        };
+        webview
+            .set_focus()
             .map_err(|error| DesktopError::Other(error.to_string()))?;
+        self.emit_surface("workbench");
         Ok(())
+    }
+
+    pub fn show_management(&self) -> DesktopResult<()> {
+        self.workbench_visible.store(false, Ordering::Release);
+        if let Some(webview) = self.app.get_webview("harness") {
+            webview
+                .hide()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+        }
+        self.layout_management()?;
+        if let Some(main) = self.app.get_webview("main") {
+            main.set_focus()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+        }
+        self.emit_surface("management");
+        Ok(())
+    }
+
+    pub fn sync_surface_layout(&self) -> DesktopResult<()> {
+        if self.workbench_visible.load(Ordering::Acquire) {
+            self.layout_workbench()
+        } else {
+            self.layout_management()
+        }
+    }
+
+    fn layout_workbench(&self) -> DesktopResult<()> {
+        let window = self
+            .app
+            .get_window("main")
+            .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
+        let main = self
+            .app
+            .get_webview("main")
+            .ok_or_else(|| DesktopError::Other("main desktop surface is unavailable".to_owned()))?;
+        let (position, size) = self.workbench_bounds(&window)?;
+        main.set_bounds(tauri::Rect {
+            position: tauri::Position::Physical(position),
+            size: tauri::Size::Physical(size),
+        })
+        .map_err(|error| DesktopError::Other(error.to_string()))?;
+        if let Some(harness) = self.app.get_webview("harness") {
+            harness
+                .set_bounds(tauri::Rect {
+                    position: tauri::Position::Physical(position),
+                    size: tauri::Size::Physical(size),
+                })
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn layout_management(&self) -> DesktopResult<()> {
+        let window = self
+            .app
+            .get_window("main")
+            .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
+        let main = self
+            .app
+            .get_webview("main")
+            .ok_or_else(|| DesktopError::Other("main desktop surface is unavailable".to_owned()))?;
+        let size = window
+            .inner_size()
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        main.set_bounds(tauri::Rect {
+            position: tauri::Position::Physical(tauri::PhysicalPosition::new(0, 0)),
+            size: tauri::Size::Physical(size),
+        })
+        .map_err(|error| DesktopError::Other(error.to_string()))?;
+        Ok(())
+    }
+
+    fn workbench_bounds(
+        &self,
+        window: &tauri::Window,
+    ) -> DesktopResult<(tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>)> {
+        let window_size = window
+            .inner_size()
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        Ok(workbench_geometry(window_size))
+    }
+
+    fn emit_surface(&self, surface: &str) {
+        let _ = self.app.emit("desktop://surface", surface);
     }
 
     fn spawn_locked(
@@ -380,9 +485,12 @@ impl RuntimeSupervisor {
         if let Some(mut process) = process {
             process.terminate();
         }
-        if let Some(window) = self.app.get_webview_window("harness") {
-            let _ = window.close();
+        self.workbench_visible.store(false, Ordering::Release);
+        if let Some(webview) = self.app.get_webview("harness") {
+            let _ = webview.close();
         }
+        let _ = self.layout_management();
+        self.emit_surface("management");
         let status = RuntimeStatus {
             phase: RuntimePhase::Idle,
             workspace: previous.workspace,
@@ -399,6 +507,7 @@ impl RuntimeSupervisor {
         message: &str,
     ) -> DesktopResult<RuntimeStatus> {
         self.diagnostics.append("supervisor", message);
+        let _ = self.show_management();
         let status = RuntimeStatus {
             phase: RuntimePhase::Failed,
             workspace: Some(workspace.to_owned()),
@@ -611,6 +720,7 @@ impl RuntimeSupervisor {
                     &format!("runtime exited unexpectedly: {exit}"),
                 );
                 if restart_count >= MAX_RESTARTS {
+                    let _ = supervisor.show_management();
                     let _ = supervisor.publish(RuntimeStatus {
                         phase: RuntimePhase::Failed,
                         workspace: Some(workspace),
@@ -622,6 +732,7 @@ impl RuntimeSupervisor {
                     continue;
                 }
                 let next = restart_count + 1;
+                let _ = supervisor.show_management();
                 let _ = supervisor.publish(RuntimeStatus {
                     phase: RuntimePhase::Recovering,
                     workspace: Some(workspace.clone()),
@@ -777,6 +888,12 @@ fn parse_ready_url(line: &str) -> Option<String> {
         .then(|| value.to_owned())
 }
 
+fn workbench_geometry(
+    window_size: tauri::PhysicalSize<u32>,
+) -> (tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>) {
+    (tauri::PhysicalPosition::new(0, 0), window_size)
+}
+
 fn health_check(url: &str) -> DesktopResult<()> {
     install_crypto_provider()?;
     let client = reqwest::blocking::Client::builder()
@@ -900,6 +1017,13 @@ mod tests {
         );
         assert_eq!(parse_ready_url("dsh web: http://localhost:43127"), None);
         assert_eq!(parse_ready_url("noise"), None);
+    }
+
+    #[test]
+    fn fills_the_native_window_with_the_embedded_workbench() {
+        let (position, size) = workbench_geometry(tauri::PhysicalSize::new(2240, 1440));
+        assert_eq!(position, tauri::PhysicalPosition::new(0, 0));
+        assert_eq!(size, tauri::PhysicalSize::new(2240, 1440));
     }
 
     #[test]

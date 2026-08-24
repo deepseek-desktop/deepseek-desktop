@@ -1,4 +1,5 @@
 export type RuntimePhase = "idle" | "starting" | "ready" | "stopping" | "recovering" | "failed";
+export type DesktopSurface = "management" | "workbench";
 
 export interface RuntimeStatus {
   phase: RuntimePhase;

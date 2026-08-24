@@ -10,6 +10,7 @@ import {
   getAbout,
   getRuntimeStatus,
   getSettings,
+  onDesktopSurface,
   onRuntimeStatus,
   openHarness,
   saveSettings,
@@ -45,6 +46,9 @@ const settings = ref<DesktopSettings>({
 const about = ref<DesktopAbout | null>(null);
 const update = ref<UpdateStatus | null>(null);
 let unlisten: (() => void) | undefined;
+let unlistenSurface: (() => void) | undefined;
+const workbenchVisible = ref(false);
+let workbenchOpening = false;
 
 const phaseLabel = computed(() => t(`runtime.${runtime.value.phase}`));
 const runtimeStartLabel = computed(() => runtime.value.phase === "failed" ? t("common.retry") : t("common.start"));
@@ -112,6 +116,7 @@ async function launch(): Promise<void> {
     settings.value.onboardingCompleted = true;
     await persistSettings();
     view.value = "runtime";
+    await showWorkbench();
   } catch {
     notice.value = t("error.unexpected");
     view.value = "runtime";
@@ -132,10 +137,24 @@ async function startFromStatus(): Promise<void> {
   notice.value = "";
   try {
     runtime.value = await startRuntime(workspace);
+    await showWorkbench();
   } catch {
     notice.value = t("error.unexpected");
   } finally {
     busy.value = false;
+  }
+}
+
+async function showWorkbench(): Promise<void> {
+  if (runtime.value.phase !== "ready" || workbenchVisible.value || workbenchOpening) return;
+  workbenchOpening = true;
+  try {
+    await openHarness();
+    workbenchVisible.value = true;
+  } catch {
+    notice.value = t("error.unexpected");
+  } finally {
+    workbenchOpening = false;
   }
 }
 
@@ -170,10 +189,18 @@ onMounted(async () => {
   view.value = settings.value.onboardingCompleted ? "runtime" : "onboarding";
   unlisten = await onRuntimeStatus(status => {
     runtime.value = status;
+    if (status.phase === "ready") void showWorkbench();
   });
+  unlistenSurface = await onDesktopSurface(surface => {
+    workbenchVisible.value = surface === "workbench";
+  });
+  await showWorkbench();
 });
 
-onBeforeUnmount(() => unlisten?.());
+onBeforeUnmount(() => {
+  unlisten?.();
+  unlistenSurface?.();
+});
 </script>
 
 <template>
