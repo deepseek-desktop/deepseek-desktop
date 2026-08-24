@@ -18,6 +18,7 @@ struct MenuLabels {
     help: &'static str,
     about: &'static str,
     close: &'static str,
+    quit: &'static str,
     undo: &'static str,
     redo: &'static str,
     cut: &'static str,
@@ -35,6 +36,8 @@ struct MenuLabels {
 
 pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
     let labels = labels(locale);
+
+    #[cfg(target_os = "macos")]
     let about = AboutMetadataBuilder::new()
         .name(Some(APP_NAME))
         .version(Some(env!("CARGO_PKG_VERSION")))
@@ -42,23 +45,24 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
         .license(Some("Apache-2.0"))
         .build();
 
+    #[cfg(target_os = "macos")]
     let application = SubmenuBuilder::new(app, APP_NAME)
         .about_with_text(labels.about, Some(about))
-        .separator();
-    #[cfg(target_os = "macos")]
-    let application = application
+        .separator()
         .services()
         .separator()
         .hide()
         .hide_others()
         .show_all()
-        .separator();
-    let application = application.quit().build().map_err(desktop_error)?;
-
-    let file = SubmenuBuilder::new(app, labels.file)
-        .close_window_with_text(labels.close)
+        .separator()
+        .quit_with_text(labels.quit)
         .build()
         .map_err(desktop_error)?;
+
+    let file = SubmenuBuilder::new(app, labels.file).close_window_with_text(labels.close);
+    #[cfg(not(target_os = "macos"))]
+    let file = file.separator().quit_with_text(labels.quit);
+    let file = file.build().map_err(desktop_error)?;
     let edit = SubmenuBuilder::new(app, labels.edit)
         .undo_with_text(labels.undo)
         .redo_with_text(labels.redo)
@@ -91,12 +95,29 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
     let documentation = MenuItemBuilder::with_id(DOCUMENTATION_MENU_ID, labels.documentation)
         .build(app)
         .map_err(desktop_error)?;
-    let help = SubmenuBuilder::new(app, labels.help)
-        .item(&documentation)
-        .build()
-        .map_err(desktop_error)?;
+    let help = SubmenuBuilder::new(app, labels.help).item(&documentation);
+    #[cfg(not(target_os = "macos"))]
+    let help = help.separator().about_with_text(
+        labels.about,
+        Some(
+            AboutMetadataBuilder::new()
+                .name(Some(APP_NAME))
+                .version(Some(env!("CARGO_PKG_VERSION")))
+                .copyright(Some("Copyright 2026 DeepSeek Harness Desktop Contributors"))
+                .license(Some("Apache-2.0"))
+                .build(),
+        ),
+    );
+    let help = help.build().map_err(desktop_error)?;
+
+    #[cfg(target_os = "macos")]
     let menu = MenuBuilder::new(app)
         .items(&[&application, &file, &edit, &view, &window, &help])
+        .build()
+        .map_err(desktop_error)?;
+    #[cfg(not(target_os = "macos"))]
+    let menu = MenuBuilder::new(app)
+        .items(&[&file, &edit, &view, &window, &help])
         .build()
         .map_err(desktop_error)?;
     app.set_menu(menu).map_err(desktop_error)?;
@@ -113,6 +134,7 @@ fn labels(locale: &str) -> MenuLabels {
             help: "輔助說明",
             about: "關於 DeepSeek Harness Desktop",
             close: "關閉視窗",
+            quit: "結束 DeepSeek Harness Desktop",
             undo: "還原",
             redo: "重做",
             cut: "剪下",
@@ -135,6 +157,7 @@ fn labels(locale: &str) -> MenuLabels {
             help: "Help",
             about: "About DeepSeek Harness Desktop",
             close: "Close Window",
+            quit: "Quit DeepSeek Harness Desktop",
             undo: "Undo",
             redo: "Redo",
             cut: "Cut",
@@ -157,6 +180,7 @@ fn labels(locale: &str) -> MenuLabels {
             help: "帮助",
             about: "关于 DeepSeek Harness Desktop",
             close: "关闭窗口",
+            quit: "退出 DeepSeek Harness Desktop",
             undo: "撤销",
             redo: "重做",
             cut: "剪切",

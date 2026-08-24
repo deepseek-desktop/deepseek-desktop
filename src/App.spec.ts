@@ -28,7 +28,7 @@ vi.mock("./desktop", () => ({
   chooseWorkspace: vi.fn(async () => null),
   exportDiagnostics: vi.fn(async () => ""),
   getAbout: vi.fn(async () => ({
-    desktopVersion: "0.1.0-community.4",
+    desktopVersion: "0.1.0-community.5",
     harnessVersion: "0.1.1-rc.2",
     harnessCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
     nodeVersion: "24.16.0",

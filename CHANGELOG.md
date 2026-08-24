@@ -2,6 +2,11 @@
 
 All notable changes to DeepSeek Harness Desktop are documented in this file.
 
+## 0.1.0-community.5 - 2026-08-25
+
+- Remove the redundant product-name menu on Windows and Linux while preserving the standard macOS application menu.
+- Keep Exit under File and About under Help on Windows and Linux so the simplified menu retains all native actions.
+
 ## 0.1.0-community.4 - 2026-08-25
 
 - Consolidate Harness and desktop management into one native window with native View menu switching.
