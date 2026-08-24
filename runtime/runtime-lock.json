@@ -45,6 +45,28 @@
     "tauriSingleInstance": "2.4.3",
     "tauriUpdater": "2.10.1"
   },
+  "nativeAssets": {
+    "aarch64-apple-darwin": {
+      "nodePtyPrebuild": "darwin-arm64",
+      "koffiPackage": "koffi-darwin-arm64",
+      "koffiTriplet": "darwin_arm64"
+    },
+    "x86_64-apple-darwin": {
+      "nodePtyPrebuild": "darwin-x64",
+      "koffiPackage": "koffi-darwin-x64",
+      "koffiTriplet": "darwin_x64"
+    },
+    "x86_64-pc-windows-msvc": {
+      "nodePtyPrebuild": "win32-x64",
+      "koffiPackage": "koffi-win32-x64",
+      "koffiTriplet": "win32_x64"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "nodePtyPrebuild": "linux-x64",
+      "koffiPackage": "koffi-linux-x64",
+      "koffiTriplet": "linux_x64"
+    }
+  },
   "targets": [
     "aarch64-apple-darwin",
     "x86_64-apple-darwin",

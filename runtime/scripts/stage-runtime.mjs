@@ -94,6 +94,33 @@ async function packageInventory(nodeModules) {
   return inventory.sort((left, right) => left.name.localeCompare(right.name) || left.version.localeCompare(right.version));
 }
 
+async function retainDirectory(root, expected) {
+  const entries = await readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory() && entry.name !== expected) {
+      await rm(join(root, entry.name), { recursive: true, force: true });
+    }
+  }
+}
+
+async function pruneNativeArtifacts(nodeModules, target) {
+  const profile = lock.nativeAssets[target];
+  if (!profile) throw new Error(`native artifact profile is not locked for ${target}`);
+
+  await retainDirectory(join(nodeModules, "node-pty", "prebuilds"), profile.nodePtyPrebuild);
+  await stat(join(nodeModules, "node-pty", "prebuilds", profile.nodePtyPrebuild));
+
+  const koffiRoot = join(nodeModules, "@koromix");
+  for (const entry of await readdir(koffiRoot, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name.startsWith("koffi-") && entry.name !== profile.koffiPackage) {
+      await rm(join(koffiRoot, entry.name), { recursive: true, force: true });
+    }
+  }
+  const koffiPackage = join(koffiRoot, profile.koffiPackage);
+  await retainDirectory(koffiPackage, profile.koffiTriplet);
+  await stat(join(koffiPackage, profile.koffiTriplet, "koffi.node"));
+}
+
 async function downloadVerified(url, destination, expectedSha256) {
   try {
     if (await hashFile(destination) === expectedSha256) return;
@@ -194,6 +221,7 @@ runPnpm(["--filter", "@springopen/dsh-desktop-runtime", "deploy", "--prod", "--l
 // pnpm writes the wall-clock pruning time into this install-only metadata file.
 // Node does not consume it at runtime, so omit it from the distributable closure.
 await rm(join(output, "node_modules", ".modules.yaml"), { force: true });
+await pruneNativeArtifacts(join(output, "node_modules"), target);
 
 const dshEntry = join(output, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
 await stat(dshEntry);

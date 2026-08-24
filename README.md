@@ -55,7 +55,7 @@ corepack pnpm@11.7.0 tauri:dev
 
 `runtime/runtime-lock.json` is the source of truth for upstream artifacts. Runtime staging is generated on the native target and is never committed.
 
-The staging command downloads the target-specific official Node.js archive into the repository `target/` cache, verifies its locked SHA-256, removes install-only wall-clock metadata, and emits deterministic `runtime-manifest.json`, `licenses.json`, and `sbom.spdx.json` files. Set `DSH_DESKTOP_SMOKE_CYCLES=100` when running `runtime:smoke` for the release stability gate; the smoke also verifies parent-death cleanup on Unix.
+The staging command downloads the target-specific official Node.js archive into the repository `target/` cache, verifies its locked SHA-256, removes install-only wall-clock metadata and non-target native artifacts, and emits deterministic `runtime-manifest.json`, `licenses.json`, and `sbom.spdx.json` files. The allowed `node-pty` and Koffi native assets for every target are pinned in `runtime/runtime-lock.json`. Set `DSH_DESKTOP_SMOKE_CYCLES=100` when running `runtime:smoke` for the release stability gate; the smoke also verifies parent-death cleanup on Unix.
 
 `DSH_DESKTOP_DATA_DIR` may be set for an isolated launch test. End users do not need it; without the override, Tauri's platform application-data directory is used.
 
