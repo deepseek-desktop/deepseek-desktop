@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-shell",
+  "description": "Minimal capability set for the local desktop shell. The Harness window receives no Tauri capabilities.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default"
+  ]
+}

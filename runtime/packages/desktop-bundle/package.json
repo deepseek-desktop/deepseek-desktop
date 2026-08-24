@@ -1,0 +1,17 @@
+{
+  "name": "@springopen/dsh-desktop-bundle",
+  "version": "0.1.0-community.1",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "files": ["cordis.patch.yml", "locale-sync.cjs", "parent-watch.cjs"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@springopen/dsh-credentials-keychain": "workspace:*",
+    "yaml": "2.9.0"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "sourceDateEpoch": 1787313817,
+  "desktopVersion": "0.1.0-community.1",
+  "harness": {
+    "version": "0.1.1-rc.2",
+    "tag": "dsh-v0.1.1-rc.2",
+    "commit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+    "sourceUrl": "https://github.com/deepseek-ai/deepseek-harness",
+    "packageUrl": "https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.1.1-rc.2.tgz",
+    "integrity": "sha512-UP1UIh6q3Gme/yXRn/QL2P8IsVlv8Shpg22TRJIZPsCRWLm4CBiA1MUvXmJAfsOEETBMLAl+xWPtFw6ICsN3wg==",
+    "license": "MIT"
+  },
+  "node": {
+    "version": "24.16.0",
+    "sourceUrl": "https://nodejs.org/dist/v24.16.0/",
+    "license": "MIT",
+    "artifacts": {
+      "aarch64-apple-darwin": {
+        "archive": "node-v24.16.0-darwin-arm64.tar.gz",
+        "sha256": "39189dab4eeb15706c424af0ac08a3044c9e48f7db12a7d77f6b7aafc7dd5df6"
+      },
+      "x86_64-apple-darwin": {
+        "archive": "node-v24.16.0-darwin-x64.tar.gz",
+        "sha256": "298b4c7b3cb80765c8703e42b90324a4ece3b6634947b89e769c3c980ab55185"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "archive": "node-v24.16.0-linux-x64.tar.gz",
+        "sha256": "2faf6a387e9b62b888e21c54f01249fb27537ffecf1842f29f4c919d0a59a0ff"
+      },
+      "x86_64-pc-windows-msvc": {
+        "archive": "node-v24.16.0-win-x64.zip",
+        "sha256": "edaca9bd58ec8e92037dac4e877d52f6b8f430b81c18b57e264b4e2fb111cd56"
+      }
+    }
+  },
+  "toolchain": {
+    "rust": "1.98.0",
+    "pnpm": "11.7.0",
+    "tauriCli": "2.11.4",
+    "tauriApi": "2.11.1",
+    "tauriRust": "2.11.5",
+    "tauriBuild": "2.6.3",
+    "tauriOpener": "2.5.4",
+    "tauriSingleInstance": "2.4.3",
+    "tauriUpdater": "2.10.1"
+  },
+  "targets": [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu"
+  ],
+  "patches": [
+    "@springopen/dsh-desktop-bundle@0.1.0-community.1",
+    "@springopen/dsh-credentials-keychain@0.1.0-community.1"
+  ]
+}

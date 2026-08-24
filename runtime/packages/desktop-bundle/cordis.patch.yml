@@ -1,0 +1,6 @@
+- id: credentials
+  disabled: true
+
+- insert:
+    - id: desktop-credentials-keychain
+      name: '@springopen/dsh-credentials-keychain'

@@ -1,0 +1,59 @@
+{
+  "name": "@springopen/dsh-desktop",
+  "version": "0.1.0-community.1",
+  "private": true,
+  "description": "Standalone community desktop distribution for DeepSeek Harness",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spring-open/deepseek-harness-desktop.git"
+  },
+  "homepage": "https://github.com/spring-open/deepseek-harness-desktop#readme",
+  "bugs": {
+    "url": "https://github.com/spring-open/deepseek-harness-desktop/issues"
+  },
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": "24.16.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "runtime:install": "node scripts/with-pnpm.mjs --dir runtime install --frozen-lockfile",
+    "runtime:stage": "node runtime/scripts/stage-runtime.mjs",
+    "runtime:verify": "node runtime/scripts/verify-runtime.mjs",
+    "runtime:smoke": "node runtime/scripts/smoke-runtime.mjs",
+    "runtime:test-locale": "node runtime/scripts/test-locale-sync.mjs",
+    "release:check": "node scripts/check-release-gates.mjs",
+    "rust:test": "node scripts/with-rust.mjs cargo test --manifest-path src-tauri/Cargo.toml",
+    "rust:check": "node scripts/with-rust.mjs cargo check --manifest-path src-tauri/Cargo.toml",
+    "rust:clippy": "node scripts/with-rust.mjs rustup component add clippy && node scripts/with-rust.mjs cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "tauri": "tauri",
+    "tauri:dev": "node scripts/with-pnpm.mjs runtime:stage && node scripts/with-rust.mjs tauri dev",
+    "tauri:build": "node scripts/with-pnpm.mjs runtime:stage && node scripts/with-rust.mjs tauri build",
+    "verify": "node scripts/with-pnpm.mjs check:i18n && node scripts/with-pnpm.mjs test && node scripts/with-pnpm.mjs typecheck && node scripts/with-pnpm.mjs runtime:test-locale && node scripts/with-pnpm.mjs runtime:stage && node scripts/with-pnpm.mjs runtime:verify && node scripts/with-pnpm.mjs rust:test && node scripts/with-pnpm.mjs rust:clippy"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "vue": "3.5.41",
+    "vue-i18n": "11.1.12"
+  },
+  "devDependencies": {
+    "@intlify/devtools-types": "11.1.12",
+    "@playwright/test": "1.57.0",
+    "@tauri-apps/cli": "2.11.4",
+    "@types/node": "24.10.0",
+    "@vitejs/plugin-vue": "6.0.8",
+    "@vue/test-utils": "2.4.11",
+    "jsdom": "29.1.1",
+    "typescript": "5.9.3",
+    "vite": "8.0.13",
+    "vitest": "4.1.9",
+    "vue-tsc": "3.2.5"
+  }
+}

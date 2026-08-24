@@ -1,0 +1,44 @@
+[package]
+name = "dsh-desktop"
+version = "0.1.0-community.1"
+description = "Self-contained local desktop shell for DeepSeek Harness"
+authors = ["SpringOpen Contributors"]
+license = "Apache-2.0"
+edition = "2024"
+rust-version = "1.98"
+
+[lib]
+name = "dsh_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "dsh-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+keyring = "3"
+libc = "0.2"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
+rfd = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.11.1", features = [] }
+tauri-plugin-opener = "2.5.4"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2.10.1"
+thiserror = "2"
+url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading"
+] }

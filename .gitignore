@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build and generated output
+dist/
+target/
+runtime/staging/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+src-tauri/gen/schemas/
+coverage/
+playwright-report/
+test-results/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.iml
+.DS_Store
+._.DS_Store
+Thumbs.db
+
+# Optional upstream audit checkout
+deepseek-harness/
+vendor/

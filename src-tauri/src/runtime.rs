@@ -1,0 +1,776 @@
+use std::collections::HashMap;
+use std::fs;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_opener::OpenerExt;
+use url::Url;
+use uuid::Uuid;
+
+use crate::contracts::{RuntimePhase, RuntimeStatus};
+use crate::diagnostics::Diagnostics;
+use crate::error::{DesktopError, DesktopResult};
+use crate::keychain::RuntimeSession;
+use crate::settings::{AppPaths, SettingsStore};
+
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
+const MAX_RESTARTS: u8 = 2;
+const READY_PREFIX: &str = "dsh web: http://127.0.0.1:";
+
+pub struct RuntimeSupervisor {
+    app: AppHandle,
+    paths: AppPaths,
+    settings: Arc<SettingsStore>,
+    diagnostics: Arc<Diagnostics>,
+    operation: Mutex<()>,
+    inner: Mutex<RuntimeInner>,
+}
+
+struct RuntimeInner {
+    status: RuntimeStatus,
+    process: Option<ManagedChild>,
+    manual_stop: bool,
+}
+
+struct ManagedChild {
+    child: Child,
+    _credential_session: RuntimeSession,
+    #[cfg(windows)]
+    job: WindowsJob,
+}
+
+impl RuntimeSupervisor {
+    pub fn new(
+        app: AppHandle,
+        paths: AppPaths,
+        settings: Arc<SettingsStore>,
+        diagnostics: Arc<Diagnostics>,
+    ) -> Arc<Self> {
+        let supervisor = Arc::new(Self {
+            app,
+            paths,
+            settings,
+            diagnostics,
+            operation: Mutex::new(()),
+            inner: Mutex::new(RuntimeInner {
+                status: RuntimeStatus::default(),
+                process: None,
+                manual_stop: false,
+            }),
+        });
+        Self::start_monitor(&supervisor);
+        supervisor
+    }
+
+    pub fn status(&self) -> DesktopResult<RuntimeStatus> {
+        Ok(self.lock_inner()?.status.clone())
+    }
+
+    pub fn start(&self, workspace: String) -> DesktopResult<RuntimeStatus> {
+        let _operation = self.lock_operation()?;
+        validate_workspace(&workspace)?;
+        self.stop_locked(false)?;
+        self.spawn_locked(workspace, 0, RuntimePhase::Starting)
+    }
+
+    pub fn restart(&self) -> DesktopResult<RuntimeStatus> {
+        let _operation = self.lock_operation()?;
+        let workspace = self
+            .lock_inner()?
+            .status
+            .workspace
+            .clone()
+            .ok_or(DesktopError::RuntimeNotReady)?;
+        self.stop_locked(false)?;
+        self.spawn_locked(workspace, 0, RuntimePhase::Starting)
+    }
+
+    pub fn stop(&self) -> DesktopResult<RuntimeStatus> {
+        let _operation = self.lock_operation()?;
+        self.stop_locked(true)
+    }
+
+    pub fn open_runtime(&self) -> DesktopResult<()> {
+        let status = self.status()?;
+        let raw_url = status.url.ok_or(DesktopError::RuntimeNotReady)?;
+        let url = Url::parse(&raw_url).map_err(|error| DesktopError::Other(error.to_string()))?;
+        if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") {
+            return Err(DesktopError::Other(
+                "runtime URL is outside the managed loopback origin".to_owned(),
+            ));
+        }
+        if let Some(window) = self.app.get_webview_window("harness") {
+            window
+                .show()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            window
+                .set_focus()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            window
+                .navigate(url)
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            return Ok(());
+        }
+        let managed_origin = url.clone();
+        let app = self.app.clone();
+        tauri::WebviewWindowBuilder::new(&self.app, "harness", tauri::WebviewUrl::External(url))
+            .title("DSH Desktop")
+            .inner_size(1280.0, 820.0)
+            .min_inner_size(900.0, 620.0)
+            .center()
+            .on_navigation(move |candidate| {
+                let managed = candidate.scheme() == managed_origin.scheme()
+                    && candidate.host_str() == managed_origin.host_str()
+                    && candidate.port_or_known_default() == managed_origin.port_or_known_default();
+                if !managed && matches!(candidate.scheme(), "http" | "https") {
+                    let _ = app.opener().open_url(candidate.as_str(), None::<&str>);
+                }
+                managed
+            })
+            .build()
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        Ok(())
+    }
+
+    fn spawn_locked(
+        &self,
+        workspace: String,
+        restart_count: u8,
+        phase: RuntimePhase,
+    ) -> DesktopResult<RuntimeStatus> {
+        self.diagnostics.set_workspace(&workspace);
+        self.publish(RuntimeStatus {
+            phase,
+            workspace: Some(workspace.clone()),
+            restart_count,
+            ..RuntimeStatus::default()
+        })?;
+        let runtime_dir = self.runtime_dir()?;
+        self.prepare_profile(&runtime_dir)?;
+        let node = self.node_binary()?;
+        let dsh_entry = runtime_dir.join("node_modules/@deepseek-ai/dsh/lib/bin.js");
+        let parent_watch =
+            runtime_dir.join("node_modules/@springopen/dsh-desktop-bundle/parent-watch.cjs");
+        let locale_sync =
+            runtime_dir.join("node_modules/@springopen/dsh-desktop-bundle/locale-sync.cjs");
+        if !dsh_entry.is_file() {
+            return self.fail(
+                &workspace,
+                restart_count,
+                "runtime-artifact-missing",
+                &format!("missing {}", dsh_entry.display()),
+            );
+        }
+        if !parent_watch.is_file() {
+            return self.fail(
+                &workspace,
+                restart_count,
+                "runtime-artifact-missing",
+                &format!("missing {}", parent_watch.display()),
+            );
+        }
+        if !locale_sync.is_file() {
+            return self.fail(
+                &workspace,
+                restart_count,
+                "runtime-artifact-missing",
+                &format!("missing {}", locale_sync.display()),
+            );
+        }
+        let helper = std::env::current_exe()?;
+        let credential_session = RuntimeSession::create()?;
+        let mut command = Command::new(node);
+        command
+            .arg("--require")
+            .arg(parent_watch)
+            .arg("--require")
+            .arg(locale_sync)
+            .arg(dsh_entry)
+            .args([
+                "--profile",
+                "desktop-web",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "0",
+                "--no-open",
+            ])
+            .current_dir(&workspace)
+            .env_clear()
+            .envs(self.runtime_environment(&helper)?)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        configure_process_group(&mut command);
+        let child = command.spawn()?;
+        let mut managed = ManagedChild::new(child, credential_session)?;
+        let session_token = managed._credential_session.token().to_owned();
+        let session_result = managed
+            .child
+            .stdin
+            .take()
+            .ok_or_else(|| {
+                DesktopError::Other("runtime credential channel is unavailable".to_owned())
+            })
+            .and_then(|mut stdin| {
+                stdin.write_all(session_token.as_bytes())?;
+                stdin.write_all(b"\n")?;
+                Ok(())
+            });
+        if let Err(error) = session_result {
+            managed.terminate();
+            return self.fail(
+                &workspace,
+                restart_count,
+                "runtime-credential-channel-failed",
+                &error.to_string(),
+            );
+        }
+        let stdout = managed
+            .child
+            .stdout
+            .take()
+            .ok_or_else(|| DesktopError::Other("runtime stdout is unavailable".to_owned()))?;
+        let stderr = managed
+            .child
+            .stderr
+            .take()
+            .ok_or_else(|| DesktopError::Other("runtime stderr is unavailable".to_owned()))?;
+        let (ready_tx, ready_rx) = mpsc::channel::<String>();
+        let stdout_diagnostics = Arc::clone(&self.diagnostics);
+        thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                stdout_diagnostics.append("runtime.stdout", &line);
+                if let Some(url) = parse_ready_url(&line) {
+                    let _ = ready_tx.send(url);
+                }
+            }
+        });
+        let stderr_diagnostics = Arc::clone(&self.diagnostics);
+        thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                stderr_diagnostics.append("runtime.stderr", &line);
+            }
+        });
+
+        let deadline = Instant::now() + STARTUP_TIMEOUT;
+        let ready_url = loop {
+            if let Some(exit) = managed.child.try_wait()? {
+                let message = format!("exit status {exit}");
+                managed.terminate();
+                return self.fail(&workspace, restart_count, "runtime-exited", &message);
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                managed.terminate();
+                return self.fail(
+                    &workspace,
+                    restart_count,
+                    "runtime-timeout",
+                    "runtime startup timed out",
+                );
+            }
+            match ready_rx.recv_timeout(remaining.min(Duration::from_millis(200))) {
+                Ok(url) => break url,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    managed.terminate();
+                    return self.fail(
+                        &workspace,
+                        restart_count,
+                        "runtime-output-closed",
+                        "runtime closed its output before readiness",
+                    );
+                }
+            }
+        };
+        if let Err(error) = health_check(&ready_url) {
+            managed.terminate();
+            return self.fail(
+                &workspace,
+                restart_count,
+                "runtime-health-check-failed",
+                &error.to_string(),
+            );
+        }
+        let status = RuntimeStatus {
+            phase: RuntimePhase::Ready,
+            url: Some(ready_url),
+            workspace: Some(workspace),
+            restart_count,
+            diagnostic_id: None,
+            error_code: None,
+        };
+        {
+            let mut inner = self.lock_inner()?;
+            inner.manual_stop = false;
+            inner.process = Some(managed);
+            inner.status = status.clone();
+        }
+        self.emit(&status);
+        Ok(status)
+    }
+
+    fn stop_locked(&self, manual: bool) -> DesktopResult<RuntimeStatus> {
+        let previous = self.status()?;
+        if previous.phase != RuntimePhase::Idle {
+            self.publish(RuntimeStatus {
+                phase: RuntimePhase::Stopping,
+                ..previous.clone()
+            })?;
+        }
+        let process = {
+            let mut inner = self.lock_inner()?;
+            inner.manual_stop = manual;
+            inner.process.take()
+        };
+        if let Some(mut process) = process {
+            process.terminate();
+        }
+        if let Some(window) = self.app.get_webview_window("harness") {
+            let _ = window.close();
+        }
+        let status = RuntimeStatus {
+            phase: RuntimePhase::Idle,
+            workspace: previous.workspace,
+            ..RuntimeStatus::default()
+        };
+        self.publish(status)
+    }
+
+    fn fail(
+        &self,
+        workspace: &str,
+        restart_count: u8,
+        code: &str,
+        message: &str,
+    ) -> DesktopResult<RuntimeStatus> {
+        self.diagnostics.append("supervisor", message);
+        let status = RuntimeStatus {
+            phase: RuntimePhase::Failed,
+            workspace: Some(workspace.to_owned()),
+            restart_count,
+            diagnostic_id: Some(Uuid::new_v4().to_string()),
+            error_code: Some(code.to_owned()),
+            ..RuntimeStatus::default()
+        };
+        self.publish(status.clone())?;
+        Err(DesktopError::RuntimeExited(message.to_owned()))
+    }
+
+    fn publish(&self, status: RuntimeStatus) -> DesktopResult<RuntimeStatus> {
+        self.lock_inner()?.status = status.clone();
+        self.emit(&status);
+        Ok(status)
+    }
+
+    fn emit(&self, status: &RuntimeStatus) {
+        let _ = self.app.emit("runtime://status", status);
+    }
+
+    fn runtime_dir(&self) -> DesktopResult<PathBuf> {
+        if let Some(path) = std::env::var_os("DSH_DESKTOP_RUNTIME_DIR") {
+            return Ok(PathBuf::from(path));
+        }
+        if cfg!(debug_assertions) {
+            return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../runtime/staging")
+                .join(env!("DSH_DESKTOP_TARGET")));
+        }
+        let resource_dir = self
+            .app
+            .path()
+            .resource_dir()
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        Ok(resource_dir
+            .join("runtime/staging")
+            .join(env!("DSH_DESKTOP_TARGET")))
+    }
+
+    fn node_binary(&self) -> DesktopResult<PathBuf> {
+        if let Some(path) = std::env::var_os("DSH_DESKTOP_NODE_PATH") {
+            return Ok(PathBuf::from(path));
+        }
+        let suffix = if cfg!(windows) { ".exe" } else { "" };
+        let sibling = std::env::current_exe()?.with_file_name(format!("node{suffix}"));
+        if sibling.is_file() {
+            return Ok(sibling);
+        }
+        if cfg!(debug_assertions) {
+            let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("binaries")
+                .join(format!("node-{}{}", env!("DSH_DESKTOP_TARGET"), suffix));
+            if development.is_file() {
+                return Ok(development);
+            }
+        }
+        Err(DesktopError::RuntimeArtifactMissing(
+            "Node sidecar".to_owned(),
+        ))
+    }
+
+    fn runtime_environment(&self, helper: &Path) -> DesktopResult<HashMap<String, String>> {
+        let mut environment = HashMap::new();
+        for name in [
+            "PATH",
+            "HOME",
+            "USER",
+            "LOGNAME",
+            "TMPDIR",
+            "LANG",
+            "LC_ALL",
+            "XDG_RUNTIME_DIR",
+            "DBUS_SESSION_BUS_ADDRESS",
+            "APPDATA",
+            "LOCALAPPDATA",
+            "USERPROFILE",
+            "SystemRoot",
+            "WINDIR",
+            "COMSPEC",
+            "PATHEXT",
+        ] {
+            if let Ok(value) = std::env::var(name) {
+                environment.insert(name.to_owned(), value);
+            }
+        }
+        environment.insert(
+            "DSH_HOME".to_owned(),
+            self.paths.dsh_home.to_string_lossy().into_owned(),
+        );
+        environment.insert("DSH_TELEMETRY_DISABLED".to_owned(), "true".to_owned());
+        environment.insert(
+            "DSH_DESKTOP_PARENT_PID".to_owned(),
+            std::process::id().to_string(),
+        );
+        environment.insert(
+            "DSH_DESKTOP_HELPER_PATH".to_owned(),
+            helper.to_string_lossy().into_owned(),
+        );
+        environment.insert(
+            "DSH_DESKTOP_DATA_DIR".to_owned(),
+            self.paths.data_dir.to_string_lossy().into_owned(),
+        );
+        environment.insert("DSH_DESKTOP_LOCALE".to_owned(), self.settings.get()?.locale);
+        Ok(environment)
+    }
+
+    fn prepare_profile(&self, runtime_dir: &Path) -> DesktopResult<()> {
+        let profile = self.paths.dsh_home.join("profiles/desktop-web");
+        let modules = profile.join("node_modules/@springopen");
+        fs::create_dir_all(&modules)?;
+        let manifest = serde_json::json!({
+            "name": "dsh-profile-desktop-web",
+            "private": true,
+            "dependencies": {},
+            "dsh": { "profile": { "bundles": [
+                "@deepseek-ai/dsh-base",
+                "@deepseek-ai/dsh-web-app",
+                "@springopen/dsh-desktop-bundle"
+            ] } }
+        });
+        fs::write(
+            profile.join("package.json"),
+            format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+        )?;
+        if !profile.join("cordis.patch.yml").exists() {
+            fs::write(profile.join("cordis.patch.yml"), "[]\n")?;
+        }
+        if !profile.join("pnpm-workspace.yaml").exists() {
+            fs::write(
+                profile.join("pnpm-workspace.yaml"),
+                "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n",
+            )?;
+        }
+        for package in ["dsh-desktop-bundle", "dsh-credentials-keychain"] {
+            let source = runtime_dir.join("node_modules/@springopen").join(package);
+            let target = modules.join(package);
+            if target.exists() {
+                fs::remove_dir_all(&target)?;
+            }
+            copy_directory(&source, &target)?;
+        }
+        Ok(())
+    }
+
+    fn lock_inner(&self) -> DesktopResult<MutexGuard<'_, RuntimeInner>> {
+        self.inner
+            .lock()
+            .map_err(|_| DesktopError::Other("runtime state lock is poisoned".to_owned()))
+    }
+
+    fn lock_operation(&self) -> DesktopResult<MutexGuard<'_, ()>> {
+        self.operation
+            .try_lock()
+            .map_err(|_| DesktopError::RuntimeBusy)
+    }
+
+    fn start_monitor(supervisor: &Arc<Self>) {
+        let weak = Arc::downgrade(supervisor);
+        thread::spawn(move || {
+            loop {
+                thread::sleep(MONITOR_INTERVAL);
+                let Some(supervisor) = weak.upgrade() else {
+                    break;
+                };
+                let restart = {
+                    let Ok(mut inner) = supervisor.inner.lock() else {
+                        break;
+                    };
+                    if inner.manual_stop || inner.status.phase != RuntimePhase::Ready {
+                        None
+                    } else {
+                        match inner
+                            .process
+                            .as_mut()
+                            .and_then(|process| process.child.try_wait().ok())
+                            .flatten()
+                        {
+                            Some(exit) => {
+                                inner.process.take();
+                                Some((
+                                    inner.status.workspace.clone(),
+                                    inner.status.restart_count,
+                                    exit.to_string(),
+                                ))
+                            }
+                            None => None,
+                        }
+                    }
+                };
+                let Some((Some(workspace), restart_count, exit)) = restart else {
+                    continue;
+                };
+                supervisor.diagnostics.append(
+                    "supervisor",
+                    &format!("runtime exited unexpectedly: {exit}"),
+                );
+                if restart_count >= MAX_RESTARTS {
+                    let _ = supervisor.publish(RuntimeStatus {
+                        phase: RuntimePhase::Failed,
+                        workspace: Some(workspace),
+                        restart_count,
+                        diagnostic_id: Some(Uuid::new_v4().to_string()),
+                        error_code: Some("restart-limit-reached".to_owned()),
+                        ..RuntimeStatus::default()
+                    });
+                    continue;
+                }
+                let next = restart_count + 1;
+                let _ = supervisor.publish(RuntimeStatus {
+                    phase: RuntimePhase::Recovering,
+                    workspace: Some(workspace.clone()),
+                    restart_count: next,
+                    ..RuntimeStatus::default()
+                });
+                thread::sleep(if next == 1 {
+                    Duration::from_secs(1)
+                } else {
+                    Duration::from_secs(3)
+                });
+                let Ok(_operation) = supervisor.operation.try_lock() else {
+                    continue;
+                };
+                let _ = supervisor.spawn_locked(workspace, next, RuntimePhase::Recovering);
+            }
+        });
+    }
+}
+
+impl Drop for RuntimeSupervisor {
+    fn drop(&mut self) {
+        if let Ok(inner) = self.inner.get_mut()
+            && let Some(process) = inner.process.as_mut()
+        {
+            process.terminate();
+        }
+    }
+}
+
+impl ManagedChild {
+    fn new(child: Child, credential_session: RuntimeSession) -> DesktopResult<Self> {
+        #[cfg(windows)]
+        let (child, job) = {
+            let mut child = child;
+            let job = match WindowsJob::attach(&child) {
+                Ok(job) => job,
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(error);
+                }
+            };
+            (child, job)
+        };
+        Ok(Self {
+            child,
+            _credential_session: credential_session,
+            #[cfg(windows)]
+            job,
+        })
+    }
+
+    fn terminate(&mut self) {
+        #[cfg(windows)]
+        self.job.terminate();
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(-(self.child.id() as i32), libc::SIGTERM);
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            if self.child.try_wait().ok().flatten().is_some() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(-(self.child.id() as i32), libc::SIGKILL);
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[cfg(unix)]
+fn configure_process_group(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(windows)]
+fn configure_process_group(_command: &mut Command) {}
+
+fn validate_workspace(workspace: &str) -> DesktopResult<()> {
+    if !Path::new(workspace).is_dir() {
+        return Err(DesktopError::InvalidWorkspace(workspace.to_owned()));
+    }
+    Ok(())
+}
+
+fn parse_ready_url(line: &str) -> Option<String> {
+    let start = line.find(READY_PREFIX)?;
+    let value = line[start + "dsh web: ".len()..]
+        .split_whitespace()
+        .next()?;
+    let url = Url::parse(value).ok()?;
+    (url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.port().is_some())
+        .then(|| value.to_owned())
+}
+
+fn health_check(url: &str) -> DesktopResult<()> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(HEALTH_TIMEOUT)
+        .build()
+        .map_err(|error| DesktopError::Other(error.to_string()))?;
+    let response = client
+        .get(url)
+        .send()
+        .map_err(|error| DesktopError::Other(error.to_string()))?;
+    if !response.status().is_success() {
+        return Err(DesktopError::Other(format!(
+            "runtime health check returned {}",
+            response.status()
+        )));
+    }
+    Ok(())
+}
+
+fn copy_directory(source: &Path, target: &Path) -> DesktopResult<()> {
+    if !source.is_dir() {
+        return Err(DesktopError::RuntimeArtifactMissing(
+            source.display().to_string(),
+        ));
+    }
+    fs::create_dir_all(target)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let destination = target.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_directory(&entry.path(), &destination)?;
+        } else {
+            fs::copy(entry.path(), destination)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+struct WindowsJob(isize);
+
+#[cfg(windows)]
+impl WindowsJob {
+    fn attach(child: &Child) -> DesktopResult<Self> {
+        use std::mem::{size_of, zeroed};
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+            SetInformationJobObject,
+        };
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job.is_null() {
+                return Err(DesktopError::Other(
+                    "could not create Windows Job Object".to_owned(),
+                ));
+            }
+            let mut information: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = zeroed();
+            information.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            if SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &information as *const _ as *const _,
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            ) == 0
+                || AssignProcessToJobObject(job, child.as_raw_handle() as _) == 0
+            {
+                CloseHandle(job);
+                return Err(DesktopError::Other(
+                    "could not attach runtime to Windows Job Object".to_owned(),
+                ));
+            }
+            Ok(Self(job as isize))
+        }
+    }
+
+    fn terminate(&self) {
+        use windows_sys::Win32::System::JobObjects::TerminateJobObject;
+        unsafe {
+            TerminateJobObject(self.0 as _, 1);
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for WindowsJob {
+    fn drop(&mut self) {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        unsafe {
+            CloseHandle(self.0 as _);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_only_managed_ready_urls() {
+        assert_eq!(
+            parse_ready_url("dsh web: http://127.0.0.1:43127"),
+            Some("http://127.0.0.1:43127".to_owned())
+        );
+        assert_eq!(parse_ready_url("dsh web: http://localhost:43127"), None);
+        assert_eq!(parse_ready_url("noise"), None);
+    }
+}

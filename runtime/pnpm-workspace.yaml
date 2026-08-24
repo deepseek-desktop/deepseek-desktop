@@ -1,0 +1,15 @@
+packages:
+  - .
+  - packages/*
+
+linkWorkspacePackages: true
+nodeLinker: hoisted
+autoInstallPeers: true
+
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': true
+  node-pty: true
+  koffi: true
+  node-addon-require-builtin: false
+  '@google/genai': false
+  protobufjs: false

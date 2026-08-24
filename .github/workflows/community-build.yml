@@ -1,0 +1,84 @@
+name: Community Build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shell-quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.16.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:i18n && pnpm test && pnpm typecheck && pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+
+  native-build:
+    needs: shell-quality
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - name: macos-x64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - name: windows-x64
+            os: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          - name: linux-x64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+    runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_CHANNEL: community
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.16.0
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            runtime/pnpm-lock.yaml
+      - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --dir runtime install --frozen-lockfile
+      - run: pnpm release:check $RELEASE_CHANNEL
+        shell: bash
+      - run: pnpm runtime:stage && pnpm runtime:verify ${{ matrix.target }}
+        shell: bash
+      - run: pnpm runtime:smoke
+      - run: pnpm rust:test
+      - run: pnpm rust:clippy
+      - run: pnpm build
+      - run: node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dsh-desktop-${{ matrix.name }}-unsigned-community
+          path: src-tauri/target/release/bundle/**
+          if-no-files-found: error
