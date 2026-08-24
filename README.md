@@ -5,7 +5,7 @@
 
 DSH Desktop is an independent, unofficial community distribution built on the locked DeepSeek Harness Runtime. It does not require a separate Node.js, pnpm, Rust, or SpringOpen Application installation at runtime. This project is not endorsed by or affiliated with DeepSeek.
 
-Version `0.1.0-community.1` is the community edition. The macOS artifact uses a complete ad-hoc signature but has no Apple Developer ID identity or notarization; other current artifacts are unsigned. The desktop-owned source is Apache-2.0, while the packaged Harness, Node.js, and npm dependencies retain their own license notices.
+Version `0.1.0-community.2` is the community edition. The macOS artifact uses a complete ad-hoc signature but has no Apple Developer ID identity or notarization; other current artifacts are unsigned. The desktop-owned source is Apache-2.0, while the packaged Harness, Node.js, and npm dependencies retain their own license notices.
 
 Installers are published on the [GitHub Releases page](https://github.com/spring-open/deepseek-harness-desktop/releases). Verify the downloaded file against the accompanying `SHA256SUMS` before installation.
 
@@ -21,10 +21,10 @@ Rust runtime supervisor
 Harness CredentialProvider
   -> short-lived session + JSON over stdin/stdout
   -> desktop helper
-  -> operating-system keychain
+  -> local encrypted credential vault
 ```
 
-The Harness WebView has no Tauri capability. It may navigate only within a managed loopback origin. A per-Runtime credential session is delivered through the Runtime standard input and is required by every helper request. Only its SHA-256 authorization digest is stored in the application data directory; the token and model credentials are never passed through command arguments, environment values, WebView IPC, or diagnostic exports. Native keychain backends are selected explicitly for macOS, Windows, and Linux so packaged builds never fall back to an in-memory test store.
+The Harness WebView has no Tauri capability. It may navigate only within a managed loopback origin. A per-Runtime credential session is delivered through the Runtime standard input and is required by every helper request. Only its SHA-256 authorization digest is stored in the application data directory; the token and model credentials are never passed through command arguments, environment values, WebView IPC, or diagnostic exports. macOS, Windows, and Linux use the same XChaCha20-Poly1305 encrypted vault in the user-scoped application data directory. The vault uses authenticated encryption, atomic replacement, cross-process locking, and private Unix file modes; it never falls back to `.env`, YAML, browser storage, or plaintext credential files.
 
 ## Toolchain
 

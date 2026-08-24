@@ -1,7 +1,7 @@
 mod contracts;
+mod credential_vault;
 mod diagnostics;
 mod error;
-mod keychain;
 mod runtime;
 mod settings;
 mod updater;
@@ -169,8 +169,8 @@ fn diagnostics_export(state: State<'_, AppState>) -> DesktopResult<String> {
     Ok(path.to_string_lossy().into_owned())
 }
 
-pub fn run_keychain_helper() -> i32 {
-    keychain::run()
+pub fn run_credential_vault_helper() -> i32 {
+    credential_vault::run()
 }
 
 pub fn run() {

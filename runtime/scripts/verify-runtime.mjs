@@ -9,6 +9,22 @@ const lock = JSON.parse(await readFile(join(runtimeRoot, "runtime-lock.json"), "
 
 const desktopPatches = [
   {
+    lockEntry: "@deepseek-ai/dsh-client-runtime@0.1.1-rc.2:neutral-auth-failure",
+    patchFile: "@deepseek-ai__dsh-client-runtime@0.1.1-rc.2.patch",
+    moduleFile: ["@deepseek-ai", "dsh-client-runtime", "lib", "client.js"],
+    markers: [
+      "Provider authentication failed. Verify the credential, endpoint, model access, and account permissions."
+    ]
+  },
+  {
+    lockEntry: "@deepseek-ai/dsh-client-ui-conversation@0.1.1-rc.2:hide-system-policy-context",
+    patchFile: "@deepseek-ai__dsh-client-ui-conversation@0.1.1-rc.2.patch",
+    moduleFile: ["@deepseek-ai", "dsh-client-ui-conversation", "lib", "client.js"],
+    markers: [
+      'if (provenance.label === "@deepseek-ai/dsh-system-prompt") return null;'
+    ]
+  },
+  {
     lockEntry: "@deepseek-ai/dsh-client-ui-settings-models@0.1.1-rc.2:provider-credential-rollback",
     patchFile: "@deepseek-ai__dsh-client-ui-settings-models@0.1.1-rc.2.patch",
     moduleFile: ["@deepseek-ai", "dsh-client-ui-settings-models", "lib", "client.js"],

@@ -15,5 +15,7 @@ allowBuilds:
   protobufjs: false
 
 patchedDependencies:
+  '@deepseek-ai/dsh-client-runtime@0.1.1-rc.2': patches/@deepseek-ai__dsh-client-runtime@0.1.1-rc.2.patch
+  '@deepseek-ai/dsh-client-ui-conversation@0.1.1-rc.2': patches/@deepseek-ai__dsh-client-ui-conversation@0.1.1-rc.2.patch
   '@deepseek-ai/dsh-client-ui-settings-models@0.1.1-rc.2': patches/@deepseek-ai__dsh-client-ui-settings-models@0.1.1-rc.2.patch
   '@deepseek-ai/dsh-user-approval@0.1.1-rc.2': patches/@deepseek-ai__dsh-user-approval@0.1.1-rc.2.patch

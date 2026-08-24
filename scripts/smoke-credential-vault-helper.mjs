@@ -6,10 +6,10 @@ import { resolve } from "node:path";
 import process from "node:process";
 
 const binary = process.argv[2];
-if (!binary) throw new Error("usage: pnpm keychain:smoke <desktop-binary>");
+if (!binary) throw new Error("usage: pnpm vault:smoke <desktop-binary>");
 await stat(binary);
 
-const dataDir = resolve("target", `keychain-helper-smoke-${process.pid}-${Date.now()}`);
+const dataDir = resolve("target", `credential-vault-helper-smoke-${process.pid}-${Date.now()}`);
 const session = randomUUID();
 const digest = createHash("sha256").update(session).digest("hex");
 const key = `DSH_DESKTOP_SMOKE_${randomUUID()}`;
@@ -22,7 +22,7 @@ await writeFile(
 );
 
 async function request(operation, value) {
-  const child = spawn(binary, ["--keychain-helper"], {
+  const child = spawn(binary, ["--credential-vault-helper"], {
     env: { ...process.env, DSH_DESKTOP_DATA_DIR: dataDir },
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
@@ -42,23 +42,28 @@ async function request(operation, value) {
   try {
     response = JSON.parse(stdout);
   } catch {
-    throw new Error(`keychain helper returned invalid JSON (code ${String(code)}): ${stderr || stdout}`);
+    throw new Error(`credential vault helper returned invalid JSON (code ${String(code)}): ${stderr || stdout}`);
   }
   if (code !== 0 || !response.ok) {
-    throw new Error(`keychain helper request failed (code ${String(code)}): ${response.error?.message || stderr}`);
+    throw new Error(`credential vault helper request failed (code ${String(code)}): ${response.error?.message || stderr}`);
   }
   return response.value;
 }
 
 try {
   await request("set-ref", syntheticSecret);
+  const files = await import("node:fs/promises").then(fs => fs.readdir(dataDir));
+  for (const filename of files.filter(name => name.startsWith("credential-vault"))) {
+    const bytes = await import("node:fs/promises").then(fs => fs.readFile(resolve(dataDir, filename)));
+    assert.equal(bytes.includes(Buffer.from(syntheticSecret)), false, `${filename} contains plaintext credentials`);
+  }
   assert.deepEqual(await request("describe-ref"), { configured: true });
   assert.equal(await request("get-ref"), syntheticSecret);
   await request("delete-ref");
   assert.deepEqual(await request("describe-ref"), { configured: false });
   const authorization = await import("node:fs/promises").then(fs => fs.readFile(resolve(dataDir, "credential-session.json"), "utf8"));
   assert.doesNotMatch(authorization, new RegExp(session, "u"));
-  console.log("packaged keychain helper smoke passed");
+  console.log("packaged encrypted credential vault helper smoke passed");
 } finally {
   try { await request("delete-ref"); } catch {}
   await rm(dataDir, { recursive: true, force: true });

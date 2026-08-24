@@ -1,8 +1,8 @@
 export const messages = {
   "zh-CN": {
     app: { name: "DSH Desktop", subtitle: "本地 AI Agent 工作台" },
-    common: { continue: "继续", back: "返回", retry: "重试", open: "打开工作台", stop: "停止", save: "保存", close: "关闭", languageSelector: "切换语言" },
-    features: { runtime: "本地 Runtime", runtimeValue: "仅监听 127.0.0.1", keychain: "系统密钥库", keychainValue: "明文凭据隔离", workspace: "受管工作区", workspaceValue: "明确限定目录" },
+    common: { continue: "继续", back: "返回", start: "启动", retry: "重试", open: "打开工作台", stop: "停止", save: "保存", close: "关闭", languageSelector: "切换语言" },
+    features: { runtime: "本地 Runtime", runtimeValue: "仅监听 127.0.0.1", vault: "加密凭据库", vaultValue: "密钥加密后仅保存在本机", workspace: "受管工作区", workspaceValue: "明确限定目录" },
     onboarding: {
       welcomeTitle: "欢迎使用 DSH Desktop",
       welcomeDescription: "Runtime、会话和凭据都保存在本机。",
@@ -34,7 +34,7 @@ export const messages = {
         exited: "Runtime 在就绪前意外退出。",
         outputClosed: "Runtime 在就绪前关闭了输出通道。",
         healthCheckFailed: "Runtime 本地健康检查失败。",
-        credentialChannelFailed: "系统密钥库通信通道启动失败。",
+        credentialChannelFailed: "加密凭据库通信通道启动失败。",
         taskFailed: "Runtime 管理任务异常终止，请重试或导出诊断信息。",
         restartLimitReached: "Runtime 已达到自动恢复次数上限。"
       }
@@ -47,8 +47,8 @@ export const messages = {
   },
   "zh-TW": {
     app: { name: "DSH Desktop", subtitle: "本機 AI Agent 工作臺" },
-    common: { continue: "繼續", back: "返回", retry: "重試", open: "開啟工作臺", stop: "停止", save: "儲存", close: "關閉", languageSelector: "切換語言" },
-    features: { runtime: "本機 Runtime", runtimeValue: "僅監聽 127.0.0.1", keychain: "系統鑰匙圈", keychainValue: "明文憑證隔離", workspace: "受管工作區", workspaceValue: "明確限定目錄" },
+    common: { continue: "繼續", back: "返回", start: "啟動", retry: "重試", open: "開啟工作臺", stop: "停止", save: "儲存", close: "關閉", languageSelector: "切換語言" },
+    features: { runtime: "本機 Runtime", runtimeValue: "僅監聽 127.0.0.1", vault: "加密憑證庫", vaultValue: "金鑰加密後僅儲存在本機", workspace: "受管工作區", workspaceValue: "明確限定目錄" },
     onboarding: {
       welcomeTitle: "歡迎使用 DSH Desktop",
       welcomeDescription: "Runtime、工作階段和憑證都儲存在本機。",
@@ -80,7 +80,7 @@ export const messages = {
         exited: "Runtime 在就緒前意外結束。",
         outputClosed: "Runtime 在就緒前關閉了輸出通道。",
         healthCheckFailed: "Runtime 本機健康檢查失敗。",
-        credentialChannelFailed: "系統鑰匙圈通訊通道啟動失敗。",
+        credentialChannelFailed: "加密憑證庫通訊通道啟動失敗。",
         taskFailed: "Runtime 管理工作異常終止，請重試或匯出診斷資訊。",
         restartLimitReached: "Runtime 已達自動復原次數上限。"
       }
@@ -93,8 +93,8 @@ export const messages = {
   },
   "en-US": {
     app: { name: "DSH Desktop", subtitle: "Local AI agent workspace" },
-    common: { continue: "Continue", back: "Back", retry: "Retry", open: "Open workspace", stop: "Stop", save: "Save", close: "Close", languageSelector: "Change language" },
-    features: { runtime: "Local runtime", runtimeValue: "Listens only on 127.0.0.1", keychain: "System keychain", keychainValue: "Plaintext credential isolation", workspace: "Managed workspace", workspaceValue: "Explicit directory scope" },
+    common: { continue: "Continue", back: "Back", start: "Start", retry: "Retry", open: "Open workspace", stop: "Stop", save: "Save", close: "Close", languageSelector: "Change language" },
+    features: { runtime: "Local runtime", runtimeValue: "Listens only on 127.0.0.1", vault: "Encrypted credential vault", vaultValue: "Keys remain encrypted on this device", workspace: "Managed workspace", workspaceValue: "Explicit directory scope" },
     onboarding: {
       welcomeTitle: "Welcome to DSH Desktop",
       welcomeDescription: "The runtime, sessions, and credentials stay on this device.",
@@ -126,7 +126,7 @@ export const messages = {
         exited: "The runtime exited before it became ready.",
         outputClosed: "The runtime closed its output before it became ready.",
         healthCheckFailed: "The local runtime health check failed.",
-        credentialChannelFailed: "The system keychain channel could not start.",
+        credentialChannelFailed: "The encrypted credential vault channel could not start.",
         taskFailed: "The runtime management task stopped unexpectedly. Retry or export diagnostics.",
         restartLimitReached: "The runtime reached its automatic recovery limit."
       }

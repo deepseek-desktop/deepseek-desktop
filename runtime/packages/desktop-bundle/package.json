@@ -1,6 +1,6 @@
 {
   "name": "@springopen/dsh-desktop-bundle",
-  "version": "0.1.0-community.1",
+  "version": "0.1.0-community.2",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -11,7 +11,7 @@
     }
   },
   "dependencies": {
-    "@springopen/dsh-credentials-keychain": "workspace:*",
+    "@springopen/dsh-credentials-vault": "workspace:*",
     "yaml": "2.9.0"
   }
 }

@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
 use std::env;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use keyring::{Entry, Error as KeyringError};
+use chacha20poly1305::aead::{Aead, Payload};
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -15,9 +17,14 @@ use uuid::Uuid;
 use crate::error::{DesktopError, DesktopResult};
 use crate::settings::write_json_atomic;
 
-const SERVICE: &str = "com.springopen.dshdesktop.credentials";
+const SERVICE: &str = "com.springopen.dshdesktop.credentials.vault.v1";
 const DATA_DIR_ENV: &str = "DSH_DESKTOP_DATA_DIR";
 const SESSION_FILE: &str = "credential-session.json";
+const VAULT_FILE: &str = "credential-vault.json";
+const VAULT_KEY_FILE: &str = "credential-vault.key";
+const VAULT_LOCK_FILE: &str = "credential-vault.lock";
+const VAULT_KEY_LEN: usize = 32;
+const VAULT_NONCE_LEN: usize = 24;
 
 pub struct RuntimeSession {
     token: String,
@@ -117,19 +124,35 @@ trait SecretStore {
     fn delete(&self, namespace: &str, key: &str) -> DesktopResult<()>;
 }
 
-struct SystemSecretStore;
+struct SystemSecretStore {
+    data_dir: PathBuf,
+}
+
+impl SystemSecretStore {
+    fn new(data_dir: &Path) -> Self {
+        Self {
+            data_dir: data_dir.to_path_buf(),
+        }
+    }
+}
 
 impl SecretStore for SystemSecretStore {
     fn get(&self, namespace: &str, key: &str) -> DesktopResult<Option<String>> {
-        get_secret(namespace, key)
+        get_secret(self.data_dir(), namespace, key)
     }
 
     fn set(&self, namespace: &str, key: &str, value: &str) -> DesktopResult<()> {
-        set_secret(namespace, key, value)
+        set_secret(self.data_dir(), namespace, key, value)
     }
 
     fn delete(&self, namespace: &str, key: &str) -> DesktopResult<()> {
-        delete_secret(namespace, key)
+        delete_secret(self.data_dir(), namespace, key)
+    }
+}
+
+impl SystemSecretStore {
+    fn data_dir(&self) -> &Path {
+        &self.data_dir
     }
 }
 
@@ -137,15 +160,24 @@ pub fn run() -> i32 {
     let stdin = io::stdin();
     let mut line = String::new();
     let response = match stdin.lock().read_line(&mut line) {
-        Ok(0) => error_response("empty-request", "keychain helper received no request"),
+        Ok(0) => error_response(
+            "empty-request",
+            "credential vault helper received no request",
+        ),
         Ok(_) => match serde_json::from_str::<HelperRequest>(&line) {
             Ok(request) => match execute(request) {
                 Ok(value) => json!({ "ok": true, "value": value }),
-                Err(error) => error_response("keychain-failed", &error.to_string()),
+                Err(error) => error_response("vault-failed", &error.to_string()),
             },
-            Err(_) => error_response("invalid-request", "keychain helper request is invalid"),
+            Err(_) => error_response(
+                "invalid-request",
+                "credential vault helper request is invalid",
+            ),
         },
-        Err(_) => error_response("read-failed", "keychain helper could not read its request"),
+        Err(_) => error_response(
+            "read-failed",
+            "credential vault helper could not read its request",
+        ),
     };
     let mut stdout = io::stdout().lock();
     if serde_json::to_writer(&mut stdout, &response).is_err() || stdout.write_all(b"\n").is_err() {
@@ -161,8 +193,10 @@ pub fn run() -> i32 {
 fn execute(request: HelperRequest) -> DesktopResult<Value> {
     let data_dir = env::var_os(DATA_DIR_ENV)
         .map(PathBuf::from)
-        .ok_or_else(|| DesktopError::Keychain(format!("{DATA_DIR_ENV} is not configured")))?;
-    let store = SystemSecretStore;
+        .ok_or_else(|| {
+            DesktopError::CredentialVault(format!("{DATA_DIR_ENV} is not configured"))
+        })?;
+    let store = SystemSecretStore::new(&data_dir);
     validate_session_at(&data_dir, &request)?;
     execute_with(&store, &data_dir, request)
 }
@@ -175,7 +209,7 @@ fn validate_session_at(data_dir: &Path, request: &HelperRequest) -> DesktopResul
         .unwrap_or_default();
     let provided_digest = session_digest(provided);
     if provided.is_empty() || !constant_time_eq(provided_digest.as_bytes(), expected.as_bytes()) {
-        return Err(DesktopError::Keychain(
+        return Err(DesktopError::CredentialVault(
             "credential helper session is not authorized".to_owned(),
         ));
     }
@@ -271,15 +305,15 @@ fn execute_with(
         }
         Operation::SetRecord => {
             let key = require_key(request.key)?;
-            let value = request
-                .value
-                .ok_or_else(|| DesktopError::Keychain("record value is required".to_owned()))?;
+            let value = request.value.ok_or_else(|| {
+                DesktopError::CredentialVault("record value is required".to_owned())
+            })?;
             let kind = value
                 .get("kind")
                 .and_then(Value::as_str)
                 .filter(|kind| matches!(*kind, "api-key" | "grant"))
                 .ok_or_else(|| {
-                    DesktopError::Keychain("record kind must be api-key or grant".to_owned())
+                    DesktopError::CredentialVault("record kind must be api-key or grant".to_owned())
                 })?;
             let previous = store.get("record", &key)?;
             store.set("record", &key, &serde_json::to_string(&value)?)?;
@@ -319,54 +353,231 @@ fn account(namespace: &str, key: &str) -> String {
     format!("{namespace}.{}", URL_SAFE_NO_PAD.encode(key.as_bytes()))
 }
 
-fn entry(namespace: &str, key: &str) -> DesktopResult<Entry> {
-    Entry::new(SERVICE, &account(namespace, key))
-        .map_err(|error| DesktopError::Keychain(safe_keyring_error(&error)))
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct VaultEntries {
+    entries: BTreeMap<String, String>,
 }
 
-fn get_secret(namespace: &str, key: &str) -> DesktopResult<Option<String>> {
-    match entry(namespace, key)?.get_password() {
-        Ok(value) => Ok(Some(value)),
-        Err(KeyringError::NoEntry) => Ok(None),
-        Err(error) => Err(DesktopError::Keychain(safe_keyring_error(&error))),
-    }
+#[derive(Debug, Deserialize, Serialize)]
+struct VaultDocument {
+    version: u8,
+    nonce: String,
+    ciphertext: String,
 }
 
-fn set_secret(namespace: &str, key: &str, value: &str) -> DesktopResult<()> {
+fn get_secret(data_dir: &Path, namespace: &str, key: &str) -> DesktopResult<Option<String>> {
+    with_vault(data_dir, |entries| {
+        Ok((
+            entries.entries.get(&account(namespace, key)).cloned(),
+            false,
+        ))
+    })
+}
+
+fn set_secret(data_dir: &Path, namespace: &str, key: &str, value: &str) -> DesktopResult<()> {
     if value.is_empty() {
-        return Err(DesktopError::Keychain(
+        return Err(DesktopError::CredentialVault(
             "empty credentials are not allowed".to_owned(),
         ));
     }
-    entry(namespace, key)?
-        .set_password(value)
-        .map_err(|error| DesktopError::Keychain(safe_keyring_error(&error)))
+    with_vault(data_dir, |entries| {
+        entries
+            .entries
+            .insert(account(namespace, key), value.to_owned());
+        Ok(((), true))
+    })
 }
 
-fn delete_secret(namespace: &str, key: &str) -> DesktopResult<()> {
-    match entry(namespace, key)?.delete_credential() {
-        Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
-        Err(error) => Err(DesktopError::Keychain(safe_keyring_error(&error))),
+fn delete_secret(data_dir: &Path, namespace: &str, key: &str) -> DesktopResult<()> {
+    with_vault(data_dir, |entries| {
+        let changed = entries.entries.remove(&account(namespace, key)).is_some();
+        Ok(((), changed))
+    })
+}
+
+fn with_vault<T>(
+    data_dir: &Path,
+    operation: impl FnOnce(&mut VaultEntries) -> DesktopResult<(T, bool)>,
+) -> DesktopResult<T> {
+    create_private_directory(data_dir)?;
+    let lock = open_private_file(&data_dir.join(VAULT_LOCK_FILE), false)?;
+    lock.lock_exclusive().map_err(|_| {
+        DesktopError::CredentialVault("encrypted credential vault is busy".to_owned())
+    })?;
+
+    let key = load_or_create_vault_key(data_dir)?;
+    let mut entries = load_vault(data_dir, &key)?;
+    let (result, changed) = operation(&mut entries)?;
+    if changed {
+        save_vault(data_dir, &key, &entries)?;
     }
+    Ok(result)
+}
+
+fn load_or_create_vault_key(data_dir: &Path) -> DesktopResult<[u8; VAULT_KEY_LEN]> {
+    let path = data_dir.join(VAULT_KEY_FILE);
+    match fs::read(&path) {
+        Ok(bytes) => bytes.try_into().map_err(|_| {
+            DesktopError::CredentialVault("encrypted credential vault key is invalid".to_owned())
+        }),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let mut key = [0_u8; VAULT_KEY_LEN];
+            getrandom::fill(&mut key).map_err(|_| {
+                DesktopError::CredentialVault(
+                    "secure random generator is unavailable for credential storage".to_owned(),
+                )
+            })?;
+            let mut file = open_private_file(&path, true)?;
+            file.write_all(&key)?;
+            file.sync_all()?;
+            Ok(key)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn load_vault(data_dir: &Path, key: &[u8; VAULT_KEY_LEN]) -> DesktopResult<VaultEntries> {
+    let path = data_dir.join(VAULT_FILE);
+    let document = match fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str::<VaultDocument>(&text).map_err(|_| {
+            DesktopError::CredentialVault("encrypted credential vault is corrupted".to_owned())
+        })?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(VaultEntries::default());
+        }
+        Err(error) => return Err(error.into()),
+    };
+    if document.version != 1 {
+        return Err(DesktopError::CredentialVault(format!(
+            "unsupported encrypted credential vault version {}",
+            document.version
+        )));
+    }
+
+    let nonce = URL_SAFE_NO_PAD.decode(document.nonce).map_err(|_| {
+        DesktopError::CredentialVault("encrypted credential vault nonce is invalid".to_owned())
+    })?;
+    if nonce.len() != VAULT_NONCE_LEN {
+        return Err(DesktopError::CredentialVault(
+            "encrypted credential vault nonce is invalid".to_owned(),
+        ));
+    }
+    let ciphertext = URL_SAFE_NO_PAD.decode(document.ciphertext).map_err(|_| {
+        DesktopError::CredentialVault("encrypted credential vault payload is invalid".to_owned())
+    })?;
+    let cipher = vault_cipher(key)?;
+    let plaintext = cipher
+        .decrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: &ciphertext,
+                aad: SERVICE.as_bytes(),
+            },
+        )
+        .map_err(|_| {
+            DesktopError::CredentialVault(
+                "encrypted credential vault could not be authenticated".to_owned(),
+            )
+        })?;
+    serde_json::from_slice(&plaintext).map_err(|_| {
+        DesktopError::CredentialVault("encrypted credential vault payload is corrupted".to_owned())
+    })
+}
+
+fn save_vault(
+    data_dir: &Path,
+    key: &[u8; VAULT_KEY_LEN],
+    entries: &VaultEntries,
+) -> DesktopResult<()> {
+    let mut nonce = [0_u8; VAULT_NONCE_LEN];
+    getrandom::fill(&mut nonce).map_err(|_| {
+        DesktopError::CredentialVault(
+            "secure random generator is unavailable for credential storage".to_owned(),
+        )
+    })?;
+    let plaintext = serde_json::to_vec(entries)?;
+    let ciphertext = vault_cipher(key)?
+        .encrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: &plaintext,
+                aad: SERVICE.as_bytes(),
+            },
+        )
+        .map_err(|_| {
+            DesktopError::CredentialVault("encrypted credential vault write failed".to_owned())
+        })?;
+    let path = data_dir.join(VAULT_FILE);
+    write_json_atomic(
+        &path,
+        &VaultDocument {
+            version: 1,
+            nonce: URL_SAFE_NO_PAD.encode(nonce),
+            ciphertext: URL_SAFE_NO_PAD.encode(ciphertext),
+        },
+    )?;
+    restrict_private_file(&path)?;
+    Ok(())
+}
+
+fn vault_cipher(key: &[u8; VAULT_KEY_LEN]) -> DesktopResult<XChaCha20Poly1305> {
+    XChaCha20Poly1305::new_from_slice(key).map_err(|_| {
+        DesktopError::CredentialVault("encrypted credential vault key is invalid".to_owned())
+    })
+}
+
+fn open_private_file(path: &Path, create_new: bool) -> DesktopResult<File> {
+    let mut options = OpenOptions::new();
+    options.read(true).write(true);
+    if create_new {
+        options.create_new(true);
+    } else {
+        options.create(true);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(path)?;
+    restrict_private_file(path)?;
+    Ok(file)
+}
+
+fn create_private_directory(path: &Path) -> DesktopResult<()> {
+    fs::create_dir_all(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn restrict_private_file(path: &Path) -> DesktopResult<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn restrict_private_file(_path: &Path) -> DesktopResult<()> {
+    Ok(())
 }
 
 fn require_key(key: Option<String>) -> DesktopResult<String> {
     key.filter(|value| !value.is_empty())
-        .ok_or_else(|| DesktopError::Keychain("credential address is required".to_owned()))
+        .ok_or_else(|| DesktopError::CredentialVault("credential address is required".to_owned()))
 }
 
 fn require_string(value: Option<Value>) -> DesktopResult<String> {
     value
         .and_then(|value| value.as_str().map(str::to_owned))
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| DesktopError::Keychain("non-empty credential value is required".to_owned()))
-}
-
-fn safe_keyring_error(error: &KeyringError) -> String {
-    match error {
-        KeyringError::NoEntry => "credential is not configured".to_owned(),
-        _ => "operating-system keychain is unavailable".to_owned(),
-    }
+        .ok_or_else(|| {
+            DesktopError::CredentialVault("non-empty credential value is required".to_owned())
+        })
 }
 
 fn error_response(code: &str, message: &str) -> Value {
@@ -409,20 +620,20 @@ mod tests {
 
     impl SecretStore for UnavailableSecretStore {
         fn get(&self, _namespace: &str, _key: &str) -> DesktopResult<Option<String>> {
-            Err(DesktopError::Keychain(
-                "operating-system keychain is unavailable".to_owned(),
+            Err(DesktopError::CredentialVault(
+                "encrypted credential vault is unavailable".to_owned(),
             ))
         }
 
         fn set(&self, _namespace: &str, _key: &str, _value: &str) -> DesktopResult<()> {
-            Err(DesktopError::Keychain(
-                "operating-system keychain is unavailable".to_owned(),
+            Err(DesktopError::CredentialVault(
+                "encrypted credential vault is unavailable".to_owned(),
             ))
         }
 
         fn delete(&self, _namespace: &str, _key: &str) -> DesktopResult<()> {
-            Err(DesktopError::Keychain(
-                "operating-system keychain is unavailable".to_owned(),
+            Err(DesktopError::CredentialVault(
+                "encrypted credential vault is unavailable".to_owned(),
             ))
         }
     }
@@ -498,7 +709,7 @@ mod tests {
     #[test]
     fn supports_refs_api_keys_grants_and_record_enumeration_without_plaintext_index_data() {
         let store = MemorySecretStore::default();
-        let data_dir = temporary_data_dir("keychain-contract");
+        let data_dir = temporary_data_dir("credential-vault-contract");
 
         execute_with(
             &store,
@@ -566,8 +777,72 @@ mod tests {
     }
 
     #[test]
-    fn keychain_failure_is_explicit_and_never_creates_a_plaintext_fallback() {
-        let data_dir = temporary_data_dir("keychain-unavailable");
+    fn encrypted_vault_round_trips_without_writing_plaintext_credentials() {
+        let data_dir = temporary_data_dir("encrypted-vault");
+        let store = SystemSecretStore::new(&data_dir);
+        let secret = "not-a-real-provider-secret";
+
+        store.set("ref", "PROVIDER_API_KEY", secret).unwrap();
+        assert_eq!(
+            store.get("ref", "PROVIDER_API_KEY").unwrap().as_deref(),
+            Some(secret)
+        );
+        let vault = fs::read_to_string(data_dir.join(VAULT_FILE)).unwrap();
+        let key = fs::read(data_dir.join(VAULT_KEY_FILE)).unwrap();
+        assert!(!vault.contains(secret));
+        assert!(
+            !key.windows(secret.len())
+                .any(|window| window == secret.as_bytes())
+        );
+        assert_eq!(key.len(), VAULT_KEY_LEN);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for path in [
+                data_dir.join(VAULT_FILE),
+                data_dir.join(VAULT_KEY_FILE),
+                data_dir.join(VAULT_LOCK_FILE),
+            ] {
+                assert_eq!(
+                    fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
+            assert_eq!(
+                fs::metadata(&data_dir).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+
+        store.delete("ref", "PROVIDER_API_KEY").unwrap();
+        assert_eq!(store.get("ref", "PROVIDER_API_KEY").unwrap(), None);
+        fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[test]
+    fn corrupted_encrypted_vault_fails_closed_without_overwriting_it() {
+        let data_dir = temporary_data_dir("corrupt-encrypted-vault");
+        let store = SystemSecretStore::new(&data_dir);
+        store
+            .set("ref", "PROVIDER_API_KEY", "not-a-real-provider-secret")
+            .unwrap();
+        let path = data_dir.join(VAULT_FILE);
+        fs::write(&path, "corrupted-vault").unwrap();
+
+        assert!(store.get("ref", "PROVIDER_API_KEY").is_err());
+        assert!(
+            store
+                .set("ref", "SECOND_API_KEY", "must-not-be-written")
+                .is_err()
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), "corrupted-vault");
+        fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[test]
+    fn vault_failure_is_explicit_and_never_creates_a_plaintext_fallback() {
+        let data_dir = temporary_data_dir("vault-unavailable");
         let error = execute_with(
             &UnavailableSecretStore,
             &data_dir,
@@ -578,7 +853,7 @@ mod tests {
             ),
         )
         .unwrap_err();
-        assert!(error.to_string().contains("keychain is unavailable"));
+        assert!(error.to_string().contains("vault is unavailable"));
         assert!(!data_dir.join(".credentials.yaml").exists());
         assert!(!data_dir.join(".env").exists());
     }

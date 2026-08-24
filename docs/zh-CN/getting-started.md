@@ -4,7 +4,7 @@ DSH Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、�
 
 桌面 Shell、应用程序和安装包统一使用固定上游提交中的 Harness 侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 
-当前版本为 `0.1.0-community.1`。它是可本地完整使用的社区版；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
+当前版本为 `0.1.0-community.2`。它是可本地完整使用的社区版；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
 
 工程源码位于仓库根目录。Runtime 使用锁定的 npm 生产依赖闭包，并从 `runtime/runtime-lock.json` 指定的 Node.js 官方归档下载、校验 SHA-256 后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
@@ -27,7 +27,7 @@ DSH Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、�
 4. 打开 Harness 的模型设置，选择 Provider，并写入 API Key 或 OAuth grant。
 5. 创建会话并开始任务。模型未配置或外部 Provider 不可用时，Runtime 仍可进入设置和诊断页面，但真实模型请求不会被伪造成成功。
 
-模型凭据由桌面专用 Credential Provider 写入操作系统密钥库。Keychain 不可用时会明确失败，不会降级写入 `.credentials.yaml`、`.env`、日志或前端存储。新增自定义 Provider 时，如果凭据写入失败，桌面 Runtime 会回滚本次新增的 Provider 配置，修复密钥库后可以直接重试，不会把失败的首次提交误报为 Provider ID 重复。
+模型凭据由桌面专用 Credential Provider 写入本机加密凭据库。macOS、Windows 和 Linux 使用同一套 XChaCha20-Poly1305 认证加密、跨进程文件锁和原子写入机制，不访问系统钥匙串，也不会弹出系统凭据授权窗口。凭据库不可用或损坏时会明确失败，不会降级写入 `.credentials.yaml`、`.env`、日志、浏览器存储或其他明文文件。新增自定义 Provider 时，如果凭据写入失败，桌面 Runtime 会回滚本次新增的 Provider 配置，修复凭据库后可以直接重试，不会把失败的首次提交误报为 Provider ID 重复。
 
 Desktop Shell 完整提供简体中文、繁体中文和英文。固定的 Harness `0.1.1-rc.2` 上游界面目前只提供 `zh` 和 `en`：启动 Runtime 时，桌面语言桥会将简体中文和繁体中文映射为上游中文，将英文映射为上游英文，并通过原子更新 `dsh/settings.yaml` 保留其他设置与注释。繁体中文用户看到的 Harness 工作区仍是上游简体中文；工程不会为了制造“全繁体”表象而直接改写上游构建产物。
 
@@ -45,6 +45,8 @@ DSH Desktop 使用系统应用数据目录，不向安装目录写运行数据�
 | --- | --- |
 | `settings.json` | Shell 语言、主题、工作区和更新通道 |
 | `dsh/` | Harness profile、会话、设置和插件数据 |
+| `credential-vault.json` | XChaCha20-Poly1305 加密后的模型凭据，不包含可读明文 |
+| `credential-vault.key` | 当前用户专用的本地凭据库密钥；Unix 权限固定为 `0600` |
 | `credential-index.json` | 仅保存非敏感 record 索引，不保存密钥明文 |
 | `credential-session.json` | 仅保存当前 Runtime 短期授权 token 的 SHA-256 摘要，不保存 token 或模型凭据 |
 | `logs/` | 10 MB 单文件、最多 5 个轮转文件 |
@@ -53,6 +55,8 @@ DSH Desktop 使用系统应用数据目录，不向安装目录写运行数据�
 | `updates/` | 未来签名更新的临时目录 |
 
 macOS 默认位于 `~/Library/Application Support/com.springopen.dshdesktop/`；Windows 和 Linux 使用 Tauri 对应的平台应用数据目录。
+
+加密凭据库以当前操作系统用户的数据目录权限作为本地信任边界：它可以避免密钥以明文出现在配置、日志、诊断或备份预览中，也不会触发反复授权弹窗；但已经控制同一操作系统用户账户的恶意程序仍可能读取应用数据。不要在多人共用同一系统账户的设备上保存生产密钥。
 
 开发者执行隔离启动验收时可以临时设置 `DSH_DESKTOP_DATA_DIR`，把测试数据写入指定目录。正式启动无需设置该变量，默认目录会自动创建，不增加用户配置负担。
 
@@ -64,14 +68,14 @@ macOS 默认位于 `~/Library/Application Support/com.springopen.dshdesktop/`；
 
 1. 所选工作区是否仍存在并可读写。
 2. 诊断编号和导出的脱敏日志中是否出现 `runtime-artifact-missing`、`runtime-timeout`、`runtime-exited` 或 `restart-limit-reached`。
-3. 系统密钥库是否被系统策略禁用。
+3. 应用数据目录中的加密凭据库是否可读写、是否被安全软件隔离或损坏。
 4. 外部模型 Provider 的地址、模型名、账号权限和网络是否可用。
 
 ## 更新与卸载
 
 当前社区版构建默认并强制关闭自动更新。工程已保留 Tauri Updater 和 GitHub Releases 签名检查实现，但只有安装包签名、Updater 私钥、公钥、Apple/Windows 证书全部就绪，Stable 构建门禁才允许继续；社区版配置不会请求更新地址或安装未签名产物。
 
-卸载应用不会自动删除工作区。需要完全清理时，先卸载 DSH Desktop，再由用户主动删除系统应用数据目录和系统密钥库中 `com.springopen.dshdesktop.credentials` 命名空间的条目。
+卸载应用不会自动删除工作区或应用数据。需要完全清理时，先卸载 DSH Desktop，再由用户主动删除系统应用数据目录。曾安装 `0.1.0-community.1` 的 macOS 用户还可以在“钥匙串访问”中删除旧的 `com.springopen.dshdesktop.credentials` 条目；新版不会再读取这些旧条目。
 
 ## 开发者验证
 

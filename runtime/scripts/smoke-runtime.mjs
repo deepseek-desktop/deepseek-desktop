@@ -89,7 +89,7 @@ await writeFile(join(profile, "package.json"), `${JSON.stringify({
 }, null, 2)}\n`);
 await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
 await writeFile(join(profile, "pnpm-workspace.yaml"), "packages:\n  - .\n\nnodeLinker: hoisted\n");
-for (const name of ["dsh-desktop-bundle", "dsh-credentials-keychain"]) {
+for (const name of ["dsh-desktop-bundle", "dsh-credentials-vault"]) {
   await cp(join(staging, "node_modules", "@springopen", name), join(scopedModules, name), { recursive: true });
 }
 
@@ -115,8 +115,8 @@ const dump = spawnSync(node, ["--require", parentWatch, "--require", localeSync,
   encoding: "utf8"
 });
 if (dump.status !== 0) throw new Error(`profile composition failed: ${dump.stderr || dump.stdout}`);
-if (!dump.stdout.includes("@springopen/dsh-credentials-keychain")) {
-  throw new Error("desktop keychain provider is absent from the composed profile");
+if (!dump.stdout.includes("@springopen/dsh-credentials-vault")) {
+  throw new Error("desktop encrypted credential provider is absent from the composed profile");
 }
 if (!/locale:\s+preference: zh/u.test(await readFile(join(dshHome, "settings.yaml"), "utf8"))) {
   throw new Error("desktop locale bridge did not persist the mapped Harness locale");

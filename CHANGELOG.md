@@ -2,6 +2,17 @@
 
 All notable changes to DSH Desktop are documented in this file.
 
+## 0.1.0-community.2 - 2026-08-25
+
+- Replace platform keychains with one cross-platform authenticated encrypted credential vault, removing repeated system authorization prompts.
+- Stop describing every Provider authentication failure as an invalid API key, and keep model-facing sandbox policy text out of the ordinary conversation view.
+- Fix Credential Provider calls when Cordis wraps the service in a Proxy.
+- Roll back a newly created custom Provider when its credential cannot be stored.
+- Clarify sandbox and approval policy context shown to the model.
+- Retry early Runtime failures from the persisted workspace, make repeated starts idempotent, and suppress duplicate actions during transitions.
+- Clear page-specific operation notices when navigating between Shell views.
+- Add packaged credential-vault helper, plaintext-leak checks, Runtime patch, and provider regression checks.
+
 ## 0.1.0-community.1 - 2026-08-24
 
 - Added the standalone Vue 3 and Tauri 2 desktop Shell.

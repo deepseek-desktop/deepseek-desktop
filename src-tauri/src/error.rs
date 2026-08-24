@@ -15,8 +15,8 @@ pub enum DesktopError {
     RuntimeNotReady,
     #[error("configuration is invalid: {0}")]
     InvalidConfiguration(String),
-    #[error("keychain operation failed: {0}")]
-    Keychain(String),
+    #[error("credential vault operation failed: {0}")]
+    CredentialVault(String),
     #[error("I/O operation failed: {0}")]
     Io(#[from] std::io::Error),
     #[error("JSON operation failed: {0}")]

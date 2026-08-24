@@ -17,7 +17,7 @@ test("onboarding, language switching, and status views fully load", async ({ pag
   await expect(page.getByRole("heading", { name: "Application updates" })).toBeVisible();
   await page.getByRole("button", { name: /About/ }).click();
   await expect(page.getByRole("heading", { name: "About DSH Desktop" })).toBeVisible();
-  await expect(page.getByText("0.1.0-community.1")).toBeVisible();
+  await expect(page.getByText("0.1.0-community.2")).toBeVisible();
   await expect(page.getByText("Community", { exact: true })).toBeVisible();
   await expect(page.getByText("Unsigned community build")).toBeVisible();
 });

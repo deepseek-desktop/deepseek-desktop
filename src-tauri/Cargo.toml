@@ -1,6 +1,6 @@
 [package]
 name = "dsh-desktop"
-version = "0.1.0-community.1"
+version = "0.1.0-community.2"
 description = "Self-contained local desktop shell for DeepSeek Harness"
 authors = ["SpringOpen Contributors"]
 license = "Apache-2.0"
@@ -35,15 +35,11 @@ tauri-plugin-updater = "2.10.1"
 thiserror = "2"
 url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", default-features = false, features = ["apple-native"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3", default-features = false, features = ["linux-native-sync-persistent", "crypto-rust"] }
+chacha20poly1305 = "0.10"
+fs2 = "0.4"
+getrandom = "0.3"
 
 [target.'cfg(windows)'.dependencies]
-keyring = { version = "3", default-features = false, features = ["windows-native"] }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Storage_FileSystem",

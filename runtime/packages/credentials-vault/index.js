@@ -3,18 +3,18 @@ import { readFileSync } from "node:fs";
 import { Service } from "@deepseek-ai/cordis";
 import { CredentialProvider, parseCredentialKey } from "@deepseek-ai/dsh-credentials";
 
-const HELPER_ARGUMENT = "--keychain-helper";
+const HELPER_ARGUMENT = "--credential-vault-helper";
 const HELPER_SESSION = readFileSync(0, "utf8").trim();
 const OPERATIONS = Symbol("operations");
 const CLOSED = Symbol("closed");
 
 if (!HELPER_SESSION) {
-  throw new Error("credentials-keychain: desktop credential session is unavailable");
+  throw new Error("credentials-vault: desktop credential session is unavailable");
 }
 
 function helperPath() {
   const path = process.env.DSH_DESKTOP_HELPER_PATH;
-  if (!path) throw new Error("credentials-keychain: DSH_DESKTOP_HELPER_PATH is not configured");
+  if (!path) throw new Error("credentials-vault: DSH_DESKTOP_HELPER_PATH is not configured");
   return path;
 }
 
@@ -36,18 +36,18 @@ function callHelper(request) {
       try {
         const response = JSON.parse(stdout);
         if (!response.ok) {
-          const helperCode = response.error?.code ?? "keychain-failed";
-          const message = response.error?.message ?? "keychain operation failed";
-          throw new Error(`credentials-keychain: ${helperCode}: ${message}`);
+          const helperCode = response.error?.code ?? "vault-failed";
+          const message = response.error?.message ?? "credential vault operation failed";
+          throw new Error(`credentials-vault: ${helperCode}: ${message}`);
         }
         if (code !== 0) {
-          throw new Error(`credentials-keychain: helper exited with code ${String(code)}`);
+          throw new Error(`credentials-vault: helper exited with code ${String(code)}`);
         }
         resolve(response.value);
       } catch (error) {
         if (error instanceof SyntaxError) {
           const detail = stderr.trim() ? `: ${stderr.trim()}` : "";
-          reject(new Error(`credentials-keychain: invalid helper response (code ${String(code)})${detail}`));
+          reject(new Error(`credentials-vault: invalid helper response (code ${String(code)})${detail}`));
         } else {
           reject(error);
         }
@@ -57,7 +57,7 @@ function callHelper(request) {
   });
 }
 
-export class KeychainCredentialProvider extends CredentialProvider {
+export class VaultCredentialProvider extends CredentialProvider {
   [OPERATIONS] = Promise.resolve();
   [CLOSED] = false;
 
@@ -69,7 +69,7 @@ export class KeychainCredentialProvider extends CredentialProvider {
   }
 
   enqueue(operation) {
-    if (this[CLOSED]) return Promise.reject(new Error("credentials-keychain: provider is disposed"));
+    if (this[CLOSED]) return Promise.reject(new Error("credentials-vault: provider is disposed"));
     const task = this[OPERATIONS].then(operation);
     this[OPERATIONS] = task.then(() => undefined, () => undefined);
     return task;
@@ -77,16 +77,16 @@ export class KeychainCredentialProvider extends CredentialProvider {
 
   async resolve(ref) {
     const value = await callHelper({ operation: "get-ref", key: ref });
-    return value === null ? undefined : { value, source: "os-keychain" };
+    return value === null ? undefined : { value, source: "encrypted-vault" };
   }
 
   async describe(ref) {
     const response = await callHelper({ operation: "describe-ref", key: ref });
-    return { configured: response.configured, source: response.configured ? "os-keychain" : undefined, writable: true };
+    return { configured: response.configured, source: response.configured ? "encrypted-vault" : undefined, writable: true };
   }
 
   async set(ref, value) {
-    if (!value) throw new Error(`credentials-keychain: an empty value cannot be stored for "${ref}"; use unset`);
+    if (!value) throw new Error(`credentials-vault: an empty value cannot be stored for "${ref}"; use unset`);
     await this.enqueue(() => callHelper({ operation: "set-ref", key: ref, value }));
     this.notifyUpdated(ref);
   }
@@ -130,4 +130,4 @@ export class KeychainCredentialProvider extends CredentialProvider {
   }
 }
 
-export default KeychainCredentialProvider;
+export default VaultCredentialProvider;

@@ -2,5 +2,5 @@
   disabled: true
 
 - insert:
-    - id: desktop-credentials-keychain
-      name: '@springopen/dsh-credentials-keychain'
+    - id: desktop-credentials-vault
+      name: '@springopen/dsh-credentials-vault'

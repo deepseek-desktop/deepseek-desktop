@@ -12,7 +12,6 @@ import {
   getSettings,
   onRuntimeStatus,
   openHarness,
-  restartRuntime,
   saveSettings,
   startRuntime,
   stopRuntime
@@ -48,6 +47,7 @@ const update = ref<UpdateStatus | null>(null);
 let unlisten: (() => void) | undefined;
 
 const phaseLabel = computed(() => t(`runtime.${runtime.value.phase}`));
+const runtimeStartLabel = computed(() => runtime.value.phase === "failed" ? t("common.retry") : t("common.start"));
 const runtimeErrorKeys: Record<string, string> = {
   "runtime-artifact-missing": "runtime.errors.artifactMissing",
   "runtime-timeout": "runtime.errors.timeout",
@@ -77,6 +77,11 @@ const canStart = computed(() => Boolean(settings.value.workspace) && !busy.value
 
 async function persistSettings(): Promise<void> {
   settings.value = await saveSettings(settings.value);
+}
+
+function navigate(next: ViewName): void {
+  notice.value = "";
+  view.value = next;
 }
 
 async function selectLocale(value: Event): Promise<void> {
@@ -115,10 +120,18 @@ async function launch(): Promise<void> {
   }
 }
 
-async function retry(): Promise<void> {
+async function startFromStatus(): Promise<void> {
+  const workspace = runtime.value.workspace || settings.value.workspace;
+  if (!workspace) {
+    notice.value = t("error.workspaceRequired");
+    onboardingStep.value = 1;
+    view.value = "onboarding";
+    return;
+  }
   busy.value = true;
+  notice.value = "";
   try {
-    runtime.value = await restartRuntime();
+    runtime.value = await startRuntime(workspace);
   } catch {
     notice.value = t("error.unexpected");
   } finally {
@@ -182,19 +195,19 @@ onBeforeUnmount(() => unlisten?.());
 
     <section class="workspace-layout">
       <nav class="side-nav" :aria-label="t('navigation.label')">
-        <button :class="{ active: view === 'onboarding' }" @click="view = 'onboarding'">
+        <button :class="{ active: view === 'onboarding' }" @click="navigate('onboarding')">
           <span aria-hidden="true">01</span>{{ t("navigation.onboarding") }}
         </button>
-        <button :class="{ active: view === 'runtime' }" @click="view = 'runtime'">
+        <button :class="{ active: view === 'runtime' }" @click="navigate('runtime')">
           <span aria-hidden="true">02</span>{{ t("navigation.runtime") }}
         </button>
-        <button :class="{ active: view === 'diagnostics' }" @click="view = 'diagnostics'">
+        <button :class="{ active: view === 'diagnostics' }" @click="navigate('diagnostics')">
           <span aria-hidden="true">03</span>{{ t("navigation.diagnostics") }}
         </button>
-        <button :class="{ active: view === 'update' }" @click="view = 'update'">
+        <button :class="{ active: view === 'update' }" @click="navigate('update')">
           <span aria-hidden="true">04</span>{{ t("navigation.update") }}
         </button>
-        <button :class="{ active: view === 'about' }" @click="view = 'about'">
+        <button :class="{ active: view === 'about' }" @click="navigate('about')">
           <span aria-hidden="true">05</span>{{ t("navigation.about") }}
         </button>
       </nav>
@@ -209,7 +222,7 @@ onBeforeUnmount(() => unlisten?.());
 
           <div v-if="onboardingStep === 0" class="feature-grid">
             <div><strong>{{ t("features.runtime") }}</strong><span>{{ t("features.runtimeValue") }}</span></div>
-            <div><strong>{{ t("features.keychain") }}</strong><span>{{ t("features.keychainValue") }}</span></div>
+            <div><strong>{{ t("features.vault") }}</strong><span>{{ t("features.vaultValue") }}</span></div>
             <div><strong>{{ t("features.workspace") }}</strong><span>{{ t("features.workspaceValue") }}</span></div>
           </div>
 
@@ -255,7 +268,8 @@ onBeforeUnmount(() => unlisten?.());
           <footer class="actions">
             <button v-if="runtime.phase === 'ready'" class="button primary" @click="openHarness">{{ t("common.open") }}</button>
             <button v-if="runtime.phase === 'ready'" class="button secondary" :disabled="busy" @click="stop">{{ t("common.stop") }}</button>
-            <button v-else class="button primary" :disabled="busy" @click="retry">{{ t("common.retry") }}</button>
+            <button v-else-if="runtime.phase === 'failed' || runtime.phase === 'idle'" class="button primary" :disabled="busy" @click="startFromStatus">{{ runtimeStartLabel }}</button>
+            <button v-else class="button primary" disabled>{{ phaseLabel }}</button>
           </footer>
         </template>
 

@@ -12,7 +12,8 @@ Include the affected version, platform, reproduction steps, impact, and any sugg
 
 ## Security boundaries
 
-- Model credentials must remain in the operating-system keychain.
-- The application must fail closed when the keychain is unavailable.
+- Model credentials must remain in the authenticated encrypted vault under the user-scoped application data directory.
+- The application must fail closed when the credential vault is unavailable, corrupted, or fails authentication.
+- Credential storage must never fall back to `.env`, YAML, browser storage, logs, diagnostics, or another plaintext file.
 - Runtime and diagnostic output must not expose credentials or short-lived helper sessions.
 - Community artifacts without a publisher identity or notarization must not be represented as authenticated Stable releases.

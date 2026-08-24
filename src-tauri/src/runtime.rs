@@ -13,9 +13,9 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::contracts::{RuntimePhase, RuntimeStatus};
+use crate::credential_vault::RuntimeSession;
 use crate::diagnostics::Diagnostics;
 use crate::error::{DesktopError, DesktopResult};
-use crate::keychain::RuntimeSession;
 use crate::settings::{AppPaths, SettingsStore};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -76,6 +76,10 @@ impl RuntimeSupervisor {
     pub fn start(&self, workspace: String) -> DesktopResult<RuntimeStatus> {
         let _operation = self.lock_operation()?;
         validate_workspace(&workspace)?;
+        let current = self.status()?;
+        if is_active_workspace(&current, &workspace) {
+            return Ok(current);
+        }
         self.stop_locked(false)?;
         self.spawn_locked(workspace, 0, RuntimePhase::Starting)
     }
@@ -498,7 +502,7 @@ impl RuntimeSupervisor {
                 "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n",
             )?;
         }
-        for package in ["dsh-desktop-bundle", "dsh-credentials-keychain"] {
+        for package in ["dsh-desktop-bundle", "dsh-credentials-vault"] {
             let source = runtime_dir.join("node_modules/@springopen").join(package);
             let target = modules.join(package);
             if target.exists() {
@@ -674,6 +678,14 @@ fn validate_workspace(workspace: &str) -> DesktopResult<()> {
     Ok(())
 }
 
+fn is_active_workspace(status: &RuntimeStatus, workspace: &str) -> bool {
+    status.workspace.as_deref() == Some(workspace)
+        && matches!(
+            status.phase,
+            RuntimePhase::Starting | RuntimePhase::Ready | RuntimePhase::Recovering
+        )
+}
+
 #[cfg(windows)]
 fn node_compatible_path(path: &Path) -> PathBuf {
     use std::ffi::OsString;
@@ -846,6 +858,30 @@ mod tests {
         );
         assert_eq!(parse_ready_url("dsh web: http://localhost:43127"), None);
         assert_eq!(parse_ready_url("noise"), None);
+    }
+
+    #[test]
+    fn treats_repeated_start_for_active_workspace_as_idempotent() {
+        for phase in [
+            RuntimePhase::Starting,
+            RuntimePhase::Ready,
+            RuntimePhase::Recovering,
+        ] {
+            let status = RuntimeStatus {
+                phase,
+                workspace: Some("/tmp/workspace".to_owned()),
+                ..RuntimeStatus::default()
+            };
+            assert!(is_active_workspace(&status, "/tmp/workspace"));
+            assert!(!is_active_workspace(&status, "/tmp/other"));
+        }
+
+        let failed = RuntimeStatus {
+            phase: RuntimePhase::Failed,
+            workspace: Some("/tmp/workspace".to_owned()),
+            ..RuntimeStatus::default()
+        };
+        assert!(!is_active_workspace(&failed, "/tmp/workspace"));
     }
 
     #[test]

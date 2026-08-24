@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DSH Desktop",
-  "version": "0.1.0-community.1",
+  "version": "0.1.0-community.2",
   "identifier": "com.springopen.dshdesktop",
   "build": {
     "beforeDevCommand": "node scripts/with-pnpm.mjs dev",

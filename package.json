@@ -1,6 +1,6 @@
 {
   "name": "@springopen/dsh-desktop",
-  "version": "0.1.0-community.1",
+  "version": "0.1.0-community.2",
   "private": true,
   "description": "Standalone community desktop distribution for DeepSeek Harness",
   "repository": {
@@ -28,9 +28,9 @@
     "runtime:stage": "node runtime/scripts/stage-runtime.mjs",
     "runtime:verify": "node runtime/scripts/verify-runtime.mjs",
     "runtime:smoke": "node runtime/scripts/smoke-runtime.mjs",
-    "runtime:test-credentials": "node runtime/scripts/test-credentials-keychain.mjs",
+    "runtime:test-credentials": "node runtime/scripts/test-credentials-vault.mjs",
     "runtime:test-locale": "node runtime/scripts/test-locale-sync.mjs",
-    "keychain:smoke": "node scripts/smoke-keychain-helper.mjs",
+    "vault:smoke": "node scripts/smoke-credential-vault-helper.mjs",
     "release:check": "node scripts/check-release-gates.mjs",
     "rust:test": "node scripts/with-rust.mjs cargo test --manifest-path src-tauri/Cargo.toml",
     "rust:check": "node scripts/with-rust.mjs cargo check --manifest-path src-tauri/Cargo.toml",

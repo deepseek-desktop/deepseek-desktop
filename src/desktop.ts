@@ -68,7 +68,7 @@ export async function openHarness(): Promise<void> {
 export async function getAbout(): Promise<DesktopAbout> {
   if (!inTauri()) {
     return {
-      desktopVersion: "0.1.0-community.1",
+      desktopVersion: "0.1.0-community.2",
       harnessVersion: "0.1.1-rc.2",
       harnessCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
       nodeVersion: "24.16.0",
@@ -84,7 +84,7 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     return {
       enabled: false,
       channel: "community",
-      currentVersion: "0.1.0-community.1",
+      currentVersion: "0.1.0-community.2",
       availableVersion: null,
       message: "updates-disabled"
     };

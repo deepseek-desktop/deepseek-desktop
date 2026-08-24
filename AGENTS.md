@@ -7,7 +7,7 @@ This repository contains only DSH Desktop. Generated Runtime staging, build outp
 ## Source of truth
 
 - `runtime/runtime-lock.json` owns upstream Runtime versions, checksums, target triples, and desktop patches.
-- `src-tauri/` owns native lifecycle, keychain, diagnostics, settings, and updater boundaries.
+- `src-tauri/` owns native lifecycle, the encrypted credential vault, diagnostics, settings, and updater boundaries.
 - `src/` owns the Vue desktop Shell and typed IPC contracts.
 - `README.md`, `docs/`, `SECURITY.md`, and `CONTRIBUTING.md` define public behavior and contribution rules.
 
