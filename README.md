@@ -3,7 +3,7 @@
 [![Community Build](https://github.com/spring-open/deepseek-harness-desktop/actions/workflows/community-build.yml/badge.svg)](https://github.com/spring-open/deepseek-harness-desktop/actions/workflows/community-build.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-DSH Desktop is a standalone Tauri 2 desktop distribution for the locked DeepSeek Harness Runtime. It does not require a separate Node.js, pnpm, Rust, or SpringOpen Application installation at runtime.
+DSH Desktop is an independent, unofficial community distribution built on the locked DeepSeek Harness Runtime. It does not require a separate Node.js, pnpm, Rust, or SpringOpen Application installation at runtime. This project is not endorsed by or affiliated with DeepSeek.
 
 Version `0.1.0-community.1` is the community edition. The macOS artifact uses a complete ad-hoc signature but has no Apple Developer ID identity or notarization; other current artifacts are unsigned. The desktop-owned source is Apache-2.0, while the packaged Harness, Node.js, and npm dependencies retain their own license notices.
 
@@ -66,5 +66,7 @@ The Desktop Shell ships `zh-CN`, `zh-TW`, and `en-US`. The locked Harness releas
 Current community builds do not carry a trusted publisher identity and automatic updates are disabled. macOS artifacts use a complete ad-hoc Bundle signature but are not signed with Apple Developer ID and are not notarized. `pnpm release:check community` documents that boundary. A future stable build must pass `pnpm release:check stable`, provide updater, Apple, and Windows signing material, and complete native clean-machine acceptance before it may be published.
 
 The CI matrix builds macOS arm64/x64, Windows x64, and Linux x64 artifacts. A successful build on one platform is not evidence that another platform has passed installation acceptance.
+
+The whale mark is the DeepSeek Harness favicon from the locked upstream commit and is used only to identify the bundled Runtime. DeepSeek Harness and its brand assets belong to their respective owner; this community distribution does not imply official endorsement.
 
 Chinese installation, configuration, data-directory, security, and troubleshooting guidance is available in [docs/zh-CN/getting-started.md](docs/zh-CN/getting-started.md).

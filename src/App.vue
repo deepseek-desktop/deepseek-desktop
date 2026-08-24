@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import deepSeekHarnessLogo from "./assets/deepseek-harness.svg";
 import type { DesktopAbout, DesktopSettings, RuntimeStatus, UpdateStatus } from "./contracts";
 import {
   checkForUpdates,
@@ -165,7 +166,7 @@ onBeforeUnmount(() => unlisten?.());
   <main class="desktop-shell">
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">DSH</span>
+        <img class="brand-mark" :src="deepSeekHarnessLogo" alt="" aria-hidden="true" />
         <span>
           <strong>{{ t("app.name") }}</strong>
           <small>{{ t("app.subtitle") }}</small>

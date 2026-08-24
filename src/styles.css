@@ -37,12 +37,8 @@ button { cursor: pointer; }
 .brand-mark {
   width: 42px;
   height: 42px;
-  display: grid;
-  place-items: center;
-  background: #137f70;
-  color: white;
-  font-size: 13px;
-  font-weight: 800;
+  display: block;
+  object-fit: contain;
 }
 
 .locale-select {

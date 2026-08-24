@@ -2,6 +2,9 @@ import { expect, test } from "@playwright/test";
 
 test("onboarding, language switching, and status views fully load", async ({ page }) => {
   await page.goto("/");
+  const brandMark = page.locator(".brand-mark");
+  await expect(brandMark).toBeVisible();
+  await expect.poll(() => brandMark.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByRole("heading", { name: "欢迎使用 DSH Desktop" })).toBeVisible();
   await page.getByLabel("切换语言").selectOption("en-US");
   await expect(page.getByRole("heading", { name: "Welcome to DSH Desktop" })).toBeVisible();
