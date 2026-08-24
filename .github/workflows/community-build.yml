@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [master]
+    tags: ["v*-community.*"]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +27,14 @@ jobs:
           node-version: 24.16.0
       - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
       - run: pnpm install --frozen-lockfile
+      - if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(node -p "require('./package.json').version")"
+          tauri_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          test "$package_version" = "$tauri_version"
+          test "v$package_version" = "$GITHUB_REF_NAME"
       - run: pnpm check:i18n && pnpm test && pnpm typecheck && pnpm build
       - run: pnpm test:e2e
 
@@ -136,3 +145,39 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: native-build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dsh-desktop-*-unsigned-community
+          path: release-assets
+          merge-multiple: true
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          find release-assets -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            | sed 's#  release-assets/#  #' \
+            > release-assets/SHA256SUMS
+          test -s release-assets/SHA256SUMS
+      - name: Publish community release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "DSH Desktop ${GITHUB_REF_NAME#v}" \
+            --notes-file .github/release-notes-community.md \
+            --prerelease \
+            --verify-tag

@@ -23,6 +23,37 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_RESTARTS: u8 = 2;
 const READY_PREFIX: &str = "dsh web: http://127.0.0.1:";
+const DISABLE_TEXT_ASSISTANCE_SCRIPT: &str = r#"
+(() => {
+  const selector = "input, textarea, [contenteditable='true'], [contenteditable='']";
+  const disable = (element) => {
+    if (!(element instanceof HTMLElement) || !element.matches(selector)) return;
+    element.setAttribute("spellcheck", "false");
+    element.setAttribute("autocorrect", "off");
+    element.setAttribute("autocapitalize", "none");
+    element.setAttribute("autocomplete", "off");
+    element.setAttribute("writingsuggestions", "false");
+  };
+  const scan = (root) => {
+    if (root instanceof Element) disable(root);
+    root.querySelectorAll?.(selector).forEach(disable);
+  };
+  const start = () => {
+    scan(document);
+    document.addEventListener("focusin", (event) => disable(event.target), true);
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) scan(node);
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start, { once: true });
+  } else {
+    start();
+  }
+})();
+"#;
 
 pub struct RuntimeSupervisor {
     app: AppHandle,
@@ -139,6 +170,7 @@ impl RuntimeSupervisor {
             .inner_size(1280.0, 820.0)
             .min_inner_size(900.0, 620.0)
             .center()
+            .initialization_script(DISABLE_TEXT_ASSISTANCE_SCRIPT)
             .on_navigation(move |candidate| {
                 let managed = candidate.scheme() == managed_origin.scheme()
                     && candidate.host_str() == managed_origin.host_str()
@@ -923,5 +955,21 @@ mod tests {
                 strip_windows_verbatim_prefix(&source.encode_utf16().collect::<Vec<_>>());
             assert_eq!(String::from_utf16(normalized.as_slice()).unwrap(), expected);
         }
+    }
+
+    #[test]
+    fn disables_webview_text_assistance_without_rewriting_values() {
+        for attribute in [
+            "spellcheck",
+            "autocorrect",
+            "autocapitalize",
+            "autocomplete",
+            "writingsuggestions",
+        ] {
+            assert!(DISABLE_TEXT_ASSISTANCE_SCRIPT.contains(attribute));
+        }
+        assert!(!DISABLE_TEXT_ASSISTANCE_SCRIPT.contains("element.value"));
+        assert!(DISABLE_TEXT_ASSISTANCE_SCRIPT.contains("MutationObserver"));
+        assert!(DISABLE_TEXT_ASSISTANCE_SCRIPT.contains("focusin"));
     }
 }

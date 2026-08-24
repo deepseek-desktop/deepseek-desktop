@@ -31,6 +31,8 @@ DSH Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、�
 
 Desktop Shell 完整提供简体中文、繁体中文和英文。固定的 Harness `0.1.1-rc.2` 上游界面目前只提供 `zh` 和 `en`：启动 Runtime 时，桌面语言桥会将简体中文和繁体中文映射为上游中文，将英文映射为上游英文，并通过原子更新 `dsh/settings.yaml` 保留其他设置与注释。繁体中文用户看到的 Harness 工作区仍是上游简体中文；工程不会为了制造“全繁体”表象而直接改写上游构建产物。
 
+受管 Harness 窗口会关闭输入框和可编辑区域的系统拼写检查、自动纠错、自动首字母大写和写作建议，确保 Provider ID、API 地址、模型名、代码和普通对话均按原文输入，不被 WebView 擅自替换。该策略只设置浏览器输入属性，不读取或改写输入值。
+
 ## Runtime 生命周期
 
 Runtime 状态包括 `idle`、`starting`、`ready`、`stopping`、`recovering` 和 `failed`。启动超时为 20 秒；意外退出后最多自动恢复两次，退避为 1 秒和 3 秒。超过上限后进入失败页，并生成诊断关联编号。
@@ -80,3 +82,13 @@ macOS 默认位于 `~/Library/Application Support/com.springopen.dshdesktop/`；
 ## 开发者验证
 
 完整构建命令、Runtime lock、测试入口和发行门禁见仓库根目录 `README.md`。本地验证至少包括三语 parity、语言桥保真测试、Vue 单测、Playwright Shell E2E、Rust 单测、Runtime manifest 校验、真实 Harness readiness smoke 和目标平台安装包构建。连续启停验收使用 `DSH_DESKTOP_SMOKE_CYCLES=100 corepack pnpm@11.7.0 runtime:smoke`。
+
+需要主动生成当前电脑对应的桌面安装包时，在仓库根目录执行：
+
+```bash
+corepack pnpm@11.7.0 package:community
+```
+
+该命令会自动安装锁定依赖，执行社区版发行门禁、单元测试、端到端测试、Runtime 校验和真实 readiness smoke，再构建当前操作系统及 CPU 架构对应的安装包。结果统一输出到 `release/<版本>/`，同时生成 `BUILD-INFO.json` 和 `SHA256SUMS`。macOS 会额外校验应用签名结构和 DMG 完整性。
+
+单台电脑只生成当前平台安装包。维护者推送与工程版本完全一致的标签（例如 `v0.1.0-community.2`）后，GitHub 工作流会分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。

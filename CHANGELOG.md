@@ -11,6 +11,7 @@ All notable changes to DSH Desktop are documented in this file.
 - Clarify sandbox and approval policy context shown to the model.
 - Retry early Runtime failures from the persisted workspace, make repeated starts idempotent, and suppress duplicate actions during transitions.
 - Clear page-specific operation notices when navigating between Shell views.
+- Disable spelling, automatic correction, automatic capitalization, and writing suggestions in managed Harness inputs without changing entered values.
 - Add packaged credential-vault helper, plaintext-leak checks, Runtime patch, and provider regression checks.
 
 ## 0.1.0-community.1 - 2026-08-24

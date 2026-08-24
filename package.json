@@ -32,6 +32,7 @@
     "runtime:test-locale": "node runtime/scripts/test-locale-sync.mjs",
     "vault:smoke": "node scripts/smoke-credential-vault-helper.mjs",
     "release:check": "node scripts/check-release-gates.mjs",
+    "package:community": "node scripts/package-community.mjs",
     "rust:test": "node scripts/with-rust.mjs cargo test --manifest-path src-tauri/Cargo.toml",
     "rust:check": "node scripts/with-rust.mjs cargo check --manifest-path src-tauri/Cargo.toml",
     "rust:clippy": "node scripts/with-rust.mjs rustup component add clippy && node scripts/with-rust.mjs cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",

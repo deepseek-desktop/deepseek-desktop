@@ -63,6 +63,18 @@ The staging command downloads the target-specific official Node.js archive into 
 
 The Desktop Shell ships `zh-CN`, `zh-TW`, and `en-US`. The locked Harness release currently ships only `zh` and `en`, so the startup bridge maps both Chinese desktop locales to upstream `zh` and English to `en`. It atomically updates the Harness settings document without discarding unrelated settings or comments. This is an explicit upstream capability boundary, not an untracked patch to generated Harness assets.
 
+## One-command packaging
+
+Run the following command from the repository root to verify the project and build an installer for the current operating system and architecture:
+
+```bash
+corepack pnpm@11.7.0 package:community
+```
+
+The command installs the locked root and Runtime dependencies, runs the community release gate, unit and end-to-end tests, Runtime verification and smoke checks, builds the native installer, validates the macOS signature and DMG when applicable, and writes the final files to `release/<version>/` with `BUILD-INFO.json` and `SHA256SUMS`.
+
+One host builds only its native target. Cross-platform GitHub Releases are created from a matching annotated version tag such as `v0.1.0-community.2`; the release workflow publishes only after the macOS arm64/x64, Windows x64, and Linux x64 jobs all succeed.
+
 ## Release Boundary
 
 Current community builds do not carry a trusted publisher identity and automatic updates are disabled. macOS artifacts use a complete ad-hoc Bundle signature but are not signed with Apple Developer ID and are not notarized. `pnpm release:check community` documents that boundary. A future stable build must pass `pnpm release:check stable`, provide updater, Apple, and Windows signing material, and complete native clean-machine acceptance before it may be published.

@@ -20,6 +20,12 @@ corepack pnpm@11.7.0 test:e2e
 
 `verify` stages the target Runtime before Rust checks. The repository-local scripts install Rust under `target/dsh-desktop-toolchain/`; they do not modify the global Rust installation.
 
+To run the complete release-oriented verification and package the current native platform in one command:
+
+```bash
+corepack pnpm@11.7.0 package:community
+```
+
 ## Pull requests
 
 - Explain the user-visible behavior and security impact.
