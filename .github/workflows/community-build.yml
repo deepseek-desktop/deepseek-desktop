@@ -16,6 +16,7 @@ concurrency:
 jobs:
   shell-quality:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
@@ -29,7 +30,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm check:i18n && pnpm test && pnpm typecheck && pnpm build
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install chromium
       - run: pnpm test:e2e
 
   native-build:
@@ -55,6 +56,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     env:
       RELEASE_CHANNEL: community
     steps:
