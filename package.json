@@ -1,6 +1,6 @@
 {
   "name": "@springopen/deepseek-harness-desktop",
-  "version": "0.1.0-community.3",
+  "version": "0.1.0-community.4",
   "private": true,
   "description": "Standalone community desktop distribution for DeepSeek Harness",
   "repository": {

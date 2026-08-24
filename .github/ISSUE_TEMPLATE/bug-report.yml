@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: DeepSeek Harness Desktop version
-      placeholder: 0.1.0-community.3
+      placeholder: 0.1.0-community.4
     validations:
       required: true
   - type: dropdown

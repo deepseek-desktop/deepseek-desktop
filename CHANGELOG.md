@@ -2,6 +2,13 @@
 
 All notable changes to DeepSeek Harness Desktop are documented in this file.
 
+## 0.1.0-community.4 - 2026-08-25
+
+- Consolidate Harness and desktop management into one native window with native View menu switching.
+- Use concise localized Workbench menu labels and remove the redundant in-window toolbar.
+- Prevent onboarding from advancing before a workspace has been selected.
+- Refresh the white, rounded desktop icon and preserve the official black Harness mark.
+
 ## 0.1.0-community.3 - 2026-08-25
 
 - Rename the product, installers, desktop-owned packages, environment variables, diagnostics, application identifier, and data directory from the abbreviated DSH Desktop identity to DeepSeek Harness Desktop.
