@@ -165,24 +165,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          publish_dir="release-assets/publish"
+          mkdir -p "$publish_dir"
+          test -z "$(find "$publish_dir" -mindepth 1 -print -quit)"
           mapfile -d '' assets < <(
-            find release-assets -type f ! -name SHA256SUMS -print0 | sort -z
+            find release-assets -type f ! -path "$publish_dir/*" ! -name SHA256SUMS -print0 | sort -z
           )
           test "${#assets[@]}" -gt 0
 
           declare -A asset_names=()
-          : > release-assets/SHA256SUMS
           for asset in "${assets[@]}"; do
             asset_name="$(basename "$asset")"
+            asset_name="${asset_name// /.}"
             if [[ -n "${asset_names[$asset_name]:-}" ]]; then
               echo "Duplicate release asset name: $asset_name" >&2
               exit 1
             fi
             asset_names[$asset_name]=1
-            checksum="$(sha256sum "$asset")"
-            printf '%s  %s\n' "${checksum%% *}" "$asset_name" >> release-assets/SHA256SUMS
+            cp "$asset" "$publish_dir/$asset_name"
           done
-          test -s release-assets/SHA256SUMS
+          (
+            cd "$publish_dir"
+            sha256sum -- * | sort -k2 > SHA256SUMS
+          )
+          test -s "$publish_dir/SHA256SUMS"
       - name: Publish community release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -190,7 +196,7 @@ jobs:
         run: |
           set -euo pipefail
           product_name="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
-          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
+          mapfile -d '' assets < <(find release-assets/publish -maxdepth 1 -type f -print0 | sort -z)
           test "${#assets[@]}" -gt 1
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
