@@ -2,7 +2,7 @@
 
 DeepSeek Desktop 的重要变化记录如下。
 
-## 0.1.0-community.7 - 2026-08-25
+## 0.1.0-community.8 - 2026-08-25
 
 - 内置 DSH Market，提供插件浏览、安装、更新和卸载入口，并随应用提供固定版本 pnpm，不要求用户单独安装 Node.js 或包管理器。
 - Runtime 启动时合并桌面内置 Bundle 与用户插件配置，不再覆盖已安装插件和自定义依赖。

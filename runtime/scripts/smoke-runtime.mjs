@@ -147,10 +147,12 @@ const pnpmVersion = spawnSync(packageManager, ["--version"], {
   cwd: smokeRoot,
   env: environment,
   encoding: "utf8",
+  shell: process.platform === "win32",
   windowsHide: true
 });
-if (pnpmVersion.status !== 0 || pnpmVersion.stdout.trim() !== lock.toolchain.pnpm) {
-  throw new Error(`packaged pnpm is unavailable: ${pnpmVersion.stderr || pnpmVersion.stdout}`);
+const pnpmStdout = pnpmVersion.stdout?.trim() || "";
+if (pnpmVersion.status !== 0 || pnpmStdout !== lock.toolchain.pnpm) {
+  throw new Error(`packaged pnpm is unavailable: ${pnpmVersion.error?.message || pnpmVersion.stderr || pnpmVersion.stdout}`);
 }
 
 const dump = spawnSync(node, ["--require", parentWatch, "--require", localeSync, dsh, "--profile", "desktop-web", "--dump-config"], {

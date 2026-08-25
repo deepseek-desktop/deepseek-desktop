@@ -29,7 +29,7 @@ vi.mock("./desktop", () => ({
   exportDiagnostics: vi.fn(async () => ""),
   exportLogs: vi.fn(async () => ""),
   getAbout: vi.fn(async () => ({
-    desktopVersion: "0.1.0-community.7",
+    desktopVersion: "0.1.0-community.8",
     runtimeVersion: "0.1.1-rc.2",
     runtimeCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
     nodeVersion: "24.16.0",
