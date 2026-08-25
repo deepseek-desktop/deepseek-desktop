@@ -27,6 +27,8 @@ DeepSeek Desktop 是内置固定版本本地 Runtime 的独立、非官方社区
 4. 打开工作台的模型设置，选择 Provider，并写入 API Key 或 OAuth grant。
 5. 创建会话并开始任务。模型未配置或外部 Provider 不可用时，Runtime 仍可进入设置和诊断页面，但真实模型请求不会被伪造成成功。
 
+桌面端会通过 Harness 的正式工作区接口自动注册所选目录。进入工作台后会直接显示该工作区，不需要重复选择；注册失败时 Runtime 不会误报为已就绪。
+
 模型凭据由桌面专用 Credential Provider 写入本机加密凭据库。macOS、Windows 和 Linux 使用同一套 XChaCha20-Poly1305 认证加密、跨进程文件锁和原子写入机制，不访问系统钥匙串，也不会弹出系统凭据授权窗口。凭据库不可用或损坏时会明确失败，不会降级写入 `.credentials.yaml`、`.env`、日志、浏览器存储或其他明文文件。新增自定义 Provider 时，如果凭据写入失败，桌面 Runtime 会回滚本次新增的 Provider 配置，修复凭据库后可以直接重试，不会把失败的首次提交误报为 Provider ID 重复。
 
 Desktop Shell 完整提供简体中文、繁体中文和英文。固定的 Runtime `0.1.1-rc.2` 上游界面目前只提供 `zh` 和 `en`：启动 Runtime 时，桌面语言桥会将简体中文和繁体中文映射为上游中文，将英文映射为上游英文，并通过原子更新 `dsh/settings.yaml` 保留其他设置与注释。繁体中文用户看到的工作区仍是上游简体中文；工程不会为了制造“全繁体”表象而直接改写上游构建产物。

@@ -21,6 +21,7 @@ use crate::settings::{AppPaths, SettingsStore};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+const WORKSPACE_REGISTRATION_TIMEOUT: Duration = Duration::from_secs(5);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_RESTARTS: u8 = 2;
 const READY_PREFIX: &str = "dsh web: http://127.0.0.1:";
@@ -309,8 +310,7 @@ impl RuntimeSupervisor {
         let dsh_entry = runtime_dir.join("node_modules/@deepseek-ai/dsh/lib/bin.js");
         let parent_watch =
             runtime_dir.join("node_modules/deepseek-desktop-bundle/parent-watch.cjs");
-        let locale_sync =
-            runtime_dir.join("node_modules/deepseek-desktop-bundle/locale-sync.cjs");
+        let locale_sync = runtime_dir.join("node_modules/deepseek-desktop-bundle/locale-sync.cjs");
         if !dsh_entry.is_file() {
             return self.fail(
                 &workspace,
@@ -448,6 +448,15 @@ impl RuntimeSupervisor {
                 &workspace,
                 restart_count,
                 "runtime-health-check-failed",
+                &error.to_string(),
+            );
+        }
+        if let Err(error) = register_workspace(&ready_url, &workspace) {
+            managed.terminate();
+            return self.fail(
+                &workspace,
+                restart_count,
+                "runtime-workspace-registration-failed",
                 &error.to_string(),
             );
         }
@@ -913,6 +922,77 @@ fn health_check(url: &str) -> DesktopResult<()> {
     Ok(())
 }
 
+fn register_workspace(url: &str, workspace: &str) -> DesktopResult<()> {
+    install_crypto_provider()?;
+    let base = Url::parse(url).map_err(|error| DesktopError::Other(error.to_string()))?;
+    if base.scheme() != "http" || base.host_str() != Some("127.0.0.1") || base.port().is_none() {
+        return Err(DesktopError::Other(
+            "runtime workspace endpoint is outside the managed loopback origin".to_owned(),
+        ));
+    }
+    let endpoint = base
+        .join("/api/workspace.create")
+        .map_err(|error| DesktopError::Other(error.to_string()))?;
+    let rpc_id = Uuid::new_v4().to_string();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(WORKSPACE_REGISTRATION_TIMEOUT)
+        .build()
+        .map_err(|error| DesktopError::Other(error.to_string()))?;
+    let response = client
+        .post(endpoint)
+        .json(&workspace_registration_request(&rpc_id, workspace))
+        .send()
+        .map_err(|error| DesktopError::Other(error.to_string()))?;
+    if !response.status().is_success() {
+        return Err(DesktopError::Other(format!(
+            "runtime workspace registration returned {}",
+            response.status()
+        )));
+    }
+    let envelope = response
+        .json::<serde_json::Value>()
+        .map_err(|error| DesktopError::Other(error.to_string()))?;
+    validate_workspace_registration_response(&rpc_id, &envelope)
+}
+
+fn workspace_registration_request(rpc_id: &str, workspace: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "client-request",
+        "rpcId": rpc_id,
+        "method": "workspace.create",
+        "payload": { "path": workspace }
+    })
+}
+
+fn validate_workspace_registration_response(
+    rpc_id: &str,
+    envelope: &serde_json::Value,
+) -> DesktopResult<()> {
+    if envelope.get("type").and_then(serde_json::Value::as_str) != Some("server-response")
+        || envelope.get("rpcId").and_then(serde_json::Value::as_str) != Some(rpc_id)
+    {
+        return Err(DesktopError::Other(
+            "runtime workspace registration returned an invalid response".to_owned(),
+        ));
+    }
+    match envelope
+        .pointer("/result/ok")
+        .and_then(serde_json::Value::as_bool)
+    {
+        Some(true) => Ok(()),
+        Some(false) => {
+            let message = envelope
+                .pointer("/result/error/message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("runtime rejected the workspace");
+            Err(DesktopError::Other(message.to_owned()))
+        }
+        None => Err(DesktopError::Other(
+            "runtime workspace registration returned an invalid result".to_owned(),
+        )),
+    }
+}
+
 pub fn install_crypto_provider() -> DesktopResult<()> {
     if rustls::crypto::CryptoProvider::get_default().is_some() {
         return Ok(());
@@ -1067,6 +1147,57 @@ mod tests {
         health_check(&format!("http://{address}")).unwrap();
         server.join().unwrap();
         assert!(rustls::crypto::CryptoProvider::get_default().is_some());
+    }
+
+    #[test]
+    fn builds_and_accepts_the_workspace_registration_contract() {
+        let request = workspace_registration_request("rpc-1", "/tmp/workspace");
+        assert_eq!(request["type"], "client-request");
+        assert_eq!(request["rpcId"], "rpc-1");
+        assert_eq!(request["method"], "workspace.create");
+        assert_eq!(request["payload"]["path"], "/tmp/workspace");
+
+        let response = serde_json::json!({
+            "type": "server-response",
+            "rpcId": "rpc-1",
+            "result": {
+                "ok": true,
+                "value": {
+                    "workspace": {
+                        "workspaceId": "workspace-1",
+                        "path": "/tmp/workspace",
+                        "title": "workspace",
+                        "sessionIds": [],
+                        "createdAt": "2026-08-25T00:00:00Z",
+                        "updatedAt": "2026-08-25T00:00:00Z"
+                    },
+                    "created": true
+                }
+            }
+        });
+        validate_workspace_registration_response("rpc-1", &response).unwrap();
+    }
+
+    #[test]
+    fn rejects_failed_or_mismatched_workspace_registration_responses() {
+        let rejected = serde_json::json!({
+            "type": "server-response",
+            "rpcId": "rpc-1",
+            "result": {
+                "ok": false,
+                "error": { "code": "invalid-path", "message": "workspace is unavailable" }
+            }
+        });
+        let error = validate_workspace_registration_response("rpc-1", &rejected).unwrap_err();
+        assert!(error.to_string().contains("workspace is unavailable"));
+
+        let mismatched = serde_json::json!({
+            "type": "server-response",
+            "rpcId": "rpc-2",
+            "result": { "ok": true, "value": {} }
+        });
+        let error = validate_workspace_registration_response("rpc-1", &mismatched).unwrap_err();
+        assert!(error.to_string().contains("invalid response"));
     }
 
     #[test]
