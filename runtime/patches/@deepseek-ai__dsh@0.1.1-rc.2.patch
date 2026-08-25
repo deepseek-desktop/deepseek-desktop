@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -76,6 +76,7 @@
+     "@deepseek-ai/dsh-tool-web": "^0.1.1-rc.2",
+     "@deepseek-ai/dsh-tool-skill": "^0.1.1-rc.2",
+-    "@deepseek-ai/dsh-workflow-worker-thread": "^0.1.1-rc.2"
++    "@deepseek-ai/dsh-workflow-worker-thread": "^0.1.1-rc.2",
++    "dshmarket": "1.28.1"
+   },
+   "devDependencies": {
+     "@types/js-yaml": "^4.0.9",

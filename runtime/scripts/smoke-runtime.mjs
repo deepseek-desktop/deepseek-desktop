@@ -1,6 +1,6 @@
-import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import process from "node:process";
 
 const runtimeRoot = resolve(import.meta.dirname, "..");
@@ -70,21 +70,26 @@ const node = join(desktopRoot, "src-tauri", "binaries", `node-${target}${nodeSuf
 const dsh = join(staging, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
 const parentWatch = join(staging, "node_modules", "deepseek-desktop-bundle", "parent-watch.cjs");
 const localeSync = join(staging, "node_modules", "deepseek-desktop-bundle", "locale-sync.cjs");
-await Promise.all([stat(node), stat(dsh), stat(parentWatch), stat(localeSync)]);
+const pnpmCli = join(staging, "node_modules", "pnpm", "bin", "pnpm.cjs");
+const marketPackage = join(staging, "node_modules", "dshmarket", "package.json");
+await Promise.all([stat(node), stat(dsh), stat(parentWatch), stat(localeSync), stat(pnpmCli), stat(marketPackage)]);
 
 const smokeRoot = join(desktopRoot, "target", "deepseek-desktop-runtime-smoke");
 const dshHome = join(smokeRoot, "home");
 const profile = join(dshHome, "profiles", "desktop-web");
 const desktopModules = join(profile, "node_modules");
+const runtimeBin = join(smokeRoot, "data", "runtime-bin");
 await rm(smokeRoot, { recursive: true, force: true });
 await mkdir(desktopModules, { recursive: true });
+await mkdir(runtimeBin, { recursive: true });
 await writeFile(join(profile, "package.json"), `${JSON.stringify({
   name: "deepseek-desktop-web-profile",
   private: true,
   dsh: { profile: { bundles: [
     "@deepseek-ai/dsh-base",
     "@deepseek-ai/dsh-web-app",
-    "deepseek-desktop-bundle"
+    "deepseek-desktop-bundle",
+    "dshmarket"
   ] } }
 }, null, 2)}\n`);
 await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
@@ -92,9 +97,16 @@ await writeFile(join(profile, "pnpm-workspace.yaml"), "packages:\n  - .\n\nnodeL
 for (const name of ["deepseek-desktop-bundle", "deepseek-desktop-credentials-vault"]) {
   await cp(join(staging, "node_modules", name), join(desktopModules, name), { recursive: true });
 }
+const packageManager = process.platform === "win32" ? join(runtimeBin, "pnpm.cmd") : join(runtimeBin, "pnpm");
+if (process.platform === "win32") {
+  await writeFile(packageManager, "@echo off\r\n\"%DEEPSEEK_DESKTOP_NODE_PATH%\" \"%DEEPSEEK_DESKTOP_PNPM_CLI%\" %*\r\n");
+} else {
+  await writeFile(packageManager, "#!/bin/sh\nexec \"$DEEPSEEK_DESKTOP_NODE_PATH\" \"$DEEPSEEK_DESKTOP_PNPM_CLI\" \"$@\"\n");
+  await chmod(packageManager, 0o700);
+}
 
 const environment = {
-  PATH: process.env.PATH,
+  PATH: [runtimeBin, process.env.PATH].filter(Boolean).join(delimiter),
   HOME: process.env.HOME,
   TMPDIR: process.env.TMPDIR,
   LANG: process.env.LANG,
@@ -104,9 +116,42 @@ const environment = {
   DEEPSEEK_DESKTOP_DATA_DIR: join(smokeRoot, "data"),
   DEEPSEEK_DESKTOP_PARENT_PID: String(process.pid),
   DEEPSEEK_DESKTOP_LOCALE: "zh-TW",
+  DEEPSEEK_DESKTOP_NODE_PATH: node,
+  DEEPSEEK_DESKTOP_PNPM_CLI: pnpmCli,
   NO_PROXY: "127.0.0.1,localhost",
   no_proxy: "127.0.0.1,localhost"
 };
+
+const preloadBoundary = spawnSync(node, [
+  "--require",
+  parentWatch,
+  "--require",
+  localeSync,
+  "-e",
+  "process.stdout.write(JSON.stringify(process.execArgv))"
+], {
+  cwd: smokeRoot,
+  env: environment,
+  encoding: "utf8",
+  windowsHide: true
+});
+if (preloadBoundary.status !== 0) {
+  throw new Error(`desktop preload boundary failed: ${preloadBoundary.stderr || preloadBoundary.stdout}`);
+}
+const inheritedExecArgv = JSON.parse(preloadBoundary.stdout || "[]");
+if (inheritedExecArgv.some(argument => /(?:parent-watch|locale-sync)\.cjs$/.test(String(argument)))) {
+  throw new Error(`desktop-only preloads leaked into child CLI argv: ${preloadBoundary.stdout}`);
+}
+
+const pnpmVersion = spawnSync(packageManager, ["--version"], {
+  cwd: smokeRoot,
+  env: environment,
+  encoding: "utf8",
+  windowsHide: true
+});
+if (pnpmVersion.status !== 0 || pnpmVersion.stdout.trim() !== lock.toolchain.pnpm) {
+  throw new Error(`packaged pnpm is unavailable: ${pnpmVersion.stderr || pnpmVersion.stdout}`);
+}
 
 const dump = spawnSync(node, ["--require", parentWatch, "--require", localeSync, dsh, "--profile", "desktop-web", "--dump-config"], {
   cwd: smokeRoot,
@@ -117,6 +162,9 @@ const dump = spawnSync(node, ["--require", parentWatch, "--require", localeSync,
 if (dump.status !== 0) throw new Error(`profile composition failed: ${dump.stderr || dump.stdout}`);
 if (!dump.stdout.includes("deepseek-desktop-credentials-vault")) {
   throw new Error("desktop encrypted credential provider is absent from the composed profile");
+}
+if (!dump.stdout.includes("dshmarket")) {
+  throw new Error("DSH Market is absent from the composed profile");
 }
 if (!/locale:\s+preference: zh/u.test(await readFile(join(dshHome, "settings.yaml"), "utf8"))) {
   throw new Error("desktop locale bridge did not persist the mapped Runtime locale");
@@ -199,6 +247,8 @@ const child = spawn(node, ["--require", parentWatch, "--require", localeSync, ds
     DEEPSEEK_DESKTOP_DATA_DIR: dataDir,
     DEEPSEEK_DESKTOP_PARENT_PID: String(process.pid),
     DEEPSEEK_DESKTOP_LOCALE: "zh-TW",
+    DEEPSEEK_DESKTOP_NODE_PATH: process.env.DEEPSEEK_DESKTOP_NODE_PATH,
+    DEEPSEEK_DESKTOP_PNPM_CLI: process.env.DEEPSEEK_DESKTOP_PNPM_CLI,
     NO_PROXY: "127.0.0.1,localhost",
     no_proxy: "127.0.0.1,localhost"
   },

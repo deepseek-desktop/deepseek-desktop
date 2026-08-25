@@ -177,6 +177,12 @@ fn diagnostics_export(state: State<'_, AppState>) -> DesktopResult<String> {
     Ok(path.to_string_lossy().into_owned())
 }
 
+#[tauri::command]
+fn logs_export(state: State<'_, AppState>) -> DesktopResult<String> {
+    let path = state.diagnostics.export_logs()?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 pub fn run_credential_vault_helper() -> i32 {
     credential_vault::run()
 }
@@ -272,7 +278,8 @@ pub fn run() {
             workspace_choose,
             desktop_about,
             update_check,
-            diagnostics_export
+            diagnostics_export,
+            logs_export
         ]);
 
     let app = builder

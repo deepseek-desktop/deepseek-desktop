@@ -648,10 +648,7 @@ mod tests {
     }
 
     fn temporary_data_dir(name: &str) -> PathBuf {
-        let path = env::temp_dir().join(format!(
-            "deepseek-desktop-{name}-{}",
-            std::process::id()
-        ));
+        let path = env::temp_dir().join(format!("deepseek-desktop-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         path
     }

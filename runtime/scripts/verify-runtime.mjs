@@ -9,6 +9,14 @@ const lock = JSON.parse(await readFile(join(runtimeRoot, "runtime-lock.json"), "
 
 const desktopPatches = [
   {
+    lockEntry: "@deepseek-ai/dsh@0.1.1-rc.2:bundled-market-fallback",
+    patchFile: "@deepseek-ai__dsh@0.1.1-rc.2.patch",
+    moduleFile: ["@deepseek-ai", "dsh", "package.json"],
+    markers: [
+      '"dshmarket": "1.28.1"'
+    ]
+  },
+  {
     lockEntry: "@deepseek-ai/dsh-client-runtime@0.1.1-rc.2:neutral-auth-failure",
     patchFile: "@deepseek-ai__dsh-client-runtime@0.1.1-rc.2.patch",
     moduleFile: ["@deepseek-ai", "dsh-client-runtime", "lib", "client.js"],
@@ -69,7 +77,7 @@ async function verifyPatch(moduleRoot, patch) {
   }
 }
 
-for (const field of ["sourceDateEpoch", "desktopVersion", "runtime", "node", "toolchain", "nativeAssets", "targets"]) {
+for (const field of ["sourceDateEpoch", "desktopVersion", "runtime", "node", "toolchain", "bundledPackages", "nativeAssets", "targets"]) {
   if (lock[field] === undefined) throw new Error(`runtime lock is missing ${field}`);
 }
 if (lock.runtime.commit.length !== 40) throw new Error("Runtime commit must be a full SHA");
@@ -78,8 +86,17 @@ for (const target of lock.targets) {
   if (!lock.nativeAssets[target]) throw new Error(`runtime lock is missing native assets for ${target}`);
 }
 const pnpmLock = await readFile(join(runtimeRoot, "pnpm-lock.yaml"), "utf8");
+const runtimePackage = JSON.parse(await readFile(join(runtimeRoot, "package.json"), "utf8"));
 if (!pnpmLock.includes(lock.runtime.integrity) || !pnpmLock.includes(`@deepseek-ai/dsh@${lock.runtime.version}`)) {
   throw new Error("pnpm lock does not match the locked Runtime artifact");
+}
+for (const [name, expected] of Object.entries(lock.bundledPackages)) {
+  if (runtimePackage.dependencies?.[name] !== expected.version) {
+    throw new Error(`runtime package does not lock ${name}@${expected.version}`);
+  }
+  if (!pnpmLock.includes(`${name}@${expected.version}`) || !pnpmLock.includes(expected.integrity)) {
+    throw new Error(`pnpm lock does not match bundled package ${name}@${expected.version}`);
+  }
 }
 for (const patch of desktopPatches) {
   await verifyPatch(join(runtimeRoot, "node_modules"), patch);
@@ -96,6 +113,12 @@ if (requested) {
   }
   if (manifest.node.archiveSha256 !== lock.node.artifacts[requested]?.sha256) {
     throw new Error(`Node source archive mismatch for ${requested}`);
+  }
+  for (const [name, expected] of Object.entries(lock.bundledPackages)) {
+    const installed = JSON.parse(await readFile(join(root, "node_modules", name, "package.json"), "utf8"));
+    if (installed.version !== expected.version) {
+      throw new Error(`staged Runtime contains ${name}@${installed.version}, expected ${expected.version}`);
+    }
   }
   const nodePtyPrebuilds = (await readdir(join(root, "node_modules", "node-pty", "prebuilds"), { withFileTypes: true }))
     .filter(entry => entry.isDirectory())

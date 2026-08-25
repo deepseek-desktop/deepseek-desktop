@@ -91,6 +91,34 @@ impl Diagnostics {
         Ok(path)
     }
 
+    pub fn export_logs(&self) -> DesktopResult<PathBuf> {
+        let _guard = self.write_lock.lock()?;
+        let filename = format!(
+            "deepseek-desktop-logs-{}.log",
+            Utc::now().format("%Y%m%dT%H%M%SZ")
+        );
+        let path = self.paths.diagnostics_dir.join(filename);
+        fs::create_dir_all(&self.paths.diagnostics_dir)?;
+        let current = self.paths.logs_dir.join("desktop.log");
+        let mut sections = Vec::new();
+        for index in (1..LOG_FILE_COUNT).rev() {
+            let rotated = current.with_extension(format!("log.{index}"));
+            if let Ok(contents) = fs::read_to_string(&rotated) {
+                sections.push(format!("===== desktop.log.{index} =====\n{contents}"));
+            }
+        }
+        if let Ok(contents) = fs::read_to_string(&current) {
+            sections.push(format!("===== desktop.log =====\n{contents}"));
+        }
+        let contents = if sections.is_empty() {
+            "No desktop logs are available.\n".to_owned()
+        } else {
+            format!("{}\n", sections.join("\n"))
+        };
+        fs::write(&path, self.redact_paths(&redact(&contents)))?;
+        Ok(path)
+    }
+
     fn read_tail(&self) -> String {
         let path = self.paths.logs_dir.join("desktop.log");
         let Ok(mut file) = fs::File::open(path) else {
@@ -225,6 +253,37 @@ mod tests {
         let log = fs::read_to_string(root.join("data/logs/desktop.log")).unwrap();
         assert!(!log.contains(&workspace));
         assert!(!log.contains(&root.join("data").to_string_lossy().into_owned()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn exports_redacted_plain_text_logs() {
+        let root = std::env::temp_dir().join(format!(
+            "deepseek-desktop-log-export-{}",
+            std::process::id()
+        ));
+        let paths = AppPaths {
+            data_dir: root.join("data"),
+            dsh_home: root.join("data/dsh"),
+            logs_dir: root.join("data/logs"),
+            backups_dir: root.join("data/backups"),
+            diagnostics_dir: root.join("data/diagnostics"),
+            updates_dir: root.join("data/updates"),
+            settings_file: root.join("data/settings.json"),
+        };
+        fs::create_dir_all(&paths.logs_dir).unwrap();
+        let diagnostics = Diagnostics::new(paths);
+        let workspace = root.join("workspace").to_string_lossy().into_owned();
+        diagnostics.set_workspace(&workspace);
+        diagnostics.append("runtime", &format!("workspace={workspace}"));
+        diagnostics.append("runtime", "Authorization: Bearer unsafe");
+
+        let exported = diagnostics.export_logs().unwrap();
+        let log = fs::read_to_string(exported).unwrap();
+        assert!(log.contains("desktop.log"));
+        assert!(log.contains("<workspace-redacted>"));
+        assert!(!log.contains(&workspace));
+        assert!(!log.contains("unsafe"));
         fs::remove_dir_all(root).unwrap();
     }
 }

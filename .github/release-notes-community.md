@@ -4,10 +4,12 @@
 
 ## 主要变化
 
-- 产品、安装包、桌面自有组件、诊断文件和数据目录统一使用 DeepSeek Desktop 新名称
-- 使用跨平台认证加密凭据库，不再反复弹出系统钥匙串授权窗口
-- 修复自定义 Provider 创建、凭据代理调用、Runtime 重试和误导性的认证错误
-- 关闭受管工作台输入框的自动纠错、首字母大写和写作建议，不修改用户输入值
+- 内置 DSH Market `1.28.1` 和锁定的 pnpm `11.7.0`，可在桌面工作台中浏览、安装、更新和卸载插件，无需预装 Node.js 或 pnpm
+- Runtime 启动时合并桌面内置 Bundle 与用户 Profile，不覆盖已安装插件和自定义依赖
+- 桌面诊断页新增脱敏纯文本日志导出，诊断包继续保留结构化状态与版本信息
+- 修复 DSH Market 安装子进程误继承桌面预加载脚本导致的安装失败
+- 桌面管理与工作台 WebView 互斥显示，修复页面重叠时鼠标手势和箭头反复切换的闪烁问题
+- README 补齐实际工作台、插件市场截图与中文快速使用流程
 
 ## 下载选择
 
@@ -23,6 +25,6 @@
 
 # DeepSeek Desktop Community Edition
 
-This independent, unofficial community distribution bundles a locked local Runtime. It standardizes the DeepSeek Desktop identity, uses a cross-platform authenticated encrypted credential vault, fixes Provider creation and Runtime retry failures, and disables automatic text correction in managed workbench inputs.
+This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.7.0. It preserves user profile dependencies, fixes plugin child-process startup, adds redacted log export, prevents overlapping workbench and management WebViews, and documents the verified workbench and plugin market flows.
 
 The macOS application has an ad-hoc integrity signature but is not signed or notarized with an Apple Developer ID. Windows and Linux community artifacts do not carry a trusted publisher signature. Automatic updates remain disabled.

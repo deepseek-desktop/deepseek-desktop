@@ -68,7 +68,7 @@ export async function openWorkbench(): Promise<void> {
 export async function getAbout(): Promise<DesktopAbout> {
   if (!inTauri()) {
     return {
-      desktopVersion: "0.1.0-community.6",
+      desktopVersion: "0.1.0-community.7",
       runtimeVersion: "0.1.1-rc.2",
       runtimeCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
       nodeVersion: "24.16.0",
@@ -84,7 +84,7 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     return {
       enabled: false,
       channel: "community",
-      currentVersion: "0.1.0-community.6",
+      currentVersion: "0.1.0-community.7",
       availableVersion: null,
       message: "updates-disabled"
     };
@@ -95,6 +95,11 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
 export async function exportDiagnostics(): Promise<string> {
   if (!inTauri()) return "";
   return invoke<string>("diagnostics_export");
+}
+
+export async function exportLogs(): Promise<string> {
+  if (!inTauri()) return "";
+  return invoke<string>("logs_export");
 }
 
 export async function onRuntimeStatus(handler: (status: RuntimeStatus) => void): Promise<UnlistenFn> {

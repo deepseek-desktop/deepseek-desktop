@@ -2,7 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { chooseWorkspace, exportDiagnostics, openWorkbench, startRuntime } from "./desktop";
+import { chooseWorkspace, exportDiagnostics, exportLogs, openWorkbench, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
@@ -27,8 +27,9 @@ vi.mock("./desktop", () => ({
   checkForUpdates: vi.fn(),
   chooseWorkspace: vi.fn(async () => null),
   exportDiagnostics: vi.fn(async () => ""),
+  exportLogs: vi.fn(async () => ""),
   getAbout: vi.fn(async () => ({
-    desktopVersion: "0.1.0-community.6",
+    desktopVersion: "0.1.0-community.7",
     runtimeVersion: "0.1.1-rc.2",
     runtimeCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
     nodeVersion: "24.16.0",
@@ -146,10 +147,16 @@ describe("DeepSeek Desktop shell", () => {
   it("clears diagnostics notices when leaving the diagnostics view", async () => {
     settings.onboardingCompleted = true;
     vi.mocked(exportDiagnostics).mockResolvedValue("/tmp/dsh-diagnostics.json");
+    vi.mocked(exportLogs).mockResolvedValue("/tmp/deepseek-desktop.log");
 
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
     await wrapper.findAll("button").find(button => button.text().includes("诊断"))?.trigger("click");
+    await wrapper.findAll("button").find(button => button.text() === "导出日志")?.trigger("click");
+    await flushPromises();
+    expect(exportLogs).toHaveBeenCalledOnce();
+    expect(wrapper.text()).toContain("/tmp/deepseek-desktop.log");
+
     await wrapper.findAll("button").find(button => button.text() === "导出诊断包")?.trigger("click");
     await flushPromises();
     expect(wrapper.text()).toContain("/tmp/dsh-diagnostics.json");

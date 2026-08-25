@@ -4,7 +4,7 @@ DeepSeek Desktop 是内置固定版本本地 Runtime 的独立、非官方社区
 
 桌面 Shell、应用程序和安装包统一使用固定上游提交中的侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 
-当前版本为 `0.1.0-community.6`。它是可本地完整使用的社区版；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
+当前版本为 `0.1.0-community.7`。它是可本地完整使用的社区版；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
 
 工程源码位于仓库根目录。Runtime 使用锁定的 npm 生产依赖闭包，并从 `runtime/runtime-lock.json` 指定的 Node.js 官方归档下载、校验 SHA-256 后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
@@ -26,6 +26,14 @@ DeepSeek Desktop 是内置固定版本本地 Runtime 的独立、非官方社区
 3. 启动本地工作台。主程序会在 `127.0.0.1` 上申请随机端口，并在当前桌面窗口中自动进入工作台，不需要填写端口或打开第二个窗口。
 4. 打开工作台的模型设置，选择 Provider，并写入 API Key 或 OAuth grant。
 5. 创建会话并开始任务。模型未配置或外部 Provider 不可用时，Runtime 仍可进入设置和诊断页面，但真实模型请求不会被伪造成成功。
+
+## 模型与插件
+
+模型设置同时支持官方 Provider 和 OpenAI Compatible 自定义 Provider。自定义 Provider 至少需要填写唯一 ID、API 地址、协议和密钥；保存前可先获取模型目录，保存后可在会话输入区切换模型。Provider ID、API 地址和模型名输入框已关闭自动纠错与首字母大写，输入内容不会被系统改写。
+
+社区版内置 DSH Market 和固定版本 pnpm。打开“设置 → 插件”即可浏览插件市场并完成安装、更新或卸载，不需要额外安装 Node.js、pnpm 或手动编辑 profile。Runtime 每次启动会合并桌面内置 Bundle 和用户插件配置，已经安装的插件与自定义依赖不会被初始化流程覆盖。
+
+插件来自独立开发者。安装前应查看插件来源、许可证和权限说明，不要安装来源不明或要求超出任务所需权限的插件。
 
 桌面端会通过 Harness 的正式工作区接口自动注册所选目录。进入工作台后会直接显示该工作区，不需要重复选择；注册失败时 Runtime 不会误报为已就绪。
 
@@ -66,7 +74,7 @@ macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows �
 
 ## 诊断与隐私
 
-诊断页面只在用户主动操作时导出状态、版本和最近日志。导出前会遮蔽 Authorization、API Key、Cookie、password、secret、Bearer token 和工作区路径。Credential Provider 调用 helper 时还必须携带每次 Runtime 启动生成的短期会话；真实 token 只通过 Runtime 标准输入交付，应用数据目录仅保存用于校验的 SHA-256 摘要，不进入命令参数、环境变量或日志。Agent Shell、工具子进程和工作台 WebView 均不能直接读取桌面主程序中的明文凭据。
+诊断页面只在用户主动操作时导出内容。“导出日志”生成便于直接查看的脱敏纯文本日志，“导出诊断包”生成包含状态、版本和最近日志摘要的 JSON 文档。两种导出都会遮蔽 Authorization、API Key、Cookie、password、secret、Bearer token 和工作区路径。Credential Provider 调用 helper 时还必须携带每次 Runtime 启动生成的短期会话；真实 token 只通过 Runtime 标准输入交付，应用数据目录仅保存用于校验的 SHA-256 摘要，不进入命令参数、环境变量或日志。Agent Shell、工具子进程和工作台 WebView 均不能直接读取桌面主程序中的明文凭据。
 
 出现启动失败时依次检查：
 
@@ -93,4 +101,4 @@ corepack pnpm@11.7.0 package:community
 
 该命令会自动安装锁定依赖，执行社区版发行门禁、单元测试、端到端测试、Runtime 校验和真实 readiness smoke，再构建当前操作系统及 CPU 架构对应的安装包。结果统一输出到 `release/<版本>/`，同时生成 `BUILD-INFO.json` 和 `SHA256SUMS`。macOS 会额外校验应用签名结构和 DMG 完整性。
 
-单台电脑只生成当前平台安装包。维护者推送与工程版本完全一致的标签（例如 `v0.1.0-community.6`）后，GitHub 工作流会分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。
+单台电脑只生成当前平台安装包。维护者推送与工程版本完全一致的标签（例如 `v0.1.0-community.7`）后，GitHub 工作流会分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。

@@ -220,10 +220,8 @@ mod tests {
 
     #[test]
     fn writes_atomic_settings_with_current_schema() {
-        let root = std::env::temp_dir().join(format!(
-            "deepseek-desktop-settings-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("deepseek-desktop-settings-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let path = root.join("settings.json");
         write_json_atomic(&path, &DesktopSettings::default()).unwrap();

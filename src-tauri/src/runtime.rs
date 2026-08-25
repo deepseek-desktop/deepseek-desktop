@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -164,6 +164,10 @@ impl RuntimeSupervisor {
             webview
                 .show()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
+            if let Some(main) = self.app.get_webview("main") {
+                main.hide()
+                    .map_err(|error| DesktopError::Other(error.to_string()))?;
+            }
             webview
                 .set_focus()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
@@ -190,8 +194,6 @@ impl RuntimeSupervisor {
                     }
                     managed
                 });
-        self.workbench_visible.store(true, Ordering::Release);
-        self.layout_workbench()?;
         let webview = match main_window.add_child(builder, position, size) {
             Ok(webview) => webview,
             Err(error) => {
@@ -200,6 +202,12 @@ impl RuntimeSupervisor {
                 return Err(DesktopError::Other(error.to_string()));
             }
         };
+        self.workbench_visible.store(true, Ordering::Release);
+        self.layout_workbench()?;
+        if let Some(main) = self.app.get_webview("main") {
+            main.hide()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+        }
         webview
             .set_focus()
             .map_err(|error| DesktopError::Other(error.to_string()))?;
@@ -212,6 +220,10 @@ impl RuntimeSupervisor {
         if let Some(webview) = self.app.get_webview("workbench") {
             webview
                 .hide()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+        }
+        if let Some(main) = self.app.get_webview("main") {
+            main.show()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
         }
         self.layout_management()?;
@@ -236,16 +248,7 @@ impl RuntimeSupervisor {
             .app
             .get_window("main")
             .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
-        let main = self
-            .app
-            .get_webview("main")
-            .ok_or_else(|| DesktopError::Other("main desktop surface is unavailable".to_owned()))?;
         let (position, size) = self.workbench_bounds(&window)?;
-        main.set_bounds(tauri::Rect {
-            position: tauri::Position::Physical(position),
-            size: tauri::Size::Physical(size),
-        })
-        .map_err(|error| DesktopError::Other(error.to_string()))?;
         if let Some(workbench) = self.app.get_webview("workbench") {
             workbench
                 .set_bounds(tauri::Rect {
@@ -305,8 +308,8 @@ impl RuntimeSupervisor {
             ..RuntimeStatus::default()
         })?;
         let runtime_dir = self.runtime_dir()?;
-        self.prepare_profile(&runtime_dir)?;
         let node = self.node_binary()?;
+        self.prepare_profile(&runtime_dir, &node)?;
         let dsh_entry = runtime_dir.join("node_modules/@deepseek-ai/dsh/lib/bin.js");
         let parent_watch =
             runtime_dir.join("node_modules/deepseek-desktop-bundle/parent-watch.cjs");
@@ -337,7 +340,7 @@ impl RuntimeSupervisor {
         }
         let helper = std::env::current_exe()?;
         let credential_session = RuntimeSession::create(&self.paths.data_dir)?;
-        let mut command = Command::new(node);
+        let mut command = Command::new(&node);
         command
             .arg("--require")
             .arg(parent_watch)
@@ -355,7 +358,7 @@ impl RuntimeSupervisor {
             ])
             .current_dir(&workspace)
             .env_clear()
-            .envs(self.runtime_environment(&helper)?)
+            .envs(self.runtime_environment(&helper, &runtime_dir, &node)?)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -584,7 +587,12 @@ impl RuntimeSupervisor {
         ))
     }
 
-    fn runtime_environment(&self, helper: &Path) -> DesktopResult<HashMap<String, String>> {
+    fn runtime_environment(
+        &self,
+        helper: &Path,
+        runtime_dir: &Path,
+        node: &Path,
+    ) -> DesktopResult<HashMap<String, String>> {
         let mut environment = HashMap::new();
         for name in [
             "PATH",
@@ -629,25 +637,43 @@ impl RuntimeSupervisor {
             "DEEPSEEK_DESKTOP_LOCALE".to_owned(),
             self.settings.get()?.locale,
         );
+        environment.insert(
+            "DEEPSEEK_DESKTOP_NODE_PATH".to_owned(),
+            node.to_string_lossy().into_owned(),
+        );
+        environment.insert(
+            "DEEPSEEK_DESKTOP_PNPM_CLI".to_owned(),
+            runtime_dir
+                .join("node_modules/pnpm/bin/pnpm.cjs")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let runtime_bin = self.paths.data_dir.join("runtime-bin");
+        let mut search_paths = vec![runtime_bin];
+        if let Some(path) = std::env::var_os("PATH") {
+            search_paths.extend(std::env::split_paths(&path));
+        }
+        environment.insert(
+            "PATH".to_owned(),
+            std::env::join_paths(search_paths)
+                .map_err(|error| DesktopError::Other(error.to_string()))?
+                .to_string_lossy()
+                .into_owned(),
+        );
         Ok(environment)
     }
 
-    fn prepare_profile(&self, runtime_dir: &Path) -> DesktopResult<()> {
+    fn prepare_profile(&self, runtime_dir: &Path, node: &Path) -> DesktopResult<()> {
         let profile = self.paths.dsh_home.join("profiles/desktop-web");
         let modules = profile.join("node_modules");
         fs::create_dir_all(&modules)?;
-        let manifest = serde_json::json!({
-            "name": "deepseek-desktop-web-profile",
-            "private": true,
-            "dependencies": {},
-            "dsh": { "profile": { "bundles": [
-                "@deepseek-ai/dsh-base",
-                "@deepseek-ai/dsh-web-app",
-                "deepseek-desktop-bundle"
-            ] } }
-        });
+        let manifest_path = profile.join("package.json");
+        let existing = fs::read_to_string(&manifest_path)
+            .ok()
+            .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok());
+        let manifest = merge_profile_manifest(existing);
         fs::write(
-            profile.join("package.json"),
+            manifest_path,
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
         )?;
         if !profile.join("cordis.patch.yml").exists() {
@@ -669,6 +695,40 @@ impl RuntimeSupervisor {
                 fs::remove_dir_all(&target)?;
             }
             copy_directory(&source, &target)?;
+        }
+        self.prepare_package_manager(runtime_dir, node)?;
+        Ok(())
+    }
+
+    fn prepare_package_manager(&self, runtime_dir: &Path, node: &Path) -> DesktopResult<()> {
+        let pnpm_cli = runtime_dir.join("node_modules/pnpm/bin/pnpm.cjs");
+        if !pnpm_cli.is_file() {
+            return Err(DesktopError::RuntimeArtifactMissing(
+                pnpm_cli.display().to_string(),
+            ));
+        }
+        let runtime_bin = self.paths.data_dir.join("runtime-bin");
+        fs::create_dir_all(&runtime_bin)?;
+        #[cfg(windows)]
+        fs::write(
+            runtime_bin.join("pnpm.cmd"),
+            "@echo off\r\n\"%DEEPSEEK_DESKTOP_NODE_PATH%\" \"%DEEPSEEK_DESKTOP_PNPM_CLI%\" %*\r\n",
+        )?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let wrapper = runtime_bin.join("pnpm");
+            fs::write(
+                &wrapper,
+                "#!/bin/sh\nexec \"$DEEPSEEK_DESKTOP_NODE_PATH\" \"$DEEPSEEK_DESKTOP_PNPM_CLI\" \"$@\"\n",
+            )?;
+            fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700))?;
+        }
+        if !node.is_file() {
+            return Err(DesktopError::RuntimeArtifactMissing(
+                node.display().to_string(),
+            ));
         }
         Ok(())
     }
@@ -1025,6 +1085,62 @@ fn copy_directory(source: &Path, target: &Path) -> DesktopResult<()> {
     Ok(())
 }
 
+fn merge_profile_manifest(existing: Option<serde_json::Value>) -> serde_json::Value {
+    const BUILT_IN_BUNDLES: [&str; 4] = [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "deepseek-desktop-bundle",
+        "dshmarket",
+    ];
+
+    let mut manifest = existing
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    let preserved_bundles = manifest
+        .pointer("/dsh/profile/bundles")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let object = manifest.as_object_mut().expect("profile manifest object");
+    object
+        .entry("name")
+        .or_insert_with(|| serde_json::json!("deepseek-desktop-web-profile"));
+    object.insert("private".to_owned(), serde_json::json!(true));
+    if !object
+        .get("dependencies")
+        .is_some_and(serde_json::Value::is_object)
+    {
+        object.insert("dependencies".to_owned(), serde_json::json!({}));
+    }
+    if !object.get("dsh").is_some_and(serde_json::Value::is_object) {
+        object.insert("dsh".to_owned(), serde_json::json!({}));
+    }
+    let dsh = object
+        .get_mut("dsh")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("dsh profile object");
+    if !dsh.get("profile").is_some_and(serde_json::Value::is_object) {
+        dsh.insert("profile".to_owned(), serde_json::json!({}));
+    }
+    let profile = dsh
+        .get_mut("profile")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("dsh profile settings object");
+    let mut seen = HashSet::new();
+    let mut bundles = Vec::new();
+    for bundle in BUILT_IN_BUNDLES.into_iter().map(str::to_owned).chain(
+        preserved_bundles
+            .into_iter()
+            .filter_map(|value| value.as_str().map(str::to_owned)),
+    ) {
+        if seen.insert(bundle.clone()) {
+            bundles.push(serde_json::Value::String(bundle));
+        }
+    }
+    profile.insert("bundles".to_owned(), serde_json::Value::Array(bundles));
+    manifest
+}
+
 #[cfg(windows)]
 struct WindowsJob(isize);
 
@@ -1128,6 +1244,34 @@ mod tests {
             ..RuntimeStatus::default()
         };
         assert!(!is_active_workspace(&failed, "/tmp/workspace"));
+    }
+
+    #[test]
+    fn preserves_user_plugins_while_ensuring_desktop_bundles() {
+        let manifest = merge_profile_manifest(Some(serde_json::json!({
+            "name": "existing-profile",
+            "dependencies": {
+                "custom-plugin": "1.2.3"
+            },
+            "dsh": {
+                "profile": {
+                    "bundles": ["custom-plugin", "deepseek-desktop-bundle"]
+                }
+            }
+        })));
+
+        assert_eq!(manifest["name"], "existing-profile");
+        assert_eq!(manifest["dependencies"]["custom-plugin"], "1.2.3");
+        assert_eq!(
+            manifest["dsh"]["profile"]["bundles"],
+            serde_json::json!([
+                "@deepseek-ai/dsh-base",
+                "@deepseek-ai/dsh-web-app",
+                "deepseek-desktop-bundle",
+                "dshmarket",
+                "custom-plugin"
+            ])
+        );
     }
 
     #[test]

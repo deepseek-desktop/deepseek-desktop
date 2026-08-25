@@ -7,6 +7,7 @@ import {
   checkForUpdates,
   chooseWorkspace,
   exportDiagnostics,
+  exportLogs,
   getAbout,
   getRuntimeStatus,
   getSettings,
@@ -175,6 +176,11 @@ async function exportBundle(): Promise<void> {
   notice.value = path ? `${t("diagnostics.exported")}: ${path}` : t("diagnostics.exported");
 }
 
+async function exportLogFile(): Promise<void> {
+  const path = await exportLogs();
+  notice.value = path ? `${t("diagnostics.logsExported")}: ${path}` : t("diagnostics.logsExported");
+}
+
 async function checkUpdate(): Promise<void> {
   update.value = await checkForUpdates();
   notice.value = updateDescription.value;
@@ -313,6 +319,7 @@ onBeforeUnmount(() => {
             <div><span>{{ t("diagnostics.workspace") }}</span><strong>{{ runtime.workspace || settings.workspace || "-" }}</strong></div>
           </div>
           <footer class="actions">
+            <button class="button secondary" @click="exportLogFile">{{ t("diagnostics.exportLogs") }}</button>
             <button class="button primary" @click="exportBundle">{{ t("diagnostics.export") }}</button>
           </footer>
         </template>

@@ -5,9 +5,26 @@
 
 DeepSeek Desktop 是内置固定版本本地 Runtime 的独立、非官方社区桌面应用。用户无需另外安装 Node.js、pnpm、Rust 或其他框架应用。本项目与 DeepSeek 不存在隶属、合作或官方背书关系。
 
-当前版本为 `0.1.0-community.6`。macOS 安装包使用完整的 ad-hoc 签名，但没有 Apple Developer ID 身份和公证；Windows、Linux 社区版产物目前也没有可信发布者签名。桌面自有源码采用 Apache-2.0，内置 Runtime、Node.js 和 npm 依赖保留各自许可证声明。
+当前版本为 `0.1.0-community.7`。macOS 安装包使用完整的 ad-hoc 签名，但没有 Apple Developer ID 身份和公证；Windows、Linux 社区版产物目前也没有可信发布者签名。桌面自有源码采用 Apache-2.0，内置 Runtime、Node.js 和 npm 依赖保留各自许可证声明。
 
 安装包发布在 [GitHub Releases](https://github.com/deepseek-desktop/deepseek-desktop/releases)。安装前请使用同版本 `SHA256SUMS` 校验文件完整性。
+
+## 界面预览
+
+![DeepSeek Desktop 工作台](docs/assets/workbench.png)
+
+![DeepSeek Desktop 插件市场](docs/assets/plugin-market.png)
+
+## 快速使用
+
+1. 从 GitHub Releases 下载当前系统对应的安装包，完成安装后启动 DeepSeek Desktop。
+2. 首次使用时选择工作区。Agent 的文件读写和命令执行均以该目录为边界。
+3. 进入工作台的“设置 → 模型”，添加官方或自定义 Provider，填写 API 地址和密钥，并获取可用模型。
+4. 在对话输入区切换模型，创建会话后即可进行对话、代码修改和工作区文件操作。
+5. 在“设置 → 插件”中打开 DSH Market，浏览、安装、更新或卸载插件；桌面版已内置所需包管理器。
+6. 通过系统“视图”菜单在“工作台”和“桌面管理”之间切换。运行异常时可在“诊断”页分别导出脱敏日志或诊断包。
+
+模型密钥会加密保存在本机，不进入日志、诊断包或浏览器存储。完整安装、配置和故障排查说明见[中文使用文档](docs/zh-CN/getting-started.md)。
 
 ## 架构
 
@@ -70,7 +87,7 @@ corepack pnpm@11.7.0 package:community
 
 该命令会安装固定依赖，执行社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，构建当前操作系统与架构的安装包，并在适用时校验 macOS 签名与 DMG。最终文件写入 `release/<version>/`，同时生成 `BUILD-INFO.json` 和 `SHA256SUMS`。
 
-单台主机只构建其原生目标。匹配版本标签（例如 `v0.1.0-community.6`）会触发 GitHub Actions，全部通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。
+单台主机只构建其原生目标。匹配版本标签（例如 `v0.1.0-community.7`）会触发 GitHub Actions，全部通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。
 
 ## 发布边界
 
