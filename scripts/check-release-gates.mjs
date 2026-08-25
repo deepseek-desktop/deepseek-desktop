@@ -1,4 +1,11 @@
+import { readFileSync } from "node:fs";
 import process from "node:process";
+
+const windowsGuiDeclaration = '#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]';
+const rustMain = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
+if (!rustMain.includes(windowsGuiDeclaration)) {
+  throw new Error("Windows release must use the GUI subsystem so it does not open a console window");
+}
 
 const channel = process.argv[2] || "community";
 if (channel === "community") {

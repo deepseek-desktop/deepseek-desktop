@@ -1,6 +1,6 @@
 {
   "name": "deepseek-desktop",
-  "version": "0.1.0-community.8",
+  "version": "0.1.0-community.9",
   "private": true,
   "description": "Standalone community distribution of DeepSeek Desktop",
   "repository": {
