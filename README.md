@@ -1,87 +1,83 @@
 # DeepSeek Desktop
 
-[![Community Build](https://github.com/deepseek-desktop/deepseek-desktop/actions/workflows/community-build.yml/badge.svg)](https://github.com/deepseek-desktop/deepseek-desktop/actions/workflows/community-build.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![社区版构建](https://github.com/deepseek-desktop/deepseek-desktop/actions/workflows/community-build.yml/badge.svg)](https://github.com/deepseek-desktop/deepseek-desktop/actions/workflows/community-build.yml)
+[![许可证](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-DeepSeek Desktop is an independent, unofficial community distribution built on the locked DeepSeek Harness Runtime. It does not require a separate Node.js, pnpm, Rust, or framework application installation at runtime. This project is not endorsed by or affiliated with DeepSeek.
+DeepSeek Desktop 是内置固定版本本地 Runtime 的独立、非官方社区桌面应用。用户无需另外安装 Node.js、pnpm、Rust 或其他框架应用。本项目与 DeepSeek 不存在隶属、合作或官方背书关系。
 
-Version `0.1.0-community.5` is the community edition. The macOS artifact uses a complete ad-hoc signature but has no Apple Developer ID identity or notarization; other current artifacts are unsigned. The desktop-owned source is Apache-2.0, while the packaged Harness, Node.js, and npm dependencies retain their own license notices.
+当前版本为 `0.1.0-community.6`。macOS 安装包使用完整的 ad-hoc 签名，但没有 Apple Developer ID 身份和公证；Windows、Linux 社区版产物目前也没有可信发布者签名。桌面自有源码采用 Apache-2.0，内置 Runtime、Node.js 和 npm 依赖保留各自许可证声明。
 
-Installers are published on the [GitHub Releases page](https://github.com/deepseek-desktop/deepseek-desktop/releases). Verify the downloaded file against the accompanying `SHA256SUMS` before installation.
+安装包发布在 [GitHub Releases](https://github.com/deepseek-desktop/deepseek-desktop/releases)。安装前请使用同版本 `SHA256SUMS` 校验文件完整性。
 
-## Architecture
+## 架构
 
 ```text
-Vue desktop shell
-  -> one native window with isolated Shell and Harness webviews
-  -> typed Tauri commands and redacted runtime events
-Rust runtime supervisor
-  -> target-specific Node sidecar
-  -> locked Harness production closure
-  -> http://127.0.0.1:<random-port>
-Harness CredentialProvider
-  -> short-lived session + JSON over stdin/stdout
-  -> desktop helper
-  -> local encrypted credential vault
+Vue 桌面 Shell
+  -> 单一原生窗口与隔离工作台 WebView
+  -> 类型化 Tauri 命令与脱敏 Runtime 事件
+Rust Runtime 管理器
+  -> 对应平台的 Node sidecar
+  -> 固定版本 Runtime 生产依赖闭包
+  -> http://127.0.0.1:<随机端口>
+桌面 CredentialProvider
+  -> 短期会话 + stdin/stdout JSON
+  -> 桌面 helper
+  -> 本地加密凭据库
 ```
 
-The desktop uses one native window. When the Runtime is ready, Harness fills the window content area in an isolated child WebView above the resident Shell surface instead of reserving a duplicate in-window toolbar. The native **View** menu switches between **Workbench** (`Cmd/Ctrl+1`) and **Desktop Management** (`Cmd/Ctrl+2`). Settings, diagnostics, updates, and Runtime recovery therefore remain available without opening another operating-system window or covering Harness content. Capability matching is scoped to the `main` Shell WebView label, so the embedded Harness WebView receives no Tauri capability. It may navigate only within a managed loopback origin. A per-Runtime credential session is delivered through the Runtime standard input and is required by every helper request. Only its SHA-256 authorization digest is stored in the application data directory; the token and model credentials are never passed through command arguments, environment values, WebView IPC, or diagnostic exports. macOS, Windows, and Linux use the same XChaCha20-Poly1305 encrypted vault in the user-scoped application data directory. The vault uses authenticated encryption, atomic replacement, cross-process locking, and private Unix file modes; it never falls back to `.env`, YAML, browser storage, or plaintext credential files.
+桌面端只创建一个操作系统窗口。Runtime 就绪后，工作台会在隔离子 WebView 中占满内容区，不保留重复工具栏。原生“视图”菜单可在“工作台”（`Cmd/Ctrl+1`）和“桌面管理”（`Cmd/Ctrl+2`）之间切换；设置、诊断、更新和 Runtime 恢复均在原窗口完成。
 
-## Toolchain
+工作台 WebView 不获得 Tauri shell、文件系统或通用 IPC 权限，只能访问受管回环 Origin。每次 Runtime 启动都会生成短期凭据会话，真实 token 仅通过标准输入交付，应用数据目录只保存 SHA-256 授权摘要。macOS、Windows 和 Linux 使用同一套 XChaCha20-Poly1305 加密凭据库，并采用原子替换、跨进程锁和私有 Unix 文件权限；不会降级写入 `.env`、YAML、浏览器存储或明文凭据文件。
+
+## 工具链
 
 - Node.js `24.16.0`
 - pnpm `11.7.0`
 - Rust `1.98.0`
 - Tauri CLI `2.11.4`
-- DeepSeek Harness `0.1.1-rc.2` at `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`
+- 内置 Runtime `0.1.1-rc.2`，提交 `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`
 
-Rust is installed under the repository `target/deepseek-desktop-toolchain/` by `scripts/with-rust.mjs`; no global Rust installation is changed.
+`scripts/with-rust.mjs` 会把 Rust 安装到仓库的 `target/deepseek-desktop-toolchain/`，不会修改用户的全局 Rust 环境。
 
-## Development
+## 本地开发
 
 ```bash
 git clone git@github.com:deepseek-desktop/deepseek-desktop.git
 cd deepseek-desktop
 corepack pnpm@11.7.0 install --frozen-lockfile
 corepack pnpm@11.7.0 --dir runtime install --frozen-lockfile
-corepack pnpm@11.7.0 check:i18n
-corepack pnpm@11.7.0 test
+corepack pnpm@11.7.0 verify
 corepack pnpm@11.7.0 test:e2e
-corepack pnpm@11.7.0 runtime:test-locale
-corepack pnpm@11.7.0 runtime:stage
-corepack pnpm@11.7.0 runtime:verify aarch64-apple-darwin
 corepack pnpm@11.7.0 runtime:smoke
-corepack pnpm@11.7.0 rust:test
-corepack pnpm@11.7.0 rust:clippy
 corepack pnpm@11.7.0 tauri:dev
 ```
 
-`runtime/runtime-lock.json` is the source of truth for upstream artifacts. Runtime staging is generated on the native target and is never committed.
+`runtime/runtime-lock.json` 是上游制品的唯一版本事实。Runtime staging 在当前目标平台生成，不提交到 Git。
 
-The staging command downloads the target-specific official Node.js archive into the repository `target/` cache, verifies its locked SHA-256, removes install-only wall-clock metadata and non-target native artifacts, and emits deterministic `runtime-manifest.json`, `licenses.json`, and `sbom.spdx.json` files. The allowed `node-pty` and Koffi native assets for every target are pinned in `runtime/runtime-lock.json`. Set `DEEPSEEK_DESKTOP_SMOKE_CYCLES=100` when running `runtime:smoke` for the release stability gate; the smoke also verifies parent-death cleanup on Unix.
+staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存，校验固定 SHA-256，移除安装期时间元数据和非目标平台原生制品，并输出确定性的 `runtime-manifest.json`、`licenses.json` 与 `sbom.spdx.json`。各平台允许使用的 `node-pty` 和 Koffi 原生制品也固定在 `runtime/runtime-lock.json`。
 
-`DEEPSEEK_DESKTOP_DATA_DIR` may be set for an isolated launch test. End users do not need it; without the override, Tauri's platform application-data directory is used.
+发布稳定性验证可设置 `DEEPSEEK_DESKTOP_SMOKE_CYCLES=100` 后执行 `runtime:smoke`。`DEEPSEEK_DESKTOP_DATA_DIR` 只用于隔离验收数据；正式用户无需配置，应用会自动使用 Tauri 对应平台的数据目录。
 
-The Desktop Shell ships `zh-CN`, `zh-TW`, and `en-US`. The locked Harness release currently ships only `zh` and `en`, so the startup bridge maps both Chinese desktop locales to upstream `zh` and English to `en`. It atomically updates the Harness settings document without discarding unrelated settings or comments. This is an explicit upstream capability boundary, not an untracked patch to generated Harness assets.
+桌面 Shell 支持 `zh-CN`、`zh-TW` 和 `en-US`。当前固定 Runtime 的工作台界面只提供 `zh` 和 `en`，启动桥会把两种中文桌面语言映射到上游中文，把英文映射到上游英文，并原子更新 `dsh/settings.yaml`，不覆盖其他设置或注释。
 
-## One-command packaging
+## 一键打包
 
-Run the following command from the repository root to verify the project and build an installer for the current operating system and architecture:
+在仓库根目录执行：
 
 ```bash
 corepack pnpm@11.7.0 package:community
 ```
 
-The command installs the locked root and Runtime dependencies, runs the community release gate, unit and end-to-end tests, Runtime verification and smoke checks, builds the native installer, validates the macOS signature and DMG when applicable, and writes the final files to `release/<version>/` with `BUILD-INFO.json` and `SHA256SUMS`.
+该命令会安装固定依赖，执行社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，构建当前操作系统与架构的安装包，并在适用时校验 macOS 签名与 DMG。最终文件写入 `release/<version>/`，同时生成 `BUILD-INFO.json` 和 `SHA256SUMS`。
 
-One host builds only its native target. Cross-platform GitHub Releases are created from a matching annotated version tag such as `v0.1.0-community.5`; the release workflow publishes only after the macOS arm64/x64, Windows x64, and Linux x64 jobs all succeed.
+单台主机只构建其原生目标。匹配版本标签（例如 `v0.1.0-community.6`）会触发 GitHub Actions，全部通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。
 
-## Release Boundary
+## 发布边界
 
-Current community builds do not carry a trusted publisher identity and automatic updates are disabled. macOS artifacts use a complete ad-hoc Bundle signature but are not signed with Apple Developer ID and are not notarized. `pnpm release:check community` documents that boundary. A future stable build must pass `pnpm release:check stable`, provide updater, Apple, and Windows signing material, and complete native clean-machine acceptance before it may be published.
+当前社区版没有可信发布者身份，自动更新保持关闭。macOS 产物只有 ad-hoc Bundle 签名，没有 Apple Developer ID 签名和公证。未来 Stable 版本必须通过 `pnpm release:check stable`，提供 Updater、Apple 和 Windows 签名材料，并完成对应平台的干净系统安装验收。
 
-The CI matrix builds macOS arm64/x64, Windows x64, and Linux x64 artifacts. macOS arm64 and Windows x64 have also passed real installation, launch, graceful-exit, orphan-process, uninstall, and reinstall acceptance on local test systems; the Windows x64 acceptance ran on Windows 11 ARM64 through its system compatibility layer. A successful build on one platform is not evidence that another platform has passed installation acceptance.
+CI 会构建 macOS arm64/x64、Windows x64 和 Linux x64 产物。macOS arm64 与 Windows x64 还必须完成真实安装、启动、正常退出、孤儿进程、卸载和重装验收；某个平台构建成功不代表其他平台已经完成安装验收。
 
-The fish mark uses the exact DeepSeek Harness sidebar geometry and primary ink color from the locked upstream commit. It is used only to identify the bundled Runtime. DeepSeek Harness and its brand assets belong to their respective owner; this community distribution does not imply official endorsement.
+应用鱼形标识沿用固定上游 Runtime 提交中的侧边栏几何与主墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 
-Chinese installation, configuration, data-directory, security, and troubleshooting guidance is available in [docs/zh-CN/getting-started.md](docs/zh-CN/getting-started.md).
+更完整的安装、模型配置、数据目录、安全和故障排查说明见 [中文使用文档](docs/zh-CN/getting-started.md)。

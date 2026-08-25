@@ -1,8 +1,8 @@
 {
   "name": "deepseek-desktop",
-  "version": "0.1.0-community.5",
+  "version": "0.1.0-community.6",
   "private": true,
-  "description": "Standalone community desktop distribution for DeepSeek Harness",
+  "description": "Standalone community distribution of DeepSeek Desktop",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-desktop/deepseek-desktop.git"

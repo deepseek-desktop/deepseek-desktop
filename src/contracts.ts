@@ -22,8 +22,8 @@ export interface DesktopSettings {
 
 export interface DesktopAbout {
   desktopVersion: string;
-  harnessVersion: string;
-  harnessCommit: string;
+  runtimeVersion: string;
+  runtimeCommit: string;
   nodeVersion: string;
   channel: string;
   signedRelease: boolean;

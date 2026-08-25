@@ -2,7 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { chooseWorkspace, exportDiagnostics, openHarness, startRuntime } from "./desktop";
+import { chooseWorkspace, exportDiagnostics, openWorkbench, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
@@ -28,9 +28,9 @@ vi.mock("./desktop", () => ({
   chooseWorkspace: vi.fn(async () => null),
   exportDiagnostics: vi.fn(async () => ""),
   getAbout: vi.fn(async () => ({
-    desktopVersion: "0.1.0-community.5",
-    harnessVersion: "0.1.1-rc.2",
-    harnessCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+    desktopVersion: "0.1.0-community.6",
+    runtimeVersion: "0.1.1-rc.2",
+    runtimeCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
     nodeVersion: "24.16.0",
     channel: "community",
     signedRelease: false
@@ -39,7 +39,7 @@ vi.mock("./desktop", () => ({
   getSettings: vi.fn(async () => ({ ...settings })),
   onRuntimeStatus: vi.fn(async () => () => undefined),
   onDesktopSurface: vi.fn(async () => () => undefined),
-  openHarness: vi.fn(),
+  openWorkbench: vi.fn(),
   saveSettings: vi.fn(async value => value),
   startRuntime: vi.fn(),
   stopRuntime: vi.fn(async () => ({ ...runtime }))
@@ -139,7 +139,7 @@ describe("DeepSeek Desktop shell", () => {
     await flushPromises();
 
     expect(startRuntime).toHaveBeenCalledWith(settings.workspace);
-    expect(openHarness).toHaveBeenCalledOnce();
+    expect(openWorkbench).toHaveBeenCalledOnce();
     expect(wrapper.text()).toContain("运行状态");
   });
 

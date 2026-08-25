@@ -17,12 +17,12 @@ importers:
       '@deepseek-ai/dsh':
         specifier: 0.1.1-rc.2
         version: 0.1.1-rc.2(f2ec21a2b88de24ccbb3802cec2245ee)
-      deepseek-harness-credentials-vault:
-        specifier: workspace:*
-        version: link:packages/credentials-vault
       deepseek-desktop-bundle:
         specifier: workspace:*
         version: link:packages/desktop-bundle
+      deepseek-desktop-credentials-vault:
+        specifier: workspace:*
+        version: link:packages/credentials-vault
       react:
         specifier: 18.3.1
         version: 18.3.1
@@ -41,7 +41,7 @@ importers:
 
   packages/desktop-bundle:
     dependencies:
-      deepseek-harness-credentials-vault:
+      deepseek-desktop-credentials-vault:
         specifier: workspace:*
         version: link:../credentials-vault
       yaml:

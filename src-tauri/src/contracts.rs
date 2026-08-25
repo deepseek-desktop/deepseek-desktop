@@ -58,8 +58,8 @@ pub const fn current_settings_schema_version() -> u8 {
 #[serde(rename_all = "camelCase")]
 pub struct DesktopAbout {
     pub desktop_version: &'static str,
-    pub harness_version: &'static str,
-    pub harness_commit: &'static str,
+    pub runtime_version: &'static str,
+    pub runtime_commit: &'static str,
     pub node_version: &'static str,
     pub channel: &'static str,
     pub signed_release: bool,

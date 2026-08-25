@@ -1,15 +1,15 @@
-## Summary
+## 变更摘要
 
-- Describe the user-visible and engineering changes.
+- 说明用户可见变化和工程改动。
 
-## Verification
+## 验证
 
-- [ ] Relevant TypeScript/Vue checks pass
-- [ ] Relevant Rust checks pass
-- [ ] Runtime contract remains reproducible or its lock was intentionally updated
-- [ ] Visible text is complete in `zh-CN`, `zh-TW`, and `en-US`
-- [ ] No credentials, generated staging, build output, or local workspace data are included
+- [ ] 相关 TypeScript/Vue 检查通过
+- [ ] 相关 Rust 检查通过
+- [ ] Runtime 契约保持可复现，或已明确更新锁文件
+- [ ] 用户可见文案已补齐 `zh-CN`、`zh-TW` 和 `en-US`
+- [ ] 未包含凭据、生成的暂存目录、构建产物或本地工作区数据
 
-## Platform and security impact
+## 平台与安全影响
 
-- Describe affected platforms, signing, credentials, and security boundaries.
+- 说明受影响平台、签名、凭据和安全边界。

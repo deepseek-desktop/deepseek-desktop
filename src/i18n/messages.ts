@@ -41,7 +41,7 @@ export const messages = {
     },
     navigation: { label: "桌面导航", onboarding: "开始使用", runtime: "运行状态", diagnostics: "诊断", update: "更新", about: "关于" },
     diagnostics: { eyebrow: "诊断", title: "运行诊断", description: "导出经过脱敏的状态、版本和日志。", export: "导出诊断包", exported: "诊断包已导出", runtime: "Runtime", workspace: "工作区" },
-    about: { eyebrow: "社区版发行", title: "关于 DeepSeek Desktop", desktopVersion: "桌面版本", harnessVersion: "Harness 版本", nodeVersion: "Node 版本", channel: "更新通道", community: "社区版", unsigned: "社区版未签名构建" },
+    about: { eyebrow: "社区版发行", title: "关于 DeepSeek Desktop", desktopVersion: "桌面版本", runtimeVersion: "Runtime 版本", nodeVersion: "Node 版本", channel: "更新通道", community: "社区版", unsigned: "社区版未签名构建" },
     update: { eyebrow: "发行通道", title: "应用更新", description: "仅安装经过签名验证的正式发行包。", currentVersion: "当前版本", channel: "更新通道", status: "更新状态", notChecked: "尚未检查更新。", check: "检查更新", disabled: "当前社区版构建未签名，自动更新已关闭。", current: "当前已是最新版本。", available: "发现新版本 {version}。", notConfigured: "签名更新服务尚未配置。" },
     error: { workspaceRequired: "请先选择工作区。", unexpected: "操作失败，请查看诊断信息。" }
   },
@@ -87,7 +87,7 @@ export const messages = {
     },
     navigation: { label: "桌面導覽", onboarding: "開始使用", runtime: "執行狀態", diagnostics: "診斷", update: "更新", about: "關於" },
     diagnostics: { eyebrow: "診斷", title: "執行診斷", description: "匯出經過遮蔽的狀態、版本和日誌。", export: "匯出診斷包", exported: "診斷包已匯出", runtime: "Runtime", workspace: "工作區" },
-    about: { eyebrow: "社群版發行", title: "關於 DeepSeek Desktop", desktopVersion: "桌面版本", harnessVersion: "Harness 版本", nodeVersion: "Node 版本", channel: "更新通道", community: "社群版", unsigned: "社群版未簽章構建" },
+    about: { eyebrow: "社群版發行", title: "關於 DeepSeek Desktop", desktopVersion: "桌面版本", runtimeVersion: "Runtime 版本", nodeVersion: "Node 版本", channel: "更新通道", community: "社群版", unsigned: "社群版未簽章構建" },
     update: { eyebrow: "發行通道", title: "應用程式更新", description: "僅安裝通過簽名驗證的正式發行套件。", currentVersion: "目前版本", channel: "更新通道", status: "更新狀態", notChecked: "尚未檢查更新。", check: "檢查更新", disabled: "目前社群版構建尚未簽章，自動更新已關閉。", current: "目前已是最新版本。", available: "發現新版本 {version}。", notConfigured: "簽名更新服務尚未設定。" },
     error: { workspaceRequired: "請先選擇工作區。", unexpected: "操作失敗，請查看診斷資訊。" }
   },
@@ -133,7 +133,7 @@ export const messages = {
     },
     navigation: { label: "Desktop navigation", onboarding: "Get started", runtime: "Runtime", diagnostics: "Diagnostics", update: "Updates", about: "About" },
     diagnostics: { eyebrow: "Diagnostics", title: "Runtime diagnostics", description: "Export redacted status, version, and log information.", export: "Export diagnostics", exported: "Diagnostics exported", runtime: "Runtime", workspace: "Workspace" },
-    about: { eyebrow: "Community distribution", title: "About DeepSeek Desktop", desktopVersion: "Desktop version", harnessVersion: "Harness version", nodeVersion: "Node version", channel: "Update channel", community: "Community", unsigned: "Unsigned community build" },
+    about: { eyebrow: "Community distribution", title: "About DeepSeek Desktop", desktopVersion: "Desktop version", runtimeVersion: "Runtime version", nodeVersion: "Node version", channel: "Update channel", community: "Community", unsigned: "Unsigned community build" },
     update: { eyebrow: "Release channel", title: "Application updates", description: "Only formally released packages with a valid signature can be installed.", currentVersion: "Current version", channel: "Update channel", status: "Update status", notChecked: "Updates have not been checked.", check: "Check for updates", disabled: "This community build is unsigned, so automatic updates are disabled.", current: "This version is current.", available: "Version {version} is available.", notConfigured: "Signed updates are not configured." },
     error: { workspaceRequired: "Choose a workspace first.", unexpected: "The operation failed. Open diagnostics for details." }
   }

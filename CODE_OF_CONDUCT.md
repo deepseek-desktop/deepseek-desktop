@@ -1,22 +1,22 @@
-# Code of Conduct
+# 社区行为准则
 
-## Our pledge
+## 我们的承诺
 
-We pledge to make participation in this project a harassment-free experience for everyone, regardless of background, identity, experience level, or personal characteristics.
+我们致力于为所有参与者提供不受骚扰的协作环境，不因背景、身份、经验或个人特征区别对待。
 
-## Expected behavior
+## 期望行为
 
-- Be respectful, constructive, and specific.
-- Assume good intent while remaining accountable for impact.
-- Focus feedback on ideas, code, documentation, and observable behavior.
-- Respect privacy and never publish another person's credentials or private data.
+- 保持尊重、建设性和具体。
+- 善意理解他人，同时对实际影响负责。
+- 将反馈集中在想法、代码、文档和可观察行为上。
+- 尊重隐私，不公开他人的凭据或私人数据。
 
-## Unacceptable behavior
+## 不可接受的行为
 
-Harassment, threats, discrimination, personal attacks, deliberate disruption, and publication of private information are not acceptable.
+骚扰、威胁、歧视、人身攻击、蓄意破坏和公开私人信息均不可接受。
 
-## Enforcement
+## 执行
 
-Report unacceptable behavior privately to the project maintainers through the repository owner profile. Maintainers may remove content, restrict participation, or take other proportionate action. Reports will be handled as confidentially as practical.
+请通过仓库所有者资料页私下向维护者报告不当行为。维护者可以删除内容、限制参与或采取其他适当措施，并会在实际可行范围内对报告保密。
 
-This policy applies in project spaces and when representing the project in public spaces.
+本准则适用于项目空间，以及代表本项目参与公开活动的场景。

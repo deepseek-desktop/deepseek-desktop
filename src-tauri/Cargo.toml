@@ -1,7 +1,7 @@
 [package]
 name = "deepseek-desktop"
-version = "0.1.0-community.5"
-description = "Self-contained local desktop shell for DeepSeek Harness"
+version = "0.1.0-community.6"
+description = "Self-contained local shell for DeepSeek Desktop"
 authors = ["DeepSeek Desktop Contributors"]
 license = "Apache-2.0"
 edition = "2024"

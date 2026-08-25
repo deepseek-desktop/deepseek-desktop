@@ -89,7 +89,7 @@ await writeFile(join(profile, "package.json"), `${JSON.stringify({
 }, null, 2)}\n`);
 await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
 await writeFile(join(profile, "pnpm-workspace.yaml"), "packages:\n  - .\n\nnodeLinker: hoisted\n");
-for (const name of ["deepseek-desktop-bundle", "deepseek-harness-credentials-vault"]) {
+for (const name of ["deepseek-desktop-bundle", "deepseek-desktop-credentials-vault"]) {
   await cp(join(staging, "node_modules", name), join(desktopModules, name), { recursive: true });
 }
 
@@ -115,11 +115,11 @@ const dump = spawnSync(node, ["--require", parentWatch, "--require", localeSync,
   encoding: "utf8"
 });
 if (dump.status !== 0) throw new Error(`profile composition failed: ${dump.stderr || dump.stdout}`);
-if (!dump.stdout.includes("deepseek-harness-credentials-vault")) {
+if (!dump.stdout.includes("deepseek-desktop-credentials-vault")) {
   throw new Error("desktop encrypted credential provider is absent from the composed profile");
 }
 if (!/locale:\s+preference: zh/u.test(await readFile(join(dshHome, "settings.yaml"), "utf8"))) {
-  throw new Error("desktop locale bridge did not persist the mapped Harness locale");
+  throw new Error("desktop locale bridge did not persist the mapped Runtime locale");
 }
 
 const cycles = Number.parseInt(process.env.DEEPSEEK_DESKTOP_SMOKE_CYCLES || "1", 10);
@@ -245,4 +245,4 @@ for (const plaintext of [".credentials.yaml", ".env"]) {
     if (error?.code !== "ENOENT") throw error;
   }
 }
-console.log(`runtime smoke passed: Harness ${lock.harness.version}, ${cycles} cycle(s)`);
+console.log(`runtime smoke passed: Runtime ${lock.runtime.version}, ${cycles} cycle(s)`);

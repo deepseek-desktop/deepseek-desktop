@@ -153,8 +153,8 @@ async fn workspace_choose(title: String) -> DesktopResult<Option<String>> {
 fn desktop_about() -> DesktopAbout {
     DesktopAbout {
         desktop_version: env!("CARGO_PKG_VERSION"),
-        harness_version: "0.1.1-rc.2",
-        harness_commit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+        runtime_version: "0.1.1-rc.2",
+        runtime_commit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
         node_version: "24.16.0",
         channel: "community",
         signed_release: false,

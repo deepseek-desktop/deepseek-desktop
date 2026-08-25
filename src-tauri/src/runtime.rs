@@ -154,7 +154,7 @@ impl RuntimeSupervisor {
                 "runtime URL is outside the managed loopback origin".to_owned(),
             ));
         }
-        if let Some(webview) = self.app.get_webview("harness") {
+        if let Some(webview) = self.app.get_webview("workbench") {
             webview
                 .navigate(url)
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
@@ -177,7 +177,7 @@ impl RuntimeSupervisor {
             .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
         let (position, size) = self.workbench_bounds(&main_window)?;
         let builder =
-            tauri::webview::WebviewBuilder::new("harness", tauri::WebviewUrl::External(url))
+            tauri::webview::WebviewBuilder::new("workbench", tauri::WebviewUrl::External(url))
                 .initialization_script(DISABLE_TEXT_ASSISTANCE_SCRIPT)
                 .on_navigation(move |candidate| {
                     let managed = candidate.scheme() == managed_origin.scheme()
@@ -208,7 +208,7 @@ impl RuntimeSupervisor {
 
     pub fn show_management(&self) -> DesktopResult<()> {
         self.workbench_visible.store(false, Ordering::Release);
-        if let Some(webview) = self.app.get_webview("harness") {
+        if let Some(webview) = self.app.get_webview("workbench") {
             webview
                 .hide()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
@@ -245,8 +245,8 @@ impl RuntimeSupervisor {
             size: tauri::Size::Physical(size),
         })
         .map_err(|error| DesktopError::Other(error.to_string()))?;
-        if let Some(harness) = self.app.get_webview("harness") {
-            harness
+        if let Some(workbench) = self.app.get_webview("workbench") {
+            workbench
                 .set_bounds(tauri::Rect {
                     position: tauri::Position::Physical(position),
                     size: tauri::Size::Physical(size),
@@ -486,7 +486,7 @@ impl RuntimeSupervisor {
             process.terminate();
         }
         self.workbench_visible.store(false, Ordering::Release);
-        if let Some(webview) = self.app.get_webview("harness") {
+        if let Some(webview) = self.app.get_webview("workbench") {
             let _ = webview.close();
         }
         let _ = self.layout_management();
@@ -652,7 +652,7 @@ impl RuntimeSupervisor {
         }
         for package in [
             "deepseek-desktop-bundle",
-            "deepseek-harness-credentials-vault",
+            "deepseek-desktop-credentials-vault",
         ] {
             let source = runtime_dir.join("node_modules").join(package);
             let target = modules.join(package);

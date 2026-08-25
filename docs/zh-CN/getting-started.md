@@ -1,10 +1,10 @@
 # DeepSeek Desktop
 
-DeepSeek Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立、非官方社区桌面发行版。它将 Vue 桌面 Shell、Tauri 2 原生主程序、固定版本 Node.js 和 Harness Runtime 打包在一起，不依赖其他框架应用，也不要求用户预装 Node.js、pnpm 或 Rust。本项目与 DeepSeek 不存在隶属、合作或官方背书关系。
+DeepSeek Desktop 是内置固定版本本地 Runtime 的独立、非官方社区桌面发行版。它将 Vue 桌面 Shell、Tauri 2 原生主程序、固定版本 Node.js 和 Runtime 打包在一起，不依赖其他框架应用，也不要求用户预装 Node.js、pnpm 或 Rust。本项目与 DeepSeek 不存在隶属、合作或官方背书关系。
 
-桌面 Shell、应用程序和安装包统一使用固定上游提交中的 Harness 侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
+桌面 Shell、应用程序和安装包统一使用固定上游提交中的侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 
-当前版本为 `0.1.0-community.5`。它是可本地完整使用的社区版；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
+当前版本为 `0.1.0-community.6`。它是可本地完整使用的社区版；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
 
 工程源码位于仓库根目录。Runtime 使用锁定的 npm 生产依赖闭包，并从 `runtime/runtime-lock.json` 指定的 Node.js 官方归档下载、校验 SHA-256 后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
@@ -23,21 +23,21 @@ DeepSeek Desktop 是基于 DeepSeek Harness 固定版本 Runtime 构建的独立
 
 1. 启动 DeepSeek Desktop，选择界面语言。
 2. 选择一个明确的工作区。Agent 的文件操作和命令执行以该目录为边界。
-3. 启动本地工作台。主程序会在 `127.0.0.1` 上申请随机端口，并在当前桌面窗口中自动进入 Harness，不需要填写端口或打开第二个窗口。
-4. 打开 Harness 的模型设置，选择 Provider，并写入 API Key 或 OAuth grant。
+3. 启动本地工作台。主程序会在 `127.0.0.1` 上申请随机端口，并在当前桌面窗口中自动进入工作台，不需要填写端口或打开第二个窗口。
+4. 打开工作台的模型设置，选择 Provider，并写入 API Key 或 OAuth grant。
 5. 创建会话并开始任务。模型未配置或外部 Provider 不可用时，Runtime 仍可进入设置和诊断页面，但真实模型请求不会被伪造成成功。
 
 模型凭据由桌面专用 Credential Provider 写入本机加密凭据库。macOS、Windows 和 Linux 使用同一套 XChaCha20-Poly1305 认证加密、跨进程文件锁和原子写入机制，不访问系统钥匙串，也不会弹出系统凭据授权窗口。凭据库不可用或损坏时会明确失败，不会降级写入 `.credentials.yaml`、`.env`、日志、浏览器存储或其他明文文件。新增自定义 Provider 时，如果凭据写入失败，桌面 Runtime 会回滚本次新增的 Provider 配置，修复凭据库后可以直接重试，不会把失败的首次提交误报为 Provider ID 重复。
 
-Desktop Shell 完整提供简体中文、繁体中文和英文。固定的 Harness `0.1.1-rc.2` 上游界面目前只提供 `zh` 和 `en`：启动 Runtime 时，桌面语言桥会将简体中文和繁体中文映射为上游中文，将英文映射为上游英文，并通过原子更新 `dsh/settings.yaml` 保留其他设置与注释。繁体中文用户看到的 Harness 工作区仍是上游简体中文；工程不会为了制造“全繁体”表象而直接改写上游构建产物。
+Desktop Shell 完整提供简体中文、繁体中文和英文。固定的 Runtime `0.1.1-rc.2` 上游界面目前只提供 `zh` 和 `en`：启动 Runtime 时，桌面语言桥会将简体中文和繁体中文映射为上游中文，将英文映射为上游英文，并通过原子更新 `dsh/settings.yaml` 保留其他设置与注释。繁体中文用户看到的工作区仍是上游简体中文；工程不会为了制造“全繁体”表象而直接改写上游构建产物。
 
-桌面端只创建一个操作系统窗口。Runtime 就绪后，受管 Harness 作为无 Tauri 权限的隔离子 WebView 覆盖常驻 Shell 并占满窗口内容区，不再保留重复的 Logo、状态和管理按钮。通过系统原生“视图”菜单可在“工作台”（`Command/Ctrl+1`）和“桌面管理”（`Command/Ctrl+2`）之间切换；运行状态、诊断、更新和关于页面都在原窗口内显示。Harness 输入框和可编辑区域会关闭系统拼写检查、自动纠错、自动首字母大写和写作建议，确保 Provider ID、API 地址、模型名、代码和普通对话均按原文输入，不被 WebView 擅自替换。该策略只设置浏览器输入属性，不读取或改写输入值。
+桌面端只创建一个操作系统窗口。Runtime 就绪后，受管工作台作为无 Tauri 权限的隔离子 WebView 覆盖常驻 Shell 并占满窗口内容区，不再保留重复的 Logo、状态和管理按钮。通过系统原生“视图”菜单可在“工作台”（`Command/Ctrl+1`）和“桌面管理”（`Command/Ctrl+2`）之间切换；运行状态、诊断、更新和关于页面都在原窗口内显示。工作台输入框和可编辑区域会关闭系统拼写检查、自动纠错、自动首字母大写和写作建议，确保 Provider ID、API 地址、模型名、代码和普通对话均按原文输入，不被 WebView 擅自替换。该策略只设置浏览器输入属性，不读取或改写输入值。
 
 ## Runtime 生命周期
 
 Runtime 状态包括 `idle`、`starting`、`ready`、`stopping`、`recovering` 和 `failed`。启动超时为 20 秒；意外退出后最多自动恢复两次，退避为 1 秒和 3 秒。超过上限后进入失败页，并生成诊断关联编号。
 
-主程序退出时会关闭完整 Node/Harness 进程树：macOS 和 Linux 使用独立进程组，并由 Runtime 监控桌面父进程是否仍存活；Windows 使用带 `KILL_ON_JOB_CLOSE` 的 Job Object。即使桌面主进程异常消失，Runtime 也会自行结束。Harness 页面只能访问当前受管回环 Origin，不获得 Tauri shell、文件系统或通用 IPC 权限。
+主程序退出时会关闭完整 Node/Runtime 进程树：macOS 和 Linux 使用独立进程组，并由 Runtime 监控桌面父进程是否仍存活；Windows 使用带 `KILL_ON_JOB_CLOSE` 的 Job Object。即使桌面主进程异常消失，Runtime 也会自行结束。工作台页面只能访问当前受管回环 Origin，不获得 Tauri shell、文件系统或通用 IPC 权限。
 
 ## 数据目录
 
@@ -46,7 +46,7 @@ DeepSeek Desktop 使用系统应用数据目录，不向安装目录写运行数
 | 内容 | 说明 |
 | --- | --- |
 | `settings.json` | Shell 语言、主题、工作区和更新通道 |
-| `dsh/` | Harness profile、会话、设置和插件数据 |
+| `dsh/` | Runtime profile、会话、设置和插件数据 |
 | `credential-vault.json` | XChaCha20-Poly1305 加密后的模型凭据，不包含可读明文 |
 | `credential-vault.key` | 当前用户专用的本地凭据库密钥；Unix 权限固定为 `0600` |
 | `credential-index.json` | 仅保存非敏感 record 索引，不保存密钥明文 |
@@ -64,7 +64,7 @@ macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows �
 
 ## 诊断与隐私
 
-诊断页面只在用户主动操作时导出状态、版本和最近日志。导出前会遮蔽 Authorization、API Key、Cookie、password、secret、Bearer token 和工作区路径。Credential Provider 调用 helper 时还必须携带每次 Runtime 启动生成的短期会话；真实 token 只通过 Runtime 标准输入交付，应用数据目录仅保存用于校验的 SHA-256 摘要，不进入命令参数、环境变量或日志。Agent Shell、工具子进程和 Harness WebView 均不能直接读取桌面主程序中的明文凭据。
+诊断页面只在用户主动操作时导出状态、版本和最近日志。导出前会遮蔽 Authorization、API Key、Cookie、password、secret、Bearer token 和工作区路径。Credential Provider 调用 helper 时还必须携带每次 Runtime 启动生成的短期会话；真实 token 只通过 Runtime 标准输入交付，应用数据目录仅保存用于校验的 SHA-256 摘要，不进入命令参数、环境变量或日志。Agent Shell、工具子进程和工作台 WebView 均不能直接读取桌面主程序中的明文凭据。
 
 出现启动失败时依次检查：
 
@@ -81,7 +81,7 @@ macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows �
 
 ## 开发者验证
 
-完整构建命令、Runtime lock、测试入口和发行门禁见仓库根目录 `README.md`。本地验证至少包括三语 parity、语言桥保真测试、Vue 单测、Playwright Shell E2E、Rust 单测、Runtime manifest 校验、真实 Harness readiness smoke 和目标平台安装包构建。连续启停验收使用 `DEEPSEEK_DESKTOP_SMOKE_CYCLES=100 corepack pnpm@11.7.0 runtime:smoke`。
+完整构建命令、Runtime lock、测试入口和发行门禁见仓库根目录 `README.md`。本地验证至少包括三语 parity、语言桥保真测试、Vue 单测、Playwright Shell E2E、Rust 单测、Runtime manifest 校验、真实 Runtime readiness smoke 和目标平台安装包构建。连续启停验收使用 `DEEPSEEK_DESKTOP_SMOKE_CYCLES=100 corepack pnpm@11.7.0 runtime:smoke`。
 
 需要主动生成当前电脑对应的桌面安装包时，在仓库根目录执行：
 
@@ -91,4 +91,4 @@ corepack pnpm@11.7.0 package:community
 
 该命令会自动安装锁定依赖，执行社区版发行门禁、单元测试、端到端测试、Runtime 校验和真实 readiness smoke，再构建当前操作系统及 CPU 架构对应的安装包。结果统一输出到 `release/<版本>/`，同时生成 `BUILD-INFO.json` 和 `SHA256SUMS`。macOS 会额外校验应用签名结构和 DMG 完整性。
 
-单台电脑只生成当前平台安装包。维护者推送与工程版本完全一致的标签（例如 `v0.1.0-community.5`）后，GitHub 工作流会分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。
+单台电脑只生成当前平台安装包。维护者推送与工程版本完全一致的标签（例如 `v0.1.0-community.6`）后，GitHub 工作流会分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。

@@ -61,16 +61,16 @@ export async function chooseWorkspace(title: string): Promise<string | null> {
   return invoke<string | null>("workspace_choose", { title });
 }
 
-export async function openHarness(): Promise<void> {
+export async function openWorkbench(): Promise<void> {
   if (inTauri()) await invoke("runtime_open");
 }
 
 export async function getAbout(): Promise<DesktopAbout> {
   if (!inTauri()) {
     return {
-      desktopVersion: "0.1.0-community.5",
-      harnessVersion: "0.1.1-rc.2",
-      harnessCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      desktopVersion: "0.1.0-community.6",
+      runtimeVersion: "0.1.1-rc.2",
+      runtimeCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
       nodeVersion: "24.16.0",
       channel: "community",
       signedRelease: false
@@ -84,7 +84,7 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     return {
       enabled: false,
       channel: "community",
-      currentVersion: "0.1.0-community.5",
+      currentVersion: "0.1.0-community.6",
       availableVersion: null,
       message: "updates-disabled"
     };

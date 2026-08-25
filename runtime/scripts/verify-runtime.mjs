@@ -69,17 +69,17 @@ async function verifyPatch(moduleRoot, patch) {
   }
 }
 
-for (const field of ["sourceDateEpoch", "desktopVersion", "harness", "node", "toolchain", "nativeAssets", "targets"]) {
+for (const field of ["sourceDateEpoch", "desktopVersion", "runtime", "node", "toolchain", "nativeAssets", "targets"]) {
   if (lock[field] === undefined) throw new Error(`runtime lock is missing ${field}`);
 }
-if (lock.harness.commit.length !== 40) throw new Error("Harness commit must be a full SHA");
+if (lock.runtime.commit.length !== 40) throw new Error("Runtime commit must be a full SHA");
 if (new Set(lock.targets).size !== lock.targets.length) throw new Error("runtime targets contain duplicates");
 for (const target of lock.targets) {
   if (!lock.nativeAssets[target]) throw new Error(`runtime lock is missing native assets for ${target}`);
 }
 const pnpmLock = await readFile(join(runtimeRoot, "pnpm-lock.yaml"), "utf8");
-if (!pnpmLock.includes(lock.harness.integrity) || !pnpmLock.includes(`@deepseek-ai/dsh@${lock.harness.version}`)) {
-  throw new Error("pnpm lock does not match the locked Harness artifact");
+if (!pnpmLock.includes(lock.runtime.integrity) || !pnpmLock.includes(`@deepseek-ai/dsh@${lock.runtime.version}`)) {
+  throw new Error("pnpm lock does not match the locked Runtime artifact");
 }
 for (const patch of desktopPatches) {
   await verifyPatch(join(runtimeRoot, "node_modules"), patch);

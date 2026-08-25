@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "sourceDateEpoch": 1787313817,
-  "desktopVersion": "0.1.0-community.5",
-  "harness": {
+  "desktopVersion": "0.1.0-community.6",
+  "runtime": {
     "version": "0.1.1-rc.2",
     "tag": "dsh-v0.1.1-rc.2",
     "commit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
@@ -74,8 +74,8 @@
     "x86_64-unknown-linux-gnu"
   ],
   "patches": [
-    "deepseek-desktop-bundle@0.1.0-community.5",
-    "deepseek-harness-credentials-vault@0.1.0-community.5",
+    "deepseek-desktop-bundle@0.1.0-community.6",
+    "deepseek-desktop-credentials-vault@0.1.0-community.6",
     "@deepseek-ai/dsh-client-runtime@0.1.1-rc.2:neutral-auth-failure",
     "@deepseek-ai/dsh-client-ui-conversation@0.1.1-rc.2:hide-system-policy-context",
     "@deepseek-ai/dsh-client-ui-settings-models@0.1.1-rc.2:provider-credential-rollback",

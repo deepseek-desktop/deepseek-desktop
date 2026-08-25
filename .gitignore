@@ -35,5 +35,5 @@ test-results/
 Thumbs.db
 
 # Optional upstream audit checkout
-deepseek-harness/
+upstream-runtime/
 vendor/

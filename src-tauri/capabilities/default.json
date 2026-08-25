@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop-shell",
-  "description": "Minimal capability set for the local desktop shell. The embedded Harness webview receives no Tauri capabilities.",
+  "description": "Minimal capability set for the local desktop shell. The embedded workbench webview receives no Tauri capabilities.",
   "webviews": ["main"],
   "permissions": [
     "core:default",

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import deepSeekHarnessLogo from "./assets/deepseek-harness.svg";
+import deepSeekDesktopLogo from "./assets/deepseek-desktop.svg";
 import type { DesktopAbout, DesktopSettings, RuntimeStatus, UpdateStatus } from "./contracts";
 import {
   checkForUpdates,
@@ -12,7 +12,7 @@ import {
   getSettings,
   onDesktopSurface,
   onRuntimeStatus,
-  openHarness,
+  openWorkbench,
   saveSettings,
   startRuntime,
   stopRuntime
@@ -150,7 +150,7 @@ async function showWorkbench(): Promise<void> {
   if (runtime.value.phase !== "ready" || workbenchVisible.value || workbenchOpening) return;
   workbenchOpening = true;
   try {
-    await openHarness();
+    await openWorkbench();
     workbenchVisible.value = true;
   } catch {
     notice.value = t("error.unexpected");
@@ -208,7 +208,7 @@ onBeforeUnmount(() => {
   <main class="desktop-shell">
     <header class="topbar">
       <div class="brand">
-        <img class="brand-mark" :src="deepSeekHarnessLogo" alt="" aria-hidden="true" />
+        <img class="brand-mark" :src="deepSeekDesktopLogo" alt="" aria-hidden="true" />
         <span>
           <strong>{{ t("app.name") }}</strong>
           <small>{{ t("app.subtitle") }}</small>
@@ -294,7 +294,7 @@ onBeforeUnmount(() => {
             </dl>
           </div>
           <footer class="actions">
-            <button v-if="runtime.phase === 'ready'" class="button primary" @click="openHarness">{{ t("common.open") }}</button>
+            <button v-if="runtime.phase === 'ready'" class="button primary" @click="openWorkbench">{{ t("common.open") }}</button>
             <button v-if="runtime.phase === 'ready'" class="button secondary" :disabled="busy" @click="stop">{{ t("common.stop") }}</button>
             <button v-else-if="runtime.phase === 'failed' || runtime.phase === 'idle'" class="button primary" :disabled="busy" @click="startFromStatus">{{ runtimeStartLabel }}</button>
             <button v-else class="button primary" disabled>{{ phaseLabel }}</button>
@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
           </div>
           <div v-if="about" class="plain-list">
             <div><span>{{ t("about.desktopVersion") }}</span><strong>{{ about.desktopVersion }}</strong></div>
-            <div><span>{{ t("about.harnessVersion") }}</span><strong>{{ about.harnessVersion }}</strong></div>
+            <div><span>{{ t("about.runtimeVersion") }}</span><strong>{{ about.runtimeVersion }}</strong></div>
             <div><span>{{ t("about.nodeVersion") }}</span><strong>{{ about.nodeVersion }}</strong></div>
             <div><span>{{ t("about.channel") }}</span><strong>{{ aboutChannel }}</strong></div>
           </div>

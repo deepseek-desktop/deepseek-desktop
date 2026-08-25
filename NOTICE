@@ -1,13 +1,10 @@
 DeepSeek Desktop
 Copyright 2026 DeepSeek Desktop Contributors
 
-This product includes software developed by the DeepSeek Harness project and
-other third parties. Their licenses and notices are preserved in
-runtime/THIRD_PARTY_NOTICES.md and in the generated runtime licenses and SPDX
-SBOM files distributed with each desktop artifact.
+本产品包含上游 Runtime 和其他第三方软件。对应许可证与声明保存在
+runtime/THIRD_PARTY_NOTICES.md，以及随各桌面产物发布的 Runtime 许可证清单和
+SPDX SBOM 文件中。
 
-The application icon uses the DeepSeek Harness sidebar fish geometry and
-primary ink color from the Runtime commit locked by this repository. DeepSeek
-Harness and its brand assets are owned by their respective owner. DeepSeek Desktop
-is an independent community distribution and is not endorsed by or affiliated
-with DeepSeek.
+应用图标使用本仓库锁定 Runtime 提交中的侧边栏鱼形几何和主墨色。上游项目及其
+品牌资产归各自所有者所有。DeepSeek Desktop 是独立社区发行版，与 DeepSeek
+不存在隶属、合作或官方背书关系。

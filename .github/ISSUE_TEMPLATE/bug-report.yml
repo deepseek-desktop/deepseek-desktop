@@ -1,39 +1,39 @@
-name: Bug report
-description: Report a reproducible DeepSeek Desktop problem
-title: "[Bug]: "
+name: 问题报告
+description: 报告可复现的 DeepSeek Desktop 问题
+title: "[Bug] "
 labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Do not include API keys, OAuth grants, workspace content, or other secrets.
+      value: 请勿附带 API Key、OAuth 授权、工作区内容或其他机密信息。
   - type: input
     id: version
     attributes:
-      label: DeepSeek Desktop version
-      placeholder: 0.1.0-community.5
+      label: DeepSeek Desktop 版本
+      placeholder: 0.1.0-community.6
     validations:
       required: true
   - type: dropdown
     id: platform
     attributes:
-      label: Platform
+      label: 操作系统
       options: [macOS arm64, macOS x64, Windows x64, Linux x64, Other]
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Reproduction steps
+      label: 复现步骤
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
+      label: 期望行为
     validations:
       required: true
   - type: textarea
     id: diagnostics
     attributes:
-      label: Redacted diagnostics
-      description: Attach only diagnostics exported by DeepSeek Desktop after confirming that they contain no private data.
+      label: 已脱敏诊断包
+      description: 确认不含私人数据后，仅附加由 DeepSeek Desktop 导出的诊断包。

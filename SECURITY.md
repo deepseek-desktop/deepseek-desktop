@@ -1,19 +1,19 @@
-# Security Policy
+# 安全策略
 
-## Supported versions
+## 支持版本
 
-Security fixes are applied to the latest community release. Pre-release and older builds may require an upgrade before a fix can be provided.
+安全修复优先应用于最新社区版。预发布版本和旧版本可能需要先升级，才能获得对应修复。
 
-## Reporting a vulnerability
+## 报告漏洞
 
-Do not open a public issue for a suspected vulnerability. Use GitHub's private vulnerability reporting for this repository, or contact the project maintainers privately through the repository owner profile.
+发现疑似漏洞时，请勿创建公开 Issue。请使用本仓库的 GitHub 私密漏洞报告，或通过仓库所有者资料页私下联系维护者。
 
-Include the affected version, platform, reproduction steps, impact, and any suggested mitigation. Do not include real API keys, OAuth grants, workspace content, or other secrets.
+报告应包含受影响版本、平台、复现步骤、影响和建议缓解措施。请勿附带真实 API Key、OAuth 授权、工作区内容或其他机密信息。
 
-## Security boundaries
+## 安全边界
 
-- Model credentials must remain in the authenticated encrypted vault under the user-scoped application data directory.
-- The application must fail closed when the credential vault is unavailable, corrupted, or fails authentication.
-- Credential storage must never fall back to `.env`, YAML, browser storage, logs, diagnostics, or another plaintext file.
-- Runtime and diagnostic output must not expose credentials or short-lived helper sessions.
-- Community artifacts without a publisher identity or notarization must not be represented as authenticated Stable releases.
+- 模型凭据必须保存在用户级应用数据目录下经过认证的加密凭据库中。
+- 凭据库不可用、损坏或认证失败时，应用必须拒绝继续使用凭据。
+- 凭据不得降级写入 `.env`、YAML、浏览器存储、日志、诊断包或其他明文文件。
+- Runtime 和诊断输出不得暴露凭据或短期 Helper Session。
+- 未提供发布者身份或平台公证的社区版产物，不得宣称为经过认证的稳定版。

@@ -1,46 +1,52 @@
-# Changelog
+# 更新日志
 
-All notable changes to DeepSeek Desktop are documented in this file.
+DeepSeek Desktop 的重要变化记录如下。
+
+## 0.1.0-community.6 - 2026-08-25
+
+- 完成产品文案、桌面自有包、图标、诊断和发行产物中的 DeepSeek Desktop 命名治理。
+- 仓库文档以中文为主，同时保留桌面界面的三语支持。
+- 关闭自动依赖更新分支，使仓库只保留 `master` 分支。
 
 ## 0.1.0-community.5 - 2026-08-25
 
-- Rename the product to DeepSeek Desktop and align installers, desktop-owned packages, environment variables, diagnostics, application identifier, and data directory with the `deepseek-desktop` / `deepseek.desktop` identity.
-- Move the Harness and Desktop repository references to the `deepseek-desktop` GitHub organization.
-- Remove the redundant product-name menu on Windows and Linux while preserving the standard macOS application menu.
-- Keep Exit under File and About under Help on Windows and Linux so the simplified menu retains all native actions.
+- 产品更名为 DeepSeek Desktop，安装包、桌面自有包、环境变量、诊断、应用标识和数据目录统一使用 `deepseek-desktop` / `deepseek.desktop`。
+- Runtime 与桌面仓库引用迁移到 `deepseek-desktop` GitHub 组织。
+- Windows 和 Linux 删除冗余产品名菜单，同时保留 macOS 标准应用菜单。
+- Windows 和 Linux 的“文件”菜单保留退出，“帮助”菜单保留关于，精简后仍具备完整原生操作。
 
 ## 0.1.0-community.4 - 2026-08-25
 
-- Consolidate Harness and desktop management into one native window with native View menu switching.
-- Use concise localized Workbench menu labels and remove the redundant in-window toolbar.
-- Prevent onboarding from advancing before a workspace has been selected.
-- Refresh the white, rounded desktop icon and preserve the official black Harness mark.
+- 工作台与桌面管理合并到同一个原生窗口，通过原生“视图”菜单切换。
+- 使用简洁的本地化工作台菜单名，并删除窗口内重复工具栏。
+- 未选择工作区时禁止首次引导进入下一步。
+- 更新白色圆角桌面图标，保留上游黑色鱼形标识。
 
 ## 0.1.0-community.3 - 2026-08-25
 
-- Standardize the desktop product identity used by that build.
-- Derive local and GitHub release package names from the Tauri product configuration instead of duplicating the product name in build scripts.
+- 统一该版本使用的桌面产品标识。
+- 本地和 GitHub 发行包名称从 Tauri 产品配置派生，不在构建脚本中重复维护产品名。
 
 ## 0.1.0-community.2 - 2026-08-25
 
-- Replace platform keychains with one cross-platform authenticated encrypted credential vault, removing repeated system authorization prompts.
-- Stop describing every Provider authentication failure as an invalid API key, and keep model-facing sandbox policy text out of the ordinary conversation view.
-- Fix Credential Provider calls when Cordis wraps the service in a Proxy.
-- Roll back a newly created custom Provider when its credential cannot be stored.
-- Clarify sandbox and approval policy context shown to the model.
-- Retry early Runtime failures from the persisted workspace, make repeated starts idempotent, and suppress duplicate actions during transitions.
-- Clear page-specific operation notices when navigating between Shell views.
-- Disable spelling, automatic correction, automatic capitalization, and writing suggestions in managed Harness inputs without changing entered values.
-- Add packaged credential-vault helper, plaintext-leak checks, Runtime patch, and provider regression checks.
+- 使用统一的跨平台认证加密凭据库替代系统钥匙串，消除重复授权弹窗。
+- 不再把所有 Provider 认证失败都描述为 API Key 无效，并从普通对话视图隐藏面向模型的沙箱策略文本。
+- 修复 Cordis 通过 Proxy 包装服务时的 Credential Provider 调用。
+- 新建自定义 Provider 的凭据保存失败时自动回滚该 Provider。
+- 明确展示给模型的沙箱与审批策略上下文。
+- 从持久化工作区重试 Runtime 早期失败，使重复启动具备幂等性，并在状态切换时抑制重复操作。
+- 在 Shell 页面切换时清除页面专属操作提示。
+- 关闭受管工作台输入框的拼写检查、自动纠错、首字母大写和写作建议，不修改用户输入值。
+- 增加随包凭据库 helper、明文泄漏检查、Runtime 补丁和 Provider 回归检查。
 
 ## 0.1.0-community.1 - 2026-08-24
 
-- Added the standalone Vue 3 and Tauri 2 desktop Shell.
-- Added the locked DeepSeek Harness and Node.js Runtime staging pipeline.
-- Added Runtime supervision, recovery, process-tree cleanup, and loopback readiness checks, including explicit Rustls provider initialization, panic recovery, and Windows verbatim-path normalization for Node module loading.
-- Added the operating-system keychain Credential Provider and redacted diagnostics.
-- Added `zh-CN`, `zh-TW`, and `en-US` Shell localization.
-- Added macOS, Windows, and Linux community build workflows.
-- Replaced the Shell, favicon, application, installer, and platform icons with the DeepSeek Harness sidebar fish mark and primary ink color from the locked upstream commit.
-- Verified the macOS arm64 DMG with a complete ad-hoc Bundle signature, isolated installation, real window launch, graceful exit, and 100 Runtime start/stop cycles.
-- Verified the Windows x64 NSIS installer on Windows 11 ARM64 through the operating system x64 compatibility layer, including checksum parity, install, launch, responsive window, graceful exit, orphan-process cleanup, uninstall, reinstall, and relaunch.
+- 新增独立的 Vue 3 与 Tauri 2 桌面 Shell。
+- 新增固定版本 Runtime 与 Node.js staging 流程。
+- 新增 Runtime 监管、恢复、进程树清理和回环就绪检查，包括 Rustls Provider 显式初始化、panic 恢复和 Windows Node 模块路径规范化。
+- 新增操作系统钥匙串 Credential Provider 和脱敏诊断。
+- 新增 `zh-CN`、`zh-TW` 和 `en-US` Shell 国际化。
+- 新增 macOS、Windows 和 Linux 社区版构建工作流。
+- Shell、favicon、应用、安装包和平台图标统一使用固定上游提交中的鱼形标识和主墨色。
+- macOS arm64 DMG 完成 ad-hoc Bundle 签名、隔离安装、真机启动、正常退出和 100 次 Runtime 启停验证。
+- Windows x64 NSIS 安装包通过 Windows 11 ARM64 的系统 x64 兼容层完成校验和、安装、启动、窗口响应、正常退出、孤儿进程清理、卸载、重装和再次启动验收。

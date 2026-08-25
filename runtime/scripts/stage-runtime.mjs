@@ -188,7 +188,7 @@ function createSpdx(target, inventory, createdAt) {
     dataLicense: "CC0-1.0",
     SPDXID: "SPDXRef-DOCUMENT",
     name: `DeepSeek-Desktop-Runtime-${target}`,
-    documentNamespace: `https://deepseek-desktop.local/${lock.desktopVersion}/sbom/${target}/${lock.harness.commit}`,
+    documentNamespace: `https://deepseek-desktop.local/${lock.desktopVersion}/sbom/${target}/${lock.runtime.commit}`,
     creationInfo: {
       created: createdAt,
       creators: ["Tool: DeepSeek Desktop runtime staging"]
@@ -250,7 +250,7 @@ const manifest = {
     sha256: await hashFile(sidecar),
     archiveSha256: nodeArchiveSha256
   },
-  harness: lock.harness,
+  runtime: lock.runtime,
   packageCount: inventory.length,
   files
 };

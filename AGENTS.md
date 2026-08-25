@@ -1,27 +1,27 @@
-# Agent Guide
+# Agent 协作指南
 
-## Scope
+## 适用范围
 
-This repository contains only DeepSeek Desktop. Generated Runtime staging, build output, local toolchains, upstream audit checkouts, credentials, and user workspace data must never be committed.
+本仓库只包含 DeepSeek Desktop。生成的 Runtime 暂存目录、构建产物、本地工具链、上游审计检出、凭据和用户工作区数据均不得提交。
 
-## Source of truth
+## 权威来源
 
-- `runtime/runtime-lock.json` owns upstream Runtime versions, checksums, target triples, and desktop patches.
-- `src-tauri/` owns native lifecycle, the encrypted credential vault, diagnostics, settings, and updater boundaries.
-- `src/` owns the Vue desktop Shell and typed IPC contracts.
-- `README.md`, `docs/`, `SECURITY.md`, and `CONTRIBUTING.md` define public behavior and contribution rules.
+- `runtime/runtime-lock.json` 记录上游 Runtime 版本、校验和、目标平台和桌面补丁。
+- `src-tauri/` 负责原生生命周期、加密凭据库、诊断、设置和更新边界。
+- `src/` 负责 Vue 桌面 Shell 和类型化 IPC 契约。
+- `README.md`、`docs/`、`SECURITY.md` 和 `CONTRIBUTING.md` 定义公开行为与协作规则。
 
-## Change rules
+## 修改规则
 
-- Keep user-visible text complete in `zh-CN`, `zh-TW`, and `en-US`.
-- Keep the Harness WebView isolated from generic Tauri shell, filesystem, and IPC capabilities.
-- Never add plaintext credential fallback storage.
-- Do not claim signing, notarization, platform support, or external Provider compatibility without real verification.
-- Keep changes focused and preserve the locked Runtime unless an intentional upgrade updates checksums, notices, SBOM expectations, tests, and documentation together.
+- 用户可见文案必须同时补齐 `zh-CN`、`zh-TW` 和 `en-US`。
+- 工作台 WebView 不得获得通用 Tauri Shell、文件系统或 IPC capability。
+- 禁止增加明文凭据降级存储。
+- 未经真实验证，不得宣称已完成签名、公证、平台支持或外部 Provider 兼容。
+- 修改应聚焦；除非有意升级并同步更新校验和、许可证、SBOM 预期、测试和文档，否则保持锁定 Runtime 不变。
 
-## Verification
+## 验证
 
-Run the smallest relevant checks during development. Before a release-oriented change, run:
+开发时运行与改动范围匹配的最小检查。涉及发行的改动必须执行：
 
 ```bash
 corepack pnpm@11.7.0 verify
@@ -29,4 +29,4 @@ corepack pnpm@11.7.0 test:e2e
 corepack pnpm@11.7.0 runtime:smoke
 ```
 
-`verify` stages and verifies the target Runtime before invoking Rust so a clean checkout never depends on a previously generated sidecar.
+`verify` 会先暂存并校验目标 Runtime，再执行 Rust 检查，确保干净检出不依赖历史生成的 sidecar。
