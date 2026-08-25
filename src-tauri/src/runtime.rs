@@ -219,7 +219,7 @@ impl RuntimeSupervisor {
         self.workbench_visible.store(false, Ordering::Release);
         if let Some(webview) = self.app.get_webview("workbench") {
             webview
-                .hide()
+                .close()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
         }
         if let Some(main) = self.app.get_webview("main") {
@@ -497,18 +497,15 @@ impl RuntimeSupervisor {
         if let Some(mut process) = process {
             process.terminate();
         }
-        self.workbench_visible.store(false, Ordering::Release);
-        if let Some(webview) = self.app.get_webview("workbench") {
-            let _ = webview.close();
-        }
-        let _ = self.layout_management();
-        self.emit_surface("management");
+        let surface_result = self.show_management();
         let status = RuntimeStatus {
             phase: RuntimePhase::Idle,
             workspace: previous.workspace,
             ..RuntimeStatus::default()
         };
-        self.publish(status)
+        let status = self.publish(status)?;
+        surface_result?;
+        Ok(status)
     }
 
     fn fail(
