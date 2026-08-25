@@ -7,6 +7,7 @@ import process from "node:process";
 
 import { loadBuildConfig } from "./lib/build-config.mjs";
 import { findInstalledPackages } from "./lib/installed-packages.mjs";
+import { applyPackagePatch } from "./lib/package-patch.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const runtimeRoot = join(root, "runtime");
@@ -419,13 +420,7 @@ async function applyDesktopPatches(moduleRoots) {
       }
       if (!patch.file) throw new Error(`Desktop patch file is missing for ${patch.packageName}:${patch.id}`);
       const patchFile = join(runtimeRoot, "patches", patch.file);
-      const checkResult = spawnSync("git", ["apply", "--check", patchFile], { cwd: directory, stdio: "ignore" });
-      if (checkResult.status === 0) {
-        run("git", ["apply", patchFile], directory);
-      } else {
-        const reverse = spawnSync("git", ["apply", "--reverse", "--check", patchFile], { cwd: directory, stdio: "ignore" });
-        if (reverse.status !== 0) throw new Error(`Desktop patch ${patch.file} does not apply to ${patch.packageName}`);
-      }
+      applyPackagePatch(directory, patchFile);
     }
     applied.push(`${patch.packageName}:${patch.id}:${directories.length}`);
   }
