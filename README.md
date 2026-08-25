@@ -13,6 +13,8 @@ DeepSeek Desktop 是内置固定版本本地 Runtime 的独立、非官方社区
 
 ![DeepSeek Desktop 工作台](docs/assets/workbench.png)
 
+![DeepSeek Desktop 模型接入](docs/assets/model-provider.png)
+
 ![DeepSeek Desktop 插件市场](docs/assets/plugin-market.png)
 
 ## 快速使用
