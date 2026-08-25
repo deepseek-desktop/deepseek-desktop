@@ -19,7 +19,7 @@ use crate::diagnostics::Diagnostics;
 use crate::error::{DesktopError, DesktopResult};
 use crate::settings::{AppPaths, SettingsStore};
 
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const WORKSPACE_REGISTRATION_TIMEOUT: Duration = Duration::from_secs(5);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
