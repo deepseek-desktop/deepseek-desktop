@@ -8,6 +8,7 @@ DeepSeek Desktop 的重要变化记录如下。
 - 仓库文档以中文为主，同时保留桌面界面的三语支持。
 - 关闭自动依赖更新分支，使仓库只保留 `master` 分支。
 - Playwright 发布门禁改为验收生产构建预览，避免开发服务器冷转换影响跨架构 Windows 验收。
+- Runtime Smoke 的临时目录固定在项目自身 `target/` 下，避免 Windows 浅层克隆路径越界到无权限目录。
 
 ## 0.1.0-community.5 - 2026-08-25
 

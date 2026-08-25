@@ -72,7 +72,7 @@ const parentWatch = join(staging, "node_modules", "deepseek-desktop-bundle", "pa
 const localeSync = join(staging, "node_modules", "deepseek-desktop-bundle", "locale-sync.cjs");
 await Promise.all([stat(node), stat(dsh), stat(parentWatch), stat(localeSync)]);
 
-const smokeRoot = resolve(desktopRoot, "../../target/deepseek-desktop-runtime-smoke");
+const smokeRoot = join(desktopRoot, "target", "deepseek-desktop-runtime-smoke");
 const dshHome = join(smokeRoot, "home");
 const profile = join(dshHome, "profiles", "desktop-web");
 const desktopModules = join(profile, "node_modules");

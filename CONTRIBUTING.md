@@ -28,6 +28,7 @@ corepack pnpm@11.7.0 package:community
 
 ## Pull Request
 
+- 文档、Issue / Pull Request 和发布说明以简体中文为主，必要时可附英文摘要。
 - 说明用户可见行为和安全影响。
 - 用户可见文案必须同时更新 `zh-CN`、`zh-TW` 和 `en-US`。
 - 运行与改动范围匹配的检查，并附上结果。

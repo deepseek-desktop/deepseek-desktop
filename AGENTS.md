@@ -13,6 +13,7 @@
 
 ## 修改规则
 
+- 仓库文档、Issue / Pull Request 模板和发布说明以简体中文为主；确有国际协作需要时可附英文摘要，但不以英文替代中文正文。
 - 用户可见文案必须同时补齐 `zh-CN`、`zh-TW` 和 `en-US`。
 - 工作台 WebView 不得获得通用 Tauri Shell、文件系统或 IPC capability。
 - 禁止增加明文凭据降级存储。
