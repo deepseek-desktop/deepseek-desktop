@@ -15,9 +15,9 @@ pub async fn check(app: &AppHandle, settings: &DesktopSettings) -> DesktopResult
         });
     }
     let endpoint =
-        option_env!("DEEPSEEK_HARNESS_DESKTOP_UPDATER_ENDPOINT").filter(|value| !value.is_empty());
+        option_env!("DEEPSEEK_DESKTOP_UPDATER_ENDPOINT").filter(|value| !value.is_empty());
     let public_key =
-        option_env!("DEEPSEEK_HARNESS_DESKTOP_UPDATER_PUBKEY").filter(|value| !value.is_empty());
+        option_env!("DEEPSEEK_DESKTOP_UPDATER_PUBKEY").filter(|value| !value.is_empty());
     let (Some(endpoint), Some(public_key)) = (endpoint, public_key) else {
         return Ok(UpdateStatus {
             enabled: false,

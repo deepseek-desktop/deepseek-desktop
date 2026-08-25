@@ -21,7 +21,7 @@ pub struct AppPaths {
 
 impl AppPaths {
     pub fn resolve(app: &AppHandle) -> DesktopResult<Self> {
-        let data_dir = std::env::var_os("DEEPSEEK_HARNESS_DESKTOP_DATA_DIR")
+        let data_dir = std::env::var_os("DEEPSEEK_DESKTOP_DATA_DIR")
             .map(PathBuf::from)
             .map(Ok)
             .unwrap_or_else(|| {
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn writes_atomic_settings_with_current_schema() {
         let root = std::env::temp_dir().join(format!(
-            "deepseek-harness-desktop-settings-{}",
+            "deepseek-desktop-settings-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&root);
@@ -237,7 +237,7 @@ mod tests {
     #[test]
     fn quarantines_corrupt_settings_and_restores_defaults() {
         let root = std::env::temp_dir().join(format!(
-            "deepseek-harness-desktop-corrupt-settings-{}",
+            "deepseek-desktop-corrupt-settings-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&root);

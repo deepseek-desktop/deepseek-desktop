@@ -1,6 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-const port = Number(process.env.DEEPSEEK_HARNESS_DESKTOP_E2E_PORT || "1421");
+const port = Number(process.env.DEEPSEEK_DESKTOP_E2E_PORT || "1421");
 const pnpmCli = process.env.npm_execpath;
 if (!pnpmCli) throw new Error("pnpm executable is unavailable");
 const quote = (value: string): string => `"${value.replaceAll("\"", "\\\"")}"`;

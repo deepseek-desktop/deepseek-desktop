@@ -1,9 +1,11 @@
 # Changelog
 
-All notable changes to DeepSeek Harness Desktop are documented in this file.
+All notable changes to DeepSeek Desktop are documented in this file.
 
 ## 0.1.0-community.5 - 2026-08-25
 
+- Rename the product to DeepSeek Desktop and align installers, desktop-owned packages, environment variables, diagnostics, application identifier, and data directory with the `deepseek-desktop` / `deepseek.desktop` identity.
+- Move the Harness and Desktop repository references to the `deepseek-desktop` GitHub organization.
 - Remove the redundant product-name menu on Windows and Linux while preserving the standard macOS application menu.
 - Keep Exit under File and About under Help on Windows and Linux so the simplified menu retains all native actions.
 
@@ -16,7 +18,7 @@ All notable changes to DeepSeek Harness Desktop are documented in this file.
 
 ## 0.1.0-community.3 - 2026-08-25
 
-- Rename the product, installers, desktop-owned packages, environment variables, diagnostics, application identifier, and data directory from the abbreviated DSH Desktop identity to DeepSeek Harness Desktop.
+- Replace the abbreviated DSH Desktop identity with the full product identity used by that build.
 - Derive local and GitHub release package names from the Tauri product configuration instead of duplicating the product name in build scripts.
 
 ## 0.1.0-community.2 - 2026-08-25

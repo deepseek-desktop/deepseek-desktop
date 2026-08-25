@@ -216,7 +216,7 @@ pub fn run() {
             }
             native_menu::DOCUMENTATION_MENU_ID => {
                 let _ = app.opener().open_url(
-                    "https://github.com/spring-open/deepseek-harness-desktop#readme",
+                    "https://github.com/deepseek-desktop/deepseek-desktop#readme",
                     None::<&str>,
                 );
             }
@@ -277,7 +277,7 @@ pub fn run() {
 
     let app = builder
         .build(tauri::generate_context!())
-        .expect("failed to build DeepSeek Harness Desktop");
+        .expect("failed to build DeepSeek Desktop");
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. })
             && let Some(state) = app_handle.try_state::<AppState>()
@@ -295,7 +295,7 @@ mod tests {
     fn resolves_an_explicit_workspace_argument() {
         let current = std::env::current_dir().unwrap();
         let arguments = vec![
-            "deepseek-harness-desktop".to_owned(),
+            "deepseek-desktop".to_owned(),
             "--workspace".to_owned(),
             ".".to_owned(),
         ];

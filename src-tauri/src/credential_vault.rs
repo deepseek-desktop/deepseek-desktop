@@ -17,8 +17,8 @@ use uuid::Uuid;
 use crate::error::{DesktopError, DesktopResult};
 use crate::settings::write_json_atomic;
 
-const SERVICE: &str = "deepseekharness.desktop.credentials.vault.v1";
-const DATA_DIR_ENV: &str = "DEEPSEEK_HARNESS_DESKTOP_DATA_DIR";
+const SERVICE: &str = "deepseek.desktop.credentials.vault.v1";
+const DATA_DIR_ENV: &str = "DEEPSEEK_DESKTOP_DATA_DIR";
 const SESSION_FILE: &str = "credential-session.json";
 const VAULT_FILE: &str = "credential-vault.json";
 const VAULT_KEY_FILE: &str = "credential-vault.key";
@@ -649,7 +649,7 @@ mod tests {
 
     fn temporary_data_dir(name: &str) -> PathBuf {
         let path = env::temp_dir().join(format!(
-            "deepseek-harness-desktop-{name}-{}",
+            "deepseek-desktop-{name}-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&path);

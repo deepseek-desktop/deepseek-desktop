@@ -45,7 +45,7 @@ vi.mock("./desktop", () => ({
   stopRuntime: vi.fn(async () => ({ ...runtime }))
 }));
 
-describe("DeepSeek Harness Desktop shell", () => {
+describe("DeepSeek Desktop shell", () => {
   beforeEach(() => {
     Object.assign(settings, {
       schemaVersion: 1,
@@ -71,11 +71,11 @@ describe("DeepSeek Harness Desktop shell", () => {
   it("loads onboarding and switches all visible navigation to English", async () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
-    expect(wrapper.text()).toContain("欢迎使用 DeepSeek Harness Desktop");
+    expect(wrapper.text()).toContain("欢迎使用 DeepSeek Desktop");
 
     await wrapper.get("select").setValue("en-US");
     await flushPromises();
-    expect(wrapper.text()).toContain("Welcome to DeepSeek Harness Desktop");
+    expect(wrapper.text()).toContain("Welcome to DeepSeek Desktop");
     expect(wrapper.text()).toContain("Runtime");
     expect(wrapper.text()).toContain("Diagnostics");
   });

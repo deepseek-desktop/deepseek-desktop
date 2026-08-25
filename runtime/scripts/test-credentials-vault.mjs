@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 const providerUrl = pathToFileURL(resolve(import.meta.dirname, "../packages/credentials-vault/index.js")).href;
 const script = `
   import { Context } from "@deepseek-ai/cordis";
-  process.env.DEEPSEEK_HARNESS_DESKTOP_HELPER_PATH = ${JSON.stringify(resolve(import.meta.dirname, "missing-vault-helper"))};
+  process.env.DEEPSEEK_DESKTOP_HELPER_PATH = ${JSON.stringify(resolve(import.meta.dirname, "missing-vault-helper"))};
   const { VaultCredentialProvider } = await import(${JSON.stringify(providerUrl)});
   const provider = new VaultCredentialProvider(new Context());
   const proxied = new Proxy(provider, {});

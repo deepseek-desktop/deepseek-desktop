@@ -1,5 +1,5 @@
 {
-  "name": "deepseek-harness-desktop-runtime",
+  "name": "deepseek-desktop-runtime",
   "version": "0.1.0-community.5",
   "private": true,
   "license": "Apache-2.0",
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.1.1-rc.2",
-    "deepseek-harness-desktop-bundle": "workspace:*",
+    "deepseek-desktop-bundle": "workspace:*",
     "deepseek-harness-credentials-vault": "workspace:*",
     "react": "18.3.1",
     "react-dom": "18.3.1"

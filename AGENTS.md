@@ -2,7 +2,7 @@
 
 ## Scope
 
-This repository contains only DeepSeek Harness Desktop. Generated Runtime staging, build output, local toolchains, upstream audit checkouts, credentials, and user workspace data must never be committed.
+This repository contains only DeepSeek Desktop. Generated Runtime staging, build output, local toolchains, upstream audit checkouts, credentials, and user workspace data must never be committed.
 
 ## Source of truth
 

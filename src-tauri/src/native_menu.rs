@@ -7,7 +7,7 @@ pub const WORKBENCH_MENU_ID: &str = "desktop-workbench";
 pub const MANAGEMENT_MENU_ID: &str = "desktop-management";
 pub const DOCUMENTATION_MENU_ID: &str = "desktop-documentation";
 
-const APP_NAME: &str = "DeepSeek Harness Desktop";
+const APP_NAME: &str = "DeepSeek Desktop";
 
 #[derive(Clone, Copy)]
 struct MenuLabels {
@@ -41,7 +41,7 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
     let about = AboutMetadataBuilder::new()
         .name(Some(APP_NAME))
         .version(Some(env!("CARGO_PKG_VERSION")))
-        .copyright(Some("Copyright 2026 DeepSeek Harness Desktop Contributors"))
+        .copyright(Some("Copyright 2026 DeepSeek Desktop Contributors"))
         .license(Some("Apache-2.0"))
         .build();
 
@@ -103,7 +103,7 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
             AboutMetadataBuilder::new()
                 .name(Some(APP_NAME))
                 .version(Some(env!("CARGO_PKG_VERSION")))
-                .copyright(Some("Copyright 2026 DeepSeek Harness Desktop Contributors"))
+                .copyright(Some("Copyright 2026 DeepSeek Desktop Contributors"))
                 .license(Some("Apache-2.0"))
                 .build(),
         ),
@@ -132,9 +132,9 @@ fn labels(locale: &str) -> MenuLabels {
             view: "檢視",
             window: "視窗",
             help: "輔助說明",
-            about: "關於 DeepSeek Harness Desktop",
+            about: "關於 DeepSeek Desktop",
             close: "關閉視窗",
-            quit: "結束 DeepSeek Harness Desktop",
+            quit: "結束 DeepSeek Desktop",
             undo: "還原",
             redo: "重做",
             cut: "剪下",
@@ -155,9 +155,9 @@ fn labels(locale: &str) -> MenuLabels {
             view: "View",
             window: "Window",
             help: "Help",
-            about: "About DeepSeek Harness Desktop",
+            about: "About DeepSeek Desktop",
             close: "Close Window",
-            quit: "Quit DeepSeek Harness Desktop",
+            quit: "Quit DeepSeek Desktop",
             undo: "Undo",
             redo: "Redo",
             cut: "Cut",
@@ -178,9 +178,9 @@ fn labels(locale: &str) -> MenuLabels {
             view: "视图",
             window: "窗口",
             help: "帮助",
-            about: "关于 DeepSeek Harness Desktop",
+            about: "关于 DeepSeek Desktop",
             close: "关闭窗口",
-            quit: "退出 DeepSeek Harness Desktop",
+            quit: "退出 DeepSeek Desktop",
             undo: "撤销",
             redo: "重做",
             cut: "剪切",

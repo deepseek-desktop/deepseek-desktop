@@ -68,28 +68,28 @@ const staging = join(runtimeRoot, "staging", target);
 const nodeSuffix = process.platform === "win32" ? ".exe" : "";
 const node = join(desktopRoot, "src-tauri", "binaries", `node-${target}${nodeSuffix}`);
 const dsh = join(staging, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
-const parentWatch = join(staging, "node_modules", "deepseek-harness-desktop-bundle", "parent-watch.cjs");
-const localeSync = join(staging, "node_modules", "deepseek-harness-desktop-bundle", "locale-sync.cjs");
+const parentWatch = join(staging, "node_modules", "deepseek-desktop-bundle", "parent-watch.cjs");
+const localeSync = join(staging, "node_modules", "deepseek-desktop-bundle", "locale-sync.cjs");
 await Promise.all([stat(node), stat(dsh), stat(parentWatch), stat(localeSync)]);
 
-const smokeRoot = resolve(desktopRoot, "../../target/deepseek-harness-desktop-runtime-smoke");
+const smokeRoot = resolve(desktopRoot, "../../target/deepseek-desktop-runtime-smoke");
 const dshHome = join(smokeRoot, "home");
 const profile = join(dshHome, "profiles", "desktop-web");
 const desktopModules = join(profile, "node_modules");
 await rm(smokeRoot, { recursive: true, force: true });
 await mkdir(desktopModules, { recursive: true });
 await writeFile(join(profile, "package.json"), `${JSON.stringify({
-  name: "deepseek-harness-desktop-web-profile",
+  name: "deepseek-desktop-web-profile",
   private: true,
   dsh: { profile: { bundles: [
     "@deepseek-ai/dsh-base",
     "@deepseek-ai/dsh-web-app",
-    "deepseek-harness-desktop-bundle"
+    "deepseek-desktop-bundle"
   ] } }
 }, null, 2)}\n`);
 await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
 await writeFile(join(profile, "pnpm-workspace.yaml"), "packages:\n  - .\n\nnodeLinker: hoisted\n");
-for (const name of ["deepseek-harness-desktop-bundle", "deepseek-harness-credentials-vault"]) {
+for (const name of ["deepseek-desktop-bundle", "deepseek-harness-credentials-vault"]) {
   await cp(join(staging, "node_modules", name), join(desktopModules, name), { recursive: true });
 }
 
@@ -100,10 +100,10 @@ const environment = {
   LANG: process.env.LANG,
   DSH_HOME: dshHome,
   DSH_TELEMETRY_DISABLED: "true",
-  DEEPSEEK_HARNESS_DESKTOP_HELPER_PATH: process.execPath,
-  DEEPSEEK_HARNESS_DESKTOP_DATA_DIR: join(smokeRoot, "data"),
-  DEEPSEEK_HARNESS_DESKTOP_PARENT_PID: String(process.pid),
-  DEEPSEEK_HARNESS_DESKTOP_LOCALE: "zh-TW",
+  DEEPSEEK_DESKTOP_HELPER_PATH: process.execPath,
+  DEEPSEEK_DESKTOP_DATA_DIR: join(smokeRoot, "data"),
+  DEEPSEEK_DESKTOP_PARENT_PID: String(process.pid),
+  DEEPSEEK_DESKTOP_LOCALE: "zh-TW",
   NO_PROXY: "127.0.0.1,localhost",
   no_proxy: "127.0.0.1,localhost"
 };
@@ -122,9 +122,9 @@ if (!/locale:\s+preference: zh/u.test(await readFile(join(dshHome, "settings.yam
   throw new Error("desktop locale bridge did not persist the mapped Harness locale");
 }
 
-const cycles = Number.parseInt(process.env.DEEPSEEK_HARNESS_DESKTOP_SMOKE_CYCLES || "1", 10);
+const cycles = Number.parseInt(process.env.DEEPSEEK_DESKTOP_SMOKE_CYCLES || "1", 10);
 if (!Number.isInteger(cycles) || cycles < 1 || cycles > 1_000) {
-  throw new Error(`DEEPSEEK_HARNESS_DESKTOP_SMOKE_CYCLES must be between 1 and 1000, got ${process.env.DEEPSEEK_HARNESS_DESKTOP_SMOKE_CYCLES}`);
+  throw new Error(`DEEPSEEK_DESKTOP_SMOKE_CYCLES must be between 1 and 1000, got ${process.env.DEEPSEEK_DESKTOP_SMOKE_CYCLES}`);
 }
 
 async function runCycle(index) {
@@ -195,10 +195,10 @@ const child = spawn(node, ["--require", parentWatch, "--require", localeSync, ds
     LANG: process.env.LANG,
     DSH_HOME: dshHome,
     DSH_TELEMETRY_DISABLED: "true",
-    DEEPSEEK_HARNESS_DESKTOP_HELPER_PATH: process.execPath,
-    DEEPSEEK_HARNESS_DESKTOP_DATA_DIR: dataDir,
-    DEEPSEEK_HARNESS_DESKTOP_PARENT_PID: String(process.pid),
-    DEEPSEEK_HARNESS_DESKTOP_LOCALE: "zh-TW",
+    DEEPSEEK_DESKTOP_HELPER_PATH: process.execPath,
+    DEEPSEEK_DESKTOP_DATA_DIR: dataDir,
+    DEEPSEEK_DESKTOP_PARENT_PID: String(process.pid),
+    DEEPSEEK_DESKTOP_LOCALE: "zh-TW",
     NO_PROXY: "127.0.0.1,localhost",
     no_proxy: "127.0.0.1,localhost"
   },

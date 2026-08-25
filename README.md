@@ -1,13 +1,13 @@
-# DeepSeek Harness Desktop
+# DeepSeek Desktop
 
-[![Community Build](https://github.com/spring-open/deepseek-harness-desktop/actions/workflows/community-build.yml/badge.svg)](https://github.com/spring-open/deepseek-harness-desktop/actions/workflows/community-build.yml)
+[![Community Build](https://github.com/deepseek-desktop/deepseek-desktop/actions/workflows/community-build.yml/badge.svg)](https://github.com/deepseek-desktop/deepseek-desktop/actions/workflows/community-build.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-DeepSeek Harness Desktop is an independent, unofficial community distribution built on the locked DeepSeek Harness Runtime. It does not require a separate Node.js, pnpm, Rust, or framework application installation at runtime. This project is not endorsed by or affiliated with DeepSeek.
+DeepSeek Desktop is an independent, unofficial community distribution built on the locked DeepSeek Harness Runtime. It does not require a separate Node.js, pnpm, Rust, or framework application installation at runtime. This project is not endorsed by or affiliated with DeepSeek.
 
 Version `0.1.0-community.5` is the community edition. The macOS artifact uses a complete ad-hoc signature but has no Apple Developer ID identity or notarization; other current artifacts are unsigned. The desktop-owned source is Apache-2.0, while the packaged Harness, Node.js, and npm dependencies retain their own license notices.
 
-Installers are published on the [GitHub Releases page](https://github.com/spring-open/deepseek-harness-desktop/releases). Verify the downloaded file against the accompanying `SHA256SUMS` before installation.
+Installers are published on the [GitHub Releases page](https://github.com/deepseek-desktop/deepseek-desktop/releases). Verify the downloaded file against the accompanying `SHA256SUMS` before installation.
 
 ## Architecture
 
@@ -35,13 +35,13 @@ The desktop uses one native window. When the Runtime is ready, Harness fills the
 - Tauri CLI `2.11.4`
 - DeepSeek Harness `0.1.1-rc.2` at `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`
 
-Rust is installed under the repository `target/deepseek-harness-desktop-toolchain/` by `scripts/with-rust.mjs`; no global Rust installation is changed.
+Rust is installed under the repository `target/deepseek-desktop-toolchain/` by `scripts/with-rust.mjs`; no global Rust installation is changed.
 
 ## Development
 
 ```bash
-git clone git@github.com:spring-open/deepseek-harness-desktop.git
-cd deepseek-harness-desktop
+git clone git@github.com:deepseek-desktop/deepseek-desktop.git
+cd deepseek-desktop
 corepack pnpm@11.7.0 install --frozen-lockfile
 corepack pnpm@11.7.0 --dir runtime install --frozen-lockfile
 corepack pnpm@11.7.0 check:i18n
@@ -58,9 +58,9 @@ corepack pnpm@11.7.0 tauri:dev
 
 `runtime/runtime-lock.json` is the source of truth for upstream artifacts. Runtime staging is generated on the native target and is never committed.
 
-The staging command downloads the target-specific official Node.js archive into the repository `target/` cache, verifies its locked SHA-256, removes install-only wall-clock metadata and non-target native artifacts, and emits deterministic `runtime-manifest.json`, `licenses.json`, and `sbom.spdx.json` files. The allowed `node-pty` and Koffi native assets for every target are pinned in `runtime/runtime-lock.json`. Set `DEEPSEEK_HARNESS_DESKTOP_SMOKE_CYCLES=100` when running `runtime:smoke` for the release stability gate; the smoke also verifies parent-death cleanup on Unix.
+The staging command downloads the target-specific official Node.js archive into the repository `target/` cache, verifies its locked SHA-256, removes install-only wall-clock metadata and non-target native artifacts, and emits deterministic `runtime-manifest.json`, `licenses.json`, and `sbom.spdx.json` files. The allowed `node-pty` and Koffi native assets for every target are pinned in `runtime/runtime-lock.json`. Set `DEEPSEEK_DESKTOP_SMOKE_CYCLES=100` when running `runtime:smoke` for the release stability gate; the smoke also verifies parent-death cleanup on Unix.
 
-`DEEPSEEK_HARNESS_DESKTOP_DATA_DIR` may be set for an isolated launch test. End users do not need it; without the override, Tauri's platform application-data directory is used.
+`DEEPSEEK_DESKTOP_DATA_DIR` may be set for an isolated launch test. End users do not need it; without the override, Tauri's platform application-data directory is used.
 
 The Desktop Shell ships `zh-CN`, `zh-TW`, and `en-US`. The locked Harness release currently ships only `zh` and `en`, so the startup bridge maps both Chinese desktop locales to upstream `zh` and English to `en`. It atomically updates the Harness settings document without discarding unrelated settings or comments. This is an explicit upstream capability boundary, not an untracked patch to generated Harness assets.
 

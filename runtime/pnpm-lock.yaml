@@ -20,7 +20,7 @@ importers:
       deepseek-harness-credentials-vault:
         specifier: workspace:*
         version: link:packages/credentials-vault
-      deepseek-harness-desktop-bundle:
+      deepseek-desktop-bundle:
         specifier: workspace:*
         version: link:packages/desktop-bundle
       react:

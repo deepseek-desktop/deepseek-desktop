@@ -1,15 +1,15 @@
 {
-  "name": "deepseek-harness-desktop",
+  "name": "deepseek-desktop",
   "version": "0.1.0-community.5",
   "private": true,
   "description": "Standalone community desktop distribution for DeepSeek Harness",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/spring-open/deepseek-harness-desktop.git"
+    "url": "git+https://github.com/deepseek-desktop/deepseek-desktop.git"
   },
-  "homepage": "https://github.com/spring-open/deepseek-harness-desktop#readme",
+  "homepage": "https://github.com/deepseek-desktop/deepseek-desktop#readme",
   "bugs": {
-    "url": "https://github.com/spring-open/deepseek-harness-desktop/issues"
+    "url": "https://github.com/deepseek-desktop/deepseek-desktop/issues"
   },
   "license": "Apache-2.0",
   "type": "module",

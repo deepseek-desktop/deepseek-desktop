@@ -308,9 +308,9 @@ impl RuntimeSupervisor {
         let node = self.node_binary()?;
         let dsh_entry = runtime_dir.join("node_modules/@deepseek-ai/dsh/lib/bin.js");
         let parent_watch =
-            runtime_dir.join("node_modules/deepseek-harness-desktop-bundle/parent-watch.cjs");
+            runtime_dir.join("node_modules/deepseek-desktop-bundle/parent-watch.cjs");
         let locale_sync =
-            runtime_dir.join("node_modules/deepseek-harness-desktop-bundle/locale-sync.cjs");
+            runtime_dir.join("node_modules/deepseek-desktop-bundle/locale-sync.cjs");
         if !dsh_entry.is_file() {
             return self.fail(
                 &workspace,
@@ -531,13 +531,13 @@ impl RuntimeSupervisor {
     }
 
     fn runtime_dir(&self) -> DesktopResult<PathBuf> {
-        if let Some(path) = std::env::var_os("DEEPSEEK_HARNESS_DESKTOP_RUNTIME_DIR") {
+        if let Some(path) = std::env::var_os("DEEPSEEK_DESKTOP_RUNTIME_DIR") {
             return Ok(PathBuf::from(path));
         }
         if cfg!(debug_assertions) {
             return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../runtime/staging")
-                .join(env!("DEEPSEEK_HARNESS_DESKTOP_TARGET")));
+                .join(env!("DEEPSEEK_DESKTOP_TARGET")));
         }
         let resource_dir = self
             .app
@@ -546,11 +546,11 @@ impl RuntimeSupervisor {
             .map_err(|error| DesktopError::Other(error.to_string()))?;
         Ok(node_compatible_path(&resource_dir)
             .join("runtime/staging")
-            .join(env!("DEEPSEEK_HARNESS_DESKTOP_TARGET")))
+            .join(env!("DEEPSEEK_DESKTOP_TARGET")))
     }
 
     fn node_binary(&self) -> DesktopResult<PathBuf> {
-        if let Some(path) = std::env::var_os("DEEPSEEK_HARNESS_DESKTOP_NODE_PATH") {
+        if let Some(path) = std::env::var_os("DEEPSEEK_DESKTOP_NODE_PATH") {
             return Ok(PathBuf::from(path));
         }
         let suffix = if cfg!(windows) { ".exe" } else { "" };
@@ -563,7 +563,7 @@ impl RuntimeSupervisor {
                 .join("binaries")
                 .join(format!(
                     "node-{}{}",
-                    env!("DEEPSEEK_HARNESS_DESKTOP_TARGET"),
+                    env!("DEEPSEEK_DESKTOP_TARGET"),
                     suffix
                 ));
             if development.is_file() {
@@ -605,19 +605,19 @@ impl RuntimeSupervisor {
         );
         environment.insert("DSH_TELEMETRY_DISABLED".to_owned(), "true".to_owned());
         environment.insert(
-            "DEEPSEEK_HARNESS_DESKTOP_PARENT_PID".to_owned(),
+            "DEEPSEEK_DESKTOP_PARENT_PID".to_owned(),
             std::process::id().to_string(),
         );
         environment.insert(
-            "DEEPSEEK_HARNESS_DESKTOP_HELPER_PATH".to_owned(),
+            "DEEPSEEK_DESKTOP_HELPER_PATH".to_owned(),
             helper.to_string_lossy().into_owned(),
         );
         environment.insert(
-            "DEEPSEEK_HARNESS_DESKTOP_DATA_DIR".to_owned(),
+            "DEEPSEEK_DESKTOP_DATA_DIR".to_owned(),
             self.paths.data_dir.to_string_lossy().into_owned(),
         );
         environment.insert(
-            "DEEPSEEK_HARNESS_DESKTOP_LOCALE".to_owned(),
+            "DEEPSEEK_DESKTOP_LOCALE".to_owned(),
             self.settings.get()?.locale,
         );
         Ok(environment)
@@ -628,13 +628,13 @@ impl RuntimeSupervisor {
         let modules = profile.join("node_modules");
         fs::create_dir_all(&modules)?;
         let manifest = serde_json::json!({
-            "name": "deepseek-harness-desktop-web-profile",
+            "name": "deepseek-desktop-web-profile",
             "private": true,
             "dependencies": {},
             "dsh": { "profile": { "bundles": [
                 "@deepseek-ai/dsh-base",
                 "@deepseek-ai/dsh-web-app",
-                "deepseek-harness-desktop-bundle"
+                "deepseek-desktop-bundle"
             ] } }
         });
         fs::write(
@@ -651,7 +651,7 @@ impl RuntimeSupervisor {
             )?;
         }
         for package in [
-            "deepseek-harness-desktop-bundle",
+            "deepseek-desktop-bundle",
             "deepseek-harness-credentials-vault",
         ] {
             let source = runtime_dir.join("node_modules").join(package);
@@ -1073,16 +1073,16 @@ mod tests {
     fn strips_windows_verbatim_prefixes_for_node_module_loading() {
         for (source, expected) in [
             (
-                r"\\?\C:\Program Files\DeepSeek Harness Desktop\runtime",
-                r"C:\Program Files\DeepSeek Harness Desktop\runtime",
+                r"\\?\C:\Program Files\DeepSeek Desktop\runtime",
+                r"C:\Program Files\DeepSeek Desktop\runtime",
             ),
             (
-                r"\\?\UNC\server\share\DeepSeek Harness Desktop\runtime",
-                r"\\server\share\DeepSeek Harness Desktop\runtime",
+                r"\\?\UNC\server\share\DeepSeek Desktop\runtime",
+                r"\\server\share\DeepSeek Desktop\runtime",
             ),
             (
-                r"C:\Users\developer\DeepSeek Harness Desktop\runtime",
-                r"C:\Users\developer\DeepSeek Harness Desktop\runtime",
+                r"C:\Users\developer\DeepSeek Desktop\runtime",
+                r"C:\Users\developer\DeepSeek Desktop\runtime",
             ),
         ] {
             let normalized =

@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible DeepSeek Harness Desktop problem
+description: Report a reproducible DeepSeek Desktop problem
 title: "[Bug]: "
 labels: [bug]
 body:
@@ -9,7 +9,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: DeepSeek Harness Desktop version
+      label: DeepSeek Desktop version
       placeholder: 0.1.0-community.5
     validations:
       required: true
@@ -36,4 +36,4 @@ body:
     id: diagnostics
     attributes:
       label: Redacted diagnostics
-      description: Attach only diagnostics exported by DeepSeek Harness Desktop after confirming that they contain no private data.
+      description: Attach only diagnostics exported by DeepSeek Desktop after confirming that they contain no private data.
