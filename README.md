@@ -26,6 +26,26 @@ DeepSeek Desktop 是内置固定版本本地 Runtime 的独立、非官方社区
 
 模型密钥会加密保存在本机，不进入日志、诊断包或浏览器存储。完整安装、配置和故障排查说明见[中文使用文档](docs/zh-CN/getting-started.md)。
 
+### macOS 提示“Apple 无法验证”怎么办
+
+当前社区版尚未使用 Apple Developer ID 签名和公证，因此首次打开时，macOS 可能提示“Apple 无法验证 DeepSeek Desktop 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件”。该提示本身不代表应用已被检测出恶意代码。请只从本项目的 [GitHub Releases](https://github.com/deepseek-desktop/deepseek-desktop/releases) 下载，并核对同版本 `SHA256SUMS`。
+
+**普通用户：**
+
+1. 将 `DeepSeek Desktop.app` 拖入“应用程序”目录。
+2. 在“访达 → 应用程序”中找到 DeepSeek Desktop，按住 `Control` 点击或右键点击应用，选择“打开”。
+3. 在再次出现的确认框中选择“打开”。完成一次确认后，后续可正常双击启动。
+4. 如果确认框中仍没有“打开”，先点“完成”，再进入“系统设置 → 隐私与安全”，在“安全性”区域找到被阻止的 DeepSeek Desktop，点击“仍要打开”并完成系统验证。
+
+**开发者：**确认安装包来源和 SHA-256 无误后，可仅移除该应用的下载隔离标记，再启动应用：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/DeepSeek Desktop.app"
+open "/Applications/DeepSeek Desktop.app"
+```
+
+不要关闭 macOS 的全局 Gatekeeper、SIP 或 XProtect，也不要对“下载”目录批量移除隔离标记；这些操作会降低整台 Mac 的安全性。
+
 ## 架构
 
 ```text
