@@ -18,7 +18,7 @@ All notable changes to DeepSeek Desktop are documented in this file.
 
 ## 0.1.0-community.3 - 2026-08-25
 
-- Replace the abbreviated DSH Desktop identity with the full product identity used by that build.
+- Standardize the desktop product identity used by that build.
 - Derive local and GitHub release package names from the Tauri product configuration instead of duplicating the product name in build scripts.
 
 ## 0.1.0-community.2 - 2026-08-25
