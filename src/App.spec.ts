@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
+import { appConfig } from "./app-config";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
 import { chooseWorkspace, exportDiagnostics, exportLogs, openWorkbench, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
@@ -29,7 +30,7 @@ vi.mock("./desktop", () => ({
   exportDiagnostics: vi.fn(async () => ""),
   exportLogs: vi.fn(async () => ""),
   getAbout: vi.fn(async () => ({
-    desktopVersion: "0.1.0-community.9",
+    desktopVersion: appConfig.version,
     runtimeVersion: "0.1.1-rc.2",
     runtimeCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
     nodeVersion: "24.16.0",
@@ -46,7 +47,7 @@ vi.mock("./desktop", () => ({
   stopRuntime: vi.fn(async () => ({ ...runtime }))
 }));
 
-describe("DeepSeek Desktop shell", () => {
+describe(`${appConfig.productName} shell`, () => {
   beforeEach(() => {
     Object.assign(settings, {
       schemaVersion: 1,
@@ -72,11 +73,11 @@ describe("DeepSeek Desktop shell", () => {
   it("loads onboarding and switches all visible navigation to English", async () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
-    expect(wrapper.text()).toContain("欢迎使用 DeepSeek Desktop");
+    expect(wrapper.text()).toContain(`欢迎使用 ${appConfig.productName}`);
 
     await wrapper.get("select").setValue("en-US");
     await flushPromises();
-    expect(wrapper.text()).toContain("Welcome to DeepSeek Desktop");
+    expect(wrapper.text()).toContain(`Welcome to ${appConfig.productName}`);
     expect(wrapper.text()).toContain("Runtime");
     expect(wrapper.text()).toContain("Diagnostics");
   });

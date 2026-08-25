@@ -1,16 +1,5 @@
 {
   "schemaVersion": 1,
-  "sourceDateEpoch": 1787313817,
-  "desktopVersion": "0.1.0-community.9",
-  "runtime": {
-    "version": "0.1.1-rc.2",
-    "tag": "dsh-v0.1.1-rc.2",
-    "commit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
-    "sourceUrl": "https://github.com/deepseek-desktop/deepseek-harness",
-    "packageUrl": "https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.1.1-rc.2.tgz",
-    "integrity": "sha512-UP1UIh6q3Gme/yXRn/QL2P8IsVlv8Shpg22TRJIZPsCRWLm4CBiA1MUvXmJAfsOEETBMLAl+xWPtFw6ICsN3wg==",
-    "license": "MIT"
-  },
   "node": {
     "version": "24.16.0",
     "sourceUrl": "https://nodejs.org/dist/v24.16.0/",
@@ -87,13 +76,43 @@
     "x86_64-pc-windows-msvc",
     "x86_64-unknown-linux-gnu"
   ],
-  "patches": [
-    "deepseek-desktop-bundle@0.1.0-community.9",
-    "deepseek-desktop-credentials-vault@0.1.0-community.9",
-    "@deepseek-ai/dsh@0.1.1-rc.2:bundled-market-fallback",
-    "@deepseek-ai/dsh-client-runtime@0.1.1-rc.2:neutral-auth-failure",
-    "@deepseek-ai/dsh-client-ui-conversation@0.1.1-rc.2:hide-system-policy-context",
-    "@deepseek-ai/dsh-client-ui-settings-models@0.1.1-rc.2:provider-credential-rollback",
-    "@deepseek-ai/dsh-user-approval@0.1.1-rc.2:desktop-policy-context"
+  "desktopPatches": [
+    {
+      "packageName": "@deepseek-ai/dsh",
+      "operation": "add-dependency",
+      "dependency": "dshmarket",
+      "version": "1.28.1",
+      "moduleFile": "package.json",
+      "markers": ["\"dshmarket\": \"1.28.1\""],
+      "id": "bundled-market-fallback"
+    },
+    {
+      "packageName": "@deepseek-ai/dsh-client-runtime",
+      "file": "@deepseek-ai__dsh-client-runtime@0.1.1-rc.2.patch",
+      "moduleFile": "lib/client.js",
+      "markers": ["Provider authentication failed. Verify the credential, endpoint, model access, and account permissions."],
+      "id": "neutral-auth-failure"
+    },
+    {
+      "packageName": "@deepseek-ai/dsh-client-ui-conversation",
+      "file": "@deepseek-ai__dsh-client-ui-conversation@0.1.1-rc.2.patch",
+      "moduleFile": "lib/client.js",
+      "markers": ["if (provenance.label === \"@deepseek-ai/dsh-system-prompt\") return null;"],
+      "id": "hide-system-policy-context"
+    },
+    {
+      "packageName": "@deepseek-ai/dsh-client-ui-settings-models",
+      "file": "@deepseek-ai__dsh-client-ui-settings-models@0.1.1-rc.2.patch",
+      "moduleFile": "lib/client.js",
+      "markers": ["profileRevision = response.result.value.revision", "ops: [{ op: \"unset\", path: [\"providers\", route] }]"],
+      "id": "provider-credential-rollback"
+    },
+    {
+      "packageName": "@deepseek-ai/dsh-user-approval",
+      "file": "@deepseek-ai__dsh-user-approval@0.1.1-rc.2.patch",
+      "moduleFile": "lib/index.js",
+      "markers": ["Operations permitted by the current sandbox run directly.", "without an interactive client, they fail closed."],
+      "id": "desktop-policy-context"
+    }
   ]
 }

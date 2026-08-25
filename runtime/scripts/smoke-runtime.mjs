@@ -5,7 +5,7 @@ import process from "node:process";
 
 const runtimeRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(runtimeRoot, "..");
-const lock = JSON.parse(await readFile(join(runtimeRoot, "runtime-lock.json"), "utf8"));
+const lock = JSON.parse(await readFile(join(desktopRoot, "target", "generated", "runtime-lock.json"), "utf8"));
 
 function hostTarget() {
   const targets = {
@@ -67,7 +67,7 @@ const target = hostTarget();
 const staging = join(runtimeRoot, "staging", target);
 const nodeSuffix = process.platform === "win32" ? ".exe" : "";
 const node = join(desktopRoot, "src-tauri", "binaries", `node-${target}${nodeSuffix}`);
-const dsh = join(staging, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
+const dsh = join(staging, lock.runtime.entry);
 const parentWatch = join(staging, "node_modules", "deepseek-desktop-bundle", "parent-watch.cjs");
 const localeSync = join(staging, "node_modules", "deepseek-desktop-bundle", "locale-sync.cjs");
 const pnpmCli = join(staging, "node_modules", "pnpm", "bin", "pnpm.cjs");

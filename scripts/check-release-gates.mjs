@@ -1,5 +1,16 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import process from "node:process";
+
+const root = resolve(import.meta.dirname, "..");
+
+function git(args) {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
+  return result.stdout.trim();
+}
 
 const windowsGuiDeclaration = '#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]';
 const rustMain = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
@@ -7,12 +18,23 @@ if (!rustMain.includes(windowsGuiDeclaration)) {
   throw new Error("Windows release must use the GUI subsystem so it does not open a console window");
 }
 
-const channel = process.argv[2] || "community";
-if (channel === "community") {
-  console.log("community release gate passed: artifacts must remain explicitly marked as not publisher-signed");
+const channel = process.argv[2] || "local";
+if (channel === "local") {
+  console.log("local package gate passed: source dirtiness will be recorded in BUILD-INFO");
   process.exit(0);
 }
-if (channel !== "stable") throw new Error(`unsupported release channel ${channel}`);
+if (channel !== "community" && channel !== "stable") throw new Error(`unsupported release channel ${channel}`);
+
+const config = JSON.parse(readFileSync(join(root, "target/generated/app-config.json"), "utf8"));
+const status = git(["status", "--porcelain", "--untracked-files=all"]);
+if (status) throw new Error(`${channel} release requires a clean worktree`);
+const expectedTag = `v${config.version}`;
+const headTags = git(["tag", "--points-at", "HEAD"]).split("\n").filter(Boolean);
+if (!headTags.includes(expectedTag)) throw new Error(`${channel} release requires tag ${expectedTag} on HEAD`);
+if (channel === "community") {
+  console.log(`community release gate passed for ${expectedTag}; artifacts remain explicitly unsigned`);
+  process.exit(0);
+}
 
 const required = [
   "TAURI_SIGNING_PRIVATE_KEY",

@@ -4,9 +4,14 @@ import { spawnSync } from "node:child_process";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import process from "node:process";
 
+import { findInstalledPackages, listInstalledPackages } from "../../scripts/lib/installed-packages.mjs";
+
 const runtimeRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(runtimeRoot, "..");
-const lock = JSON.parse(await readFile(join(runtimeRoot, "runtime-lock.json"), "utf8"));
+const generatedRoot = join(desktopRoot, "target", "generated");
+const preparedRuntime = join(generatedRoot, "runtime", "prepared");
+const generatedLock = join(generatedRoot, "runtime-lock.json");
+const lock = JSON.parse(await readFile(generatedLock, "utf8"));
 
 function hostTarget() {
   const key = `${process.platform}-${process.arch}`;
@@ -38,12 +43,6 @@ function powershellLiteral(value) {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-function runPnpm(args, cwd) {
-  const pnpmCli = process.env.npm_execpath;
-  if (!pnpmCli) throw new Error("pnpm executable is unavailable; run this script through the package manager");
-  run(process.execPath, [pnpmCli, ...args], cwd);
-}
-
 async function hashFile(filename) {
   return createHash("sha256").update(await readFile(filename)).digest("hex");
 }
@@ -58,40 +57,18 @@ async function collectFiles(root, current = root, output = []) {
 }
 
 async function packageInventory(nodeModules) {
-  const inventory = [];
-  async function inspectModules(modulesDir) {
-    let entries;
-    try {
-      entries = await readdir(modulesDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name === ".bin" || entry.name === ".pnpm") continue;
-      if (entry.name.startsWith("@")) {
-        const scoped = await readdir(join(modulesDir, entry.name), { withFileTypes: true });
-        for (const child of scoped) if (child.isDirectory()) await inspectPackage(join(modulesDir, entry.name, child.name));
-      } else {
-        await inspectPackage(join(modulesDir, entry.name));
-      }
-    }
+  const inventory = new Map();
+  for (const item of await listInstalledPackages([nodeModules])) {
+    const { name, version, license } = item.manifest;
+    if (!name || !version) continue;
+    inventory.set(`${name}@${version}`, {
+      name,
+      version,
+      license: typeof license === "string" ? license : "NOASSERTION"
+    });
   }
-  async function inspectPackage(packageDir) {
-    try {
-      const manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
-      if (manifest.name && manifest.version && !inventory.some(item => item.name === manifest.name && item.version === manifest.version)) {
-        inventory.push({
-          name: manifest.name,
-          version: manifest.version,
-          license: typeof manifest.license === "string" ? manifest.license : "NOASSERTION"
-        });
-      }
-    } catch {
-      return;
-    }
-  }
-  await inspectModules(nodeModules);
-  return inventory.sort((left, right) => left.name.localeCompare(right.name) || left.version.localeCompare(right.version));
+  return [...inventory.values()]
+    .sort((left, right) => left.name.localeCompare(right.name) || left.version.localeCompare(right.version));
 }
 
 async function retainDirectory(root, expected) {
@@ -103,22 +80,65 @@ async function retainDirectory(root, expected) {
   }
 }
 
+function targetPlatform(target) {
+  const profiles = {
+    "aarch64-apple-darwin": { os: "darwin", cpu: "arm64" },
+    "x86_64-apple-darwin": { os: "darwin", cpu: "x64" },
+    "x86_64-pc-windows-msvc": { os: "win32", cpu: "x64" },
+    "x86_64-unknown-linux-gnu": { os: "linux", cpu: "x64" }
+  };
+  const profile = profiles[target];
+  if (!profile) throw new Error(`target platform profile is missing for ${target}`);
+  return profile;
+}
+
+function supportsConstraint(constraint, value) {
+  if (!Array.isArray(constraint) || constraint.length === 0) return true;
+  if (constraint.includes(`!${value}`)) return false;
+  const allowed = constraint.filter(item => !item.startsWith("!"));
+  return allowed.length === 0 || allowed.includes(value);
+}
+
+async function pruneIncompatiblePackages(nodeModules, target) {
+  const platform = targetPlatform(target);
+  const packages = await listInstalledPackages([nodeModules]);
+  for (const item of packages) {
+    if (!supportsConstraint(item.manifest.os, platform.os)
+      || !supportsConstraint(item.manifest.cpu, platform.cpu)) {
+      await rm(item.directory, { recursive: true, force: true });
+    }
+  }
+}
+
 async function pruneNativeArtifacts(nodeModules, target) {
   const profile = lock.nativeAssets[target];
   if (!profile) throw new Error(`native artifact profile is not locked for ${target}`);
+  const moduleRoots = [
+    nodeModules,
+    join(nodeModules, ...lock.runtime.packageName.split("/"), "node_modules")
+  ];
 
-  await retainDirectory(join(nodeModules, "node-pty", "prebuilds"), profile.nodePtyPrebuild);
-  await stat(join(nodeModules, "node-pty", "prebuilds", profile.nodePtyPrebuild));
+  const nodePtyPackages = await findInstalledPackages(moduleRoots, "node-pty");
+  if (nodePtyPackages.length === 0) throw new Error("node-pty is absent from the generated Runtime");
+  for (const packageRoot of nodePtyPackages) {
+    const prebuilds = join(packageRoot, "prebuilds");
+    await retainDirectory(prebuilds, profile.nodePtyPrebuild);
+    await stat(join(prebuilds, profile.nodePtyPrebuild));
+  }
 
-  const koffiRoot = join(nodeModules, "@koromix");
-  for (const entry of await readdir(koffiRoot, { withFileTypes: true })) {
-    if (entry.isDirectory() && entry.name.startsWith("koffi-") && entry.name !== profile.koffiPackage) {
-      await rm(join(koffiRoot, entry.name), { recursive: true, force: true });
+  const koffiPackages = [...new Set(Object.values(lock.nativeAssets).map(item => item.koffiPackage))];
+  for (const packageName of koffiPackages) {
+    const directories = await findInstalledPackages(moduleRoots, `@koromix/${packageName}`);
+    if (packageName !== profile.koffiPackage) {
+      for (const directory of directories) await rm(directory, { recursive: true, force: true });
+      continue;
+    }
+    if (directories.length === 0) throw new Error(`target Koffi package is absent: ${packageName}`);
+    for (const directory of directories) {
+      await retainDirectory(directory, profile.koffiTriplet);
+      await stat(join(directory, profile.koffiTriplet, "koffi.node"));
     }
   }
-  const koffiPackage = join(koffiRoot, profile.koffiPackage);
-  await retainDirectory(koffiPackage, profile.koffiTriplet);
-  await stat(join(koffiPackage, profile.koffiTriplet, "koffi.node"));
 }
 
 async function downloadVerified(url, destination, expectedSha256) {
@@ -214,16 +234,20 @@ if (process.versions.node !== lock.node.version) {
 }
 
 const output = join(runtimeRoot, "staging", target);
-await rm(output, { recursive: true, force: true });
-await mkdir(dirname(output), { recursive: true });
-runPnpm(["--filter", "deepseek-desktop-runtime", "deploy", "--prod", "--legacy", output], runtimeRoot);
+const stagingRoot = dirname(output);
+await rm(stagingRoot, { recursive: true, force: true });
+await mkdir(stagingRoot, { recursive: true });
+await stat(join(preparedRuntime, lock.runtime.entry));
+await cp(preparedRuntime, output, { recursive: true, force: true });
 
 // pnpm writes the wall-clock pruning time into this install-only metadata file.
 // Node does not consume it at runtime, so omit it from the distributable closure.
 await rm(join(output, "node_modules", ".modules.yaml"), { force: true });
+await rm(join(output, "node_modules", ...lock.runtime.packageName.split("/"), "node_modules", ".modules.yaml"), { force: true });
+await pruneIncompatiblePackages(join(output, "node_modules"), target);
 await pruneNativeArtifacts(join(output, "node_modules"), target);
 
-const dshEntry = join(output, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
+const dshEntry = join(output, lock.runtime.entry);
 await stat(dshEntry);
 
 const binarySuffix = process.platform === "win32" ? ".exe" : "";
@@ -236,7 +260,7 @@ inventory.sort((left, right) => left.name.localeCompare(right.name) || left.vers
 const generatedAt = new Date(lock.sourceDateEpoch * 1_000).toISOString();
 await writeFile(join(output, "licenses.json"), `${JSON.stringify(inventory, null, 2)}\n`);
 await writeFile(join(output, "sbom.spdx.json"), `${JSON.stringify(createSpdx(target, inventory, generatedAt), null, 2)}\n`);
-await cp(join(runtimeRoot, "runtime-lock.json"), join(output, "runtime-lock.json"));
+await cp(generatedLock, join(output, "runtime-lock.json"));
 await cp(join(runtimeRoot, "THIRD_PARTY_NOTICES.md"), join(output, "THIRD_PARTY_NOTICES.md"));
 
 const files = await collectFiles(output);

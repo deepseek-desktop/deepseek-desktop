@@ -84,16 +84,17 @@ Rust Runtime 管理器
 git clone git@github.com:deepseek-desktop/deepseek-desktop.git
 cd deepseek-desktop
 corepack pnpm@11.7.0 install --frozen-lockfile
-corepack pnpm@11.7.0 --dir runtime install --frozen-lockfile
+corepack pnpm@11.7.0 app:sync
+corepack pnpm@11.7.0 runtime:sync
 corepack pnpm@11.7.0 verify
 corepack pnpm@11.7.0 test:e2e
 corepack pnpm@11.7.0 runtime:smoke
 corepack pnpm@11.7.0 tauri:dev
 ```
 
-`runtime/runtime-lock.json` 是上游制品的唯一版本事实。Runtime staging 在当前目标平台生成，不提交到 Git。
+`runtime/toolchain-lock.json` 固定 Node、原生依赖和桌面补丁等稳定工具链事实；`runtime:sync` 会将 Harness ref 解析为不可变 commit，并把仓库、commit、动态 CLI 入口和 Runtime 哈希写入不提交 Git 的 `target/generated/runtime-lock.json`。Runtime staging 只消费该生成 lock，并且只保留当前原生目标。
 
-staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存，校验固定 SHA-256，移除安装期时间元数据和非目标平台原生制品，并输出确定性的 `runtime-manifest.json`、`licenses.json` 与 `sbom.spdx.json`。各平台允许使用的 `node-pty` 和 Koffi 原生制品也固定在 `runtime/runtime-lock.json`。
+staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存，校验固定 SHA-256，移除安装期时间元数据和非目标平台原生制品，并输出确定性的 `runtime-manifest.json`、`licenses.json` 与 `sbom.spdx.json`。各平台允许使用的 `node-pty` 和 Koffi 原生制品固定在 `runtime/toolchain-lock.json`。
 
 发布稳定性验证可设置 `DEEPSEEK_DESKTOP_SMOKE_CYCLES=100` 后执行 `runtime:smoke`。`DEEPSEEK_DESKTOP_DATA_DIR` 只用于隔离验收数据；正式用户无需配置，应用会自动使用 Tauri 对应平台的数据目录。
 
@@ -107,7 +108,15 @@ staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存�
 corepack pnpm@11.7.0 package:community
 ```
 
-该命令会安装固定依赖，执行社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，构建当前操作系统与架构的安装包，并在适用时校验 macOS 签名与 DMG。最终文件写入 `release/<version>/`，同时生成 `BUILD-INFO.json` 和 `SHA256SUMS`。
+该命令会安装固定依赖，执行应用配置与 Runtime 同步、社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，构建当前操作系统与架构的安装包，并在适用时校验 macOS 签名与 DMG。最终文件写入 `release/<version>/<target>/`，同时生成目标平台对应的 `BUILD-INFO.<target>.json` 和 `SHA256SUMS`。
+
+制作不要求干净 Git 工作区的本地定制包时使用：
+
+```bash
+corepack pnpm@11.7.0 desktop:package
+```
+
+可复制 `.env.example` 为 `.env` 来定制应用元数据和 Harness 来源。配置优先级为“命令行环境变量 > `.env` > 内置默认值”；`.env` 不会进入 Runtime、安装包、诊断包或发布目录。
 
 单台主机只构建其原生目标。匹配版本标签（例如 `v0.1.0-community.9`）会触发 GitHub Actions，全部通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。
 

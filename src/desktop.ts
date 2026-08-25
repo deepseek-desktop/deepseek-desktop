@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { appConfig } from "./app-config";
 import type { DesktopAbout, DesktopSettings, DesktopSurface, RuntimeStatus, UpdateStatus } from "./contracts";
 
 const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
@@ -68,9 +69,9 @@ export async function openWorkbench(): Promise<void> {
 export async function getAbout(): Promise<DesktopAbout> {
   if (!inTauri()) {
     return {
-      desktopVersion: "0.1.0-community.9",
-      runtimeVersion: "0.1.1-rc.2",
-      runtimeCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      desktopVersion: appConfig.version,
+      runtimeVersion: appConfig.harness.ref.replace(/^dsh-v/u, ""),
+      runtimeCommit: "development",
       nodeVersion: "24.16.0",
       channel: "community",
       signedRelease: false
@@ -84,7 +85,7 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     return {
       enabled: false,
       channel: "community",
-      currentVersion: "0.1.0-community.9",
+      currentVersion: appConfig.version,
       availableVersion: null,
       message: "updates-disabled"
     };

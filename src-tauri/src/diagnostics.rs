@@ -80,8 +80,8 @@ impl Diagnostics {
             .map(|_| "<workspace-redacted>".to_owned());
         let document = DiagnosticDocument {
             generated_at: Utc::now().to_rfc3339(),
-            desktop_version: env!("CARGO_PKG_VERSION"),
-            runtime_version: "0.1.1-rc.2",
+            desktop_version: env!("DEEPSEEK_DESKTOP_APP_VERSION"),
+            runtime_version: env!("DEEPSEEK_DESKTOP_RUNTIME_VERSION"),
             target: env!("DEEPSEEK_DESKTOP_TARGET"),
             status: redacted_status,
             settings: redacted_settings,

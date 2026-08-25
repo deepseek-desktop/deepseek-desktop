@@ -13,12 +13,13 @@
 
 ```bash
 corepack pnpm@11.7.0 install --frozen-lockfile
-corepack pnpm@11.7.0 --dir runtime install --frozen-lockfile
+corepack pnpm@11.7.0 app:sync
+corepack pnpm@11.7.0 runtime:sync
 corepack pnpm@11.7.0 verify
 corepack pnpm@11.7.0 test:e2e
 ```
 
-`verify` 会在 Rust 检查前暂存目标 Runtime。仓库脚本将 Rust 安装到 `target/deepseek-desktop-toolchain/`，不会修改全局 Rust 环境。
+`runtime:sync` 会锁定 Harness 来源、构建生产 Runtime 并生成完整性记录；`verify` 会在 Rust 检查前暂存并校验目标 Runtime。仓库脚本将 Rust 安装到 `target/deepseek-desktop-toolchain/`，不会修改全局 Rust 环境。
 
 执行完整发行检查并打包当前原生平台：
 

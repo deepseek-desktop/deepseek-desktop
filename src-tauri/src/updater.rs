@@ -9,7 +9,7 @@ pub async fn check(app: &AppHandle, settings: &DesktopSettings) -> DesktopResult
         return Ok(UpdateStatus {
             enabled: false,
             channel: settings.update_channel.clone(),
-            current_version: env!("CARGO_PKG_VERSION").to_owned(),
+            current_version: env!("DEEPSEEK_DESKTOP_APP_VERSION").to_owned(),
             available_version: None,
             message: "updates-disabled".to_owned(),
         });
@@ -22,7 +22,7 @@ pub async fn check(app: &AppHandle, settings: &DesktopSettings) -> DesktopResult
         return Ok(UpdateStatus {
             enabled: false,
             channel: settings.update_channel.clone(),
-            current_version: env!("CARGO_PKG_VERSION").to_owned(),
+            current_version: env!("DEEPSEEK_DESKTOP_APP_VERSION").to_owned(),
             available_version: None,
             message: "signed-updater-not-configured".to_owned(),
         });
@@ -42,7 +42,7 @@ pub async fn check(app: &AppHandle, settings: &DesktopSettings) -> DesktopResult
     Ok(UpdateStatus {
         enabled: true,
         channel: settings.update_channel.clone(),
-        current_version: env!("CARGO_PKG_VERSION").to_owned(),
+        current_version: env!("DEEPSEEK_DESKTOP_APP_VERSION").to_owned(),
         available_version: update.as_ref().map(|release| release.version.clone()),
         message: if update.is_some() {
             "update-available"

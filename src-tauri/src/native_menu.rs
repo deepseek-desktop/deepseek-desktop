@@ -7,7 +7,9 @@ pub const WORKBENCH_MENU_ID: &str = "desktop-workbench";
 pub const MANAGEMENT_MENU_ID: &str = "desktop-management";
 pub const DOCUMENTATION_MENU_ID: &str = "desktop-documentation";
 
-const APP_NAME: &str = "DeepSeek Desktop";
+const APP_NAME: &str = env!("DEEPSEEK_DESKTOP_APP_NAME");
+const APP_VERSION: &str = env!("DEEPSEEK_DESKTOP_APP_VERSION");
+const APP_COPYRIGHT: &str = env!("DEEPSEEK_DESKTOP_APP_COPYRIGHT");
 
 #[derive(Clone, Copy)]
 struct MenuLabels {
@@ -40,8 +42,8 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
     #[cfg(target_os = "macos")]
     let about = AboutMetadataBuilder::new()
         .name(Some(APP_NAME))
-        .version(Some(env!("CARGO_PKG_VERSION")))
-        .copyright(Some("Copyright 2026 DeepSeek Desktop Contributors"))
+        .version(Some(APP_VERSION))
+        .copyright(Some(APP_COPYRIGHT))
         .license(Some("Apache-2.0"))
         .build();
 
@@ -102,8 +104,8 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
         Some(
             AboutMetadataBuilder::new()
                 .name(Some(APP_NAME))
-                .version(Some(env!("CARGO_PKG_VERSION")))
-                .copyright(Some("Copyright 2026 DeepSeek Desktop Contributors"))
+                .version(Some(APP_VERSION))
+                .copyright(Some(APP_COPYRIGHT))
                 .license(Some("Apache-2.0"))
                 .build(),
         ),
@@ -132,9 +134,9 @@ fn labels(locale: &str) -> MenuLabels {
             view: "檢視",
             window: "視窗",
             help: "輔助說明",
-            about: "關於 DeepSeek Desktop",
+            about: "關於",
             close: "關閉視窗",
-            quit: "結束 DeepSeek Desktop",
+            quit: "結束",
             undo: "還原",
             redo: "重做",
             cut: "剪下",
@@ -155,9 +157,9 @@ fn labels(locale: &str) -> MenuLabels {
             view: "View",
             window: "Window",
             help: "Help",
-            about: "About DeepSeek Desktop",
+            about: "About",
             close: "Close Window",
-            quit: "Quit DeepSeek Desktop",
+            quit: "Quit",
             undo: "Undo",
             redo: "Redo",
             cut: "Cut",
@@ -178,9 +180,9 @@ fn labels(locale: &str) -> MenuLabels {
             view: "视图",
             window: "窗口",
             help: "帮助",
-            about: "关于 DeepSeek Desktop",
+            about: "关于",
             close: "关闭窗口",
-            quit: "退出 DeepSeek Desktop",
+            quit: "退出",
             undo: "撤销",
             redo: "重做",
             cut: "剪切",

@@ -3,10 +3,16 @@ import vm from "node:vm";
 import ts from "typescript";
 
 const source = await readFile(new URL("../src/i18n/messages.ts", import.meta.url), "utf8");
-const literal = source
-  .replace(/^export const messages = /, "")
-  .replace(/ as const;\s*$/, "");
-const messages = vm.runInNewContext(`(${literal})`);
+const executable = source
+  .replace(/^import \{ appConfig \} from "\.\.\/app-config";\s*$/mu, "")
+  .replace(/^const appName = appConfig\.productName;\s*$/mu, 'const appName = "Application";')
+  .replace(/^export const messages = /mu, "globalThis.__messages = ");
+const context = {};
+vm.runInNewContext(ts.transpileModule(executable, {
+  compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 }
+}).outputText, context);
+const messages = context.__messages;
+if (!messages || typeof messages !== "object") throw new Error("could not evaluate i18n messages");
 
 function flatten(value, prefix = "", output = new Map()) {
   for (const [key, nested] of Object.entries(value)) {

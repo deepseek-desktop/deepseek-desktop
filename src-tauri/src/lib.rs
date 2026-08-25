@@ -152,11 +152,11 @@ async fn workspace_choose(title: String) -> DesktopResult<Option<String>> {
 #[tauri::command]
 fn desktop_about() -> DesktopAbout {
     DesktopAbout {
-        desktop_version: env!("CARGO_PKG_VERSION"),
-        runtime_version: "0.1.1-rc.2",
-        runtime_commit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
-        node_version: "24.16.0",
-        channel: "community",
+        desktop_version: env!("DEEPSEEK_DESKTOP_APP_VERSION"),
+        runtime_version: env!("DEEPSEEK_DESKTOP_RUNTIME_VERSION"),
+        runtime_commit: env!("DEEPSEEK_DESKTOP_RUNTIME_COMMIT"),
+        node_version: env!("DEEPSEEK_DESKTOP_NODE_VERSION"),
+        channel: env!("DEEPSEEK_DESKTOP_RELEASE_CHANNEL"),
         signed_release: false,
     }
 }
@@ -284,7 +284,7 @@ pub fn run() {
 
     let app = builder
         .build(tauri::generate_context!())
-        .expect("failed to build DeepSeek Desktop");
+        .expect("failed to build desktop application");
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. })
             && let Some(state) = app_handle.try_state::<AppState>()

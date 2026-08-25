@@ -6,7 +6,7 @@
 
 ## 权威来源
 
-- `runtime/runtime-lock.json` 记录上游 Runtime 版本、校验和、目标平台和桌面补丁。
+- `runtime/toolchain-lock.json` 记录稳定工具链、Node 制品、原生依赖和桌面补丁；`target/generated/runtime-lock.json` 记录本次构建解析出的 Harness 仓库、commit、CLI 入口和 Runtime 哈希。
 - `src-tauri/` 负责原生生命周期、加密凭据库、诊断、设置和更新边界。
 - `src/` 负责 Vue 桌面 Shell 和类型化 IPC 契约。
 - `README.md`、`docs/`、`SECURITY.md` 和 `CONTRIBUTING.md` 定义公开行为与协作规则。

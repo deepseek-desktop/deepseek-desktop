@@ -310,7 +310,7 @@ impl RuntimeSupervisor {
         let runtime_dir = self.runtime_dir()?;
         let node = self.node_binary()?;
         self.prepare_profile(&runtime_dir, &node)?;
-        let dsh_entry = runtime_dir.join("node_modules/@deepseek-ai/dsh/lib/bin.js");
+        let dsh_entry = runtime_dir.join(env!("DEEPSEEK_DESKTOP_RUNTIME_ENTRY"));
         let parent_watch =
             runtime_dir.join("node_modules/deepseek-desktop-bundle/parent-watch.cjs");
         let locale_sync = runtime_dir.join("node_modules/deepseek-desktop-bundle/locale-sync.cjs");

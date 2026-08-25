@@ -17,7 +17,7 @@ concurrency:
 jobs:
   shell-quality:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     container:
       image: mcr.microsoft.com/playwright:v1.57.0-noble
     steps:
@@ -25,18 +25,14 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24.16.0
+      - run: apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
-      - run: pnpm install --frozen-lockfile
-      - if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        run: |
-          set -euo pipefail
-          package_version="$(node -p "require('./package.json').version")"
-          tauri_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          test "$package_version" = "$tauri_version"
-          test "v$package_version" = "$GITHUB_REF_NAME"
-      - run: pnpm check:i18n && pnpm test && pnpm typecheck && pnpm build
-      - run: pnpm test:e2e
+      - run: corepack pnpm@11.7.0 install --frozen-lockfile
+      - run: corepack pnpm@11.7.0 app:sync
+      - run: corepack pnpm@11.7.0 runtime:sync
+      - run: corepack pnpm@11.7.0 verify
+      - run: corepack pnpm@11.7.0 test:e2e
+      - run: corepack pnpm@11.7.0 runtime:smoke
 
   native-build:
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
@@ -47,30 +43,16 @@ jobs:
         include:
           - name: macos-arm64
             os: macos-15
-            target: aarch64-apple-darwin
-            bundles: dmg
-            artifactPath: src-tauri/target/release/bundle/dmg/*.dmg
           - name: macos-x64
             os: macos-15-intel
-            target: x86_64-apple-darwin
-            bundles: dmg
-            artifactPath: src-tauri/target/release/bundle/dmg/*.dmg
           - name: windows-x64
             os: windows-2022
-            target: x86_64-pc-windows-msvc
-            bundles: nsis
-            artifactPath: src-tauri/target/release/bundle/nsis/*.exe
           - name: linux-x64
             os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            bundles: appimage,deb
-            artifactPath: |
-              src-tauri/target/release/bundle/appimage/*.AppImage
-              src-tauri/target/release/bundle/deb/*.deb
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
-      RELEASE_CHANNEL: community
+      NO_STRIP: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v7
@@ -79,53 +61,10 @@ jobs:
       - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --dir runtime install --frozen-lockfile
-      - run: pnpm release:check $RELEASE_CHANNEL
-        shell: bash
-      - run: pnpm runtime:stage && pnpm runtime:verify ${{ matrix.target }}
-        shell: bash
-      - run: pnpm runtime:smoke
-      - run: pnpm rust:test
-      - run: pnpm rust:clippy
-      - run: pnpm build
-      - if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          node scripts/with-rust.mjs tauri build --bundles app --verbose
-
-          product_name="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
-          app="src-tauri/target/release/bundle/macos/${product_name}.app"
-          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          case "${{ matrix.target }}" in
-            aarch64-apple-darwin) architecture="aarch64" ;;
-            x86_64-apple-darwin) architecture="x64" ;;
-            *) echo "Unsupported macOS target: ${{ matrix.target }}" >&2; exit 1 ;;
-          esac
-
-          staging="$RUNNER_TEMP/deepseek-desktop-dmg"
-          output="src-tauri/target/release/bundle/dmg/${product_name}_${version}_${architecture}.dmg"
-          if [ -e "$staging" ]; then
-            find "$staging" -depth -delete
-          fi
-          mkdir -p "$staging" "$(dirname "$output")"
-          ditto "$app" "$staging/${product_name}.app"
-          ln -s /Applications "$staging/Applications"
-          codesign --verify --deep --strict "$staging/${product_name}.app"
-          hdiutil create \
-            -srcfolder "$staging" \
-            -volname "$product_name" \
-            -fs HFS+ \
-            -format UDZO \
-            -ov "$output"
-          hdiutil verify "$output"
-      - if: runner.os == 'Linux'
-        run: node scripts/with-rust.mjs tauri build --bundles deb
-      - if: runner.os == 'Linux'
-        run: node scripts/with-rust.mjs tauri build --bundles appimage --verbose
-        env:
-          NO_STRIP: "1"
+      - if: runner.os != 'Windows' && startsWith(github.ref, 'refs/tags/')
+        run: corepack pnpm@11.7.0 package:community
+      - if: runner.os != 'Windows' && !startsWith(github.ref, 'refs/tags/')
+        run: corepack pnpm@11.7.0 desktop:package
       - if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -133,7 +72,11 @@ jobs:
           $exitCode = 1
           try {
             Set-Location R:\
-            node scripts/with-rust.mjs tauri build --bundles ${{ matrix.bundles }}
+            if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true") {
+              corepack pnpm@11.7.0 package:community
+            } else {
+              corepack pnpm@11.7.0 desktop:package
+            }
             $exitCode = $LASTEXITCODE
           } finally {
             Set-Location $env:GITHUB_WORKSPACE
@@ -143,7 +86,12 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: deepseek-desktop-${{ matrix.name }}-unsigned-community
-          path: ${{ matrix.artifactPath }}
+          path: |
+            release/**/*.dmg
+            release/**/*.exe
+            release/**/*.AppImage
+            release/**/*.deb
+            release/**/BUILD-INFO.*.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -156,18 +104,22 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.16.0
+      - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
+      - run: corepack pnpm@11.7.0 install --frozen-lockfile && corepack pnpm@11.7.0 app:sync
       - uses: actions/download-artifact@v8
         with:
           pattern: deepseek-desktop-*-unsigned-community
           path: release-assets
           merge-multiple: true
-      - name: Generate SHA-256 checksums
+      - name: Prepare release assets
         shell: bash
         run: |
           set -euo pipefail
           publish_dir="release-assets/publish"
           mkdir -p "$publish_dir"
-          test -z "$(find "$publish_dir" -mindepth 1 -print -quit)"
           mapfile -d '' assets < <(
             find release-assets -type f ! -path "$publish_dir/*" ! -name SHA256SUMS -print0 | sort -z
           )
@@ -195,7 +147,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          product_name="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
+          product_name="$(node -p "require('./target/generated/app-config.json').productName")"
           mapfile -d '' assets < <(find release-assets/publish -maxdepth 1 -type f -print0 | sort -z)
           test "${#assets[@]}" -gt 1
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
