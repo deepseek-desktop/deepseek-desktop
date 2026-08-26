@@ -6,6 +6,7 @@ const commands = [
   ["app:sync"],
   ["runtime:sync"],
   ["verify"],
+  ["playwright:install"],
   ["test:e2e"]
 ];
 

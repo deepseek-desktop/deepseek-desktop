@@ -14,6 +14,8 @@ DeepSeek Desktop 的重要变化记录如下。
 - Windows 每次从本地 Git mirror 重建锁定提交的干净 Runtime checkout，避开 pnpm 目录链接导致的 `git clean` 循环与 `ENOBUFS`；其他平台继续复用安全缓存。
 - Windows Rust 工具链显式绑定 x64 构建目标并使用系统 curl 下载组件，同时正确解析 Clippy 的官方清单包名，避免 ARM 虚拟机缓存、目标漂移和下载卡死。
 - Runtime 父进程守护改为确认桌面进程是否存活，不再因中间启动进程退出而误触发恢复。
+- Docker 复用版本锁定的 Playwright 镜像浏览器，GitHub 构建会在端到端测试前安装锁定版本所需的 Chromium Headless Shell，并按平台复用缓存，确保纯净构建机不会因历史缓存差异失败。
+- Docker 预检固定模拟 GitHub Ubuntu x64 架构；Apple Silicon 不再误用缺少锁定 Runtime 制品的 Linux arm64 环境，跨架构时仅将 Runtime 进程 smoke 顺延到原生打包门禁。
 
 ## 0.1.0-community.12 - 2026-08-26
 

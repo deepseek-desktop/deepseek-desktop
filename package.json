@@ -25,6 +25,7 @@
     "test": "node scripts/app-sync.mjs && vitest run",
     "test:config": "node --test scripts/tests/*.test.mjs",
     "test:e2e": "playwright test",
+    "playwright:install": "playwright install --only-shell chromium",
     "check:i18n": "node scripts/check-i18n.mjs",
     "runtime:install": "node scripts/with-pnpm.mjs --dir runtime install --frozen-lockfile",
     "runtime:sync": "node scripts/runtime-sync.mjs",

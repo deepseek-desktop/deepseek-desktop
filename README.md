@@ -108,9 +108,9 @@ staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存�
 corepack pnpm@11.7.0 release:preflight
 ```
 
-该命令先使用与 GitHub Actions 相同的 Playwright Ubuntu 镜像、Node.js 和 pnpm 版本，在 Linux amd64 Docker 容器中运行质量门禁；随后构建当前操作系统的原生安装包。Docker 负责提前发现通用脚本、依赖、Runtime、Rust、前端和端到端测试问题，macOS 与 Windows 原生步骤负责验证 Docker 无法模拟的 Tauri、WebView、DMG / NSIS 和进程窗口行为。两台环境都通过后再推送版本标签。
+该命令先使用与 GitHub Actions 相同的 Playwright Ubuntu 镜像、Node.js 和 pnpm 版本，在 `linux/amd64` Docker 容器中运行质量门禁；随后构建当前操作系统的原生安装包。Docker 负责提前发现通用脚本、依赖、Runtime、Rust、前端和端到端测试问题，macOS 与 Windows 原生步骤负责验证 Docker 无法模拟的 Tauri、WebView、DMG / NSIS 和进程窗口行为。两台环境都通过后再推送版本标签。
 
-Apple Silicon 会模拟 GitHub 的 Linux amd64 环境。通用构建和测试仍在 Docker 中完整执行，但 Runtime 使用原生模块，x64 模拟执行可能被 QEMU/Rosetta 以 `SIGSEGV` 终止，因此该环境下的 Runtime smoke 自动顺延到紧接着执行的 macOS 原生打包门禁。GitHub 原生 Linux x64 任务不会跳过 Runtime smoke。
+Docker 预检固定使用与 GitHub Ubuntu runner 一致的 `linux/amd64` 架构。Apple Silicon 会通过 Docker Desktop 模拟 x64，但直接复用锁定 Playwright 镜像中的浏览器，不重复下载和解压。跨架构模拟下仅将 Runtime 进程 smoke 顺延到紧接着执行的 macOS 原生打包门禁；Runtime 组装、校验、Rust、前端和端到端测试仍会在容器中执行，GitHub 原生 Linux x64 任务不会跳过 Runtime smoke。
 
 只运行容器质量门禁时使用：
 
@@ -124,7 +124,7 @@ corepack pnpm@11.7.0 preflight:docker
 corepack pnpm@11.7.0 package:community
 ```
 
-该命令会安装固定依赖，执行应用配置与 Runtime 同步、社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，并构建当前操作系统与架构的安装包。最终文件写入 `release/<version>/<target>/`，同时生成目标平台对应的 `BUILD-INFO.<target>.json` 和 `SHA256SUMS`。
+该命令会安装固定依赖，执行应用配置与 Runtime 同步、社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，并构建当前操作系统与架构的安装包。最终文件写入 `release/<version>/<target>/`，同时生成目标平台对应的 `BUILD-INFO.<target>.json` 和 `SHA256SUMS`。Docker 复用版本锁定的 Playwright 镜像浏览器，GitHub 纯净构建机则安装锁定版本所需的 Chromium Headless Shell，并复用平台级缓存。
 
 制作不要求干净 Git 工作区的本地定制包时使用：
 

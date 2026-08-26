@@ -3,10 +3,14 @@ import { resolve } from "node:path";
 import process from "node:process";
 
 const root = resolve(import.meta.dirname, "..");
-const image = "deepseek-desktop-ci-preflight:node24.16.0-playwright1.57.0";
-const platform = process.env.DEEPSEEK_DESKTOP_DOCKER_PLATFORM?.trim() || "linux/amd64";
-const cachePrefix = "deepseek-desktop-ci-preflight";
-const emulatedAmd64 = platform === "linux/amd64" && process.arch === "arm64";
+if (process.argv.length > 2) {
+  throw new Error(`Unknown Docker preflight arguments: ${process.argv.slice(2).join(", ")}`);
+}
+
+const platform = "linux/amd64";
+const image = "deepseek-desktop-ci-preflight:node24.16.0-playwright1.57.0-linux-amd64";
+const cachePrefix = "deepseek-desktop-ci-preflight-linux-amd64";
+const emulatedAmd64 = process.arch === "arm64";
 
 function run(args) {
   console.log(`\n> docker ${args.join(" ")}`);
@@ -35,6 +39,7 @@ run([
   "--rm",
   "--platform", platform,
   "--env", "CI=true",
+  "--env", "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
   ...(emulatedAmd64 ? ["--env", "DEEPSEEK_DESKTOP_SKIP_RUNTIME_SMOKE=true"] : []),
   "--volume", `${cachePrefix}-target:/workspace/target`,
   "--volume", `${cachePrefix}-rust-target:/workspace/src-tauri/target`,
@@ -43,7 +48,7 @@ run([
 ]);
 
 if (emulatedAmd64) {
-  console.log("\nDocker common CI passed under linux/amd64 emulation; Runtime smoke remains a native-host gate.");
+  console.log("\nDocker common CI passed under GitHub-compatible linux/amd64 emulation; Runtime smoke remains a native-host gate.");
 }
 
-console.log("\nDocker CI preflight passed");
+console.log("\nDocker CI preflight passed for GitHub-compatible linux/amd64");
