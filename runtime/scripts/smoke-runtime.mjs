@@ -28,21 +28,6 @@ function signalTree(child, signal) {
   }
 }
 
-async function waitForExit(child, timeoutMs = 5_000) {
-  if (child.exitCode !== null) return true;
-  return new Promise(resolveExit => {
-    const timer = setTimeout(() => {
-      child.off("exit", onExit);
-      resolveExit(false);
-    }, timeoutMs);
-    const onExit = () => {
-      clearTimeout(timer);
-      resolveExit(true);
-    };
-    child.once("exit", onExit);
-  });
-}
-
 function processGroupExists(pid) {
   if (process.platform === "win32") return false;
   const processes = spawnSync("ps", ["-axo", "pgid=,stat="], { encoding: "utf8" });
@@ -54,6 +39,16 @@ function processGroupExists(pid) {
   }
   // Minimal systems may not provide ps; retain the signal probe as a fallback.
   try { process.kill(-pid, 0); return true; } catch { return false; }
+}
+
+async function waitForExit(child, timeoutMs = 5_000) {
+  if (child.exitCode !== null) return true;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null || (process.platform !== "win32" && !processGroupExists(child.pid))) return true;
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 50));
+  }
+  return child.exitCode !== null || (process.platform !== "win32" && !processGroupExists(child.pid));
 }
 
 async function terminateTree(child) {
@@ -221,9 +216,9 @@ async function runCycle(index) {
       };
       child.stdout.on("data", inspect);
       child.stderr.on("data", inspect);
-      child.once("exit", code => {
+      child.once("exit", (code, signal) => {
         clearTimeout(timer);
-        reject(new Error(`runtime exited before readiness on cycle ${index} (${String(code)}):\n${output}`));
+        reject(new Error(`runtime exited before readiness on cycle ${index} (code=${String(code)}, signal=${String(signal)}):\n${output}`));
       });
     });
     const readyUrl = new URL(ready);

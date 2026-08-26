@@ -25,7 +25,6 @@ if (!Number.isInteger(expectedParent) || expectedParent <= 1) {
 }
 
 function parentIsAlive() {
-  if (process.ppid !== expectedParent) return false;
   try {
     process.kill(expectedParent, 0);
     return true;

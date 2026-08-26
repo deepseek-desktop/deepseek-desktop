@@ -1,0 +1,16 @@
+.git/modules/
+.env
+.env.*
+!.env.example
+node_modules/
+.pnpm-store/
+dist/
+target/
+release/
+runtime/staging/
+src-tauri/target/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+playwright-report/
+test-results/
+*.log

@@ -392,6 +392,8 @@ async function prepareRemote(repository, ref) {
     runGit(["clone", "--no-checkout", mirror, checkout], root);
     runGit(["checkout", "--detach", commit], checkout);
   }
+  runGit(["reset", "--hard", commit], checkout);
+  runGit(["clean", "-ffdx"], checkout);
   return { sourceRoot: checkout, repository, ref, commit, dirty: false, kind, mode: "remote" };
 }
 

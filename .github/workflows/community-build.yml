@@ -27,13 +27,8 @@ jobs:
           node-version: 24.16.0
       - run: apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
-      - run: corepack pnpm@11.7.0 install --frozen-lockfile
       - run: node scripts/ci-release-version.mjs
-      - run: corepack pnpm@11.7.0 app:sync
-      - run: corepack pnpm@11.7.0 runtime:sync
-      - run: corepack pnpm@11.7.0 verify
-      - run: corepack pnpm@11.7.0 test:e2e
-      - run: corepack pnpm@11.7.0 runtime:smoke
+      - run: corepack pnpm@11.7.0 ci:shell-quality
 
   native-build:
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
