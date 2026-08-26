@@ -28,6 +28,7 @@ jobs:
       - run: apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
       - run: corepack pnpm@11.7.0 install --frozen-lockfile
+      - run: node scripts/ci-release-version.mjs
       - run: corepack pnpm@11.7.0 app:sync
       - run: corepack pnpm@11.7.0 runtime:sync
       - run: corepack pnpm@11.7.0 verify
@@ -59,6 +60,7 @@ jobs:
         with:
           node-version: 24.16.0
       - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
+      - run: node scripts/ci-release-version.mjs
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - if: runner.os != 'Windows' && startsWith(github.ref, 'refs/tags/')
@@ -108,7 +110,9 @@ jobs:
         with:
           node-version: 24.16.0
       - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
-      - run: corepack pnpm@11.7.0 install --frozen-lockfile && corepack pnpm@11.7.0 app:sync
+      - run: corepack pnpm@11.7.0 install --frozen-lockfile
+      - run: node scripts/ci-release-version.mjs
+      - run: corepack pnpm@11.7.0 app:sync
       - uses: actions/download-artifact@v8
         with:
           pattern: deepseek-desktop-*-unsigned-community

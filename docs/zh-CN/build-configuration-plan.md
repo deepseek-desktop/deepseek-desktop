@@ -28,7 +28,7 @@
 ```dotenv
 # 应用信息
 DESKTOP_APP_NAME=DeepSeek Desktop
-DESKTOP_APP_VERSION=0.1.0-community.10
+DESKTOP_APP_VERSION=1.0.0
 DESKTOP_APP_IDENTIFIER=deepseek.desktop
 DESKTOP_APP_SLUG=deepseek-desktop
 DESKTOP_APP_DESCRIPTION=Local AI agent workspace
@@ -187,7 +187,7 @@ corepack pnpm@11.7.0 tauri:build
   "schemaVersion": 1,
   "application": {
     "productName": "DeepSeek Desktop",
-    "version": "0.1.0-community.10",
+    "version": "1.0.0",
     "identifier": "deepseek.desktop",
     "slug": "deepseek-desktop",
     "description": "Local AI agent workspace",

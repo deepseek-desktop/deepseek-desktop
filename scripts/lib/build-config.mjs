@@ -16,7 +16,7 @@ export const CONFIG_KEYS = Object.freeze([
 
 export const DEFAULT_CONFIG = Object.freeze({
   DESKTOP_APP_NAME: "DeepSeek Desktop",
-  DESKTOP_APP_VERSION: "0.1.0-community.10",
+  DESKTOP_APP_VERSION: "1.0.0",
   DESKTOP_APP_IDENTIFIER: "deepseek.desktop",
   DESKTOP_APP_SLUG: "deepseek-desktop",
   DESKTOP_APP_DESCRIPTION: "Local AI agent workspace",

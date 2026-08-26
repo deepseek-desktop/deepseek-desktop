@@ -4,7 +4,7 @@ DeepSeek Desktop 是内置固定版本本地 Runtime 的独立、非官方社区
 
 桌面 Shell、应用程序和安装包统一使用固定上游提交中的侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 
-当前版本为 `0.1.0-community.10`。它是可本地完整使用的社区版；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
+源码默认和文档示例版本固定为 `1.0.0`，实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
 
 工程源码位于仓库根目录。`runtime/toolchain-lock.json` 固定 Node、原生依赖和桌面补丁；`runtime:sync` 将 Harness ref 解析为不可变 commit，并生成当前构建专用的 `target/generated/runtime-lock.json`。Runtime 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
@@ -101,4 +101,4 @@ corepack pnpm@11.7.0 package:community
 
 该命令会自动安装锁定依赖，执行应用配置与 Runtime 同步、社区版发行门禁、单元测试、端到端测试、Runtime 校验和真实 readiness smoke，再构建当前操作系统及 CPU 架构对应的安装包。结果统一输出到 `release/<版本>/<目标平台>/`，同时生成 `BUILD-INFO.<目标平台>.json` 和 `SHA256SUMS`。
 
-单台电脑只生成当前平台安装包。维护者推送与工程版本完全一致的标签（例如 `v0.1.0-community.10`）后，GitHub 工作流会分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。
+单台电脑只生成当前平台安装包。默认和示例版本始终使用 `1.0.0`；社区发布标签按实际发行需要追加 `-community.<序号>` 后缀。维护者推送版本标签后，GitHub 工作流会从标签注入真实发行版本，并分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。

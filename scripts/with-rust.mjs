@@ -3,11 +3,8 @@ import { delimiter, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 
-const rootResult = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" });
-if (rootResult.status !== 0) throw new Error("could not locate the repository root");
-const projectRoot = rootResult.stdout.trim();
 const desktopRoot = resolve(import.meta.dirname, "..");
-const toolchainRoot = resolve(process.env.DEEPSEEK_DESKTOP_TOOLCHAIN_DIR || join(projectRoot, "target/deepseek-desktop-toolchain"));
+const toolchainRoot = resolve(process.env.DEEPSEEK_DESKTOP_TOOLCHAIN_DIR || join(desktopRoot, "target/deepseek-desktop-toolchain"));
 const cargoHome = join(toolchainRoot, "cargo");
 const rustupHome = join(toolchainRoot, "rustup");
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
