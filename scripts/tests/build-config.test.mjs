@@ -13,17 +13,17 @@ test("uses built-in defaults without an env file", async () => {
   assert.equal(config.productName, DEFAULT_CONFIG.DESKTOP_APP_NAME);
   assert.equal(config.version, DEFAULT_CONFIG.DESKTOP_APP_VERSION);
   assert.equal(config.repository, "https://github.com/deepseek-desktop/deepseek-desktop");
-  assert.equal(config.harness.repository, DEFAULT_CONFIG.HARNESS_REPOSITORY);
+  assert.equal(config.harness.repository, DEFAULT_CONFIG.RUNTIME_REPOSITORY);
   assert.equal(config.harness.ref, "");
 });
 
 test("environment values override env file values", () => {
   const values = resolveBuildValues({
-    fileValues: { DESKTOP_APP_NAME: "File Name", HARNESS_REF: "file-ref" },
+    fileValues: { DESKTOP_APP_NAME: "File Name", RUNTIME_REF: "file-ref" },
     environment: { DESKTOP_APP_NAME: "Environment Name" }
   });
   assert.equal(values.DESKTOP_APP_NAME, "Environment Name");
-  assert.equal(values.HARNESS_REF, "file-ref");
+  assert.equal(values.RUNTIME_REF, "file-ref");
 });
 
 test("loads every declared value from an env file before applying environment overrides", async () => {
@@ -38,8 +38,8 @@ test("loads every declared value from an env file before applying environment ov
     "DESKTOP_APP_AUTHORS=Alice, Bob",
     "DESKTOP_APP_REPOSITORY=https://git.example.com/team/desktop.git",
     "DESKTOP_APP_ICON=src-tauri/icons/icon.png",
-    "HARNESS_REPOSITORY=git@github.com:example/deepseek-harness.git",
-    "HARNESS_REF=release-candidate"
+    "RUNTIME_REPOSITORY=git@github.com:example/deepseek-harness.git",
+    "RUNTIME_REF=release-candidate"
   ].join("\n"));
   try {
     const config = await loadBuildConfig(root, {
@@ -66,9 +66,9 @@ test("rejects unknown and required empty declared values", () => {
 
 test("accepts empty Harness ref and Desktop repository for automatic resolution", () => {
   const values = resolveBuildValues({
-    environment: { HARNESS_REF: " ", DESKTOP_APP_REPOSITORY: "" }
+    environment: { RUNTIME_REF: " ", DESKTOP_APP_REPOSITORY: "" }
   });
-  assert.equal(values.HARNESS_REF, "");
+  assert.equal(values.RUNTIME_REF, "");
   assert.equal(values.DESKTOP_APP_REPOSITORY, "");
 });
 
@@ -114,7 +114,7 @@ test("accepts spaces, Chinese text, and Windows separators in relative paths", a
 
 test("rejects repository URLs containing embedded credentials", async () => {
   await assert.rejects(loadBuildConfig(root, {
-    environment: { HARNESS_REPOSITORY: "https://token@example.com/deepseek-harness.git" },
+    environment: { RUNTIME_REPOSITORY: "https://token@example.com/deepseek-harness.git" },
     envFile: resolve(root, "target/missing.env")
   }), /must not contain embedded credentials/u);
   assert.throws(

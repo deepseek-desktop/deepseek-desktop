@@ -12,8 +12,8 @@ export const CONFIG_KEYS = Object.freeze([
   "DESKTOP_APP_AUTHORS",
   "DESKTOP_APP_REPOSITORY",
   "DESKTOP_APP_ICON",
-  "HARNESS_REPOSITORY",
-  "HARNESS_REF"
+  "RUNTIME_REPOSITORY",
+  "RUNTIME_REF"
 ]);
 
 export const DEFAULT_CONFIG = Object.freeze({
@@ -25,11 +25,11 @@ export const DEFAULT_CONFIG = Object.freeze({
   DESKTOP_APP_AUTHORS: "DeepSeek Desktop Contributors",
   DESKTOP_APP_REPOSITORY: "",
   DESKTOP_APP_ICON: "src-tauri/icons/icon.png",
-  HARNESS_REPOSITORY: "https://github.com/deepseek-desktop/deepseek-harness.git",
-  HARNESS_REF: ""
+  RUNTIME_REPOSITORY: "https://github.com/deepseek-desktop/deepseek-harness.git",
+  RUNTIME_REF: ""
 });
 
-const OPTIONAL_EMPTY_KEYS = new Set(["DESKTOP_APP_REPOSITORY", "HARNESS_REF"]);
+const OPTIONAL_EMPTY_KEYS = new Set(["DESKTOP_APP_REPOSITORY", "RUNTIME_REF"]);
 
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const identifierPattern = /^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*)+$/u;
@@ -37,7 +37,7 @@ const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 function assertKnownKeys(values, source) {
   const unknown = Object.keys(values)
-    .filter(key => (key.startsWith("DESKTOP_APP_") || key.startsWith("HARNESS_")) && !CONFIG_KEYS.includes(key))
+    .filter(key => (key.startsWith("DESKTOP_APP_") || key.startsWith("RUNTIME_")) && !CONFIG_KEYS.includes(key))
     .sort();
   if (unknown.length > 0) throw new Error(`${source} contains unsupported build configuration: ${unknown.join(", ")}`);
 }
@@ -77,7 +77,7 @@ async function inspectPng(path) {
   return { width, height };
 }
 
-function normalizeRepository(value, name = "HARNESS_REPOSITORY") {
+function normalizeRepository(value, name = "RUNTIME_REPOSITORY") {
   const repository = value.trim();
   if (/^(?:https?|ssh|git):\/\//u.test(repository)) {
     const url = new URL(repository);
@@ -166,7 +166,7 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
   const desktopRepository = await resolveDesktopRepository(root, values.DESKTOP_APP_REPOSITORY);
   const iconSource = normalizeRelativePath(values.DESKTOP_APP_ICON);
   const icon = await inspectPng(resolve(root, iconSource));
-  const repository = normalizeRepository(values.HARNESS_REPOSITORY);
+  const repository = normalizeRepository(values.RUNTIME_REPOSITORY);
   const year = new Date().getUTCFullYear();
   return Object.freeze({
     schemaVersion: 2,
@@ -182,7 +182,7 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
     icon,
     harness: {
       repository,
-      ref: values.HARNESS_REF
+      ref: values.RUNTIME_REF
     }
   });
 }

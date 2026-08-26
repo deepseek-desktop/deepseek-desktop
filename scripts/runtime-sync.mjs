@@ -393,7 +393,7 @@ async function prepareRemote(repository, ref) {
       break;
     } catch {}
   }
-  if (!commit || !/^[0-9a-f]{40}$/u.test(commit)) throw new Error(`HARNESS_REF could not be resolved: ${resolvedRef}`);
+  if (!commit || !/^[0-9a-f]{40}$/u.test(commit)) throw new Error(`RUNTIME_REF could not be resolved: ${resolvedRef}`);
   const tag = runGit(["tag", "--points-at", commit], mirror).split("\n").find(value => value === resolvedRef) || null;
   const kind = tag ? "tag" : /^[0-9a-f]{40}$/u.test(resolvedRef) ? "commit" : "branch";
   if (fetchError && kind === "branch") throw fetchError;

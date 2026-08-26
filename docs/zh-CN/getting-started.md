@@ -6,7 +6,7 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 源码默认和文档示例版本固定为 `1.0.0`，实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
 
-工程源码位于仓库根目录。`runtime/toolchain-lock.json` 固定 Node、原生依赖和桌面补丁；`runtime:sync` 在 `HARNESS_REF` 为空时自动选择 Harness 仓库最新的 SemVer 版本标签，显式填写时使用指定来源，随后统一解析为不可变 commit，并生成当前构建专用的 `target/generated/runtime-lock.json`。Runtime 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
+工程源码位于仓库根目录。`runtime/toolchain-lock.json` 固定 Node、原生依赖和桌面补丁；`runtime:sync` 在 `RUNTIME_REF` 为空时自动选择 Runtime 仓库最新的 SemVer 版本标签，显式填写时使用指定来源，随后统一解析为不可变 commit，并生成当前构建专用的 `target/generated/runtime-lock.json`。Runtime 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
 ## 支持平台
 
