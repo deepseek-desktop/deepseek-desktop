@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { delimiter, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -45,6 +45,20 @@ function run(command, args, options = {}) {
   if (result.status !== 0) throw new Error(`${command} exited with code ${String(result.status)}`);
 }
 
+function runWithRetry(command, args, attempts = 3) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      run(command, args);
+      return;
+    } catch (error) {
+      if (attempt === attempts) throw error;
+      const delaySeconds = attempt * 3;
+      console.warn(`${command} failed; retrying in ${delaySeconds}s (${attempt}/${attempts})`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delaySeconds * 1_000);
+    }
+  }
+}
+
 async function exists(path) {
   try { await stat(path); return true; } catch { return false; }
 }
@@ -56,7 +70,18 @@ async function sha256(path) {
 }
 
 async function downloadWithCurl(url, output) {
-  run("curl.exe", ["--fail", "--location", "--retry", "3", "--connect-timeout", "20", "--output", output, url]);
+  const curl = process.platform === "win32" ? "curl.exe" : "curl";
+  run(curl, [
+    "--fail",
+    "--location",
+    "--retry", "5",
+    "--retry-all-errors",
+    "--retry-delay", "2",
+    "--connect-timeout", "30",
+    "--max-time", "300",
+    "--output", output,
+    url
+  ]);
 }
 
 async function prefetchWindowsToolchain(components = ["cargo", "rust-std", "rustc", "clippy"]) {
@@ -97,12 +122,10 @@ if (!await exists(rustup)) {
     await downloadWithCurl(url, installer);
     await prefetchWindowsToolchain();
   } else {
-    const response = await fetch(url, { signal: AbortSignal.timeout(120_000) });
-    if (!response.ok) throw new Error(`could not download rustup-init: HTTP ${response.status}`);
-    await writeFile(installer, new Uint8Array(await response.arrayBuffer()));
+    await downloadWithCurl(url, installer);
     await chmod(installer, 0o755);
   }
-  run(installer, [
+  runWithRetry(installer, [
     "-y",
     "--no-modify-path",
     "--profile", "minimal",
@@ -113,7 +136,9 @@ if (!await exists(rustup)) {
 }
 
 const installed = spawnSync(rustup, ["run", rustToolchain, "rustc", "--version"], { env: environment, stdio: "ignore" });
-if (installed.status !== 0) run(rustup, ["toolchain", "install", rustToolchain, "--profile", "minimal"]);
+if (installed.status !== 0) {
+  runWithRetry(rustup, ["toolchain", "install", rustToolchain, "--profile", "minimal"]);
+}
 
 const [command, ...args] = process.argv.slice(2);
 if (!command) throw new Error("a command is required");
