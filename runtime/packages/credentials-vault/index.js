@@ -5,23 +5,32 @@ import { CredentialProvider, parseCredentialKey } from "@deepseek-ai/dsh-credent
 
 const HELPER_ARGUMENT = "--credential-vault-helper";
 const HELPER_SESSION = readFileSync(0, "utf8").trim();
+const HELPER_PATH = process.env.DEEPSEEK_DESKTOP_HELPER_PATH;
+const HELPER_DATA_DIR = process.env.DEEPSEEK_DESKTOP_DATA_DIR;
 const OPERATIONS = Symbol("operations");
 const CLOSED = Symbol("closed");
+
+delete process.env.DEEPSEEK_DESKTOP_HELPER_PATH;
+delete process.env.DEEPSEEK_DESKTOP_DATA_DIR;
 
 if (!HELPER_SESSION) {
   throw new Error("credentials-vault: desktop credential session is unavailable");
 }
 
-function helperPath() {
-  const path = process.env.DEEPSEEK_DESKTOP_HELPER_PATH;
-  if (!path) throw new Error("credentials-vault: DEEPSEEK_DESKTOP_HELPER_PATH is not configured");
-  return path;
+function helperEnvironment() {
+  if (!HELPER_DATA_DIR) throw new Error("credentials-vault: desktop credential data directory is not configured");
+  const environment = { DEEPSEEK_DESKTOP_DATA_DIR: HELPER_DATA_DIR };
+  for (const name of ["SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR"]) {
+    if (process.env[name]) environment[name] = process.env[name];
+  }
+  return environment;
 }
 
 function callHelper(request) {
   return new Promise((resolve, reject) => {
-    const child = spawn(helperPath(), [HELPER_ARGUMENT], {
-      env: process.env,
+    if (!HELPER_PATH) throw new Error("credentials-vault: desktop credential helper is not configured");
+    const child = spawn(HELPER_PATH, [HELPER_ARGUMENT], {
+      env: helperEnvironment(),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true
     });

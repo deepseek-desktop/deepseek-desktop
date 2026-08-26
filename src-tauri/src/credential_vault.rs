@@ -23,6 +23,9 @@ const SESSION_FILE: &str = "credential-session.json";
 const VAULT_FILE: &str = "credential-vault.json";
 const VAULT_KEY_FILE: &str = "credential-vault.key";
 const VAULT_LOCK_FILE: &str = "credential-vault.lock";
+const LEGACY_INDEX_FILE: &str = "credential-index.json";
+const INDEX_NAMESPACE: &str = "desktop-internal";
+const INDEX_KEY: &str = "credential-record-index";
 const VAULT_KEY_LEN: usize = 32;
 const VAULT_NONCE_LEN: usize = 24;
 
@@ -103,18 +106,25 @@ struct CredentialIndex {
 }
 
 impl CredentialIndex {
-    fn load(data_dir: &Path) -> DesktopResult<(Self, PathBuf)> {
-        fs::create_dir_all(data_dir)?;
-        let path = data_dir.join("credential-index.json");
-        let index = match fs::read_to_string(&path) {
-            Ok(text) => serde_json::from_str(&text)?,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Self {
+    fn load(store: &dyn SecretStore) -> DesktopResult<Self> {
+        let index = match store.get(INDEX_NAMESPACE, INDEX_KEY)? {
+            Some(text) => serde_json::from_str(&text)?,
+            None => Self {
                 version: 1,
                 records: BTreeMap::new(),
             },
-            Err(error) => return Err(error.into()),
         };
-        Ok((index, path))
+        if index.version != 1 {
+            return Err(DesktopError::CredentialVault(format!(
+                "unsupported credential index version {}",
+                index.version
+            )));
+        }
+        Ok(index)
+    }
+
+    fn save(&self, store: &dyn SecretStore) -> DesktopResult<()> {
+        store.set(INDEX_NAMESPACE, INDEX_KEY, &serde_json::to_string(self)?)
     }
 }
 
@@ -198,7 +208,31 @@ fn execute(request: HelperRequest) -> DesktopResult<Value> {
         })?;
     let store = SystemSecretStore::new(&data_dir);
     validate_session_at(&data_dir, &request)?;
-    execute_with(&store, &data_dir, request)
+    migrate_legacy_index(&data_dir, &store)?;
+    execute_with(&store, request)
+}
+
+fn migrate_legacy_index(data_dir: &Path, store: &dyn SecretStore) -> DesktopResult<()> {
+    let path = data_dir.join(LEGACY_INDEX_FILE);
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let legacy = serde_json::from_str::<CredentialIndex>(&text)?;
+    if legacy.version != 1 {
+        return Err(DesktopError::CredentialVault(format!(
+            "unsupported legacy credential index version {}",
+            legacy.version
+        )));
+    }
+    let mut encrypted = CredentialIndex::load(store)?;
+    for (key, kind) in legacy.records {
+        encrypted.records.entry(key).or_insert(kind);
+    }
+    encrypted.save(store)?;
+    fs::remove_file(path)?;
+    Ok(())
 }
 
 fn validate_session_at(data_dir: &Path, request: &HelperRequest) -> DesktopResult<()> {
@@ -252,11 +286,7 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
-fn execute_with(
-    store: &dyn SecretStore,
-    data_dir: &Path,
-    request: HelperRequest,
-) -> DesktopResult<Value> {
+fn execute_with(store: &dyn SecretStore, request: HelperRequest) -> DesktopResult<Value> {
     match request.operation {
         Operation::GetRef => store
             .get("ref", &require_key(request.key)?)
@@ -295,7 +325,7 @@ fn execute_with(
             Ok(json!({ "configured": value.is_some(), "kind": kind }))
         }
         Operation::ListRecords => {
-            let (index, _) = CredentialIndex::load(data_dir)?;
+            let index = CredentialIndex::load(store)?;
             let records = index
                 .records
                 .into_iter()
@@ -315,37 +345,43 @@ fn execute_with(
                 .ok_or_else(|| {
                     DesktopError::CredentialVault("record kind must be api-key or grant".to_owned())
                 })?;
+            let mut index = CredentialIndex::load(store)?;
             let previous = store.get("record", &key)?;
             store.set("record", &key, &serde_json::to_string(&value)?)?;
-            let (mut index, path) = CredentialIndex::load(data_dir)?;
             index.records.insert(key.clone(), kind.to_owned());
-            if let Err(error) = write_json_atomic(&path, &index) {
-                match previous {
-                    Some(value) => store.set("record", &key, &value)?,
-                    None => store.delete("record", &key)?,
-                }
-                return Err(error);
+            if let Err(error) = index.save(store) {
+                let rollback = match previous {
+                    Some(value) => store.set("record", &key, &value),
+                    None => store.delete("record", &key),
+                };
+                return Err(preserve_rollback_error(error, rollback));
             }
             Ok(Value::Null)
         }
         Operation::DeleteRecord => {
             let key = require_key(request.key)?;
+            let mut index = CredentialIndex::load(store)?;
             let previous = store.get("record", &key)?;
-            let (mut index, path) = CredentialIndex::load(data_dir)?;
-            let previous_kind = index.records.remove(&key);
-            write_json_atomic(&path, &index)?;
-            if let Err(error) = store.delete("record", &key) {
-                if let Some(kind) = previous_kind {
-                    index.records.insert(key.clone(), kind);
-                }
-                write_json_atomic(&path, &index)?;
-                if let Some(value) = previous {
-                    store.set("record", &key, &value)?;
-                }
-                return Err(error);
+            store.delete("record", &key)?;
+            index.records.remove(&key);
+            if let Err(error) = index.save(store) {
+                let rollback = match previous {
+                    Some(value) => store.set("record", &key, &value),
+                    None => Ok(()),
+                };
+                return Err(preserve_rollback_error(error, rollback));
             }
             Ok(Value::Null)
         }
+    }
+}
+
+fn preserve_rollback_error(original: DesktopError, rollback: DesktopResult<()>) -> DesktopError {
+    match rollback {
+        Ok(()) => original,
+        Err(rollback_error) => DesktopError::CredentialVault(format!(
+            "{original}; credential rollback also failed: {rollback_error}"
+        )),
     }
 }
 
@@ -588,6 +624,7 @@ fn error_response(code: &str, message: &str) -> Value {
 mod tests {
     use super::*;
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     #[derive(Default)]
     struct MemorySecretStore(Mutex<BTreeMap<String, String>>);
@@ -635,6 +672,57 @@ mod tests {
             Err(DesktopError::CredentialVault(
                 "encrypted credential vault is unavailable".to_owned(),
             ))
+        }
+    }
+
+    #[derive(Default)]
+    struct FailingIndexStore {
+        entries: Mutex<BTreeMap<String, String>>,
+        fail_index_write: AtomicBool,
+    }
+
+    impl FailingIndexStore {
+        fn fail_next_index_write(&self) {
+            self.fail_index_write.store(true, Ordering::SeqCst);
+        }
+
+        fn insert(&self, namespace: &str, key: &str, value: &str) {
+            self.entries
+                .lock()
+                .unwrap()
+                .insert(format!("{namespace}:{key}"), value.to_owned());
+        }
+    }
+
+    impl SecretStore for FailingIndexStore {
+        fn get(&self, namespace: &str, key: &str) -> DesktopResult<Option<String>> {
+            Ok(self
+                .entries
+                .lock()
+                .unwrap()
+                .get(&format!("{namespace}:{key}"))
+                .cloned())
+        }
+
+        fn set(&self, namespace: &str, key: &str, value: &str) -> DesktopResult<()> {
+            if namespace == INDEX_NAMESPACE
+                && key == INDEX_KEY
+                && self.fail_index_write.swap(false, Ordering::SeqCst)
+            {
+                return Err(DesktopError::CredentialVault(
+                    "credential index write failed".to_owned(),
+                ));
+            }
+            self.insert(namespace, key, value);
+            Ok(())
+        }
+
+        fn delete(&self, namespace: &str, key: &str) -> DesktopResult<()> {
+            self.entries
+                .lock()
+                .unwrap()
+                .remove(&format!("{namespace}:{key}"));
+            Ok(())
         }
     }
 
@@ -686,7 +774,7 @@ mod tests {
 
         drop(session);
         assert!(!data_dir.join(SESSION_FILE).exists());
-        fs::remove_dir_all(data_dir).unwrap();
+        let _ = fs::remove_dir_all(data_dir);
     }
 
     #[test]
@@ -713,7 +801,6 @@ mod tests {
 
         execute_with(
             &store,
-            &data_dir,
             request(
                 Operation::SetRef,
                 "DEEPSEEK_API_KEY",
@@ -722,18 +809,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            execute_with(
-                &store,
-                &data_dir,
-                request(Operation::GetRef, "DEEPSEEK_API_KEY", None)
-            )
-            .unwrap(),
+            execute_with(&store, request(Operation::GetRef, "DEEPSEEK_API_KEY", None)).unwrap(),
             json!("secret-ref")
         );
 
         execute_with(
             &store,
-            &data_dir,
             request(
                 Operation::SetRecord,
                 "provider:primary",
@@ -741,39 +822,67 @@ mod tests {
             ),
         )
         .unwrap();
-        execute_with(&store, &data_dir, request(
-            Operation::SetRecord,
-            "provider:oauth",
-            Some(json!({ "kind": "grant", "accessToken": "secret-oauth-token", "expiresAt": 4_102_444_800_i64 })),
-        )).unwrap();
-
-        let records = execute_with(
+        execute_with(
             &store,
-            &data_dir,
-            request(Operation::ListRecords, "ignored", None),
+            request(
+                Operation::SetRecord,
+                "provider:oauth",
+                Some(json!({ "kind": "grant", "accessToken": "secret-oauth-token", "expiresAt": 4_102_444_800_i64 })),
+            ),
         )
         .unwrap();
+
+        let records =
+            execute_with(&store, request(Operation::ListRecords, "ignored", None)).unwrap();
         assert_eq!(records["records"].as_array().unwrap().len(), 2);
-        let index = fs::read_to_string(data_dir.join("credential-index.json")).unwrap();
+        let index = store.get(INDEX_NAMESPACE, INDEX_KEY).unwrap().unwrap();
         assert!(!index.contains("secret-api-key"));
         assert!(!index.contains("secret-oauth-token"));
+        assert!(!data_dir.join(LEGACY_INDEX_FILE).exists());
 
         execute_with(
             &store,
-            &data_dir,
             request(Operation::DeleteRecord, "provider:primary", None),
         )
         .unwrap();
         assert_eq!(
             execute_with(
                 &store,
-                &data_dir,
                 request(Operation::GetRecord, "provider:primary", None)
             )
             .unwrap(),
             Value::Null
         );
-        fs::remove_dir_all(data_dir).unwrap();
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn migrates_the_legacy_record_index_before_removing_plaintext() {
+        let data_dir = temporary_data_dir("legacy-index-migration");
+        fs::create_dir_all(&data_dir).unwrap();
+        let legacy = CredentialIndex {
+            version: 1,
+            records: BTreeMap::from([("provider:legacy".to_owned(), "api-key".to_owned())]),
+        };
+        fs::write(
+            data_dir.join(LEGACY_INDEX_FILE),
+            serde_json::to_vec(&legacy).unwrap(),
+        )
+        .unwrap();
+        let store = MemorySecretStore::default();
+
+        migrate_legacy_index(&data_dir, &store).unwrap();
+
+        assert!(!data_dir.join(LEGACY_INDEX_FILE).exists());
+        assert_eq!(
+            CredentialIndex::load(&store)
+                .unwrap()
+                .records
+                .get("provider:legacy")
+                .map(String::as_str),
+            Some("api-key")
+        );
+        let _ = fs::remove_dir_all(data_dir);
     }
 
     #[test]
@@ -821,6 +930,74 @@ mod tests {
     }
 
     #[test]
+    fn restores_the_previous_record_when_encrypted_index_update_fails() {
+        let store = FailingIndexStore::default();
+        let previous = json!({ "kind": "api-key", "apiKey": "previous-secret" });
+        store.insert(
+            "record",
+            "provider:primary",
+            &serde_json::to_string(&previous).unwrap(),
+        );
+        store.fail_next_index_write();
+
+        let error = execute_with(
+            &store,
+            request(
+                Operation::SetRecord,
+                "provider:primary",
+                Some(json!({ "kind": "api-key", "apiKey": "replacement-secret" })),
+            ),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("credential index write failed"));
+        let restored = execute_with(
+            &store,
+            request(Operation::GetRecord, "provider:primary", None),
+        )
+        .unwrap();
+        assert_eq!(restored, previous);
+    }
+
+    #[test]
+    fn restores_a_deleted_record_when_encrypted_index_update_fails() {
+        let store = FailingIndexStore::default();
+        let previous = json!({ "kind": "grant", "accessToken": "previous-secret" });
+        let mut index = CredentialIndex {
+            version: 1,
+            records: BTreeMap::new(),
+        };
+        index
+            .records
+            .insert("provider:primary".to_owned(), "grant".to_owned());
+        store.insert(
+            "record",
+            "provider:primary",
+            &serde_json::to_string(&previous).unwrap(),
+        );
+        store.insert(
+            INDEX_NAMESPACE,
+            INDEX_KEY,
+            &serde_json::to_string(&index).unwrap(),
+        );
+        store.fail_next_index_write();
+
+        let error = execute_with(
+            &store,
+            request(Operation::DeleteRecord, "provider:primary", None),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("credential index write failed"));
+        let restored = execute_with(
+            &store,
+            request(Operation::GetRecord, "provider:primary", None),
+        )
+        .unwrap();
+        assert_eq!(restored, previous);
+    }
+
+    #[test]
     fn corrupted_encrypted_vault_fails_closed_without_overwriting_it() {
         let data_dir = temporary_data_dir("corrupt-encrypted-vault");
         let store = SystemSecretStore::new(&data_dir);
@@ -845,7 +1022,6 @@ mod tests {
         let data_dir = temporary_data_dir("vault-unavailable");
         let error = execute_with(
             &UnavailableSecretStore,
-            &data_dir,
             request(
                 Operation::SetRef,
                 "DEEPSEEK_API_KEY",

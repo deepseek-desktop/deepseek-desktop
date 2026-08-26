@@ -7,7 +7,9 @@ const providerUrl = pathToFileURL(resolve(import.meta.dirname, "../packages/cred
 const script = `
   import { Context } from "@deepseek-ai/cordis";
   process.env.DEEPSEEK_DESKTOP_HELPER_PATH = ${JSON.stringify(resolve(import.meta.dirname, "missing-vault-helper"))};
+  process.env.DEEPSEEK_DESKTOP_DATA_DIR = ${JSON.stringify(resolve(import.meta.dirname, "test-credential-data"))};
   const { VaultCredentialProvider } = await import(${JSON.stringify(providerUrl)});
+  const environmentCleared = !process.env.DEEPSEEK_DESKTOP_HELPER_PATH && !process.env.DEEPSEEK_DESKTOP_DATA_DIR;
   const provider = new VaultCredentialProvider(new Context());
   const proxied = new Proxy(provider, {});
   const result = await proxied.enqueue(async () => "proxy-safe");
@@ -17,7 +19,7 @@ const script = `
   } catch (error) {
     setFailure = String(error);
   }
-  process.stdout.write(JSON.stringify({ result, setFailure }));
+  process.stdout.write(JSON.stringify({ result, setFailure, environmentCleared }));
 `;
 
 const child = spawn(process.execPath, ["--input-type=module", "--eval", script], {
@@ -41,6 +43,7 @@ const code = await new Promise((resolveExit, reject) => {
 assert.equal(code, 0, stderr);
 const result = JSON.parse(stdout);
 assert.equal(result.result, "proxy-safe");
+assert.equal(result.environmentCleared, true);
 assert.match(result.setFailure, /ENOENT|spawn/u);
 assert.doesNotMatch(result.setFailure, /Receiver must be an instance of class KeychainCredentialProvider/u);
 assert.doesNotMatch(stderr, /Receiver must be an instance of class KeychainCredentialProvider/);

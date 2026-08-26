@@ -63,6 +63,7 @@ impl Diagnostics {
         status: &RuntimeStatus,
         settings: &DesktopSettings,
     ) -> DesktopResult<PathBuf> {
+        let _guard = self.write_lock.lock()?;
         let filename = format!(
             "deepseek-desktop-diagnostics-{}.json",
             Utc::now().format("%Y%m%dT%H%M%SZ")
@@ -101,7 +102,7 @@ impl Diagnostics {
         fs::create_dir_all(&self.paths.diagnostics_dir)?;
         let current = self.paths.logs_dir.join("desktop.log");
         let mut sections = Vec::new();
-        for index in (1..LOG_FILE_COUNT).rev() {
+        for index in (1..=LOG_FILE_COUNT).rev() {
             let rotated = current.with_extension(format!("log.{index}"));
             if let Ok(contents) = fs::read_to_string(&rotated) {
                 sections.push(format!("===== desktop.log.{index} =====\n{contents}"));
@@ -131,10 +132,16 @@ impl Diagnostics {
         if file.seek(SeekFrom::Start(start)).is_err() {
             return String::new();
         }
-        let mut text = String::new();
-        if file.read_to_string(&mut text).is_err() {
+        let mut bytes = Vec::new();
+        if file.read_to_end(&mut bytes).is_err() {
             return String::new();
         }
+        if start > 0
+            && let Some(line_start) = bytes.iter().position(|byte| *byte == b'\n')
+        {
+            bytes.drain(..=line_start);
+        }
+        let text = String::from_utf8_lossy(&bytes);
         self.redact_paths(&redact(&text))
     }
 
@@ -172,6 +179,10 @@ struct DiagnosticDocument {
 }
 
 fn rotate(path: &PathBuf) -> DesktopResult<()> {
+    let oldest = path.with_extension(format!("log.{LOG_FILE_COUNT}"));
+    if oldest.exists() {
+        fs::remove_file(oldest)?;
+    }
     for index in (1..LOG_FILE_COUNT).rev() {
         let from = path.with_extension(format!("log.{index}"));
         let to = path.with_extension(format!("log.{}", index + 1));
@@ -187,8 +198,15 @@ fn rotate(path: &PathBuf) -> DesktopResult<()> {
 
 pub fn redact(value: &str) -> String {
     value
-        .lines()
-        .map(|line| {
+        .split_inclusive('\n')
+        .fold(String::new(), |mut output, part| {
+            let (line, ending) = if let Some(line) = part.strip_suffix("\r\n") {
+                (line, "\r\n")
+            } else if let Some(line) = part.strip_suffix('\n') {
+                (line, "\n")
+            } else {
+                (part, "")
+            };
             let lower = line.to_ascii_lowercase();
             if lower.contains("authorization:")
                 || lower.contains("api_key")
@@ -197,13 +215,13 @@ pub fn redact(value: &str) -> String {
                 || lower.contains("cookie:")
                 || lower.contains("secret")
             {
-                "<redacted>".to_owned()
+                output.push_str("<redacted>");
             } else {
-                line.replace("Bearer ", "Bearer <redacted>")
+                output.push_str(&line.replace("Bearer ", "Bearer <redacted>"));
             }
+            output.push_str(ending);
+            output
         })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, ()>>> for DesktopError {
@@ -223,6 +241,10 @@ mod tests {
             "<redacted>\nready"
         );
         assert_eq!(redact("password=unsafe"), "<redacted>");
+        assert_eq!(
+            redact("ready\r\npassword=unsafe\r\n"),
+            "ready\r\n<redacted>\r\n"
+        );
     }
 
     #[test]
@@ -284,6 +306,69 @@ mod tests {
         assert!(log.contains("<workspace-redacted>"));
         assert!(!log.contains(&workspace));
         assert!(!log.contains("unsafe"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reads_a_utf8_safe_tail_from_a_large_log() {
+        let root =
+            std::env::temp_dir().join(format!("deepseek-desktop-utf8-tail-{}", std::process::id()));
+        let paths = AppPaths {
+            data_dir: root.join("data"),
+            dsh_home: root.join("data/dsh"),
+            logs_dir: root.join("data/logs"),
+            backups_dir: root.join("data/backups"),
+            diagnostics_dir: root.join("data/diagnostics"),
+            updates_dir: root.join("data/updates"),
+            settings_file: root.join("data/settings.json"),
+        };
+        fs::create_dir_all(&paths.logs_dir).unwrap();
+        let log = paths.logs_dir.join("desktop.log");
+        let mut contents = "填充内容\n".repeat(20_000);
+        contents.push_str("最后一行：运行正常\n");
+        fs::write(log, contents).unwrap();
+        let diagnostics = Diagnostics::new(paths);
+
+        let tail = diagnostics.read_tail();
+
+        assert!(tail.contains("最后一行：运行正常"));
+        assert!(!tail.contains('\u{fffd}'));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rotates_and_exports_all_five_archives() {
+        let root = std::env::temp_dir().join(format!(
+            "deepseek-desktop-log-rotation-{}",
+            std::process::id()
+        ));
+        let paths = AppPaths {
+            data_dir: root.join("data"),
+            dsh_home: root.join("data/dsh"),
+            logs_dir: root.join("data/logs"),
+            backups_dir: root.join("data/backups"),
+            diagnostics_dir: root.join("data/diagnostics"),
+            updates_dir: root.join("data/updates"),
+            settings_file: root.join("data/settings.json"),
+        };
+        fs::create_dir_all(&paths.logs_dir).unwrap();
+        let current = paths.logs_dir.join("desktop.log");
+        fs::write(&current, "current\n").unwrap();
+        for index in 1..=LOG_FILE_COUNT {
+            fs::write(
+                current.with_extension(format!("log.{index}")),
+                format!("archive-{index}\n"),
+            )
+            .unwrap();
+        }
+        rotate(&current).unwrap();
+        let diagnostics = Diagnostics::new(paths);
+
+        let exported = fs::read_to_string(diagnostics.export_logs().unwrap()).unwrap();
+
+        assert!(exported.contains("desktop.log.5"));
+        assert!(exported.contains("archive-4"));
+        assert!(!exported.contains("archive-5"));
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -87,16 +87,6 @@ async fn runtime_start(
 }
 
 #[tauri::command]
-async fn runtime_restart(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus> {
-    let supervisor = Arc::clone(&state.supervisor);
-    let recovery = Arc::clone(&supervisor);
-    match tauri::async_runtime::spawn_blocking(move || supervisor.restart()).await {
-        Ok(result) => result,
-        Err(error) => recovery.task_failed(&error.to_string()),
-    }
-}
-
-#[tauri::command]
 async fn runtime_stop(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus> {
     let supervisor = Arc::clone(&state.supervisor);
     let recovery = Arc::clone(&supervisor);
@@ -159,17 +149,14 @@ fn desktop_about() -> DesktopAbout {
         authors: env!("DEEPSEEK_DESKTOP_APP_AUTHORS"),
         repository: env!("DEEPSEEK_DESKTOP_APP_REPOSITORY"),
         channel: env!("DEEPSEEK_DESKTOP_RELEASE_CHANNEL"),
-        signed_release: false,
+        signed_release: env!("DEEPSEEK_DESKTOP_SIGNED_RELEASE") == "true",
     }
 }
 
 #[tauri::command]
 fn repository_open(app: tauri::AppHandle) -> DesktopResult<()> {
     app.opener()
-        .open_url(
-            env!("DEEPSEEK_DESKTOP_APP_REPOSITORY"),
-            None::<&str>,
-        )
+        .open_url(env!("DEEPSEEK_DESKTOP_APP_REPOSITORY"), None::<&str>)
         .map_err(|error| DesktopError::Other(error.to_string()))
 }
 
@@ -292,7 +279,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             runtime_status,
             runtime_start,
-            runtime_restart,
             runtime_stop,
             runtime_open,
             settings_get,

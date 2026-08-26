@@ -19,7 +19,7 @@
 - 应用名称、版本、Identifier、描述、作者和图标由统一配置加载器解析。
 - `src-tauri/icons/icon.png` 是唯一人工维护的源图，各平台图标生成到 `target/generated/branding/icons/`。
 - Harness 仓库和 ref 会参与真实源码构建；CLI workspace 包名和 `bin.dsh` 入口从 manifest 动态解析。
-- 稳定工具链事实与动态 Runtime 来源分离，安装包附带可追溯的 `BUILD-INFO` 和 SHA-256。
+- 稳定工具链事实与本地动态 Runtime 来源分离，发布构建额外受仓库内固定来源约束，安装包附带可追溯的 `BUILD-INFO` 和 SHA-256。
 
 ## 配置文件
 
@@ -41,7 +41,7 @@ RUNTIME_REPOSITORY=https://github.com/deepseek-desktop/deepseek-harness.git
 RUNTIME_REF=
 ```
 
-内置默认值与上述示例保持一致，但不能通过读取 `.env.example` 获得默认值；默认值应由统一配置加载器持有，确保删除 `.env` 和 `.env.example` 后仍能正常开发、测试和打包。`DESKTOP_APP_REPOSITORY` 留空时自动读取当前 Git `origin`，无法读取时使用项目内置仓库地址；`RUNTIME_REF` 留空时自动选择 Runtime 仓库中最新的 SemVer 版本标签。
+内置默认值与上述示例保持一致，但不能通过读取 `.env.example` 获得默认值；默认值应由统一配置加载器持有，确保删除 `.env` 和 `.env.example` 后仍能正常开发、测试和打包。`DESKTOP_APP_REPOSITORY` 留空时自动读取当前 Git `origin`，无法读取时使用项目内置仓库地址；`RUNTIME_REF` 留空时，本地开发自动选择 Runtime 仓库中最新的 SemVer 版本标签，社区版和正式发布则必须匹配 `runtime/toolchain-lock.json` 中经过审计的固定仓库与 commit。
 
 `.env` 解析优先使用 Node.js 24 标准能力，不为简单键值配置新增 dotenv 运行依赖。配置加载器只读取已声明变量，忽略宿主环境中的无关变量，并对未知的 `DESKTOP_APP_*`、`RUNTIME_*` 变量给出明确错误，防止拼写错误被静默忽略。
 
@@ -113,7 +113,7 @@ corepack pnpm@11.7.0 runtime:sync --local /absolute/path/to/deepseek-harness
 
 `runtime:sync` 让 `RUNTIME_REPOSITORY` 真正决定打包内容，而不只是修改来源说明：
 
-1. 获取 `RUNTIME_REPOSITORY` 指定仓库。`RUNTIME_REF` 为空时从远程或本地镜像选择最新 SemVer 版本标签；显式填写时使用指定 tag、commit 或开发分支。远端暂时不可用时，只允许使用本地镜像中已经解析出的不可变来源。
+1. 获取 `RUNTIME_REPOSITORY` 指定仓库。`RUNTIME_REF` 为空时从远程或本地镜像选择最新 SemVer 版本标签；显式填写时使用指定 tag、commit 或开发分支。远端暂时不可用时，只允许使用本地镜像中已经解析出的不可变来源。社区版和正式发布会在解析后校验仓库与 commit 是否匹配 `runtime/toolchain-lock.json` 中的固定来源。
 2. 将自动选择或显式指定的 ref 解析为不可变 commit，并同时记录 requested ref 与 resolved ref。
 3. 按 Harness 约定构建桌面生产 Runtime 制品。
 4. 校验主包、CLI 入口、Web 工作台和桌面兼容契约。
@@ -123,7 +123,7 @@ Runtime 内部依赖安装始终使用非交互模式，本机终端、Windows �
 6. 自动生成 `target/generated/runtime-lock.json`。
 7. Runtime staging 只消费经过校验的锁定制品。
 
-正式发布不得直接跟随未锁定分支。即使 `.env` 中填写分支名，发布产物也会记录实际 commit 和完整性哈希。`--local` 仅用于定制 Harness 本地联调；社区和正式发布门禁会拒绝脏工作区或无法追溯的本地制品。
+正式发布不得直接跟随未锁定分支或未经审计的新标签。即使 `.env` 中填写分支名，发布产物也会记录实际 commit 和完整性哈希，并且必须匹配仓库内固定来源。`--local` 仅用于定制 Harness 本地联调；社区和正式发布门禁会拒绝脏工作区、无法追溯的本地制品或固定来源之外的 commit。
 
 定制仓库应尽量保留 Harness 原有 workspace 包名、CLI 入口和桌面 Runtime 输出契约。同步器从 CLI workspace manifest 动态解析实际包名和 `bin.dsh` 入口，不依赖固定的 `@deepseek-ai/dsh/lib/bin.js` 路径。生成 Runtime 前还会清理旧 staging，并移除构建源码中的本机绝对路径，防止历史制品或本地路径混入安装包。
 
@@ -246,7 +246,7 @@ corepack pnpm@11.7.0 tauri:build
 
 ### Runtime 同步
 
-- 默认仓库和空 ref 能自动选择最新 SemVer 版本标签，并把实际 tag、commit 和哈希锁定到构建事实中。
+- 本地默认仓库和空 ref 能自动选择最新 SemVer 版本标签，并把实际 tag、commit 和哈希锁定到构建事实中；发布构建只接受经过审计的固定来源。
 - 替换为测试 fork 后，安装包内确实运行 fork 的可识别版本，不能仍回退到官方 npm 制品。
 - 无效仓库、无效 ref、入口缺失和完整性不匹配均立即失败。
 - 本地模式可联调，但正式发布门禁拒绝不可追溯制品。
@@ -265,6 +265,6 @@ corepack pnpm@11.7.0 tauri:build
 - `desktop:package` 自动完成配置解析、Runtime 锁定、验证和当前平台打包。
 - `package:community` 复用同一打包实现并增加社区发行门禁，不形成重复流水线。
 - 应用名称、版本和图标不再要求修改业务源码。
-- `RUNTIME_REPOSITORY` 和可选的 `RUNTIME_REF` 真正控制打包的 Runtime；空 ref 自动选择最新版本，显式 ref 精确指定版本。
+- `RUNTIME_REPOSITORY` 和可选的 `RUNTIME_REF` 真正控制本地构建的 Runtime；空 ref 自动选择最新版本，显式 ref 精确指定版本，发布构建额外校验固定来源。
 - 发行产物包含完整、不可变、可校验的桌面与 Harness 来源记录。
 - 相关单元测试、Playwright、Runtime smoke 和当前平台安装验收全部通过。

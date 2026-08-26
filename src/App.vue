@@ -39,11 +39,11 @@ const runtime = ref<RuntimeStatus>({
 const settings = ref<DesktopSettings>({
   schemaVersion: 1,
   locale: normalizeLocale(navigator.language),
-  theme: "system",
   workspace: null,
   onboardingCompleted: false,
   updateChannel: "community",
-  updateEnabled: false
+  updateEnabled: false,
+  recoveryReason: null
 });
 const about = ref<DesktopAbout | null>(null);
 const update = ref<UpdateStatus | null>(null);
@@ -61,14 +61,27 @@ const runtimeErrorKeys: Record<string, string> = {
   "runtime-output-closed": "runtime.errors.outputClosed",
   "runtime-health-check-failed": "runtime.errors.healthCheckFailed",
   "runtime-credential-channel-failed": "runtime.errors.credentialChannelFailed",
+  "runtime-workspace-registration-failed": "runtime.errors.workspaceRegistrationFailed",
   "runtime-task-failed": "runtime.errors.taskFailed",
   "restart-limit-reached": "runtime.errors.restartLimitReached"
 };
+const settingsRecoveryKeys = {
+  corrupt: "settings.recovered.corrupt",
+  future: "settings.recovered.future"
+} as const;
 const runtimeDescription = computed(() => {
   if (!runtime.value.errorCode) return t("runtime.detail");
   return `${runtime.value.errorCode}: ${t(runtimeErrorKeys[runtime.value.errorCode] || "error.unexpected")}`;
 });
-const aboutChannel = computed(() => about.value?.channel === "community" ? t("about.community") : about.value?.channel || "-");
+const aboutChannel = computed(() => {
+  const key = {
+    local: "about.local",
+    community: "about.community",
+    stable: "about.stable"
+  }[about.value?.channel || ""];
+  return key ? t(key) : about.value?.channel || "-";
+});
+const aboutSignature = computed(() => about.value?.signedRelease ? t("about.signed") : t("about.unsigned"));
 const updateDescription = computed(() => {
   if (!update.value) return t("update.notChecked");
   const messageKey = {
@@ -93,17 +106,28 @@ function navigate(next: ViewName): void {
 
 async function selectLocale(value: Event): Promise<void> {
   const next = (value.target as HTMLSelectElement).value as SupportedLocale;
+  const previous = settings.value.locale;
   locale.value = next;
   settings.value.locale = next;
-  await persistSettings();
+  try {
+    await persistSettings();
+  } catch {
+    locale.value = previous;
+    settings.value.locale = previous;
+    notice.value = t("error.settingsSaveFailed");
+  }
 }
 
 async function selectWorkspace(): Promise<void> {
-  const selected = await chooseWorkspace(t("onboarding.chooseWorkspace"));
-  if (!selected) return;
-  settings.value.workspace = selected;
-  await persistSettings();
-  notice.value = "";
+  try {
+    const selected = await chooseWorkspace(t("onboarding.chooseWorkspace"));
+    if (!selected) return;
+    settings.value.workspace = selected;
+    await persistSettings();
+    notice.value = "";
+  } catch {
+    notice.value = t("error.workspaceSelectionFailed");
+  }
 }
 
 async function launch(): Promise<void> {
@@ -173,18 +197,30 @@ async function stop(): Promise<void> {
 }
 
 async function exportBundle(): Promise<void> {
-  const path = await exportDiagnostics();
-  notice.value = path ? `${t("diagnostics.exported")}: ${path}` : t("diagnostics.exported");
+  try {
+    const path = await exportDiagnostics();
+    notice.value = path ? `${t("diagnostics.exported")}: ${path}` : t("diagnostics.exported");
+  } catch {
+    notice.value = t("error.diagnosticsExportFailed");
+  }
 }
 
 async function exportLogFile(): Promise<void> {
-  const path = await exportLogs();
-  notice.value = path ? `${t("diagnostics.logsExported")}: ${path}` : t("diagnostics.logsExported");
+  try {
+    const path = await exportLogs();
+    notice.value = path ? `${t("diagnostics.logsExported")}: ${path}` : t("diagnostics.logsExported");
+  } catch {
+    notice.value = t("error.logsExportFailed");
+  }
 }
 
 async function checkUpdate(): Promise<void> {
-  update.value = await checkForUpdates();
-  notice.value = updateDescription.value;
+  try {
+    update.value = await checkForUpdates();
+    notice.value = updateDescription.value;
+  } catch {
+    notice.value = t("error.updateCheckFailed");
+  }
 }
 
 async function visitRepository(): Promise<void> {
@@ -196,20 +232,32 @@ async function visitRepository(): Promise<void> {
 }
 
 onMounted(async () => {
-  [settings.value, runtime.value, about.value] = await Promise.all([
-    getSettings(),
-    getRuntimeStatus(),
-    getAbout()
-  ]);
-  locale.value = settings.value.locale;
-  view.value = settings.value.onboardingCompleted ? "runtime" : "onboarding";
-  unlisten = await onRuntimeStatus(status => {
-    runtime.value = status;
-    if (status.phase === "ready") void showWorkbench();
-  });
-  unlistenSurface = await onDesktopSurface(surface => {
-    workbenchVisible.value = surface === "workbench";
-  });
+  try {
+    [settings.value, runtime.value, about.value] = await Promise.all([
+      getSettings(),
+      getRuntimeStatus(),
+      getAbout()
+    ]);
+    locale.value = settings.value.locale;
+    view.value = settings.value.onboardingCompleted ? "runtime" : "onboarding";
+    if (settings.value.recoveryReason) {
+      notice.value = t(settingsRecoveryKeys[settings.value.recoveryReason]);
+    }
+  } catch {
+    notice.value = t("error.initializationFailed");
+    return;
+  }
+  try {
+    unlisten = await onRuntimeStatus(status => {
+      runtime.value = status;
+      if (status.phase === "ready") void showWorkbench();
+    });
+    unlistenSurface = await onDesktopSurface(surface => {
+      workbenchVisible.value = surface === "workbench";
+    });
+  } catch {
+    notice.value = t("error.eventChannelFailed");
+  }
   await showWorkbench();
 });
 
@@ -309,7 +357,7 @@ onBeforeUnmount(() => {
             </dl>
           </div>
           <footer class="actions">
-            <button v-if="runtime.phase === 'ready'" class="button primary" @click="openWorkbench">{{ t("common.open") }}</button>
+            <button v-if="runtime.phase === 'ready'" class="button primary" @click="showWorkbench">{{ t("common.open") }}</button>
             <button v-if="runtime.phase === 'ready'" class="button secondary" :disabled="busy" @click="stop">{{ t("common.stop") }}</button>
             <button v-else-if="runtime.phase === 'failed' || runtime.phase === 'idle'" class="button primary" :disabled="busy" @click="startFromStatus">{{ runtimeStartLabel }}</button>
             <button v-else class="button primary" disabled>{{ phaseLabel }}</button>
@@ -353,7 +401,7 @@ onBeforeUnmount(() => {
           <div class="section-heading">
             <span class="eyebrow">{{ t("about.eyebrow") }}</span>
             <h1>{{ t("about.title") }}</h1>
-            <p>{{ t("about.unsigned") }}</p>
+            <p>{{ aboutSignature }}</p>
           </div>
           <div v-if="about" class="plain-list">
             <div><span>{{ t("about.desktopVersion") }}</span><strong>{{ about.desktopVersion }}</strong></div>

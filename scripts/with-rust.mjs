@@ -13,6 +13,11 @@ const rustupHome = join(toolchainRoot, "rustup");
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
 const rustup = join(cargoHome, "bin", `rustup${executableSuffix}`);
 const require = createRequire(import.meta.url);
+const toolchainLock = JSON.parse(await readFile(join(desktopRoot, "runtime", "toolchain-lock.json"), "utf8"));
+const rustVersion = toolchainLock.toolchain?.rust;
+if (typeof rustVersion !== "string" || !/^\d+\.\d+\.\d+$/u.test(rustVersion)) {
+  throw new Error("runtime/toolchain-lock.json must declare toolchain.rust as a full semantic version");
+}
 const triples = {
   "darwin-arm64": "aarch64-apple-darwin",
   "darwin-x64": "x86_64-apple-darwin",
@@ -21,7 +26,7 @@ const triples = {
 };
 const triple = triples[`${process.platform}-${process.arch}`];
 if (!triple) throw new Error(`unsupported Rust bootstrap host ${process.platform}-${process.arch}`);
-const rustToolchain = `1.98.0-${triple}`;
+const rustToolchain = `${rustVersion}-${triple}`;
 const generatedTauriConfigPath = join(desktopRoot, "target", "generated", "tauri.conf.json");
 let generatedTauriConfig;
 try {
@@ -85,8 +90,8 @@ async function downloadWithCurl(url, output) {
 }
 
 async function prefetchWindowsToolchain(components = ["cargo", "rust-std", "rustc", "clippy"]) {
-  const manifest = join(toolchainRoot, "channel-rust-1.98.0.toml");
-  await downloadWithCurl("https://static.rust-lang.org/dist/channel-rust-1.98.0.toml", manifest);
+  const manifest = join(toolchainRoot, `channel-rust-${rustVersion}.toml`);
+  await downloadWithCurl(`https://static.rust-lang.org/dist/channel-rust-${rustVersion}.toml`, manifest);
   const content = await readFile(manifest, "utf8");
   const downloads = join(rustupHome, "downloads");
   await mkdir(downloads, { recursive: true });
@@ -118,11 +123,21 @@ if (!await exists(rustup)) {
   await mkdir(toolchainRoot, { recursive: true });
   const installer = join(toolchainRoot, `rustup-init${executableSuffix}`);
   const url = `https://static.rust-lang.org/rustup/dist/${triple}/rustup-init${executableSuffix}`;
+  const checksum = `${installer}.sha256`;
+  await downloadWithCurl(`${url}.sha256`, checksum);
+  const checksumText = await readFile(checksum, "utf8");
+  const expectedHash = checksumText.match(/\b([0-9a-f]{64})\b/iu)?.[1]?.toLowerCase();
+  if (!expectedHash) throw new Error(`rustup-init checksum response is invalid for ${triple}`);
+  await downloadWithCurl(url, installer);
+  const actualHash = await sha256(installer);
+  await rm(checksum, { force: true });
+  if (actualHash !== expectedHash) {
+    await rm(installer, { force: true });
+    throw new Error(`rustup-init checksum mismatch: expected ${expectedHash}, got ${actualHash}`);
+  }
   if (process.platform === "win32") {
-    await downloadWithCurl(url, installer);
     await prefetchWindowsToolchain();
   } else {
-    await downloadWithCurl(url, installer);
     await chmod(installer, 0o755);
   }
   runWithRetry(installer, [
@@ -135,9 +150,14 @@ if (!await exists(rustup)) {
   ]);
 }
 
-const installed = spawnSync(rustup, ["run", rustToolchain, "rustc", "--version"], { env: environment, stdio: "ignore" });
+let installed = spawnSync(rustup, ["run", rustToolchain, "rustc", "--version"], { env: environment, encoding: "utf8" });
 if (installed.status !== 0) {
   runWithRetry(rustup, ["toolchain", "install", rustToolchain, "--profile", "minimal"]);
+  installed = spawnSync(rustup, ["run", rustToolchain, "rustc", "--version"], { env: environment, encoding: "utf8" });
+}
+if (installed.error) throw installed.error;
+if (installed.status !== 0 || !installed.stdout.trim().startsWith(`rustc ${rustVersion} `)) {
+  throw new Error(`installed Rust toolchain does not match lock: expected ${rustVersion}, got ${installed.stdout.trim() || installed.stderr.trim() || "unavailable"}`);
 }
 
 const [command, ...args] = process.argv.slice(2);

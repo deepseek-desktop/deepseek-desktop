@@ -29,11 +29,12 @@ pub struct DesktopSettings {
     #[serde(default = "current_settings_schema_version")]
     pub schema_version: u8,
     pub locale: String,
-    pub theme: String,
     pub workspace: Option<String>,
     pub onboarding_completed: bool,
     pub update_channel: String,
     pub update_enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_reason: Option<String>,
 }
 
 impl Default for DesktopSettings {
@@ -41,11 +42,11 @@ impl Default for DesktopSettings {
         Self {
             schema_version: current_settings_schema_version(),
             locale: "zh-CN".to_owned(),
-            theme: "system".to_owned(),
             workspace: None,
             onboarding_completed: false,
             update_channel: "community".to_owned(),
             update_enabled: false,
+            recovery_reason: None,
         }
     }
 }

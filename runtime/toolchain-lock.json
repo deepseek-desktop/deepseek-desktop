@@ -34,6 +34,11 @@
     "tauriSingleInstance": "2.4.3",
     "tauriUpdater": "2.10.1"
   },
+  "runtimeSource": {
+    "repository": "https://github.com/deepseek-desktop/deepseek-harness.git",
+    "ref": "dsh-v0.1.1-rc.2",
+    "commit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
+  },
   "bundledPackages": {
     "dshmarket": {
       "version": "1.28.1",

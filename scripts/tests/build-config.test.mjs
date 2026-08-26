@@ -15,6 +15,9 @@ test("uses built-in defaults without an env file", async () => {
   assert.equal(config.repository, "https://github.com/deepseek-desktop/deepseek-desktop");
   assert.equal(config.harness.repository, DEFAULT_CONFIG.RUNTIME_REPOSITORY);
   assert.equal(config.harness.ref, "");
+  assert.deepEqual(config.release, { channel: "local", signed: false });
+  assert.equal(config.toolchain.nodeVersion, "24.16.0");
+  assert.equal(config.toolchain.rustVersion, "1.98.0");
 });
 
 test("environment values override env file values", () => {
@@ -39,7 +42,9 @@ test("loads every declared value from an env file before applying environment ov
     "DESKTOP_APP_REPOSITORY=https://git.example.com/team/desktop.git",
     "DESKTOP_APP_ICON=src-tauri/icons/icon.png",
     "RUNTIME_REPOSITORY=git@github.com:example/deepseek-harness.git",
-    "RUNTIME_REF=release-candidate"
+    "RUNTIME_REF=release-candidate",
+    "RELEASE_CHANNEL=community",
+    "RELEASE_SIGNED=true"
   ].join("\n"));
   try {
     const config = await loadBuildConfig(root, {
@@ -54,6 +59,7 @@ test("loads every declared value from an env file before applying environment ov
     assert.equal(config.repository, "https://git.example.com/team/desktop");
     assert.equal(config.harness.repository, "git@github.com:example/deepseek-harness.git");
     assert.equal(config.harness.ref, "release-candidate");
+    assert.deepEqual(config.release, { channel: "community", signed: true });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -62,6 +68,18 @@ test("loads every declared value from an env file before applying environment ov
 test("rejects unknown and required empty declared values", () => {
   assert.throws(() => resolveBuildValues({ fileValues: { DESKTOP_APP_NANE: "typo" } }), /unsupported build configuration/u);
   assert.throws(() => resolveBuildValues({ environment: { DESKTOP_APP_NAME: " " } }), /must not be empty/u);
+  assert.throws(() => resolveBuildValues({ environment: { RELEASE_CHANEL: "stable" } }), /unsupported build configuration/u);
+});
+
+test("validates explicit release metadata", async () => {
+  await assert.rejects(loadBuildConfig(root, {
+    environment: { RELEASE_CHANNEL: "preview" },
+    envFile: resolve(root, "target/missing.env")
+  }), /local, community, or stable/u);
+  await assert.rejects(loadBuildConfig(root, {
+    environment: { RELEASE_SIGNED: "yes" },
+    envFile: resolve(root, "target/missing.env")
+  }), /true or false/u);
 });
 
 test("accepts empty Harness ref and Desktop repository for automatic resolution", () => {

@@ -8,11 +8,11 @@ const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 const browserSettings: DesktopSettings = {
   schemaVersion: 1,
   locale: "zh-CN",
-  theme: "system",
   workspace: null,
   onboardingCompleted: false,
   updateChannel: "community",
-  updateEnabled: false
+  updateEnabled: false,
+  recoveryReason: null
 };
 
 export async function getRuntimeStatus(): Promise<RuntimeStatus> {
@@ -37,11 +37,6 @@ export async function startRuntime(workspace: string): Promise<RuntimeStatus> {
 export async function stopRuntime(): Promise<RuntimeStatus> {
   if (!inTauri()) return getRuntimeStatus();
   return invoke<RuntimeStatus>("runtime_stop");
-}
-
-export async function restartRuntime(): Promise<RuntimeStatus> {
-  if (!inTauri()) return getRuntimeStatus();
-  return invoke<RuntimeStatus>("runtime_restart");
 }
 
 export async function getSettings(): Promise<DesktopSettings> {
@@ -72,11 +67,11 @@ export async function getAbout(): Promise<DesktopAbout> {
       desktopVersion: appConfig.version,
       runtimeVersion: appConfig.harness.ref.replace(/^dsh-v/u, "") || "auto",
       runtimeCommit: "development",
-      nodeVersion: "24.16.0",
+      nodeVersion: appConfig.toolchain.nodeVersion,
       authors: appConfig.authors.join(", "),
       repository: appConfig.repository,
-      channel: "community",
-      signedRelease: false
+      channel: appConfig.release.channel,
+      signedRelease: appConfig.release.signed
     };
   }
   return invoke<DesktopAbout>("desktop_about");

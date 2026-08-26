@@ -4,6 +4,7 @@ import { join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 
 import { findInstalledPackages, listInstalledPackages } from "../../scripts/lib/installed-packages.mjs";
+import { assertPinnedRuntimeSource } from "../../scripts/lib/runtime-source-pin.mjs";
 
 const runtimeRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(runtimeRoot, "..");
@@ -88,10 +89,21 @@ async function verifyPatches(nodeModules) {
   for (const patch of toolchain.desktopPatches) await verifyPatch([cliModules, nodeModules], patch);
 }
 
-for (const field of ["sourceDateEpoch", "desktopVersion", "runtime", "node", "toolchain", "bundledPackages", "nativeAssets", "targets"]) {
+for (const field of ["sourceDateEpoch", "desktopVersion", "release", "runtime", "node", "toolchain", "bundledPackages", "nativeAssets", "targets"]) {
   if (lock[field] === undefined) throw new Error(`runtime lock is missing ${field}`);
 }
+if (lock.schemaVersion !== 3) throw new Error(`unsupported runtime lock schema: ${lock.schemaVersion}`);
+if (!(["local", "community", "stable"].includes(lock.release.channel))
+  || typeof lock.release.sourcePinned !== "boolean") {
+  throw new Error("runtime lock has an invalid release profile");
+}
 if (lock.runtime.commit.length !== 40) throw new Error("Runtime commit must be a full SHA");
+if (lock.release.sourcePinned) {
+  assertPinnedRuntimeSource({
+    repository: lock.runtime.sourceUrl,
+    commit: lock.runtime.commit
+  }, toolchain.runtimeSource);
+}
 if (new Set(lock.targets).size !== lock.targets.length) throw new Error("runtime targets contain duplicates");
 for (const target of lock.targets) {
   if (!lock.nativeAssets[target]) throw new Error(`runtime lock is missing native assets for ${target}`);

@@ -4,11 +4,13 @@ import { spawnSync } from "node:child_process";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import process from "node:process";
 import { createMacDmg } from "./macos-dmg.mjs";
+import { loadBuildConfig } from "./lib/build-config.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const pnpmVersion = packageJson.packageManager?.replace(/^pnpm@/u, "");
-const channel = process.env.RELEASE_CHANNEL?.trim() || "local";
+const resolvedConfig = await loadBuildConfig(root);
+const channel = resolvedConfig.release.channel;
 if (!pnpmVersion) throw new Error("packageManager must declare a pinned pnpm version");
 if (!new Set(["local", "community", "stable"]).has(channel)) throw new Error(`unsupported release channel ${channel}`);
 
@@ -27,7 +29,7 @@ function run(command, args, options = {}) {
   console.log(`\n> ${command} ${args.join(" ")}`);
   const result = spawnSync(command, args, {
     cwd: root,
-    env: { ...process.env, RELEASE_CHANNEL: channel, ...options.env },
+    env: { ...process.env, RELEASE_CHANNEL: channel, RELEASE_SIGNED: String(resolvedConfig.release.signed), ...options.env },
     stdio: "inherit",
     shell: options.shell ?? false
   });
@@ -139,7 +141,8 @@ await writeFile(buildInfoPath, `${JSON.stringify({
     sha256: runtime.runtime.sha256
   },
   target: target.triple,
-  channel
+  channel,
+  signed: config.release.signed
 }, null, 2)}\n`);
 
 await assertNoEnvironmentFiles(join(root, "target", "generated"));

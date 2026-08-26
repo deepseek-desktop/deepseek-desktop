@@ -6,7 +6,7 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 源码默认和文档示例版本固定为 `1.0.0`，实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
 
-工程源码位于仓库根目录。`runtime/toolchain-lock.json` 固定 Node、原生依赖和桌面补丁；`runtime:sync` 在 `RUNTIME_REF` 为空时自动选择 Runtime 仓库最新的 SemVer 版本标签，显式填写时使用指定来源，随后统一解析为不可变 commit，并生成当前构建专用的 `target/generated/runtime-lock.json`。Runtime 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
+工程源码位于仓库根目录。`runtime/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Runtime 来源；`runtime:sync` 在本地开发且 `RUNTIME_REF` 为空时自动选择 Runtime 仓库最新的 SemVer 版本标签，显式填写时使用指定来源，随后统一解析为不可变 commit。社区版和正式发布还必须匹配仓库内经过审计的固定 Runtime 提交，避免可变标签在无人复核时改变发行内容。同步结果写入当前构建专用的 `target/generated/runtime-lock.json`。Runtime 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
 ## 支持平台
 
@@ -59,9 +59,8 @@ DeepSeek Desktop 使用系统应用数据目录，不向安装目录写运行数
 | --- | --- |
 | `settings.json` | Shell 语言、主题、工作区和更新通道 |
 | `dsh/` | Runtime profile、会话、设置和插件数据 |
-| `credential-vault.json` | XChaCha20-Poly1305 加密后的模型凭据，不包含可读明文 |
+| `credential-vault.json` | XChaCha20-Poly1305 加密后的模型凭据和 record 索引，不包含可读明文 |
 | `credential-vault.key` | 当前用户专用的本地凭据库密钥；Unix 权限固定为 `0600` |
-| `credential-index.json` | 仅保存非敏感 record 索引，不保存密钥明文 |
 | `credential-session.json` | 仅保存当前 Runtime 短期授权 token 的 SHA-256 摘要，不保存 token 或模型凭据 |
 | `logs/` | 10 MB 单文件、最多 5 个轮转文件 |
 | `backups/` | 设置更新前的最近备份 |
@@ -70,13 +69,13 @@ DeepSeek Desktop 使用系统应用数据目录，不向安装目录写运行数
 
 macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows 和 Linux 使用 Tauri 对应的平台应用数据目录。
 
-加密凭据库以当前操作系统用户的数据目录权限作为本地信任边界：它可以避免密钥以明文出现在配置、日志、诊断或备份预览中，也不会触发反复授权弹窗；但已经控制同一操作系统用户账户的恶意程序仍可能读取应用数据。不要在多人共用同一系统账户的设备上保存生产密钥。
+加密凭据库以当前操作系统用户的数据目录权限作为本地信任边界：它可以避免密钥以明文出现在配置、日志、诊断或备份预览中，也不会触发反复授权弹窗；但已经控制同一操作系统用户账户的恶意程序或获得文件读取权限的 Agent 工具仍可能读取凭据库密钥和密文。不要在多人共用同一系统账户的设备上保存生产密钥，也不要向不可信任务授予应用数据目录访问权限。
 
 开发者执行隔离启动验收时可以临时设置 `DEEPSEEK_DESKTOP_DATA_DIR`，把测试数据写入指定目录。正式启动无需设置该变量，默认目录会自动创建，不增加用户配置负担。
 
 ## 诊断与隐私
 
-诊断页面只在用户主动操作时导出内容。“导出日志”生成便于直接查看的脱敏纯文本日志，“导出诊断包”生成包含状态、版本和最近日志摘要的 JSON 文档。两种导出都会遮蔽 Authorization、API Key、Cookie、password、secret、Bearer token 和工作区路径。Credential Provider 调用 helper 时还必须携带每次 Runtime 启动生成的短期会话；真实 token 只通过 Runtime 标准输入交付，应用数据目录仅保存用于校验的 SHA-256 摘要，不进入命令参数、环境变量或日志。Agent Shell、工具子进程和工作台 WebView 均不能直接读取桌面主程序中的明文凭据。
+诊断页面只在用户主动操作时导出内容。“导出日志”生成便于直接查看的脱敏纯文本日志，“导出诊断包”生成包含状态、版本和最近日志摘要的 JSON 文档。两种导出都会遮蔽 Authorization、API Key、Cookie、password、secret、Bearer token 和工作区路径。Credential Provider 调用 helper 时还必须携带每次 Runtime 启动生成的短期会话；真实 token 只通过 Runtime 标准输入交付，应用数据目录仅保存用于校验的 SHA-256 摘要，不进入命令参数或日志。Runtime 启动后会从自身环境中移除 Helper 路径、数据目录和短期会话，避免普通工具子进程通过继承环境直接调用 Helper；工作台 WebView 也没有 Tauri 文件系统或通用 IPC 权限。这些措施用于减少意外泄漏，不构成对同一操作系统用户下任意代码执行的安全隔离。
 
 出现启动失败时依次检查：
 

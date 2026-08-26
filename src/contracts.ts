@@ -13,11 +13,11 @@ export interface RuntimeStatus {
 export interface DesktopSettings {
   schemaVersion: number;
   locale: "zh-CN" | "zh-TW" | "en-US";
-  theme: "system" | "light" | "dark";
   workspace: string | null;
   onboardingCompleted: boolean;
   updateChannel: "community" | "stable";
   updateEnabled: boolean;
+  recoveryReason?: "corrupt" | "future" | null;
 }
 
 export interface DesktopAbout {

@@ -18,6 +18,21 @@ fn required_string<'a>(document: &'a Value, path: &[&str]) -> &'a str {
     })
 }
 
+fn required_bool(document: &Value, path: &[&str]) -> bool {
+    let mut value = document;
+    for key in path {
+        value = value
+            .get(key)
+            .unwrap_or_else(|| panic!("generated configuration is missing {}", path.join(".")));
+    }
+    value.as_bool().unwrap_or_else(|| {
+        panic!(
+            "generated configuration field {} must be a boolean",
+            path.join(".")
+        )
+    })
+}
+
 fn emit(name: &str, value: &str) {
     println!("cargo:rustc-env={name}={value}");
 }
@@ -45,12 +60,14 @@ fn main() {
             )
         }))
         .expect("generated runtime-lock.json must be valid JSON");
-    let version = required_string(&app, &["version"]);
     emit(
         "DEEPSEEK_DESKTOP_APP_NAME",
         required_string(&app, &["productName"]),
     );
-    emit("DEEPSEEK_DESKTOP_APP_VERSION", version);
+    emit(
+        "DEEPSEEK_DESKTOP_APP_VERSION",
+        required_string(&app, &["version"]),
+    );
     emit(
         "DEEPSEEK_DESKTOP_APP_DESCRIPTION",
         required_string(&app, &["description"]),
@@ -79,11 +96,19 @@ fn main() {
     );
     emit(
         "DEEPSEEK_DESKTOP_RELEASE_CHANNEL",
-        if version.contains("-community.") {
-            "community"
+        required_string(&app, &["release", "channel"]),
+    );
+    emit(
+        "DEEPSEEK_DESKTOP_SIGNED_RELEASE",
+        if required_bool(&app, &["release", "signed"]) {
+            "true"
         } else {
-            "stable"
+            "false"
         },
+    );
+    emit(
+        "DEEPSEEK_DESKTOP_RUST_VERSION",
+        required_string(&app, &["toolchain", "rustVersion"]),
     );
     emit(
         "DEEPSEEK_DESKTOP_RUNTIME_VERSION",
@@ -96,6 +121,10 @@ fn main() {
     emit(
         "DEEPSEEK_DESKTOP_RUNTIME_ENTRY",
         required_string(&runtime, &["runtime", "entry"]),
+    );
+    emit(
+        "DEEPSEEK_DESKTOP_RUNTIME_SHA256",
+        required_string(&runtime, &["runtime", "sha256"]),
     );
     emit(
         "DEEPSEEK_DESKTOP_NODE_VERSION",

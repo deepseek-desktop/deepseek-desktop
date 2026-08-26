@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, MutexGuard, TryLockError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
@@ -24,6 +25,7 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const WORKSPACE_REGISTRATION_TIMEOUT: Duration = Duration::from_secs(5);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_RESTARTS: u8 = 2;
+const PROFILE_PACKAGE_DIGEST_FILE: &str = ".deepseek-desktop-source.sha256";
 const READY_PREFIX: &str = "dsh web: http://127.0.0.1:";
 const DISABLE_TEXT_ASSISTANCE_SCRIPT: &str = r#"
 (() => {
@@ -115,18 +117,6 @@ impl RuntimeSupervisor {
         if is_active_workspace(&current, &workspace) {
             return Ok(current);
         }
-        self.stop_locked(false)?;
-        self.spawn_locked(workspace, 0, RuntimePhase::Starting)
-    }
-
-    pub fn restart(&self) -> DesktopResult<RuntimeStatus> {
-        let _operation = self.lock_operation()?;
-        let workspace = self
-            .lock_inner()?
-            .status
-            .workspace
-            .clone()
-            .ok_or(DesktopError::RuntimeNotReady)?;
         self.stop_locked(false)?;
         self.spawn_locked(workspace, 0, RuntimePhase::Starting)
     }
@@ -540,10 +530,10 @@ impl RuntimeSupervisor {
     }
 
     fn runtime_dir(&self) -> DesktopResult<PathBuf> {
-        if let Some(path) = std::env::var_os("DEEPSEEK_DESKTOP_RUNTIME_DIR") {
-            return Ok(PathBuf::from(path));
-        }
         if cfg!(debug_assertions) {
+            if let Some(path) = std::env::var_os("DEEPSEEK_DESKTOP_RUNTIME_DIR") {
+                return Ok(PathBuf::from(path));
+            }
             return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../runtime/staging")
                 .join(env!("DEEPSEEK_DESKTOP_TARGET")));
@@ -559,7 +549,9 @@ impl RuntimeSupervisor {
     }
 
     fn node_binary(&self) -> DesktopResult<PathBuf> {
-        if let Some(path) = std::env::var_os("DEEPSEEK_DESKTOP_NODE_PATH") {
+        if cfg!(debug_assertions)
+            && let Some(path) = std::env::var_os("DEEPSEEK_DESKTOP_NODE_PATH")
+        {
             return Ok(PathBuf::from(path));
         }
         let suffix = if cfg!(windows) { ".exe" } else { "" };
@@ -688,10 +680,7 @@ impl RuntimeSupervisor {
         ] {
             let source = runtime_dir.join("node_modules").join(package);
             let target = modules.join(package);
-            if target.exists() {
-                fs::remove_dir_all(&target)?;
-            }
-            copy_directory(&source, &target)?;
+            sync_profile_package(&source, &target)?;
         }
         self.prepare_package_manager(runtime_dir, node)?;
         Ok(())
@@ -1087,6 +1076,64 @@ fn copy_directory(source: &Path, target: &Path) -> DesktopResult<()> {
     Ok(())
 }
 
+fn sync_profile_package(source: &Path, target: &Path) -> DesktopResult<()> {
+    let digest = directory_digest(source)?;
+    let marker = target.join(PROFILE_PACKAGE_DIGEST_FILE);
+    if fs::read_to_string(&marker).is_ok_and(|existing| existing.trim() == digest) {
+        return Ok(());
+    }
+    if target.exists() {
+        fs::remove_dir_all(target)?;
+    }
+    copy_directory(source, target)?;
+    fs::write(marker, format!("{digest}\n"))?;
+    Ok(())
+}
+
+fn directory_digest(source: &Path) -> DesktopResult<String> {
+    if !source.is_dir() {
+        return Err(DesktopError::RuntimeArtifactMissing(
+            source.display().to_string(),
+        ));
+    }
+    let mut files = Vec::new();
+    collect_directory_files(source, source, &mut files)?;
+    files.sort();
+    let mut digest = Sha256::new();
+    for relative in files {
+        digest.update(relative.to_string_lossy().as_bytes());
+        digest.update([0]);
+        digest.update(fs::read(source.join(relative))?);
+        digest.update([0]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn collect_directory_files(
+    root: &Path,
+    current: &Path,
+    files: &mut Vec<PathBuf>,
+) -> DesktopResult<()> {
+    for entry in fs::read_dir(current)? {
+        let entry = entry?;
+        if entry.file_name() == PROFILE_PACKAGE_DIGEST_FILE {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            collect_directory_files(root, &entry.path(), files)?;
+        } else {
+            files.push(
+                entry
+                    .path()
+                    .strip_prefix(root)
+                    .map_err(|error| DesktopError::Other(error.to_string()))?
+                    .to_path_buf(),
+            );
+        }
+    }
+    Ok(())
+}
+
 fn merge_profile_manifest(existing: Option<serde_json::Value>) -> serde_json::Value {
     const BUILT_IN_BUNDLES: [&str; 4] = [
         "@deepseek-ai/dsh-base",
@@ -1274,6 +1321,30 @@ mod tests {
                 "custom-plugin"
             ])
         );
+    }
+
+    #[test]
+    fn copies_profile_packages_only_when_the_bundled_source_changes() {
+        let root =
+            std::env::temp_dir().join(format!("deepseek-desktop-profile-sync-{}", Uuid::new_v4()));
+        let source = root.join("source");
+        let target = root.join("target");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("index.js"), "first").unwrap();
+
+        sync_profile_package(&source, &target).unwrap();
+        fs::write(target.join("preserved.txt"), "unchanged").unwrap();
+        sync_profile_package(&source, &target).unwrap();
+        assert!(target.join("preserved.txt").exists());
+
+        fs::write(source.join("index.js"), "second").unwrap();
+        sync_profile_package(&source, &target).unwrap();
+        assert!(!target.join("preserved.txt").exists());
+        assert_eq!(
+            fs::read_to_string(target.join("index.js")).unwrap(),
+            "second"
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

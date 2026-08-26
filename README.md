@@ -73,7 +73,7 @@ Rust Runtime 管理器
 
 桌面端只创建一个操作系统窗口。Runtime 就绪后，工作台会在隔离子 WebView 中占满内容区，不保留重复工具栏。原生“视图”菜单可在“工作台”（`Cmd/Ctrl+1`）和“桌面管理”（`Cmd/Ctrl+2`）之间切换；设置、诊断、更新和 Runtime 恢复均在原窗口完成。应用退出时会保存窗口位置、尺寸和全屏状态；下次启动优先恢复到上次使用的显示器，对外接屏幕用户更友好。
 
-工作台 WebView 不获得 Tauri shell、文件系统或通用 IPC 权限，只能访问受管回环 Origin。每次 Runtime 启动都会生成短期凭据会话，真实 token 仅通过标准输入交付，应用数据目录只保存 SHA-256 授权摘要。macOS、Windows 和 Linux 使用同一套 XChaCha20-Poly1305 加密凭据库，并采用原子替换、跨进程锁和私有 Unix 文件权限；不会降级写入 `.env`、YAML、浏览器存储或明文凭据文件。
+工作台 WebView 不获得 Tauri shell、文件系统或通用 IPC 权限，只能访问受管回环 Origin。每次 Runtime 启动都会生成短期凭据会话，真实 token 仅通过标准输入交付，应用数据目录只保存 SHA-256 授权摘要。Runtime 启动后会移除 Helper 相关环境变量，避免普通工具子进程继承短期会话。macOS、Windows 和 Linux 使用同一套 XChaCha20-Poly1305 加密凭据库，并采用原子替换、跨进程锁和私有 Unix 文件权限；不会降级写入 `.env`、YAML、浏览器存储或明文凭据文件。凭据库以当前操作系统用户为信任边界，不能防御已取得同一用户文件权限的恶意程序或 Agent 工具。
 
 ## 工具链
 
@@ -81,9 +81,9 @@ Rust Runtime 管理器
 - pnpm `11.7.0`
 - Rust `1.98.0`
 - Tauri CLI `2.11.4`
-- 默认自动选择 Harness 仓库最新的 SemVer 版本标签，并在构建时锁定实际 tag、commit 和制品哈希
+- 本地开发默认选择 Harness 仓库最新的 SemVer 标签；社区版和正式发布只接受仓库内经过审计的固定提交
 
-`scripts/with-rust.mjs` 会把 Rust 安装到仓库的 `target/deepseek-desktop-toolchain/`，不会修改用户的全局 Rust 环境。
+`scripts/with-rust.mjs` 会把 Rust 安装到仓库的 `target/deepseek-desktop-toolchain/`，下载时校验 Rust 官方发布的 `rustup-init` SHA-256，并确认实际 `rustc` 版本与 lock 一致，不会修改用户的全局 Rust 环境。
 
 ## 本地开发
 
@@ -99,7 +99,7 @@ corepack pnpm@11.7.0 runtime:smoke
 corepack pnpm@11.7.0 tauri:dev
 ```
 
-`runtime/toolchain-lock.json` 固定 Node、原生依赖和桌面补丁等稳定工具链事实。`RUNTIME_REF` 留空时，`runtime:sync` 自动选择仓库中最新的 SemVer 版本标签；显式填写时则使用指定 tag、commit 或开发分支。两种方式都会解析并锁定不可变 commit，并把请求 ref、最终 ref、commit、动态 CLI 入口和 Runtime 哈希写入不提交 Git 的 `target/generated/runtime-lock.json`。Runtime staging 只消费该生成 lock，并且只保留当前原生目标。
+`runtime/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Runtime 来源。`RUNTIME_REF` 留空时，本地 `runtime:sync` 自动选择仓库中最新的 SemVer 版本标签；显式填写时则使用指定 tag、commit 或开发分支。两种方式都会解析并锁定不可变 commit，并把请求 ref、最终 ref、commit、动态 CLI 入口和 Runtime 哈希写入不提交 Git 的 `target/generated/runtime-lock.json`。社区版和正式发布额外要求解析结果匹配 `runtime/toolchain-lock.json` 中经过审计的固定仓库与提交；上游出现新版本时必须先复核并更新固定来源，不能在无人审查时自动改变安装包内容。Runtime staging 只消费该生成 lock，并且只保留当前原生目标。
 
 staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存，校验固定 SHA-256，移除安装期时间元数据和非目标平台原生制品，并输出确定性的 `runtime-manifest.json`、`licenses.json` 与 `sbom.spdx.json`。各平台允许使用的 `node-pty` 和 Koffi 原生制品固定在 `runtime/toolchain-lock.json`。
 
@@ -139,7 +139,7 @@ corepack pnpm@11.7.0 package:community
 corepack pnpm@11.7.0 desktop:package
 ```
 
-可复制 `.env.example` 为 `.env` 来定制应用元数据和 Runtime 来源。配置优先级为“命令行环境变量 > `.env` > 内置默认值”；`.env` 不会进入 Runtime、安装包、诊断包或发布目录。`RUNTIME_REF` 默认留空并自动选择最新版本标签；`DESKTOP_APP_REPOSITORY` 默认留空并自动读取当前 Git `origin`，无法读取时回退到项目内置仓库地址。作者和仓库地址会显示在关于页，仓库地址可直接用系统浏览器打开。
+可复制 `.env.example` 为 `.env` 来定制应用元数据和 Runtime 来源。配置优先级为“命令行环境变量 > `.env` > 内置默认值”；`.env` 不会进入 Runtime、安装包、诊断包或发布目录。`RUNTIME_REF` 默认留空，本地开发会自动选择最新版本标签；社区版和正式发布仍受仓库内固定 Runtime 来源约束。`DESKTOP_APP_REPOSITORY` 默认留空并自动读取当前 Git `origin`，无法读取时回退到项目内置仓库地址。作者和仓库地址会显示在关于页，仓库地址可直接用系统浏览器打开。
 
 单台主机只构建其原生目标。默认和示例版本始终使用 `1.0.0`；社区发布标签按实际发行需要追加 `-community.<序号>` 后缀。匹配的版本标签会触发 GitHub Actions，全部通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。发布构建从标签注入真实版本，不需要修改源码中的默认或示例版本。
 

@@ -9,11 +9,11 @@ import { i18n } from "./i18n";
 const settings: DesktopSettings = {
   schemaVersion: 1,
   locale: "zh-CN",
-  theme: "system",
   workspace: null,
   onboardingCompleted: false,
   updateChannel: "community",
-  updateEnabled: false
+  updateEnabled: false,
+  recoveryReason: null
 };
 const runtime: RuntimeStatus = {
   phase: "idle",
@@ -55,11 +55,11 @@ describe(`${appConfig.productName} shell`, () => {
     Object.assign(settings, {
       schemaVersion: 1,
       locale: "zh-CN",
-      theme: "system",
       workspace: null,
       onboardingCompleted: false,
       updateChannel: "community",
-      updateEnabled: false
+      updateEnabled: false,
+      recoveryReason: null
     });
     Object.assign(runtime, {
       phase: "idle",

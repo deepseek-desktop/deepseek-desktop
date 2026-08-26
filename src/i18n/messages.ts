@@ -39,15 +39,17 @@ export const messages = {
         outputClosed: "Runtime 在就绪前关闭了输出通道。",
         healthCheckFailed: "Runtime 本地健康检查失败。",
         credentialChannelFailed: "加密凭据库通信通道启动失败。",
+        workspaceRegistrationFailed: "Runtime 无法注册所选工作区，请重新选择目录。",
         taskFailed: "Runtime 管理任务异常终止，请重试或导出诊断信息。",
         restartLimitReached: "Runtime 已达到自动恢复次数上限。"
       }
     },
     navigation: { label: "桌面导航", onboarding: "开始使用", runtime: "运行状态", diagnostics: "诊断", update: "更新", about: "关于" },
     diagnostics: { eyebrow: "诊断", title: "运行诊断", description: "导出经过脱敏的状态、版本和日志。", export: "导出诊断包", exported: "诊断包已导出", exportLogs: "导出日志", logsExported: "日志已导出", runtime: "Runtime", workspace: "工作区" },
-    about: { eyebrow: "社区版发行", title: `关于 ${appName}`, desktopVersion: "桌面版本", runtimeVersion: "Runtime 版本", nodeVersion: "Node 版本", channel: "更新通道", author: "作者", repository: "项目仓库", community: "社区版", unsigned: "社区版未签名构建" },
+    settings: { recovered: { corrupt: "设置文件已损坏，已备份原文件并恢复默认设置。", future: "设置文件来自更高版本，已备份原文件并恢复默认设置。" } },
+    about: { eyebrow: "应用信息", title: `关于 ${appName}`, desktopVersion: "桌面版本", runtimeVersion: "Runtime 版本", nodeVersion: "Node 版本", channel: "更新通道", author: "作者", repository: "项目仓库", local: "本地构建", community: "社区版", stable: "稳定版", signed: "已签名发行构建", unsigned: "未签名构建" },
     update: { eyebrow: "发行通道", title: "应用更新", description: "仅安装经过签名验证的正式发行包。", currentVersion: "当前版本", channel: "更新通道", status: "更新状态", notChecked: "尚未检查更新。", check: "检查更新", disabled: "当前社区版构建未签名，自动更新已关闭。", current: "当前已是最新版本。", available: "发现新版本 {version}。", notConfigured: "签名更新服务尚未配置。" },
-    error: { workspaceRequired: "请先选择工作区。", unexpected: "操作失败，请查看诊断信息。" }
+    error: { workspaceRequired: "请先选择工作区。", unexpected: "操作失败，请查看诊断信息。", settingsSaveFailed: "设置保存失败，已恢复原设置。", workspaceSelectionFailed: "工作区选择或保存失败。", diagnosticsExportFailed: "诊断包导出失败。", logsExportFailed: "日志导出失败。", updateCheckFailed: "更新检查失败。", initializationFailed: "桌面应用初始化失败，请重新启动或查看日志。", eventChannelFailed: "状态事件通道连接失败，请刷新运行状态。" }
   },
   "zh-TW": {
     app: { name: appName, subtitle: "本機 AI Agent 工作臺" },
@@ -85,15 +87,17 @@ export const messages = {
         outputClosed: "Runtime 在就緒前關閉了輸出通道。",
         healthCheckFailed: "Runtime 本機健康檢查失敗。",
         credentialChannelFailed: "加密憑證庫通訊通道啟動失敗。",
+        workspaceRegistrationFailed: "Runtime 無法註冊所選工作區，請重新選擇目錄。",
         taskFailed: "Runtime 管理工作異常終止，請重試或匯出診斷資訊。",
         restartLimitReached: "Runtime 已達自動復原次數上限。"
       }
     },
     navigation: { label: "桌面導覽", onboarding: "開始使用", runtime: "執行狀態", diagnostics: "診斷", update: "更新", about: "關於" },
     diagnostics: { eyebrow: "診斷", title: "執行診斷", description: "匯出經過遮蔽的狀態、版本和日誌。", export: "匯出診斷包", exported: "診斷包已匯出", exportLogs: "匯出日誌", logsExported: "日誌已匯出", runtime: "Runtime", workspace: "工作區" },
-    about: { eyebrow: "社群版發行", title: `關於 ${appName}`, desktopVersion: "桌面版本", runtimeVersion: "Runtime 版本", nodeVersion: "Node 版本", channel: "更新通道", author: "作者", repository: "專案倉庫", community: "社群版", unsigned: "社群版未簽章構建" },
+    settings: { recovered: { corrupt: "設定檔已損壞，已備份原檔並恢復預設設定。", future: "設定檔來自較新版本，已備份原檔並恢復預設設定。" } },
+    about: { eyebrow: "應用程式資訊", title: `關於 ${appName}`, desktopVersion: "桌面版本", runtimeVersion: "Runtime 版本", nodeVersion: "Node 版本", channel: "更新通道", author: "作者", repository: "專案倉庫", local: "本機構建", community: "社群版", stable: "穩定版", signed: "已簽章發行構建", unsigned: "未簽章構建" },
     update: { eyebrow: "發行通道", title: "應用程式更新", description: "僅安裝通過簽名驗證的正式發行套件。", currentVersion: "目前版本", channel: "更新通道", status: "更新狀態", notChecked: "尚未檢查更新。", check: "檢查更新", disabled: "目前社群版構建尚未簽章，自動更新已關閉。", current: "目前已是最新版本。", available: "發現新版本 {version}。", notConfigured: "簽名更新服務尚未設定。" },
-    error: { workspaceRequired: "請先選擇工作區。", unexpected: "操作失敗，請查看診斷資訊。" }
+    error: { workspaceRequired: "請先選擇工作區。", unexpected: "操作失敗，請查看診斷資訊。", settingsSaveFailed: "設定儲存失敗，已恢復原設定。", workspaceSelectionFailed: "工作區選擇或儲存失敗。", diagnosticsExportFailed: "診斷包匯出失敗。", logsExportFailed: "日誌匯出失敗。", updateCheckFailed: "更新檢查失敗。", initializationFailed: "桌面應用程式初始化失敗，請重新啟動或查看日誌。", eventChannelFailed: "狀態事件通道連線失敗，請重新整理執行狀態。" }
   },
   "en-US": {
     app: { name: appName, subtitle: "Local AI agent workspace" },
@@ -131,14 +135,16 @@ export const messages = {
         outputClosed: "The runtime closed its output before it became ready.",
         healthCheckFailed: "The local runtime health check failed.",
         credentialChannelFailed: "The encrypted credential vault channel could not start.",
+        workspaceRegistrationFailed: "The runtime could not register the selected workspace. Choose the folder again.",
         taskFailed: "The runtime management task stopped unexpectedly. Retry or export diagnostics.",
         restartLimitReached: "The runtime reached its automatic recovery limit."
       }
     },
     navigation: { label: "Desktop navigation", onboarding: "Get started", runtime: "Runtime", diagnostics: "Diagnostics", update: "Updates", about: "About" },
     diagnostics: { eyebrow: "Diagnostics", title: "Runtime diagnostics", description: "Export redacted status, version, and log information.", export: "Export diagnostics", exported: "Diagnostics exported", exportLogs: "Export logs", logsExported: "Logs exported", runtime: "Runtime", workspace: "Workspace" },
-    about: { eyebrow: "Community distribution", title: `About ${appName}`, desktopVersion: "Desktop version", runtimeVersion: "Runtime version", nodeVersion: "Node version", channel: "Update channel", author: "Author", repository: "Repository", community: "Community", unsigned: "Unsigned community build" },
+    settings: { recovered: { corrupt: "The settings file was damaged. The original was backed up and defaults were restored.", future: "The settings file came from a newer version. The original was backed up and defaults were restored." } },
+    about: { eyebrow: "Application information", title: `About ${appName}`, desktopVersion: "Desktop version", runtimeVersion: "Runtime version", nodeVersion: "Node version", channel: "Update channel", author: "Author", repository: "Repository", local: "Local build", community: "Community", stable: "Stable", signed: "Signed release build", unsigned: "Unsigned build" },
     update: { eyebrow: "Release channel", title: "Application updates", description: "Only formally released packages with a valid signature can be installed.", currentVersion: "Current version", channel: "Update channel", status: "Update status", notChecked: "Updates have not been checked.", check: "Check for updates", disabled: "This community build is unsigned, so automatic updates are disabled.", current: "This version is current.", available: "Version {version} is available.", notConfigured: "Signed updates are not configured." },
-    error: { workspaceRequired: "Choose a workspace first.", unexpected: "The operation failed. Open diagnostics for details." }
+    error: { workspaceRequired: "Choose a workspace first.", unexpected: "The operation failed. Open diagnostics for details.", settingsSaveFailed: "The settings could not be saved. The previous value was restored.", workspaceSelectionFailed: "The workspace could not be selected or saved.", diagnosticsExportFailed: "Diagnostics could not be exported.", logsExportFailed: "Logs could not be exported.", updateCheckFailed: "The update check failed.", initializationFailed: "The desktop application could not initialize. Restart it or inspect the logs.", eventChannelFailed: "The status event channel could not connect. Refresh the runtime status." }
   }
 } as const;

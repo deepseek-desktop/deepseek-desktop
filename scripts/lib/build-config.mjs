@@ -13,7 +13,9 @@ export const CONFIG_KEYS = Object.freeze([
   "DESKTOP_APP_REPOSITORY",
   "DESKTOP_APP_ICON",
   "RUNTIME_REPOSITORY",
-  "RUNTIME_REF"
+  "RUNTIME_REF",
+  "RELEASE_CHANNEL",
+  "RELEASE_SIGNED"
 ]);
 
 export const DEFAULT_CONFIG = Object.freeze({
@@ -26,7 +28,9 @@ export const DEFAULT_CONFIG = Object.freeze({
   DESKTOP_APP_REPOSITORY: "",
   DESKTOP_APP_ICON: "src-tauri/icons/icon.png",
   RUNTIME_REPOSITORY: "https://github.com/deepseek-desktop/deepseek-harness.git",
-  RUNTIME_REF: ""
+  RUNTIME_REF: "",
+  RELEASE_CHANNEL: "local",
+  RELEASE_SIGNED: "false"
 });
 
 const OPTIONAL_EMPTY_KEYS = new Set(["DESKTOP_APP_REPOSITORY", "RUNTIME_REF"]);
@@ -37,7 +41,11 @@ const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 function assertKnownKeys(values, source) {
   const unknown = Object.keys(values)
-    .filter(key => (key.startsWith("DESKTOP_APP_") || key.startsWith("RUNTIME_")) && !CONFIG_KEYS.includes(key))
+    .filter(key => (
+      key.startsWith("DESKTOP_APP_")
+      || key.startsWith("RUNTIME_")
+      || key.startsWith("RELEASE_")
+    ) && !CONFIG_KEYS.includes(key))
     .sort();
   if (unknown.length > 0) throw new Error(`${source} contains unsupported build configuration: ${unknown.join(", ")}`);
 }
@@ -167,9 +175,18 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
   const iconSource = normalizeRelativePath(values.DESKTOP_APP_ICON);
   const icon = await inspectPng(resolve(root, iconSource));
   const repository = normalizeRepository(values.RUNTIME_REPOSITORY);
+  if (!new Set(["local", "community", "stable"]).has(values.RELEASE_CHANNEL)) {
+    throw new Error("RELEASE_CHANNEL must be local, community, or stable");
+  }
+  if (!new Set(["true", "false"]).has(values.RELEASE_SIGNED)) {
+    throw new Error("RELEASE_SIGNED must be true or false");
+  }
+  const toolchainLock = JSON.parse(await readFile(resolve(root, "runtime/toolchain-lock.json"), "utf8"));
+  assertText("runtime/toolchain-lock.json node.version", toolchainLock.node?.version || "");
+  assertText("runtime/toolchain-lock.json toolchain.rust", toolchainLock.toolchain?.rust || "");
   const year = new Date().getUTCFullYear();
   return Object.freeze({
-    schemaVersion: 2,
+    schemaVersion: 3,
     productName: values.DESKTOP_APP_NAME,
     version: values.DESKTOP_APP_VERSION,
     identifier: values.DESKTOP_APP_IDENTIFIER,
@@ -183,6 +200,14 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
     harness: {
       repository,
       ref: values.RUNTIME_REF
+    },
+    release: {
+      channel: values.RELEASE_CHANNEL,
+      signed: values.RELEASE_SIGNED === "true"
+    },
+    toolchain: {
+      nodeVersion: toolchainLock.node.version,
+      rustVersion: toolchainLock.toolchain.rust
     }
   });
 }

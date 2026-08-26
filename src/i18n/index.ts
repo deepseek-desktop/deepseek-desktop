@@ -4,8 +4,8 @@ import { messages } from "./messages";
 export type SupportedLocale = keyof typeof messages;
 
 export function normalizeLocale(value: string | undefined): SupportedLocale {
-  const locale = value?.replace("_", "-").toLowerCase();
-  if (locale === "zh-tw" || locale === "zh-hk" || locale === "zh-hant") return "zh-TW";
+  const locale = value?.replaceAll("_", "-").toLowerCase();
+  if (locale === "zh-tw" || locale === "zh-hk" || locale === "zh-mo" || locale?.startsWith("zh-hant")) return "zh-TW";
   if (locale?.startsWith("en")) return "en-US";
   return "zh-CN";
 }

@@ -13,6 +13,14 @@ export interface AppConfig {
     repository: string;
     ref: string;
   };
+  release: {
+    channel: "local" | "community" | "stable";
+    signed: boolean;
+  };
+  toolchain: {
+    nodeVersion: string;
+    rustVersion: string;
+  };
 }
 
 export const appConfig: AppConfig = __APP_CONFIG__;

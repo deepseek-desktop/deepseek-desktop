@@ -55,7 +55,21 @@ for (const locale of locales) {
 }
 
 const appSource = await readFile(new URL("../src/App.vue", import.meta.url), "utf8");
+const script = appSource.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)?.[1] ?? "";
 const template = appSource.match(/<template>([\s\S]*?)<\/template>/)?.[1] ?? "";
+const referencedKeys = new Set();
+const appScript = ts.createSourceFile("App.vue.ts", script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+function collectReferencedKeys(node) {
+  if (ts.isStringLiteral(node) && /^[a-z][\w-]*(?:\.[\w-]+)+$/u.test(node.text)) {
+    referencedKeys.add(node.text);
+  }
+  ts.forEachChild(node, collectReferencedKeys);
+}
+collectReferencedKeys(appScript);
+for (const match of template.matchAll(/\bt\(\s*["']([^"']+)["']/gu)) referencedKeys.add(match[1]);
+for (const key of referencedKeys) {
+  if (!baseline.has(key)) failures.push(`App.vue: referenced i18n key is missing: ${key}`);
+}
 const allowedText = new Set(["DSH", "简体中文", "繁體中文", "English"]);
 let textBuffer = "";
 for (let index = 0; index < template.length;) {

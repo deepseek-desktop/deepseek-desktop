@@ -9,6 +9,7 @@ import { loadBuildConfig } from "./lib/build-config.mjs";
 import { selectLatestHarnessTag } from "./lib/harness-ref.mjs";
 import { findInstalledPackages } from "./lib/installed-packages.mjs";
 import { applyPackagePatch } from "./lib/package-patch.mjs";
+import { assertPinnedRuntimeSource } from "./lib/runtime-source-pin.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const runtimeRoot = join(root, "runtime");
@@ -452,7 +453,7 @@ async function applyDesktopPatches(moduleRoots) {
 const config = await loadBuildConfig(root);
 await mkdir(cacheRoot, { recursive: true });
 pinnedToolEnvironment = await preparePinnedPnpm();
-const releaseChannel = process.env.RELEASE_CHANNEL?.trim() || "local";
+const releaseChannel = config.release.channel;
 const releaseBuild = releaseChannel === "community" || releaseChannel === "stable";
 const source = localPath
   ? await prepareLocal(localPath, config.harness.ref)
@@ -460,6 +461,7 @@ const source = localPath
 if (releaseBuild && (source.mode !== "remote" || source.dirty || source.kind === "branch")) {
   throw new Error("release builds require a clean remote Harness tag or immutable commit");
 }
+if (releaseBuild) assertPinnedRuntimeSource(source, toolchain.runtimeSource);
 
 const workRoot = check
   ? await mkdtemp(join(tmpdir(), "deepseek-desktop-runtime-sync-"))
@@ -506,9 +508,13 @@ try {
   const credentialVaultVersion = await readPackageVersion(finalModules, "deepseek-desktop-credentials-vault");
   const runtimeSha256 = await hashTree(prepared);
   const lock = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     sourceDateEpoch,
     desktopVersion: config.version,
+    release: {
+      channel: releaseChannel,
+      sourcePinned: releaseBuild
+    },
     runtime: {
       version: cli.manifest.version,
       ref: source.ref,

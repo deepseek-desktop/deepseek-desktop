@@ -4,7 +4,20 @@ import { resolve } from "node:path";
 
 const appConfig = JSON.parse(
   readFileSync(resolve(import.meta.dirname, "../../target/generated/app-config.json"), "utf8")
-) as { productName: string; version: string };
+) as {
+  productName: string;
+  version: string;
+  release: {
+    channel: "local" | "community" | "stable";
+    signed: boolean;
+  };
+};
+
+const releaseChannelLabel = {
+  local: "Local build",
+  community: "Community",
+  stable: "Stable"
+} as const;
 
 test("onboarding, language switching, and status views fully load", async ({ page }) => {
   await page.goto("/");
@@ -27,6 +40,6 @@ test("onboarding, language switching, and status views fully load", async ({ pag
   await page.getByRole("button", { name: /About/ }).click();
   await expect(page.getByRole("heading", { name: `About ${appConfig.productName}` })).toBeVisible();
   await expect(page.getByText(appConfig.version)).toBeVisible();
-  await expect(page.getByText("Community", { exact: true })).toBeVisible();
-  await expect(page.getByText("Unsigned community build")).toBeVisible();
+  await expect(page.getByText(releaseChannelLabel[appConfig.release.channel], { exact: true })).toBeVisible();
+  await expect(page.getByText(appConfig.release.signed ? "Signed release build" : "Unsigned build")).toBeVisible();
 });

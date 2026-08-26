@@ -21,7 +21,7 @@ pub struct AppPaths {
 
 impl AppPaths {
     pub fn resolve(app: &AppHandle) -> DesktopResult<Self> {
-        let data_dir = std::env::var_os("DEEPSEEK_DESKTOP_DATA_DIR")
+        let data_dir = debug_override("DEEPSEEK_DESKTOP_DATA_DIR")
             .map(PathBuf::from)
             .map(Ok)
             .unwrap_or_else(|| {
@@ -63,14 +63,10 @@ impl SettingsStore {
         let current = match fs::read_to_string(&paths.settings_file) {
             Ok(text) => match serde_json::from_str::<DesktopSettings>(&text) {
                 Ok(settings) if settings.schema_version > current_settings_schema_version() => {
-                    return Err(DesktopError::InvalidConfiguration(format!(
-                        "settings schema {} is newer than supported schema {}",
-                        settings.schema_version,
-                        current_settings_schema_version()
-                    )));
+                    quarantine_settings(paths, "future")?
                 }
                 Ok(settings) if validate(&settings).is_ok() => settings,
-                Ok(_) | Err(_) => quarantine_invalid_settings(paths)?,
+                Ok(_) | Err(_) => quarantine_settings(paths, "corrupt")?,
             },
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 DesktopSettings::default()
@@ -92,7 +88,8 @@ impl SettingsStore {
             .map_err(|_| DesktopError::Other("settings lock is poisoned".to_owned()))
     }
 
-    pub fn update(&self, settings: DesktopSettings) -> DesktopResult<DesktopSettings> {
+    pub fn update(&self, mut settings: DesktopSettings) -> DesktopResult<DesktopSettings> {
+        settings.recovery_reason = None;
         validate(&settings)?;
         if self.path.exists() {
             let backup = self.backup_dir.join("settings.previous.json");
@@ -164,10 +161,21 @@ fn replace_file(source: &Path, destination: &Path) -> DesktopResult<()> {
     Ok(())
 }
 
-fn quarantine_invalid_settings(paths: &AppPaths) -> DesktopResult<DesktopSettings> {
-    let backup = paths.backups_dir.join("settings.corrupt.json");
+fn debug_override(name: &str) -> Option<std::ffi::OsString> {
+    if cfg!(debug_assertions) {
+        std::env::var_os(name)
+    } else {
+        None
+    }
+}
+
+fn quarantine_settings(paths: &AppPaths, reason: &str) -> DesktopResult<DesktopSettings> {
+    let backup = paths.backups_dir.join(format!("settings.{reason}.json"));
     replace_file(&paths.settings_file, &backup)?;
-    let settings = DesktopSettings::default();
+    let settings = DesktopSettings {
+        recovery_reason: Some(reason.to_owned()),
+        ..DesktopSettings::default()
+    };
     write_json_atomic(&paths.settings_file, &settings)?;
     Ok(settings)
 }
@@ -183,12 +191,6 @@ fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
         return Err(DesktopError::InvalidConfiguration(format!(
             "unsupported locale {}",
             settings.locale
-        )));
-    }
-    if !matches!(settings.theme.as_str(), "system" | "light" | "dark") {
-        return Err(DesktopError::InvalidConfiguration(format!(
-            "unsupported theme {}",
-            settings.theme
         )));
     }
     if !matches!(settings.update_channel.as_str(), "community" | "stable") {
@@ -253,13 +255,73 @@ mod tests {
 
         let store = SettingsStore::load(&paths).unwrap();
 
-        assert_eq!(store.get().unwrap(), DesktopSettings::default());
+        assert_eq!(
+            store.get().unwrap().recovery_reason.as_deref(),
+            Some("corrupt")
+        );
         assert!(paths.backups_dir.join("settings.corrupt.json").is_file());
         let restored = serde_json::from_str::<DesktopSettings>(
             &fs::read_to_string(&paths.settings_file).unwrap(),
         )
         .unwrap();
-        assert_eq!(restored, DesktopSettings::default());
+        assert_eq!(restored.recovery_reason.as_deref(), Some("corrupt"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn quarantines_settings_from_a_future_schema() {
+        let root = std::env::temp_dir().join(format!(
+            "deepseek-desktop-future-settings-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let paths = AppPaths {
+            data_dir: root.clone(),
+            dsh_home: root.join("dsh"),
+            logs_dir: root.join("logs"),
+            backups_dir: root.join("backups"),
+            diagnostics_dir: root.join("diagnostics"),
+            updates_dir: root.join("updates"),
+            settings_file: root.join("settings.json"),
+        };
+        fs::create_dir_all(&paths.backups_dir).unwrap();
+        let mut value = serde_json::to_value(DesktopSettings::default()).unwrap();
+        value["schemaVersion"] = serde_json::json!(current_settings_schema_version() + 1);
+        fs::write(&paths.settings_file, serde_json::to_vec(&value).unwrap()).unwrap();
+
+        let store = SettingsStore::load(&paths).unwrap();
+
+        assert_eq!(
+            store.get().unwrap().recovery_reason.as_deref(),
+            Some("future")
+        );
+        assert!(paths.backups_dir.join("settings.future.json").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn clears_recovery_notice_after_settings_are_saved() {
+        let root = std::env::temp_dir().join(format!(
+            "deepseek-desktop-recovered-settings-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let paths = AppPaths {
+            data_dir: root.clone(),
+            dsh_home: root.join("dsh"),
+            logs_dir: root.join("logs"),
+            backups_dir: root.join("backups"),
+            diagnostics_dir: root.join("diagnostics"),
+            updates_dir: root.join("updates"),
+            settings_file: root.join("settings.json"),
+        };
+        fs::create_dir_all(&paths.backups_dir).unwrap();
+        fs::write(&paths.settings_file, "{not-json\n").unwrap();
+        let store = SettingsStore::load(&paths).unwrap();
+
+        let saved = store.update(store.get().unwrap()).unwrap();
+
+        assert_eq!(saved.recovery_reason, None);
         fs::remove_dir_all(root).unwrap();
     }
 }
