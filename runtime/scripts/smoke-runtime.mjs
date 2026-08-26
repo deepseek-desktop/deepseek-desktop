@@ -45,6 +45,14 @@ async function waitForExit(child, timeoutMs = 5_000) {
 
 function processGroupExists(pid) {
   if (process.platform === "win32") return false;
+  const processes = spawnSync("ps", ["-axo", "pgid=,stat="], { encoding: "utf8" });
+  if (processes.status === 0) {
+    return processes.stdout.split("\n").some(line => {
+      const match = line.trim().match(/^(\d+)\s+(\S+)/u);
+      return Number.parseInt(match?.[1] || "", 10) === pid && !match?.[2]?.startsWith("Z");
+    });
+  }
+  // Minimal systems may not provide ps; retain the signal probe as a fallback.
   try { process.kill(-pid, 0); return true; } catch { return false; }
 }
 
