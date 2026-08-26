@@ -2,6 +2,11 @@
 
 DeepSeek Desktop 的重要变化记录如下。
 
+## 0.1.0-community.13 - 2026-08-26
+
+- 修复 Windows 发行构建通过映射盘访问 Runtime 源码时，TypeScript 将同一模块解析为两套路径并产生声明冲突的问题。
+- Windows 构建改为在真实短路径中执行，兼顾 pnpm 深层依赖路径与类型系统的一致性。
+
 ## 0.1.0-community.12 - 2026-08-26
 
 - 修复容器环境未及时回收僵尸进程时，Runtime 父进程退出 smoke 误报残留进程组的问题。

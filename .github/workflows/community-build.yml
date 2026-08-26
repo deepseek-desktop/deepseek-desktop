@@ -70,21 +70,28 @@ jobs:
       - if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          subst R: "$env:GITHUB_WORKSPACE"
-          $exitCode = 1
-          try {
-            Set-Location R:\
-            if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true") {
-              corepack pnpm@11.7.0 package:community
-            } else {
-              corepack pnpm@11.7.0 desktop:package
-            }
-            $exitCode = $LASTEXITCODE
-          } finally {
-            Set-Location $env:GITHUB_WORKSPACE
-            subst R: /D
+          $buildRoot = "C:\d"
+          if (Test-Path $buildRoot) {
+            Remove-Item -Recurse -Force $buildRoot
           }
-          exit $exitCode
+          git clone --no-hardlinks "$env:GITHUB_WORKSPACE" $buildRoot
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          Set-Location $buildRoot
+          git checkout --detach $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true") {
+            corepack pnpm@11.7.0 package:community
+          } else {
+            corepack pnpm@11.7.0 desktop:package
+          }
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          Copy-Item -Recurse -Force "$buildRoot\release" "$env:GITHUB_WORKSPACE\release"
       - uses: actions/upload-artifact@v7
         with:
           name: deepseek-desktop-${{ matrix.name }}-unsigned-community
