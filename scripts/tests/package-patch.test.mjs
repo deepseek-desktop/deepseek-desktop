@@ -27,7 +27,8 @@ test("applies package-relative patches inside a parent Git worktree", async () =
 
   try {
     assert.equal(applyPackagePatch(packageRoot, patchFile), "applied");
-    assert.equal(await readFile(sourceFile, "utf8"), 'const message = "after";\n');
+    const patchedSource = (await readFile(sourceFile, "utf8")).replaceAll("\r\n", "\n");
+    assert.equal(patchedSource, 'const message = "after";\n');
     assert.equal(applyPackagePatch(packageRoot, patchFile), "already-applied");
   } finally {
     await rm(directory, { recursive: true, force: true });
