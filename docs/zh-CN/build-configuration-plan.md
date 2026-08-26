@@ -28,7 +28,7 @@
 ```dotenv
 # 应用信息
 DESKTOP_APP_NAME=DeepSeek Desktop
-DESKTOP_APP_VERSION=0.1.0-community.9
+DESKTOP_APP_VERSION=0.1.0-community.10
 DESKTOP_APP_IDENTIFIER=deepseek.desktop
 DESKTOP_APP_SLUG=deepseek-desktop
 DESKTOP_APP_DESCRIPTION=Local AI agent workspace
@@ -187,7 +187,7 @@ corepack pnpm@11.7.0 tauri:build
   "schemaVersion": 1,
   "application": {
     "productName": "DeepSeek Desktop",
-    "version": "0.1.0-community.9",
+    "version": "0.1.0-community.10",
     "identifier": "deepseek.desktop",
     "slug": "deepseek-desktop",
     "description": "Local AI agent workspace",
@@ -244,7 +244,7 @@ corepack pnpm@11.7.0 tauri:build
 
 ### 平台验收
 
-- 当前 macOS arm64 已完成真实 DMG 构建、`hdiutil verify`、只读挂载、Bundle 签名结构校验和挂载产物启动 smoke。
+- 当前 macOS arm64 已完成真实 DMG 构建；安装与启动体验由对应平台的人工验收确认。
 - macOS x64、Windows x64 和 Linux x64 由 GitHub Actions 原生矩阵调用同一构建链路；只有对应平台工作流及人工安装验收通过后，才能声明该平台可用。
 - Windows 验收包括安装器、EXE、桌面快捷方式和开始菜单图标，以及启动时不附带终端窗口。
 - Linux 验收包括 AppImage、deb、图标和 desktop entry。

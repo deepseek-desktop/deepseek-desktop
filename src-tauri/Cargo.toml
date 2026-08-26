@@ -1,6 +1,6 @@
 [package]
 name = "deepseek-desktop"
-version = "0.1.0-community.9"
+version = "0.1.0-community.10"
 description = "Self-contained local shell for DeepSeek Desktop"
 authors = ["DeepSeek Desktop Contributors"]
 license = "Apache-2.0"

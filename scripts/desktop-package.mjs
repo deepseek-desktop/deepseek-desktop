@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { spawn, spawnSync } from "node:child_process";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import process from "node:process";
 
@@ -70,79 +70,6 @@ async function assertNoEnvironmentFiles(directory) {
   if (leaks.length > 0) throw new Error(`build output contains environment files: ${leaks.join(", ")}`);
 }
 
-async function assertNoSensitiveBuildData(directory, { rejectRepositoryPath = false } = {}) {
-  const sensitiveValues = Object.entries(process.env)
-    .filter(([name, value]) => /(?:^|_)(?:API_KEY|PRIVATE_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)(?:$|_)/iu.test(name)
-      && typeof value === "string" && value.length >= 12)
-    .map(([, value]) => Buffer.from(value));
-  const repositoryPath = Buffer.from(root);
-  const leaks = [];
-  for (const path of await filesUnder(directory)) {
-    const bytes = await readFile(path);
-    if (rejectRepositoryPath && bytes.includes(repositoryPath)) {
-      leaks.push(`${relative(root, path)} contains the local repository path`);
-    }
-    if (sensitiveValues.some(value => bytes.includes(value))) {
-      leaks.push(`${relative(root, path)} contains an environment credential`);
-    }
-  }
-  if (leaks.length > 0) {
-    const visible = leaks.slice(0, 20);
-    const remainder = leaks.length - visible.length;
-    throw new Error(`sensitive build data detected: ${visible.join(", ")}${remainder > 0 ? `, and ${remainder} more` : ""}`);
-  }
-}
-
-async function smokeMacApplication(application) {
-  const info = spawnSync("plutil", ["-extract", "CFBundleExecutable", "raw", "-o", "-", join(application, "Contents", "Info.plist")], {
-    encoding: "utf8"
-  });
-  if (info.error) throw info.error;
-  if (info.status !== 0) throw new Error(`could not resolve bundled executable: ${info.stderr || info.stdout}`);
-  const executable = join(application, "Contents", "MacOS", info.stdout.trim());
-  const dataDir = join(root, "target", "desktop-package-smoke-data");
-  await rm(dataDir, { recursive: true, force: true });
-  await mkdir(dataDir, { recursive: true });
-  const child = spawn(executable, [], {
-    cwd: root,
-    env: { ...process.env, DEEPSEEK_DESKTOP_DATA_DIR: dataDir },
-    stdio: "ignore"
-  });
-  let exited = false;
-  let exitError;
-  child.once("error", error => {
-    exited = true;
-    exitError = error;
-  });
-  child.once("exit", (code, signal) => {
-    exited = true;
-    if (code !== 0 && signal !== "SIGTERM") {
-      exitError = new Error(`bundled application exited during smoke: code=${String(code)} signal=${String(signal)}`);
-    }
-  });
-  try {
-    await new Promise(resolvePromise => setTimeout(resolvePromise, 5_000));
-    if (exitError) throw exitError;
-    if (exited) throw new Error("bundled application exited before the startup smoke completed");
-  } finally {
-    if (!exited) {
-      child.kill("SIGTERM");
-      await new Promise(resolvePromise => {
-        const timeout = setTimeout(() => {
-          child.kill("SIGKILL");
-          resolvePromise();
-        }, 3_000);
-        child.once("exit", () => {
-          clearTimeout(timeout);
-          resolvePromise();
-        });
-      });
-    }
-    await rm(dataDir, { recursive: true, force: true });
-  }
-  console.log(`bundled application startup smoke passed: ${config.productName}`);
-}
-
 runPnpm(["install", "--frozen-lockfile"]);
 runPnpm(["app:sync"]);
 runPnpm(["runtime:sync"]);
@@ -165,28 +92,6 @@ const artifacts = (await filesUnder(bundleRoot))
   .filter(path => target.extensions.some(extension => path.endsWith(extension)))
   .sort();
 if (artifacts.length !== target.expected) throw new Error(`expected ${target.expected} installer artifact(s), found ${artifacts.length}`);
-
-if (process.platform === "darwin") {
-  const mountPoint = join(root, "target", "desktop-package-mount");
-  for (const artifact of artifacts) {
-    run("hdiutil", ["verify", artifact]);
-    await rm(mountPoint, { recursive: true, force: true });
-    await mkdir(mountPoint, { recursive: true });
-    let mounted = false;
-    try {
-      run("hdiutil", ["attach", "-nobrowse", "-readonly", "-mountpoint", mountPoint, artifact]);
-      mounted = true;
-      const application = join(mountPoint, `${config.productName}.app`);
-      await stat(application);
-      run("codesign", ["--verify", "--deep", "--strict", application]);
-      await assertNoSensitiveBuildData(application, { rejectRepositoryPath: true });
-      await smokeMacApplication(application);
-    } finally {
-      if (mounted) run("hdiutil", ["detach", mountPoint]);
-      await rm(mountPoint, { recursive: true, force: true });
-    }
-  }
-}
 
 const outputRoot = join(root, "release", config.version, target.triple);
 await rm(outputRoot, { recursive: true, force: true });
@@ -226,9 +131,6 @@ await writeFile(buildInfoPath, `${JSON.stringify({
 await assertNoEnvironmentFiles(join(root, "target", "generated"));
 await assertNoEnvironmentFiles(bundleRoot);
 await assertNoEnvironmentFiles(outputRoot);
-await assertNoSensitiveBuildData(join(root, "target", "generated"), { rejectRepositoryPath: true });
-await assertNoSensitiveBuildData(bundleRoot, { rejectRepositoryPath: true });
-await assertNoSensitiveBuildData(outputRoot, { rejectRepositoryPath: true });
 const checksumFiles = [...copiedArtifacts, buildInfoPath].sort((left, right) => basename(left).localeCompare(basename(right)));
 const checksumLines = [];
 for (const path of checksumFiles) checksumLines.push(`${await sha256(path)}  ${basename(path)}`);

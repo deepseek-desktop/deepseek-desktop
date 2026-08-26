@@ -4,12 +4,12 @@
 
 ## 主要变化
 
-- 内置 DSH Market `1.28.1` 和锁定的 pnpm `11.7.0`，可在桌面工作台中浏览、安装、更新和卸载插件，无需预装 Node.js 或 pnpm
-- Runtime 启动时合并桌面内置 Bundle 与用户 Profile，不覆盖已安装插件和自定义依赖
-- 桌面诊断页新增脱敏纯文本日志导出，诊断包继续保留结构化状态与版本信息
-- 修复 DSH Market 安装子进程误继承桌面预加载脚本导致的安装失败
-- 桌面管理与工作台 WebView 互斥显示，修复页面重叠时鼠标手势和箭头反复切换的闪烁问题
-- README 补齐实际工作台、插件市场截图与中文快速使用流程
+- 统一 `.env`、应用元数据、Runtime 来源和安装包信息的构建配置链路
+- Runtime 来源解析为不可变提交，并生成可追溯的构建信息与制品校验和
+- 修复 Runtime 桌面补丁应用流程，保持上游构建和桌面扩展可复现
+- 修复 macOS 从工作台切回桌面管理时残留 WebView 原生渲染层导致的白屏问题
+- 修复 Windows Runtime 子进程显示控制台窗口、关闭窗口触发自动恢复并可能打开外部浏览器的问题
+- 保留 DSH Market、脱敏日志导出、自定义 Provider 和跨平台本地加密凭据库能力
 
 ## 下载选择
 
@@ -25,6 +25,6 @@
 
 # DeepSeek Desktop Community Edition
 
-This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.7.0. It preserves user profile dependencies, fixes plugin child-process startup, adds redacted log export, prevents overlapping workbench and management WebViews, and documents the verified workbench and plugin market flows.
+This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.7.0. It unifies build configuration and provenance, fixes Runtime patching, prevents stale macOS WebView layers from obscuring the desktop management surface, and keeps the Windows Runtime console hidden.
 
 The macOS application has an ad-hoc integrity signature but is not signed or notarized with an Apple Developer ID. Windows and Linux community artifacts do not carry a trusted publisher signature. Automatic updates remain disabled.

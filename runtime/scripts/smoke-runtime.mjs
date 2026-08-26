@@ -224,6 +224,10 @@ async function runCycle(index) {
     if (!response.ok) throw new Error(`runtime health check returned ${response.status}`);
     const body = await response.text();
     if (!body.toLowerCase().includes("html")) throw new Error("runtime did not return an HTML shell");
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
+    if (output.includes("dsh web: opening the default browser")) {
+      throw new Error("desktop Runtime attempted to open the system browser");
+    }
   } finally {
     await terminateTree(child);
   }

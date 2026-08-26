@@ -888,7 +888,12 @@ fn configure_process_group(command: &mut Command) {
 }
 
 #[cfg(windows)]
-fn configure_process_group(_command: &mut Command) {}
+fn configure_process_group(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+    command.creation_flags(CREATE_NO_WINDOW);
+}
 
 fn validate_workspace(workspace: &str) -> DesktopResult<()> {
     if !Path::new(workspace).is_dir() {
