@@ -33,6 +33,7 @@ function run(command, commandArgs, cwd, options = {}) {
     cwd,
     encoding: options.capture ? "utf8" : undefined,
     stdio: options.capture ? "pipe" : "inherit",
+    maxBuffer: options.capture ? 16 * 1024 * 1024 : undefined,
     shell: false,
     env: { ...process.env, ...options.env }
   });
@@ -43,8 +44,9 @@ function run(command, commandArgs, cwd, options = {}) {
   return options.capture ? result.stdout.trim() : "";
 }
 
-function runGit(commandArgs, cwd) {
-  return run("git", commandArgs, cwd, { capture: true });
+function runGit(commandArgs, cwd, options = {}) {
+  const platformArgs = process.platform === "win32" ? ["-c", "core.longPaths=true"] : [];
+  return run("git", [...platformArgs, ...commandArgs], cwd, { capture: options.capture ?? true });
 }
 
 let pinnedToolEnvironment;
@@ -69,6 +71,7 @@ async function preparePinnedPnpm() {
   await writeFile(join(binRoot, "pnpm.cmd"), `@echo off\r\n"${process.execPath}" "${wrapper}" %*\r\n`);
   return {
     ...process.env,
+    CI: "true",
     PATH: `${binRoot}${process.platform === "win32" ? ";" : ":"}${process.env.PATH || ""}`
   };
 }
@@ -371,7 +374,12 @@ async function prepareRemote(repository, ref) {
     await rm(mirror, { recursive: true, force: true });
     runGit(["clone", "--mirror", repository, mirror], root);
   }
-  runGit(["fetch", "--prune", "--tags", "origin"], mirror);
+  let fetchError = null;
+  try {
+    runGit(["fetch", "--prune", "--tags", "origin"], mirror);
+  } catch (error) {
+    fetchError = error;
+  }
   let commit;
   const candidates = [`refs/tags/${ref}^{commit}`, `refs/remotes/origin/${ref}^{commit}`, `${ref}^{commit}`];
   for (const candidate of candidates) {
@@ -383,17 +391,24 @@ async function prepareRemote(repository, ref) {
   if (!commit || !/^[0-9a-f]{40}$/u.test(commit)) throw new Error(`HARNESS_REF could not be resolved: ${ref}`);
   const tag = runGit(["tag", "--points-at", commit], mirror).split("\n").find(value => value === ref) || null;
   const kind = tag ? "tag" : /^[0-9a-f]{40}$/u.test(ref) ? "commit" : "branch";
+  if (fetchError && kind === "branch") throw fetchError;
+  if (fetchError) {
+    console.warn(`Harness fetch failed; using cached immutable ${kind} ${ref} (${commit.slice(0, 12)}).`);
+  }
   const checkout = join(cacheRoot, "source", commit);
   let current = null;
   try { current = runGit(["rev-parse", "HEAD"], checkout); } catch {}
-  if (current !== commit) {
+  const recreateCheckout = process.platform === "win32" || current !== commit;
+  if (recreateCheckout) {
     await rm(checkout, { recursive: true, force: true });
     await mkdir(dirname(checkout), { recursive: true });
     runGit(["clone", "--no-checkout", mirror, checkout], root);
     runGit(["checkout", "--detach", commit], checkout);
   }
-  runGit(["reset", "--hard", commit], checkout);
-  runGit(["clean", "-ffdx"], checkout);
+  if (!recreateCheckout) {
+    runGit(["reset", "--hard", commit], checkout);
+    runGit(["clean", "-ffdx", "-q"], checkout, { capture: false });
+  }
   return { sourceRoot: checkout, repository, ref, commit, dirty: false, kind, mode: "remote" };
 }
 

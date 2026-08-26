@@ -110,10 +110,12 @@ corepack pnpm@11.7.0 runtime:sync --local /absolute/path/to/deepseek-harness
 
 `runtime:sync` 让 `HARNESS_REPOSITORY` 真正决定打包内容，而不只是修改来源说明：
 
-1. 获取 `HARNESS_REPOSITORY` 指定仓库的 `HARNESS_REF`。
+1. 获取 `HARNESS_REPOSITORY` 指定仓库的 `HARNESS_REF`。远端暂时不可用时，只有本地镜像已存在对应固定 tag 或 40 位 commit 才允许继续；分支引用、首次构建和缓存缺失仍会失败。
 2. 将 tag、分支或 ref 解析为不可变 commit。
 3. 按 Harness 约定构建桌面生产 Runtime 制品。
 4. 校验主包、CLI 入口、Web 工作台和桌面兼容契约。
+
+Runtime 内部依赖安装始终使用非交互模式，本机终端、Windows 虚拟机、Docker 和 GitHub Actions 执行同一套 pnpm 行为，不会等待目录清理确认。Windows 从本地 Git mirror 重建锁定提交的 checkout，避免 pnpm 目录链接干扰源码清理；该过程不重复下载远程仓库。
 5. 计算制品 SHA-256、依赖完整性和许可证信息。
 6. 自动生成 `target/generated/runtime-lock.json`。
 7. Runtime staging 只消费经过校验的锁定制品。
@@ -148,6 +150,8 @@ corepack pnpm@11.7.0 package:community
 4. 发布门禁、单元测试、端到端测试和 Runtime smoke。
 5. Tauri 原生打包。
 6. 安装包、完整性文件和构建信息生成。
+
+Windows 构建会按当前 Node 架构显式选择 `x86_64-pc-windows-msvc` 工具链，并通过系统 curl 按官方清单校验和获取 Rust、Cargo 与 Clippy 组件；不会复用虚拟机中其他架构的全局 Rustup 设置。
 
 打包脚本不得要求开发者预先手动同步配置。单独保留分步骤命令，方便开发阶段快速检查和定位错误：
 

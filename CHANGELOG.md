@@ -8,6 +8,11 @@ DeepSeek Desktop 的重要变化记录如下。
 - Windows 构建改为在真实短路径中执行，兼顾 pnpm 深层依赖路径与类型系统的一致性。
 - 新增与 GitHub 通用质量任务同源的 Docker 预检及本机原生发行预检，发布前可在 macOS 与 Windows 提前发现构建问题。
 - Runtime 远程源码缓存每次同步前恢复到锁定提交并清理旧生成物，避免历史构建污染后续安装包。
+- Runtime 远端暂时不可用时允许复用已验证的不可变 tag / commit 缓存，避免重复打包被短暂网络故障中断。
+- Windows Runtime 同步的 Git 操作按进程启用长路径支持，不修改用户全局配置也能清理深层依赖缓存。
+- Runtime 依赖同步统一使用非交互模式，避免本机或虚拟机打包因 pnpm 等待目录清理确认而中断。
+- Windows 每次从本地 Git mirror 重建锁定提交的干净 Runtime checkout，避开 pnpm 目录链接导致的 `git clean` 循环与 `ENOBUFS`；其他平台继续复用安全缓存。
+- Windows Rust 工具链显式绑定 x64 构建目标并使用系统 curl 下载组件，同时正确解析 Clippy 的官方清单包名，避免 ARM 虚拟机缓存、目标漂移和下载卡死。
 - Runtime 父进程守护改为确认桌面进程是否存活，不再因中间启动进程退出而误触发恢复。
 
 ## 0.1.0-community.12 - 2026-08-26

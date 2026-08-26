@@ -146,11 +146,10 @@ if (inheritedExecArgv.some(argument => /(?:parent-watch|locale-sync)\.cjs$/.test
   throw new Error(`desktop-only preloads leaked into child CLI argv: ${preloadBoundary.stdout}`);
 }
 
-const pnpmVersion = spawnSync(packageManager, ["--version"], {
+const pnpmVersion = spawnSync(node, [pnpmCli, "--version"], {
   cwd: smokeRoot,
   env: environment,
   encoding: "utf8",
-  shell: process.platform === "win32",
   windowsHide: true
 });
 const pnpmStdout = pnpmVersion.stdout?.trim() || "";
