@@ -156,9 +156,21 @@ fn desktop_about() -> DesktopAbout {
         runtime_version: env!("DEEPSEEK_DESKTOP_RUNTIME_VERSION"),
         runtime_commit: env!("DEEPSEEK_DESKTOP_RUNTIME_COMMIT"),
         node_version: env!("DEEPSEEK_DESKTOP_NODE_VERSION"),
+        authors: env!("DEEPSEEK_DESKTOP_APP_AUTHORS"),
+        repository: env!("DEEPSEEK_DESKTOP_APP_REPOSITORY"),
         channel: env!("DEEPSEEK_DESKTOP_RELEASE_CHANNEL"),
         signed_release: false,
     }
+}
+
+#[tauri::command]
+fn repository_open(app: tauri::AppHandle) -> DesktopResult<()> {
+    app.opener()
+        .open_url(
+            env!("DEEPSEEK_DESKTOP_APP_REPOSITORY"),
+            None::<&str>,
+        )
+        .map_err(|error| DesktopError::Other(error.to_string()))
 }
 
 #[tauri::command]
@@ -200,6 +212,16 @@ pub fn run() {
             },
         ))
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED
+                        | tauri_plugin_window_state::StateFlags::FULLSCREEN,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_menu_event(|app, event| match event.id().as_ref() {
             native_menu::WORKBENCH_MENU_ID => {
@@ -222,7 +244,7 @@ pub fn run() {
             }
             native_menu::DOCUMENTATION_MENU_ID => {
                 let _ = app.opener().open_url(
-                    "https://github.com/deepseek-desktop/deepseek-desktop#readme",
+                    concat!(env!("DEEPSEEK_DESKTOP_APP_REPOSITORY"), "#readme"),
                     None::<&str>,
                 );
             }
@@ -277,6 +299,7 @@ pub fn run() {
             settings_update,
             workspace_choose,
             desktop_about,
+            repository_open,
             update_check,
             diagnostics_export,
             logs_export

@@ -70,14 +70,24 @@ export async function getAbout(): Promise<DesktopAbout> {
   if (!inTauri()) {
     return {
       desktopVersion: appConfig.version,
-      runtimeVersion: appConfig.harness.ref.replace(/^dsh-v/u, ""),
+      runtimeVersion: appConfig.harness.ref.replace(/^dsh-v/u, "") || "auto",
       runtimeCommit: "development",
       nodeVersion: "24.16.0",
+      authors: appConfig.authors.join(", "),
+      repository: appConfig.repository,
       channel: "community",
       signedRelease: false
     };
   }
   return invoke<DesktopAbout>("desktop_about");
+}
+
+export async function openRepository(): Promise<void> {
+  if (!inTauri()) {
+    window.open(appConfig.repository, "_blank", "noopener,noreferrer");
+    return;
+  }
+  await invoke("repository_open");
 }
 
 export async function checkForUpdates(): Promise<UpdateStatus> {

@@ -25,6 +25,8 @@ export interface DesktopAbout {
   runtimeVersion: string;
   runtimeCommit: string;
   nodeVersion: string;
+  authors: string;
+  repository: string;
   channel: string;
   signedRelease: boolean;
 }

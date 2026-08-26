@@ -66,6 +66,10 @@ fn main() {
             .join(", "),
     );
     emit(
+        "DEEPSEEK_DESKTOP_APP_REPOSITORY",
+        required_string(&app, &["repository"]),
+    );
+    emit(
         "DEEPSEEK_DESKTOP_APP_IDENTIFIER",
         required_string(&app, &["identifier"]),
     );

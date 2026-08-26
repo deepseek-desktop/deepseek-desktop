@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import { appConfig } from "./app-config";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { chooseWorkspace, exportDiagnostics, exportLogs, openWorkbench, startRuntime } from "./desktop";
+import { chooseWorkspace, exportDiagnostics, exportLogs, openRepository, openWorkbench, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
@@ -34,6 +34,8 @@ vi.mock("./desktop", () => ({
     runtimeVersion: "0.1.1-rc.2",
     runtimeCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
     nodeVersion: "24.16.0",
+    authors: appConfig.authors.join(", "),
+    repository: appConfig.repository,
     channel: "community",
     signedRelease: false
   })),
@@ -41,6 +43,7 @@ vi.mock("./desktop", () => ({
   getSettings: vi.fn(async () => ({ ...settings })),
   onRuntimeStatus: vi.fn(async () => () => undefined),
   onDesktopSurface: vi.fn(async () => () => undefined),
+  openRepository: vi.fn(),
   openWorkbench: vi.fn(),
   saveSettings: vi.fn(async value => value),
   startRuntime: vi.fn(),
@@ -164,5 +167,20 @@ describe(`${appConfig.productName} shell`, () => {
 
     await wrapper.findAll("button").find(button => button.text().includes("开始使用"))?.trigger("click");
     expect(wrapper.text()).not.toContain("/tmp/dsh-diagnostics.json");
+  });
+
+  it("shows the configured author and opens the project repository", async () => {
+    settings.onboardingCompleted = true;
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    await wrapper.findAll("button").find(button => button.text().includes("关于"))?.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(appConfig.authors.join(", "));
+    const repository = wrapper.get(".repository-link");
+    expect(repository.text()).toBe(appConfig.repository);
+    await repository.trigger("click");
+    expect(openRepository).toHaveBeenCalledOnce();
   });
 });

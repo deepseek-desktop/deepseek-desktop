@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { DEFAULT_CONFIG, loadBuildConfig, resolveBuildValues } from "../lib/build-config.mjs";
+import { DEFAULT_CONFIG, loadBuildConfig, normalizePublicRepository, resolveBuildValues } from "../lib/build-config.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -12,7 +12,9 @@ test("uses built-in defaults without an env file", async () => {
   const config = await loadBuildConfig(root, { environment: {}, envFile: resolve(root, "target/missing.env") });
   assert.equal(config.productName, DEFAULT_CONFIG.DESKTOP_APP_NAME);
   assert.equal(config.version, DEFAULT_CONFIG.DESKTOP_APP_VERSION);
+  assert.equal(config.repository, "https://github.com/deepseek-desktop/deepseek-desktop");
   assert.equal(config.harness.repository, DEFAULT_CONFIG.HARNESS_REPOSITORY);
+  assert.equal(config.harness.ref, "");
 });
 
 test("environment values override env file values", () => {
@@ -34,6 +36,7 @@ test("loads every declared value from an env file before applying environment ov
     "DESKTOP_APP_SLUG=custom-desktop",
     "DESKTOP_APP_DESCRIPTION=Custom agent workspace",
     "DESKTOP_APP_AUTHORS=Alice, Bob",
+    "DESKTOP_APP_REPOSITORY=https://git.example.com/team/desktop.git",
     "DESKTOP_APP_ICON=src-tauri/icons/icon.png",
     "HARNESS_REPOSITORY=git@github.com:example/deepseek-harness.git",
     "HARNESS_REF=release-candidate"
@@ -48,6 +51,7 @@ test("loads every declared value from an env file before applying environment ov
     assert.equal(config.identifier, "example.custom.desktop");
     assert.equal(config.slug, "custom-desktop");
     assert.deepEqual(config.authors, ["Alice", "Bob"]);
+    assert.equal(config.repository, "https://git.example.com/team/desktop");
     assert.equal(config.harness.repository, "git@github.com:example/deepseek-harness.git");
     assert.equal(config.harness.ref, "release-candidate");
   } finally {
@@ -55,9 +59,32 @@ test("loads every declared value from an env file before applying environment ov
   }
 });
 
-test("rejects unknown and empty declared values", () => {
+test("rejects unknown and required empty declared values", () => {
   assert.throws(() => resolveBuildValues({ fileValues: { DESKTOP_APP_NANE: "typo" } }), /unsupported build configuration/u);
-  assert.throws(() => resolveBuildValues({ environment: { HARNESS_REF: " " } }), /must not be empty/u);
+  assert.throws(() => resolveBuildValues({ environment: { DESKTOP_APP_NAME: " " } }), /must not be empty/u);
+});
+
+test("accepts empty Harness ref and Desktop repository for automatic resolution", () => {
+  const values = resolveBuildValues({
+    environment: { HARNESS_REF: " ", DESKTOP_APP_REPOSITORY: "" }
+  });
+  assert.equal(values.HARNESS_REF, "");
+  assert.equal(values.DESKTOP_APP_REPOSITORY, "");
+});
+
+test("normalizes common Git remotes into browser repository URLs", () => {
+  assert.equal(
+    normalizePublicRepository("git@github.com:deepseek-desktop/deepseek-desktop.git"),
+    "https://github.com/deepseek-desktop/deepseek-desktop"
+  );
+  assert.equal(
+    normalizePublicRepository("git+https://github.com/deepseek-desktop/deepseek-desktop.git"),
+    "https://github.com/deepseek-desktop/deepseek-desktop"
+  );
+  assert.equal(
+    normalizePublicRepository("ssh://git@github.com/deepseek-desktop/deepseek-desktop.git"),
+    "https://github.com/deepseek-desktop/deepseek-desktop"
+  );
 });
 
 test("validates SemVer, identifier, slug, and icon paths", async () => {
@@ -90,4 +117,8 @@ test("rejects repository URLs containing embedded credentials", async () => {
     environment: { HARNESS_REPOSITORY: "https://token@example.com/deepseek-harness.git" },
     envFile: resolve(root, "target/missing.env")
   }), /must not contain embedded credentials/u);
+  assert.throws(
+    () => normalizePublicRepository("https://token@example.com/deepseek-desktop.git"),
+    /must not contain embedded credentials/u
+  );
 });

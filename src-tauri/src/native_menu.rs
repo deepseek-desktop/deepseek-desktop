@@ -10,6 +10,7 @@ pub const DOCUMENTATION_MENU_ID: &str = "desktop-documentation";
 const APP_NAME: &str = env!("DEEPSEEK_DESKTOP_APP_NAME");
 const APP_VERSION: &str = env!("DEEPSEEK_DESKTOP_APP_VERSION");
 const APP_COPYRIGHT: &str = env!("DEEPSEEK_DESKTOP_APP_COPYRIGHT");
+const APP_AUTHORS: &str = env!("DEEPSEEK_DESKTOP_APP_AUTHORS");
 
 #[derive(Clone, Copy)]
 struct MenuLabels {
@@ -43,6 +44,7 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
     let about = AboutMetadataBuilder::new()
         .name(Some(APP_NAME))
         .version(Some(APP_VERSION))
+        .authors(Some(APP_AUTHORS.split(", ").map(str::to_owned).collect()))
         .copyright(Some(APP_COPYRIGHT))
         .license(Some("Apache-2.0"))
         .build();
@@ -105,6 +107,7 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
             AboutMetadataBuilder::new()
                 .name(Some(APP_NAME))
                 .version(Some(APP_VERSION))
+                .authors(Some(APP_AUTHORS.split(", ").map(str::to_owned).collect()))
                 .copyright(Some(APP_COPYRIGHT))
                 .license(Some("Apache-2.0"))
                 .build(),

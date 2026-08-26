@@ -14,6 +14,7 @@ import {
   onDesktopSurface,
   onRuntimeStatus,
   openWorkbench,
+  openRepository,
   saveSettings,
   startRuntime,
   stopRuntime
@@ -186,6 +187,14 @@ async function checkUpdate(): Promise<void> {
   notice.value = updateDescription.value;
 }
 
+async function visitRepository(): Promise<void> {
+  try {
+    await openRepository();
+  } catch {
+    notice.value = t("error.unexpected");
+  }
+}
+
 onMounted(async () => {
   [settings.value, runtime.value, about.value] = await Promise.all([
     getSettings(),
@@ -351,6 +360,11 @@ onBeforeUnmount(() => {
             <div><span>{{ t("about.runtimeVersion") }}</span><strong>{{ about.runtimeVersion }}</strong></div>
             <div><span>{{ t("about.nodeVersion") }}</span><strong>{{ about.nodeVersion }}</strong></div>
             <div><span>{{ t("about.channel") }}</span><strong>{{ aboutChannel }}</strong></div>
+            <div><span>{{ t("about.author") }}</span><strong>{{ about.authors }}</strong></div>
+            <div>
+              <span>{{ t("about.repository") }}</span>
+              <button class="repository-link" type="button" @click="visitRepository">{{ about.repository }}</button>
+            </div>
           </div>
         </template>
 

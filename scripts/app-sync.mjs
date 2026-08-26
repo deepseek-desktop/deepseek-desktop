@@ -59,13 +59,13 @@ try {
   let runtimeSource = {
     schemaVersion: 1,
     repository: config.harness.repository,
-    ref: config.harness.ref
+    requestedRef: config.harness.ref || null
   };
   if (!check) {
     try {
       const existing = JSON.parse(await readFile(join(outputRoot, "runtime-source.json"), "utf8"));
       if (existing.repository === config.harness.repository
-        && (existing.requestedRef === config.harness.ref || existing.ref === config.harness.ref)
+        && existing.requestedRef === (config.harness.ref || null)
         && existing.resolvedCommit) {
         runtimeSource = existing;
       }

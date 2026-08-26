@@ -1,5 +1,6 @@
 import { parseEnv } from "node:util";
 import { readFile, stat } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 
 export const CONFIG_KEYS = Object.freeze([
@@ -9,6 +10,7 @@ export const CONFIG_KEYS = Object.freeze([
   "DESKTOP_APP_SLUG",
   "DESKTOP_APP_DESCRIPTION",
   "DESKTOP_APP_AUTHORS",
+  "DESKTOP_APP_REPOSITORY",
   "DESKTOP_APP_ICON",
   "HARNESS_REPOSITORY",
   "HARNESS_REF"
@@ -21,10 +23,13 @@ export const DEFAULT_CONFIG = Object.freeze({
   DESKTOP_APP_SLUG: "deepseek-desktop",
   DESKTOP_APP_DESCRIPTION: "Local AI agent workspace",
   DESKTOP_APP_AUTHORS: "DeepSeek Desktop Contributors",
+  DESKTOP_APP_REPOSITORY: "",
   DESKTOP_APP_ICON: "src-tauri/icons/icon.png",
   HARNESS_REPOSITORY: "https://github.com/deepseek-desktop/deepseek-harness.git",
-  HARNESS_REF: "dsh-v0.1.1-rc.2"
+  HARNESS_REF: ""
 });
+
+const OPTIONAL_EMPTY_KEYS = new Set(["DESKTOP_APP_REPOSITORY", "HARNESS_REF"]);
 
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const identifierPattern = /^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*)+$/u;
@@ -72,15 +77,55 @@ async function inspectPng(path) {
   return { width, height };
 }
 
-function normalizeRepository(value) {
+function normalizeRepository(value, name = "HARNESS_REPOSITORY") {
   const repository = value.trim();
   if (/^(?:https?|ssh|git):\/\//u.test(repository)) {
     const url = new URL(repository);
-    if (url.username || url.password) throw new Error("HARNESS_REPOSITORY must not contain embedded credentials");
+    if (url.username || url.password) throw new Error(`${name} must not contain embedded credentials`);
     return repository;
   }
   if (/^[\w.-]+@[\w.-]+:.+/u.test(repository)) return repository;
-  throw new Error("HARNESS_REPOSITORY must be an HTTP(S), SSH, or Git repository URL");
+  throw new Error(`${name} must be an HTTP(S), SSH, or Git repository URL`);
+}
+
+export function normalizePublicRepository(value) {
+  let publicUrl = value.trim().replace(/^git\+/u, "");
+  const scpMatch = /^[^@/\s]+@([^:]+):(.+)$/u.exec(publicUrl);
+  if (scpMatch) publicUrl = `https://${scpMatch[1]}/${scpMatch[2]}`;
+  if (publicUrl.startsWith("ssh://")) {
+    const url = new URL(publicUrl);
+    if (url.password) throw new Error("DESKTOP_APP_REPOSITORY must not contain embedded credentials");
+    publicUrl = `https://${url.hostname}${url.pathname}`;
+  }
+  const url = new URL(publicUrl);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("DESKTOP_APP_REPOSITORY must resolve to a public HTTP(S) URL");
+  }
+  if (url.username || url.password) throw new Error("DESKTOP_APP_REPOSITORY must not contain embedded credentials");
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  url.pathname = url.pathname.replace(/\.git\/?$/u, "").replace(/\/$/u, "");
+  return url.toString().replace(/\/$/u, "");
+}
+
+async function resolveDesktopRepository(root, configured) {
+  if (configured) return normalizePublicRepository(configured);
+  const remote = spawnSync("git", ["remote", "get-url", "origin"], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (remote.status === 0 && remote.stdout.trim()) {
+    return normalizePublicRepository(remote.stdout.trim());
+  }
+  try {
+    const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
+    const repository = typeof manifest.repository === "string" ? manifest.repository : manifest.repository?.url;
+    if (repository) return normalizePublicRepository(repository);
+  } catch {}
+  return "https://github.com/deepseek-desktop/deepseek-desktop";
 }
 
 export function resolveBuildValues({ fileValues = {}, environment = {} } = {}) {
@@ -91,7 +136,8 @@ export function resolveBuildValues({ fileValues = {}, environment = {} } = {}) {
     if (Object.hasOwn(environment, key)) values[key] = environment[key];
     else if (Object.hasOwn(fileValues, key)) values[key] = fileValues[key];
     else values[key] = DEFAULT_CONFIG[key];
-    if (typeof values[key] !== "string" || !values[key].trim()) throw new Error(`${key} must not be empty`);
+    if (typeof values[key] !== "string") throw new Error(`${key} must be a string`);
+    if (!values[key].trim() && !OPTIONAL_EMPTY_KEYS.has(key)) throw new Error(`${key} must not be empty`);
     values[key] = values[key].trim();
   }
   return values;
@@ -117,19 +163,20 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
   const authors = values.DESKTOP_APP_AUTHORS.split(",").map(value => value.trim()).filter(Boolean);
   if (authors.length === 0) throw new Error("DESKTOP_APP_AUTHORS must contain at least one author");
   authors.forEach(author => assertText("DESKTOP_APP_AUTHORS", author));
+  const desktopRepository = await resolveDesktopRepository(root, values.DESKTOP_APP_REPOSITORY);
   const iconSource = normalizeRelativePath(values.DESKTOP_APP_ICON);
   const icon = await inspectPng(resolve(root, iconSource));
   const repository = normalizeRepository(values.HARNESS_REPOSITORY);
-  assertText("HARNESS_REF", values.HARNESS_REF);
   const year = new Date().getUTCFullYear();
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
     productName: values.DESKTOP_APP_NAME,
     version: values.DESKTOP_APP_VERSION,
     identifier: values.DESKTOP_APP_IDENTIFIER,
     slug: values.DESKTOP_APP_SLUG,
     description: values.DESKTOP_APP_DESCRIPTION,
     authors,
+    repository: desktopRepository,
     copyright: `Copyright ${year} ${authors.join(", ")}`,
     iconSource,
     icon,

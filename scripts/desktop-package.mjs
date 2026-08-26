@@ -125,12 +125,14 @@ await writeFile(buildInfoPath, `${JSON.stringify({
     identifier: config.identifier,
     slug: config.slug,
     description: config.description,
-    authors: config.authors
+    authors: config.authors,
+    repository: config.repository
   },
   desktop: { commit: git(["rev-parse", "HEAD"]), dirty },
   harness: {
     repository: runtimeSource.repository,
     requestedRef: runtimeSource.requestedRef,
+    resolvedRef: runtimeSource.resolvedRef,
     commit: runtimeSource.resolvedCommit,
     packageName: runtimeSource.packageName,
     version: runtime.runtime.version,

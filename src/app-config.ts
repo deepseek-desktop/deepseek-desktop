@@ -6,6 +6,7 @@ export interface AppConfig {
   slug: string;
   description: string;
   authors: string[];
+  repository: string;
   copyright: string;
   iconSource: string;
   harness: {

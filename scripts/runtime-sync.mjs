@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import process from "node:process";
 
 import { loadBuildConfig } from "./lib/build-config.mjs";
+import { selectLatestHarnessTag } from "./lib/harness-ref.mjs";
 import { findInstalledPackages } from "./lib/installed-packages.mjs";
 import { applyPackagePatch } from "./lib/package-patch.mjs";
 
@@ -380,20 +381,24 @@ async function prepareRemote(repository, ref) {
   } catch (error) {
     fetchError = error;
   }
+  const requestedRef = ref.trim() || null;
+  const resolvedRef = requestedRef || selectLatestHarnessTag(
+    runGit(["tag", "--list"], mirror).split("\n").filter(Boolean)
+  );
   let commit;
-  const candidates = [`refs/tags/${ref}^{commit}`, `refs/remotes/origin/${ref}^{commit}`, `${ref}^{commit}`];
+  const candidates = [`refs/tags/${resolvedRef}^{commit}`, `refs/remotes/origin/${resolvedRef}^{commit}`, `${resolvedRef}^{commit}`];
   for (const candidate of candidates) {
     try {
       commit = runGit(["rev-parse", "--verify", candidate], mirror);
       break;
     } catch {}
   }
-  if (!commit || !/^[0-9a-f]{40}$/u.test(commit)) throw new Error(`HARNESS_REF could not be resolved: ${ref}`);
-  const tag = runGit(["tag", "--points-at", commit], mirror).split("\n").find(value => value === ref) || null;
-  const kind = tag ? "tag" : /^[0-9a-f]{40}$/u.test(ref) ? "commit" : "branch";
+  if (!commit || !/^[0-9a-f]{40}$/u.test(commit)) throw new Error(`HARNESS_REF could not be resolved: ${resolvedRef}`);
+  const tag = runGit(["tag", "--points-at", commit], mirror).split("\n").find(value => value === resolvedRef) || null;
+  const kind = tag ? "tag" : /^[0-9a-f]{40}$/u.test(resolvedRef) ? "commit" : "branch";
   if (fetchError && kind === "branch") throw fetchError;
   if (fetchError) {
-    console.warn(`Harness fetch failed; using cached immutable ${kind} ${ref} (${commit.slice(0, 12)}).`);
+    console.warn(`Harness fetch failed; using cached immutable ${kind} ${resolvedRef} (${commit.slice(0, 12)}).`);
   }
   const checkout = join(cacheRoot, "source", commit);
   let current = null;
@@ -409,7 +414,7 @@ async function prepareRemote(repository, ref) {
     runGit(["reset", "--hard", commit], checkout);
     runGit(["clean", "-ffdx", "-q"], checkout, { capture: false });
   }
-  return { sourceRoot: checkout, repository, ref, commit, dirty: false, kind, mode: "remote" };
+  return { sourceRoot: checkout, repository, requestedRef, ref: resolvedRef, commit, dirty: false, kind, mode: "remote" };
 }
 
 async function prepareLocal(path, ref) {
@@ -419,7 +424,7 @@ async function prepareLocal(path, ref) {
   const repository = (() => {
     try { return runGit(["remote", "get-url", "origin"], sourceRoot); } catch { return sourceRoot; }
   })();
-  return { sourceRoot, repository, ref, commit, dirty, kind: "local", mode: "local" };
+  return { sourceRoot, repository, requestedRef: ref.trim() || null, ref: ref.trim() || commit, commit, dirty, kind: "local", mode: "local" };
 }
 
 async function applyDesktopPatches(moduleRoots) {
@@ -537,7 +542,8 @@ try {
     await writeJson(join(generatedRoot, "runtime-source.json"), {
       schemaVersion: 1,
       repository: source.repository,
-      requestedRef: source.ref,
+      requestedRef: source.requestedRef,
+      resolvedRef: source.ref,
       resolvedCommit: source.commit,
       sourceMode: source.mode,
       sourceKind: source.kind,

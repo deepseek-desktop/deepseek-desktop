@@ -61,6 +61,8 @@ pub struct DesktopAbout {
     pub runtime_version: &'static str,
     pub runtime_commit: &'static str,
     pub node_version: &'static str,
+    pub authors: &'static str,
+    pub repository: &'static str,
     pub channel: &'static str,
     pub signed_release: bool,
 }

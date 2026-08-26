@@ -102,6 +102,18 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
 .plain-list div { min-height: 54px; display: grid; grid-template-columns: 180px 1fr; align-items: center; gap: 24px; padding: 0 20px; border-bottom: 1px solid #edf1f2; }
 .plain-list div:last-child { border-bottom: 0; }
 .plain-list span { color: #7a8891; }
+.repository-link {
+  min-width: 0;
+  padding: 0;
+  color: #0e6f62;
+  background: transparent;
+  border: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.repository-link:hover { color: #094f47; }
 
 .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 34px; }
 .button { min-width: 120px; height: 42px; padding: 0 18px; border: 1px solid transparent; border-radius: 6px; font-weight: 700; }
@@ -119,4 +131,5 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
   .feature-grid div, .model-step, .workspace-picker, .runtime-panel, .plain-list { background: #182226; border-color: #2c3a3e; }
   .locale-select, .button.secondary { color: #e4ebee; background: #182226; border-color: #3a484d; }
   .plain-list div { border-color: #273337; }
+  .repository-link { color: #5bc8b5; }
 }
