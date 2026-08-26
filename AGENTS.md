@@ -6,10 +6,25 @@
 
 ## 权威来源
 
+- `.ai/README.md` 是 Agent 项目记忆入口；`.ai/context.md`、`.ai/todo.md` 和相关决策记录用于跨任务恢复上下文。
 - `runtime/toolchain-lock.json` 记录稳定工具链、Node 制品、原生依赖、桌面补丁和发布允许的 Runtime 固定来源；`target/generated/runtime-lock.json` 记录本次构建解析出的 Harness 仓库、commit、CLI 入口和 Runtime 哈希。
 - `src-tauri/` 负责原生生命周期、加密凭据库、诊断、设置和更新边界。
 - `src/` 负责 Vue 桌面 Shell 和类型化 IPC 契约。
 - `README.md`、`docs/`、`SECURITY.md` 和 `CONTRIBUTING.md` 定义公开行为与协作规则。
+
+代码、Git 状态和实际构建结果高于 `.ai/` 记忆；发现不一致时应先核对源码，再同步修正记忆。
+
+## 会话启动
+
+每个新任务至少执行并读取：
+
+1. `git status --short --branch`
+2. `AGENTS.md`
+3. `.ai/README.md`
+4. `.ai/context.md`
+5. `.ai/todo.md`
+
+涉及架构、构建、凭据、Runtime 或发布时，再读取 `.ai/architecture.md`、`.ai/conventions.md`、相关 `.ai/decisions/` 与 `.ai/memory/verification.md`。不要依靠历史对话代替仓库事实。
 
 ## 修改规则
 
@@ -19,6 +34,7 @@
 - 禁止增加明文凭据降级存储。
 - 未经真实验证，不得宣称已完成签名、公证、平台支持或外部 Provider 兼容。
 - 修改应聚焦；除非有意升级并同步更新校验和、许可证、SBOM 预期、测试和文档，否则保持锁定 Runtime 不变。
+- 完成影响架构边界、公共配置、验证基线或后续工作的重要变更后，同步维护 `.ai/`；不把执行流水和临时日志写入项目记忆。
 
 ## 验证
 
