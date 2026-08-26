@@ -136,7 +136,11 @@ jobs:
           publish_dir="release-assets/publish"
           mkdir -p "$publish_dir"
           mapfile -d '' assets < <(
-            find release-assets -type f ! -path "$publish_dir/*" ! -name SHA256SUMS -print0 | sort -z
+            find release-assets -type f \
+              ! -path "$publish_dir/*" \
+              ! -name 'BUILD-INFO.*.json' \
+              ! -name SHA256SUMS \
+              -print0 | sort -z
           )
           test "${#assets[@]}" -gt 0
 
