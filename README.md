@@ -39,10 +39,17 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 3. 在再次出现的确认框中选择“打开”。完成一次确认后，后续可正常双击启动。
 4. 如果确认框中仍没有“打开”，先点“完成”，再进入“系统设置 → 隐私与安全”，在“安全性”区域找到被阻止的 DeepSeek Desktop，点击“仍要打开”并完成系统验证。
 
-**开发者：**确认安装包来源和 SHA-256 无误后，可仅移除该应用的下载隔离标记，再启动应用：
+**开发者：**确认安装包来源和 SHA-256 无误后，按以下两步操作。
+
+1. 仅移除 DeepSeek Desktop 的下载隔离标记：
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/DeepSeek Desktop.app"
+```
+
+2. 启动 DeepSeek Desktop：
+
+```bash
 open "/Applications/DeepSeek Desktop.app"
 ```
 
