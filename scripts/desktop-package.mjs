@@ -3,6 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promi
 import { spawnSync } from "node:child_process";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import process from "node:process";
+import { createMacDmg } from "./macos-dmg.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -12,8 +13,8 @@ if (!pnpmVersion) throw new Error("packageManager must declare a pinned pnpm ver
 if (!new Set(["local", "community", "stable"]).has(channel)) throw new Error(`unsupported release channel ${channel}`);
 
 const targets = {
-  "darwin-arm64": { triple: "aarch64-apple-darwin", bundles: "dmg", extensions: [".dmg"], expected: 1 },
-  "darwin-x64": { triple: "x86_64-apple-darwin", bundles: "dmg", extensions: [".dmg"], expected: 1 },
+  "darwin-arm64": { triple: "aarch64-apple-darwin", bundles: "app", extensions: [".dmg"], expected: 1, dmgArch: "aarch64" },
+  "darwin-x64": { triple: "x86_64-apple-darwin", bundles: "app", extensions: [".dmg"], expected: 1, dmgArch: "x64" },
   "win32-x64": { triple: "x86_64-pc-windows-msvc", bundles: "nsis", extensions: [".exe"], expected: 1 },
   "linux-x64": { triple: "x86_64-unknown-linux-gnu", bundles: "appimage,deb", extensions: [".AppImage", ".deb"], expected: 2 }
 };
@@ -90,6 +91,14 @@ const rustFlags = [process.env.RUSTFLAGS, `--remap-path-prefix=${root}=.`].filte
 run(process.execPath, ["scripts/with-rust.mjs", "tauri", "build", "--config", "target/generated/tauri.conf.json", "--bundles", target.bundles], {
   env: { RUSTFLAGS: rustFlags }
 });
+if (target.dmgArch) {
+  await createMacDmg({
+    bundleRoot,
+    productName: config.productName,
+    version: config.version,
+    architecture: target.dmgArch
+  });
+}
 
 const artifacts = (await filesUnder(bundleRoot))
   .filter(path => target.extensions.some(extension => path.endsWith(extension)))
