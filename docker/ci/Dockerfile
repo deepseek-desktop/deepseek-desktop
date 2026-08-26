@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright:v1.57.0-noble
+FROM mcr.microsoft.com/playwright:v1.62.1-noble
 
 ARG NODE_VERSION=24.16.0
 ARG TARGETARCH

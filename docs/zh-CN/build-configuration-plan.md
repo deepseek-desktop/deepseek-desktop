@@ -144,7 +144,7 @@ corepack pnpm@11.7.0 package:community
 
 `desktop:package` 按顺序自动执行：
 
-1. 安装固定工具链和依赖。
+1. 冻结安装固定工具链、项目依赖和锁定版本的 Chromium Headless Shell；本地浏览器缓存默认隔离在 `target/playwright-browsers/`。
 2. `app:sync`。
 3. `runtime:sync`。
 4. 发布门禁、单元测试、端到端测试和 Runtime smoke。

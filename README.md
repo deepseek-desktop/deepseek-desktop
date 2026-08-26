@@ -124,7 +124,7 @@ corepack pnpm@11.7.0 preflight:docker
 corepack pnpm@11.7.0 package:community
 ```
 
-该命令会安装固定依赖，执行应用配置与 Runtime 同步、社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，并构建当前操作系统与架构的安装包。最终文件写入 `release/<version>/<target>/`，同时生成目标平台对应的 `BUILD-INFO.<target>.json` 和 `SHA256SUMS`。Docker 复用版本锁定的 Playwright 镜像浏览器，GitHub 纯净构建机则安装锁定版本所需的 Chromium Headless Shell，并复用平台级缓存。
+该命令会安装固定依赖及锁定版本所需的 Chromium Headless Shell，执行应用配置与 Runtime 同步、社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，并构建当前操作系统与架构的安装包。最终文件写入 `release/<version>/<target>/`，同时生成目标平台对应的 `BUILD-INFO.<target>.json` 和 `SHA256SUMS`。本地浏览器缓存默认位于 `target/playwright-browsers/`；Docker 复用版本锁定的 Playwright 镜像浏览器，GitHub 纯净构建机复用平台级浏览器缓存，三者均由同一打包编排负责依赖准备。
 
 制作不要求干净 Git 工作区的本地定制包时使用：
 

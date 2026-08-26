@@ -19,6 +19,8 @@ const targets = {
 };
 const target = targets[`${process.platform}-${process.arch}`];
 if (!target) throw new Error(`unsupported packaging host ${process.platform}-${process.arch}`);
+process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH?.trim()
+  || join(root, "target", "playwright-browsers");
 
 function run(command, args, options = {}) {
   console.log(`\n> ${command} ${args.join(" ")}`);
@@ -71,6 +73,7 @@ async function assertNoEnvironmentFiles(directory) {
 }
 
 runPnpm(["install", "--frozen-lockfile"]);
+runPnpm(["playwright:install"]);
 runPnpm(["app:sync"]);
 runPnpm(["runtime:sync"]);
 runPnpm(["release:check", channel]);
