@@ -43,7 +43,7 @@ Desktop Shell 完整提供简体中文、繁体中文和英文。当前锁定 Ru
 
 桌面端只创建一个操作系统窗口。Runtime 就绪后，受管工作台作为无 Tauri 权限的隔离子 WebView 覆盖常驻 Shell 并占满窗口内容区，不再保留重复的 Logo、状态和管理按钮。通过系统原生“视图”菜单可在“工作台”（`Command/Ctrl+1`）和“桌面管理”（`Command/Ctrl+2`）之间切换；运行状态、诊断、更新和关于页面都在原窗口内显示。应用退出时会保存窗口位置、尺寸、最大化和全屏状态，再次打开时优先恢复到上次使用的显示器；外接屏幕暂时断开时由系统窗口管理决定可见位置。工作台输入框和可编辑区域会关闭系统拼写检查、自动纠错、自动首字母大写和写作建议，确保 Provider ID、API 地址、模型名、代码和普通对话均按原文输入，不被 WebView 擅自替换。该策略只设置浏览器输入属性，不读取或改写输入值。
 
-关于页面会显示构建版本、Runtime、作者和项目仓库。开发者可以通过 `.env` 的 `DESKTOP_APP_AUTHORS` 自定义作者，通过 `DESKTOP_APP_REPOSITORY` 自定义公开仓库地址；仓库地址留空时自动读取当前 Git `origin`，无法读取时使用项目内置地址。
+关于页面会显示构建版本、Runtime、作者和项目仓库。开发者可以通过 `.env` 的 `DESKTOP_APP_AUTHORS` 自定义作者，通过 `DESKTOP_APP_REPOSITORY` 自定义公开仓库地址；仓库地址留空时，GitHub Actions 使用当前工作流仓库地址，本地开发优先读取公开的 Git `origin`，本机路径类型的 `origin` 会回退到 `package.json` 或项目内置地址。
 
 ## Runtime 生命周期
 

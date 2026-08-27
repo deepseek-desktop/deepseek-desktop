@@ -118,15 +118,32 @@ export function normalizePublicRepository(value) {
   return url.toString().replace(/\/$/u, "");
 }
 
-async function resolveDesktopRepository(root, configured) {
+function resolveGitHubRepository(environment) {
+  if (environment.GITHUB_ACTIONS !== "true") return "";
+  const server = environment.GITHUB_SERVER_URL?.trim();
+  const repository = environment.GITHUB_REPOSITORY?.trim();
+  if (!server || !repository) {
+    throw new Error("GitHub Actions repository metadata is incomplete");
+  }
+  if (!/^[^/\s]+\/[^/\s]+$/u.test(repository)) {
+    throw new Error("GITHUB_REPOSITORY must use owner/repository notation");
+  }
+  return normalizePublicRepository(`${server.replace(/\/$/u, "")}/${repository}`);
+}
+
+export async function resolveDesktopRepository(root, configured, environment = {}) {
   if (configured) return normalizePublicRepository(configured);
+  const githubRepository = resolveGitHubRepository(environment);
+  if (githubRepository) return githubRepository;
   const remote = spawnSync("git", ["remote", "get-url", "origin"], {
     cwd: root,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
   });
   if (remote.status === 0 && remote.stdout.trim()) {
-    return normalizePublicRepository(remote.stdout.trim());
+    try {
+      return normalizePublicRepository(remote.stdout.trim());
+    } catch {}
   }
   try {
     const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
@@ -171,7 +188,7 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
   const authors = values.DESKTOP_APP_AUTHORS.split(",").map(value => value.trim()).filter(Boolean);
   if (authors.length === 0) throw new Error("DESKTOP_APP_AUTHORS must contain at least one author");
   authors.forEach(author => assertText("DESKTOP_APP_AUTHORS", author));
-  const desktopRepository = await resolveDesktopRepository(root, values.DESKTOP_APP_REPOSITORY);
+  const desktopRepository = await resolveDesktopRepository(root, values.DESKTOP_APP_REPOSITORY, environment);
   const iconSource = normalizeRelativePath(values.DESKTOP_APP_ICON);
   const icon = await inspectPng(resolve(root, iconSource));
   const repository = normalizeRepository(values.RUNTIME_REPOSITORY);

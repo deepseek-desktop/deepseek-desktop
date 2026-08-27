@@ -4,6 +4,7 @@
 
 ## 主要变化
 
+- 修复 Windows 短路径构建副本的仓库地址自动解析，GitHub Actions 始终使用当前工作流仓库链接
 - 发行标签支持完整 SemVer 的带 `v` 和无 `v` 两种格式，并在构建入口严格校验
 - Runtime 来源和 Rust 工具链增加不可变提交与 SHA-256 校验，公开发行不会因移动 tag 或本机缓存发生漂移
 - Runtime 构建变量统一为 `RUNTIME_REPOSITORY` / `RUNTIME_REF`，本地开发可自动跟随最新 SemVer，社区发行保持审计锁定

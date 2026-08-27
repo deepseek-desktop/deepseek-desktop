@@ -8,6 +8,7 @@
 - `RUNTIME_REF` 本地为空时可解析最新 SemVer；社区版和正式发布必须命中 `runtime/toolchain-lock.json` 的审计 commit。
 - 默认和示例版本使用 `1.0.0`，真实版本由发布流程注入，避免文档散落维护发行号。
 - 发行标签接受带或不带 `v` 前缀的完整 SemVer，例如 `1.0.0`、`v1.0.0` 和 `v0.1.0-community.13`；工作流入口必须执行严格 SemVer 校验。
+- GitHub Actions 的应用仓库地址必须来自工作流仓库上下文，不能使用 Windows 短路径副本或其他本地 clone 的文件型 `origin`。
 
 ## 实现
 

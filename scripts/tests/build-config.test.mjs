@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { DEFAULT_CONFIG, loadBuildConfig, normalizePublicRepository, resolveBuildValues } from "../lib/build-config.mjs";
+import {
+  DEFAULT_CONFIG,
+  loadBuildConfig,
+  normalizePublicRepository,
+  resolveBuildValues,
+  resolveDesktopRepository
+} from "../lib/build-config.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -103,6 +109,42 @@ test("normalizes common Git remotes into browser repository URLs", () => {
     normalizePublicRepository("ssh://git@github.com/deepseek-desktop/deepseek-desktop.git"),
     "https://github.com/deepseek-desktop/deepseek-desktop"
   );
+});
+
+test("uses GitHub Actions repository metadata before a temporary clone origin", async () => {
+  const config = await loadBuildConfig(root, {
+    environment: {
+      GITHUB_ACTIONS: "true",
+      GITHUB_SERVER_URL: "https://github.example.com/",
+      GITHUB_REPOSITORY: "desktop/deepseek-desktop"
+    },
+    envFile: resolve(root, "target/missing.env")
+  });
+  assert.equal(config.repository, "https://github.example.com/desktop/deepseek-desktop");
+});
+
+test("ignores a local clone origin and falls back to the manifest repository", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-desktop-local-origin-"));
+  await writeFile(join(directory, "package.json"), JSON.stringify({
+    repository: "git+https://github.com/example/desktop.git"
+  }));
+  const gitDirectory = join(directory, ".git");
+  await mkdir(gitDirectory);
+  await writeFile(join(gitDirectory, "config"), [
+    "[core]",
+    "\trepositoryformatversion = 0",
+    "\tbare = false",
+    "[remote \"origin\"]",
+    `\turl = ${join(directory, "source")}`
+  ].join("\n"));
+  try {
+    assert.equal(
+      await resolveDesktopRepository(directory, "", {}),
+      "https://github.com/example/desktop"
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("validates SemVer, identifier, slug, and icon paths", async () => {

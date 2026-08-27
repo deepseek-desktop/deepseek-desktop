@@ -2,8 +2,9 @@
 
 DeepSeek Desktop 的重要变化记录如下。
 
-## 0.1.0-community.14 - 2026-08-27
+## 0.1.0-community.15 - 2026-08-27
 
+- 修复 Windows 短路径构建副本把本机 Git `origin` 误当公开仓库地址的问题；GitHub Actions 现在使用当前工作流仓库上下文，本地文件型 `origin` 会安全回退。
 - 发行工作流接受带或不带 `v` 前缀的完整 SemVer 标签，并在构建入口与发布门禁中执行严格版本匹配。
 - Runtime 构建变量统一为 `RUNTIME_REPOSITORY` / `RUNTIME_REF`；本地留空时自动选择最新 SemVer，社区发行仍锁定经过审计的不可变提交。
 - 统一 local、community、stable 的发行渠道与签名状态来源，关于页、浏览器 fallback、构建门禁和发布信息不再各自推断。
