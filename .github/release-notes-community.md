@@ -4,12 +4,12 @@
 
 ## 主要变化
 
-- 统一 `.env`、应用元数据、Runtime 来源和安装包信息的构建配置链路
-- Runtime 来源解析为不可变提交，并生成可追溯的构建信息与制品校验和
-- 修复 Runtime 桌面补丁应用流程，保持上游构建和桌面扩展可复现
-- 修复 macOS 从工作台切回桌面管理时残留 WebView 原生渲染层导致的白屏问题
-- 修复 Windows Runtime 子进程显示控制台窗口、关闭窗口触发自动恢复并可能打开外部浏览器的问题
-- 保留 DSH Market、脱敏日志导出、自定义 Provider 和跨平台本地加密凭据库能力
+- Runtime 来源和 Rust 工具链增加不可变提交与 SHA-256 校验，公开发行不会因移动 tag 或本机缓存发生漂移
+- Runtime 构建变量统一为 `RUNTIME_REPOSITORY` / `RUNTIME_REF`，本地开发可自动跟随最新 SemVer，社区发行保持审计锁定
+- 凭据记录索引改为加密存储，并安全迁移旧版明文索引；失败写入和删除具备回滚保护
+- 修复损坏或未来版本设置恢复、诊断日志轮转与 UTF-8 截断、工作区注册和桌面状态操作提示
+- 减少 Runtime profile 扩展的重复文件同步，并加强三语文案引用检查
+- 保留 DSH Market、脱敏日志导出、自定义 Provider、模型切换和跨平台本地加密凭据库能力
 
 ## 下载选择
 
@@ -25,6 +25,6 @@
 
 # DeepSeek Desktop Community Edition
 
-This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.7.0. It unifies build configuration and provenance, fixes Runtime patching, prevents stale macOS WebView layers from obscuring the desktop management surface, and keeps the Windows Runtime console hidden.
+This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.7.0. This release strengthens immutable Runtime and Rust toolchain verification, encrypts the credential record index with safe legacy migration, improves settings recovery and diagnostics, and reduces repeated Runtime profile synchronization.
 
 The macOS application has an ad-hoc integrity signature but is not signed or notarized with an Apple Developer ID. Windows and Linux community artifacts do not carry a trusted publisher signature. Automatic updates remain disabled.
