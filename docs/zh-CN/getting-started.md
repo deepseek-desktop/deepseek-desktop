@@ -102,4 +102,4 @@ corepack pnpm@11.7.0 package:community
 
 该命令会自动安装锁定依赖，执行应用配置与 Runtime 同步、社区版发行门禁、单元测试、端到端测试、Runtime 校验和真实 readiness smoke，再构建当前操作系统及 CPU 架构对应的安装包。结果统一输出到 `release/<版本>/<目标平台>/`，同时生成 `BUILD-INFO.<目标平台>.json` 和 `SHA256SUMS`。macOS 构建先由 Tauri 生成 `.app`，再通过不依赖 Finder 或 AppleScript 的 `hdiutil` 创建 DMG，避免无界面构建机因窗口美化流程阻塞。
 
-单台电脑只生成当前平台安装包。默认和示例版本始终使用 `1.0.0`；社区发布标签按实际发行需要追加 `-community.<序号>` 后缀。维护者推送版本标签后，GitHub 工作流会从标签注入真实发行版本，并分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。
+单台电脑只生成当前平台安装包。默认和示例版本始终使用 `1.0.0`。维护者推送符合 SemVer 的标签后，GitHub 工作流会从标签注入真实发行版本；标签可带或不带 `v` 前缀，例如 `1.0.0`、`v1.0.0`、`v0.1.0-community.13`。完整 SemVer 校验会在构建开始时执行，随后分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。

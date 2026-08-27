@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import process from "node:process";
+import { parseReleaseTag, releaseTagsForVersion } from "./lib/release-tag.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -39,12 +40,17 @@ if (channel !== "community" && channel !== "stable") throw new Error(`unsupporte
 
 const status = git(["status", "--porcelain", "--untracked-files=all"]);
 if (status) throw new Error(`${channel} release requires a clean worktree`);
-const expectedTag = `v${config.version}`;
 const headTags = git(["tag", "--points-at", "HEAD"]).split("\n").filter(Boolean);
-if (!headTags.includes(expectedTag)) throw new Error(`${channel} release requires tag ${expectedTag} on HEAD`);
+const githubTag = process.env.GITHUB_REF_TYPE === "tag" ? process.env.GITHUB_REF_NAME?.trim() : "";
+const acceptedTags = githubTag ? [parseReleaseTag(githubTag).tag] : releaseTagsForVersion(config.version);
+const releaseTag = acceptedTags.find(tag => headTags.includes(tag));
+if (!releaseTag) throw new Error(`${channel} release requires tag ${acceptedTags.join(" or ")} on HEAD`);
+if (parseReleaseTag(releaseTag).version !== config.version) {
+  throw new Error(`${channel} release tag ${releaseTag} does not match configured version ${config.version}`);
+}
 if (channel === "community") {
   if (config.release.signed) throw new Error("community release must not claim a trusted publisher signature");
-  console.log(`community release gate passed for ${expectedTag}; artifacts remain explicitly unsigned`);
+  console.log(`community release gate passed for ${releaseTag}; artifacts remain explicitly unsigned`);
   process.exit(0);
 }
 
