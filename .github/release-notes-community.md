@@ -13,7 +13,9 @@
 - Runtime 来源和 Rust 工具链增加不可变提交与 SHA-256 校验，公开发行不会因移动 tag 或本机缓存发生漂移
 - Runtime 构建变量统一为 `RUNTIME_REPOSITORY` / `RUNTIME_REF`，本地开发可自动跟随最新 SemVer，社区发行保持审计锁定
 - 凭据记录索引改为加密存储，并安全迁移旧版明文索引；失败写入和删除具备回滚保护
-- 修复损坏或未来版本设置恢复、诊断日志轮转与 UTF-8 截断、工作区注册和桌面状态操作提示
+- Desktop 壳不再选择、保存或注册项目目录；Runtime 使用独立内部运行目录，项目目录完全由工作台管理
+- 外接屏仍连接时恢复原窗口位置，目标显示器断开时自动回到当前可见显示器
+- 修复损坏或未来版本设置恢复、诊断日志轮转、UTF-8 截断和桌面状态操作提示
 - 减少 Runtime profile 扩展的重复文件同步，并加强三语文案引用检查
 - 保留 DSH Market、脱敏日志导出、自定义 Provider、模型切换和跨平台本地加密凭据库能力
 
@@ -31,6 +33,6 @@
 
 # DeepSeek Desktop Community Edition
 
-This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.7.0. This release updates the Runtime to upstream 0.1.2-alpha.1, includes its HTTP web-fetch implementation, migrates the Desktop integration patches, and shows the exact Desktop version in the native window title.
+This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.7.0. This release updates the Runtime to upstream 0.1.2-alpha.1, includes its HTTP web-fetch implementation, decouples Desktop startup from Runtime project selection, keeps Runtime in an internal work directory, restores windows safely across changing monitor layouts, and shows the exact Desktop version in the native window title.
 
 The macOS application has an ad-hoc integrity signature but is not signed or notarized with an Apple Developer ID. Windows and Linux community artifacts do not carry a trusted publisher signature. Automatic updates remain disabled.

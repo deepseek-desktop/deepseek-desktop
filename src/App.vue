@@ -6,7 +6,6 @@ import type { DesktopAbout, DesktopSettings, RuntimeStatus, RuntimeUpdateStatus,
 import {
   checkRuntimeUpdate,
   checkForUpdates,
-  chooseWorkspace,
   downloadRuntimeUpdate,
   exportDiagnostics,
   exportLogs,
@@ -36,15 +35,13 @@ const notice = ref("");
 const runtime = ref<RuntimeStatus>({
   phase: "idle",
   url: null,
-  workspace: null,
   restartCount: 0,
   diagnosticId: null,
   errorCode: null
 });
 const settings = ref<DesktopSettings>({
-  schemaVersion: 2,
+  schemaVersion: 3,
   locale: normalizeLocale(navigator.language),
-  workspace: null,
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
@@ -66,6 +63,7 @@ const phaseLabel = computed(() => t(`runtime.${runtime.value.phase}`));
 const runtimeStartLabel = computed(() => runtime.value.phase === "failed" ? t("common.retry") : t("common.start"));
 const runtimeErrorKeys: Record<string, string> = {
   "runtime-artifact-missing": "runtime.errors.artifactMissing",
+  "runtime-workdir-unavailable": "runtime.errors.workdirUnavailable",
   "runtime-profile-prepare-failed": "runtime.errors.profilePrepareFailed",
   "runtime-helper-unavailable": "runtime.errors.helperUnavailable",
   "runtime-credential-session-failed": "runtime.errors.credentialSessionFailed",
@@ -78,7 +76,6 @@ const runtimeErrorKeys: Record<string, string> = {
   "runtime-output-closed": "runtime.errors.outputClosed",
   "runtime-health-check-failed": "runtime.errors.healthCheckFailed",
   "runtime-credential-channel-failed": "runtime.errors.credentialChannelFailed",
-  "runtime-workspace-registration-failed": "runtime.errors.workspaceRegistrationFailed",
   "runtime-task-failed": "runtime.errors.taskFailed",
   "restart-limit-reached": "runtime.errors.restartLimitReached"
 };
@@ -117,8 +114,7 @@ const runtimeUpdateDescription = computed(() => {
   });
 });
 const canDownloadRuntime = computed(() => runtimeUpdate.value?.phase === "available" && !busy.value);
-const canStart = computed(() => Boolean(settings.value.workspace) && !busy.value);
-const canContinueOnboarding = computed(() => onboardingStep.value !== 1 || Boolean(settings.value.workspace));
+const canStart = computed(() => !busy.value);
 
 async function persistSettings(): Promise<void> {
   settings.value = await saveSettings(settings.value);
@@ -143,28 +139,11 @@ async function selectLocale(value: Event): Promise<void> {
   }
 }
 
-async function selectWorkspace(): Promise<void> {
-  try {
-    const selected = await chooseWorkspace(t("onboarding.chooseWorkspace"));
-    if (!selected) return;
-    settings.value.workspace = selected;
-    await persistSettings();
-    notice.value = "";
-  } catch {
-    notice.value = t("error.workspaceSelectionFailed");
-  }
-}
-
 async function launch(): Promise<void> {
-  if (!settings.value.workspace) {
-    notice.value = t("error.workspaceRequired");
-    onboardingStep.value = 1;
-    return;
-  }
   busy.value = true;
   notice.value = "";
   try {
-    runtime.value = await startRuntime(settings.value.workspace);
+    runtime.value = await startRuntime();
     settings.value.onboardingCompleted = true;
     await persistSettings();
     view.value = "runtime";
@@ -178,17 +157,10 @@ async function launch(): Promise<void> {
 }
 
 async function startFromStatus(): Promise<void> {
-  const workspace = runtime.value.workspace || settings.value.workspace;
-  if (!workspace) {
-    notice.value = t("error.workspaceRequired");
-    onboardingStep.value = 1;
-    view.value = "onboarding";
-    return;
-  }
   busy.value = true;
   notice.value = "";
   try {
-    runtime.value = await startRuntime(workspace);
+    runtime.value = await startRuntime();
     await showWorkbench();
   } catch {
     notice.value = t("error.unexpected");
@@ -423,23 +395,15 @@ onBeforeUnmount(() => {
       <section class="content" aria-live="polite">
         <template v-if="view === 'onboarding'">
           <div class="section-heading">
-            <span class="eyebrow">{{ String(onboardingStep + 1).padStart(2, "0") }} / 03</span>
-            <h1>{{ t(["onboarding.welcomeTitle", "onboarding.workspaceTitle", "onboarding.modelTitle"][onboardingStep]) }}</h1>
-            <p>{{ t(["onboarding.welcomeDescription", "onboarding.workspaceDescription", "onboarding.modelDescription"][onboardingStep]) }}</p>
+            <span class="eyebrow">{{ String(onboardingStep + 1).padStart(2, "0") }} / 02</span>
+            <h1>{{ t(["onboarding.welcomeTitle", "onboarding.modelTitle"][onboardingStep]) }}</h1>
+            <p>{{ t(["onboarding.welcomeDescription", "onboarding.modelDescription"][onboardingStep]) }}</p>
           </div>
 
           <div v-if="onboardingStep === 0" class="feature-grid">
             <div><strong>{{ t("features.runtime") }}</strong><span>{{ t("features.runtimeValue") }}</span></div>
             <div><strong>{{ t("features.vault") }}</strong><span>{{ t("features.vaultValue") }}</span></div>
-            <div><strong>{{ t("features.workspace") }}</strong><span>{{ t("features.workspaceValue") }}</span></div>
-          </div>
-
-          <div v-else-if="onboardingStep === 1" class="workspace-picker">
-            <div>
-              <strong>{{ settings.workspace || t("onboarding.workspacePlaceholder") }}</strong>
-              <small>{{ t("onboarding.workspaceDescription") }}</small>
-            </div>
-            <button class="button secondary" @click="selectWorkspace">{{ t("onboarding.chooseWorkspace") }}</button>
+            <div><strong>{{ t("features.workbench") }}</strong><span>{{ t("features.workbenchValue") }}</span></div>
           </div>
 
           <div v-else class="model-step">
@@ -452,7 +416,7 @@ onBeforeUnmount(() => {
 
           <footer class="actions">
             <button v-if="onboardingStep > 0" class="button secondary" @click="onboardingStep -= 1">{{ t("common.back") }}</button>
-            <button v-if="onboardingStep < 2" class="button primary" :disabled="!canContinueOnboarding" @click="onboardingStep += 1">{{ t("common.continue") }}</button>
+            <button v-if="onboardingStep < 1" class="button primary" @click="onboardingStep += 1">{{ t("common.continue") }}</button>
             <button v-else class="button primary" :disabled="!canStart" @click="launch">{{ t("onboarding.start") }}</button>
           </footer>
         </template>
@@ -468,7 +432,6 @@ onBeforeUnmount(() => {
             <dl>
               <div><dt>{{ t("runtime.state") }}</dt><dd>{{ phaseLabel }}</dd></div>
               <div><dt>{{ t("runtime.origin") }}</dt><dd>{{ runtime.url || "-" }}</dd></div>
-              <div><dt>{{ t("runtime.workspace") }}</dt><dd>{{ runtime.workspace || settings.workspace || "-" }}</dd></div>
               <div><dt>{{ t("runtime.restarts") }}</dt><dd>{{ runtime.restartCount }}</dd></div>
               <div v-if="runtime.diagnosticId"><dt>{{ t("runtime.diagnosticId") }}</dt><dd>{{ runtime.diagnosticId }}</dd></div>
             </dl>
@@ -490,7 +453,6 @@ onBeforeUnmount(() => {
           <div class="plain-list">
             <div><span>{{ t("diagnostics.runtime") }}</span><strong>{{ phaseLabel }}</strong></div>
             <div><span>{{ t("runtime.diagnosticId") }}</span><strong>{{ runtime.diagnosticId || "-" }}</strong></div>
-            <div><span>{{ t("diagnostics.workspace") }}</span><strong>{{ runtime.workspace || settings.workspace || "-" }}</strong></div>
           </div>
           <footer class="actions">
             <button class="button secondary" @click="exportLogFile">{{ t("diagnostics.exportLogs") }}</button>

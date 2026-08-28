@@ -50,7 +50,7 @@ Apple Silicon 单机编排由 `scripts/release-system/local-all.mjs` 在同一�
 ## 代码职责
 
 - `src/`：Vue 3 桌面管理 Shell、三语国际化、类型化 IPC 和视图状态。
-- `src-tauri/src/runtime.rs`：Runtime 状态机、进程生命周期、探活、恢复、工作区注册和嵌入式工作台。
+- `src-tauri/src/runtime.rs`：Runtime 状态机、独立运行目录、进程生命周期、探活、恢复和嵌入式工作台。
 - `src-tauri/src/runtime_update.rs`：签名 Runtime 清单、平台下载、受限解压、版本指针、smoke、切换与回滚。
 - `src-tauri/src/credential_vault.rs`：本地加密凭据库、短期 Runtime 会话授权及旧索引迁移。
 - `src-tauri/src/settings.rs`：原子设置读写、损坏或未来 schema 隔离恢复。
@@ -66,12 +66,14 @@ Apple Silicon 单机编排由 `scripts/release-system/local-all.mjs` 在同一�
 
 ## 运行链路
 
-1. 桌面应用读取设置并确定工作区。
-2. Rust Supervisor 以随机端口启动捆绑的 Node/Harness Runtime。
+1. 桌面应用读取壳层设置，不要求选择项目目录。
+2. Rust Supervisor 在应用数据目录内的独立运行目录中，以随机端口启动捆绑的 Node/Harness Runtime。
 3. Runtime 通过受限会话调用桌面凭据 helper，不接收长期明文环境变量。
 4. readiness 通过后，同一原生窗口切换到受管 Harness Origin。
 5. Runtime 异常退出时按有限次数恢复；用户主动停止或应用退出时清理进程树。
 6. 已配置可信更新服务时，候选 Runtime 下载到应用数据目录并在下次启动 smoke 后切换；失败回滚上一版或内置基线。
+
+Desktop 与 Runtime 的关系是“原生壳 + 本地 Web 应用”：Desktop 不调用 Runtime 私有工作区 API，不保存用户项目目录，也不把自身运行目录解释为用户工作区。会话、项目目录和文件边界由 Runtime 工作台自己的稳定公共能力负责。
 
 ## 安全边界
 

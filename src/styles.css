@@ -76,16 +76,13 @@ button { cursor: pointer; }
 .section-heading p { margin: 0; color: #697984; font-size: 16px; line-height: 1.7; }
 
 .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 40px; }
-.feature-grid div, .model-step, .workspace-picker, .runtime-panel, .plain-list {
+.feature-grid div, .model-step, .runtime-panel, .plain-list {
   background: #fff;
   border: 1px solid #dbe4e7;
   border-radius: 8px;
 }
 .feature-grid div { min-height: 132px; display: grid; align-content: center; gap: 8px; padding: 20px; }
-.feature-grid span, .workspace-picker small { color: #84919a; }
-.workspace-picker { margin-top: 40px; padding: 24px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.workspace-picker > div { min-width: 0; display: grid; gap: 6px; }
-.workspace-picker strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feature-grid span { color: #84919a; }
 .model-step { margin-top: 40px; padding: 24px; display: flex; gap: 16px; align-items: flex-start; }
 .model-step p { margin: 6px 0 0; color: #73818a; }
 .status-dot { width: 12px; height: 12px; margin-top: 5px; border-radius: 50%; background: #1bb699; box-shadow: 0 0 0 6px #e1f5ef; }
@@ -134,7 +131,7 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
   .brand-mark { filter: brightness(0) invert(1); }
   .desktop-shell { background-color: #11191b; background-image: linear-gradient(rgba(60, 181, 157, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 181, 157, 0.05) 1px, transparent 1px); }
   .topbar, .side-nav { background: rgba(18, 27, 30, 0.94); border-color: #2b373b; }
-  .feature-grid div, .model-step, .workspace-picker, .runtime-panel, .plain-list { background: #182226; border-color: #2c3a3e; }
+  .feature-grid div, .model-step, .runtime-panel, .plain-list { background: #182226; border-color: #2c3a3e; }
   .locale-select, .button.secondary, .setting-select { color: #e4ebee; background: #182226; border-color: #3a484d; }
   .plain-list div { border-color: #273337; }
   .repository-link { color: #5bc8b5; }

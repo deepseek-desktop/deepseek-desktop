@@ -6,9 +6,8 @@ import type { DesktopAbout, DesktopSettings, DesktopSurface, RuntimeStatus, Runt
 const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 
 const browserSettings: DesktopSettings = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   locale: "zh-CN",
-  workspace: null,
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
@@ -23,7 +22,6 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
     return {
       phase: "idle",
       url: null,
-      workspace: browserSettings.workspace,
       restartCount: 0,
       diagnosticId: null,
       errorCode: null
@@ -32,9 +30,9 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
   return invoke<RuntimeStatus>("runtime_status");
 }
 
-export async function startRuntime(workspace: string): Promise<RuntimeStatus> {
-  if (!inTauri()) return { ...(await getRuntimeStatus()), phase: "ready", workspace };
-  return invoke<RuntimeStatus>("runtime_start", { workspace });
+export async function startRuntime(): Promise<RuntimeStatus> {
+  if (!inTauri()) return { ...(await getRuntimeStatus()), phase: "ready" };
+  return invoke<RuntimeStatus>("runtime_start");
 }
 
 export async function stopRuntime(): Promise<RuntimeStatus> {
@@ -53,11 +51,6 @@ export async function saveSettings(settings: DesktopSettings): Promise<DesktopSe
     return { ...browserSettings };
   }
   return invoke<DesktopSettings>("settings_update", { settings });
-}
-
-export async function chooseWorkspace(title: string): Promise<string | null> {
-  if (!inTauri()) return null;
-  return invoke<string | null>("workspace_choose", { title });
 }
 
 export async function openWorkbench(): Promise<void> {

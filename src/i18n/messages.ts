@@ -6,14 +6,10 @@ export const messages = {
   "zh-CN": {
     app: { name: appName, subtitle: "本地 AI Agent 工作台" },
     common: { continue: "继续", back: "返回", start: "启动", retry: "重试", open: "打开工作台", stop: "停止", save: "保存", close: "关闭", languageSelector: "切换语言" },
-    features: { runtime: "本地 Runtime", runtimeValue: "仅监听 127.0.0.1", vault: "加密凭据库", vaultValue: "密钥加密后仅保存在本机", workspace: "受管工作区", workspaceValue: "明确限定目录" },
+    features: { runtime: "本地 Runtime", runtimeValue: "仅监听 127.0.0.1", vault: "加密凭据库", vaultValue: "密钥加密后仅保存在本机", workbench: "独立工作台", workbenchValue: "项目目录由工作台管理" },
     onboarding: {
       welcomeTitle: `欢迎使用 ${appName}`,
       welcomeDescription: "Runtime、会话和凭据都保存在本机。",
-      workspaceTitle: "选择工作区",
-      workspaceDescription: "Agent 只会在你选择的目录中工作。",
-      workspacePlaceholder: "尚未选择工作区",
-      chooseWorkspace: "选择目录",
       modelTitle: "配置模型",
       modelDescription: "启动后前往模型设置添加 Provider 和密钥。",
       start: "启动工作台"
@@ -30,10 +26,10 @@ export const messages = {
       supervisor: "Runtime 管理器",
       state: "状态",
       origin: "本地地址",
-      workspace: "工作区",
       restarts: "恢复次数",
       errors: {
         artifactMissing: "Runtime 制品不完整，请重新安装应用。",
+        workdirUnavailable: "Runtime 独立工作目录无法创建，请检查应用数据目录权限。",
         profilePrepareFailed: "Runtime 用户配置准备失败，请检查应用数据目录权限。",
         helperUnavailable: "桌面凭据 Helper 无法启动，请重新安装应用。",
         credentialSessionFailed: "无法创建本次 Runtime 的加密凭据会话。",
@@ -46,13 +42,12 @@ export const messages = {
         outputClosed: "Runtime 在就绪前关闭了输出通道。",
         healthCheckFailed: "Runtime 本地健康检查失败。",
         credentialChannelFailed: "加密凭据库通信通道启动失败。",
-        workspaceRegistrationFailed: "Runtime 无法注册所选工作区，请重新选择目录。",
         taskFailed: "Runtime 管理任务异常终止，请重试或导出诊断信息。",
         restartLimitReached: "Runtime 已达到自动恢复次数上限。"
       }
     },
     navigation: { label: "桌面导航", onboarding: "开始使用", runtime: "运行状态", diagnostics: "诊断", update: "更新", about: "关于" },
-    diagnostics: { eyebrow: "诊断", title: "运行诊断", description: "导出经过脱敏的状态、版本和日志。", export: "导出诊断包", exported: "诊断包已导出", exportLogs: "导出日志", logsExported: "日志已导出", runtime: "Runtime", workspace: "工作区" },
+    diagnostics: { eyebrow: "诊断", title: "运行诊断", description: "导出经过脱敏的状态、版本和日志。", export: "导出诊断包", exported: "诊断包已导出", exportLogs: "导出日志", logsExported: "日志已导出", runtime: "Runtime" },
     settings: { recovered: { corrupt: "设置文件已损坏，已备份原文件并恢复默认设置。", future: "设置文件来自更高版本，已备份原文件并恢复默认设置。" } },
     about: { eyebrow: "应用信息", title: `关于 ${appName}`, desktopVersion: "桌面版本", runtimeVersion: "Runtime 版本", nodeVersion: "Node 版本", channel: "更新通道", author: "作者", repository: "项目仓库", local: "本地构建", community: "社区版", stable: "稳定版", signed: "已签名发行构建", unsigned: "未签名构建" },
     update: { eyebrow: "发行通道", title: "更新", desktopTitle: "桌面应用", description: "桌面外壳与 Runtime 分别更新，当前可用版本始终保留。", currentVersion: "当前版本", channel: "更新通道", status: "更新状态", notChecked: "尚未检查更新。", check: "检查桌面更新", disabled: "当前社区版构建未签名，桌面自动更新已关闭。", current: "当前已是最新版本。", available: "发现新版本 {version}。", notConfigured: "签名更新服务尚未配置。" },
@@ -63,19 +58,15 @@ export const messages = {
       channels: { stable: "稳定版", preview: "预览版" },
       messages: { idle: "尚未检查 Runtime 更新。", not_configured: "未配置可信 Runtime 更新服务。", checking: "正在检查 Runtime 更新。", available: "发现 Runtime {version}。", up_to_date: "当前 Runtime 已是最新版本。", downloading: "正在下载并校验 Runtime。", restart_to_apply: "Runtime {version} 已就绪，将在下次启动安装。", applied: "Runtime 更新已安装。", check_failed: "Runtime 更新检查失败，当前版本未受影响。", download_failed: "Runtime 下载或校验失败，当前版本未受影响。", smoke_failed: "新 Runtime 启动验证失败，已保留当前版本。", pinned: "当前 Runtime 已固定，不会自动更新。", bundled_restored: "已恢复安装包内置 Runtime。", startup_rollback: "新 Runtime 启动失败，已自动回滚。" }
     },
-    error: { workspaceRequired: "请先选择工作区。", unexpected: "操作失败，请查看诊断信息。", settingsSaveFailed: "设置保存失败，已恢复原设置。", workspaceSelectionFailed: "工作区选择或保存失败。", diagnosticsExportFailed: "诊断包导出失败。", logsExportFailed: "日志导出失败。", updateCheckFailed: "桌面更新检查失败。", runtimeUpdateCheckFailed: "Runtime 更新检查失败，当前版本未受影响。", runtimeUpdateDownloadFailed: "Runtime 下载或校验失败，当前版本未受影响。", runtimeRestoreFailed: "恢复内置 Runtime 失败。", initializationFailed: "桌面应用初始化失败，请重新启动或查看日志。", eventChannelFailed: "状态事件通道连接失败，请刷新运行状态。" }
+    error: { unexpected: "操作失败，请查看诊断信息。", settingsSaveFailed: "设置保存失败，已恢复原设置。", diagnosticsExportFailed: "诊断包导出失败。", logsExportFailed: "日志导出失败。", updateCheckFailed: "桌面更新检查失败。", runtimeUpdateCheckFailed: "Runtime 更新检查失败，当前版本未受影响。", runtimeUpdateDownloadFailed: "Runtime 下载或校验失败，当前版本未受影响。", runtimeRestoreFailed: "恢复内置 Runtime 失败。", initializationFailed: "桌面应用初始化失败，请重新启动或查看日志。", eventChannelFailed: "状态事件通道连接失败，请刷新运行状态。" }
   },
   "zh-TW": {
     app: { name: appName, subtitle: "本機 AI Agent 工作臺" },
     common: { continue: "繼續", back: "返回", start: "啟動", retry: "重試", open: "開啟工作臺", stop: "停止", save: "儲存", close: "關閉", languageSelector: "切換語言" },
-    features: { runtime: "本機 Runtime", runtimeValue: "僅監聽 127.0.0.1", vault: "加密憑證庫", vaultValue: "金鑰加密後僅儲存在本機", workspace: "受管工作區", workspaceValue: "明確限定目錄" },
+    features: { runtime: "本機 Runtime", runtimeValue: "僅監聽 127.0.0.1", vault: "加密憑證庫", vaultValue: "金鑰加密後僅儲存在本機", workbench: "獨立工作臺", workbenchValue: "專案目錄由工作臺管理" },
     onboarding: {
       welcomeTitle: `歡迎使用 ${appName}`,
       welcomeDescription: "Runtime、工作階段和憑證都儲存在本機。",
-      workspaceTitle: "選擇工作區",
-      workspaceDescription: "Agent 只會在你選擇的目錄中工作。",
-      workspacePlaceholder: "尚未選擇工作區",
-      chooseWorkspace: "選擇目錄",
       modelTitle: "設定模型",
       modelDescription: "啟動後前往模型設定新增 Provider 和金鑰。",
       start: "啟動工作臺"
@@ -92,10 +83,10 @@ export const messages = {
       supervisor: "Runtime 管理器",
       state: "狀態",
       origin: "本機位址",
-      workspace: "工作區",
       restarts: "復原次數",
       errors: {
         artifactMissing: "Runtime 制品不完整，請重新安裝應用程式。",
+        workdirUnavailable: "Runtime 獨立工作目錄無法建立，請檢查應用程式資料目錄權限。",
         profilePrepareFailed: "Runtime 使用者設定準備失敗，請檢查應用程式資料目錄權限。",
         helperUnavailable: "桌面憑證 Helper 無法啟動，請重新安裝應用程式。",
         credentialSessionFailed: "無法建立本次 Runtime 的加密憑證工作階段。",
@@ -108,13 +99,12 @@ export const messages = {
         outputClosed: "Runtime 在就緒前關閉了輸出通道。",
         healthCheckFailed: "Runtime 本機健康檢查失敗。",
         credentialChannelFailed: "加密憑證庫通訊通道啟動失敗。",
-        workspaceRegistrationFailed: "Runtime 無法註冊所選工作區，請重新選擇目錄。",
         taskFailed: "Runtime 管理工作異常終止，請重試或匯出診斷資訊。",
         restartLimitReached: "Runtime 已達自動復原次數上限。"
       }
     },
     navigation: { label: "桌面導覽", onboarding: "開始使用", runtime: "執行狀態", diagnostics: "診斷", update: "更新", about: "關於" },
-    diagnostics: { eyebrow: "診斷", title: "執行診斷", description: "匯出經過遮蔽的狀態、版本和日誌。", export: "匯出診斷包", exported: "診斷包已匯出", exportLogs: "匯出日誌", logsExported: "日誌已匯出", runtime: "Runtime", workspace: "工作區" },
+    diagnostics: { eyebrow: "診斷", title: "執行診斷", description: "匯出經過遮蔽的狀態、版本和日誌。", export: "匯出診斷包", exported: "診斷包已匯出", exportLogs: "匯出日誌", logsExported: "日誌已匯出", runtime: "Runtime" },
     settings: { recovered: { corrupt: "設定檔已損壞，已備份原檔並恢復預設設定。", future: "設定檔來自較新版本，已備份原檔並恢復預設設定。" } },
     about: { eyebrow: "應用程式資訊", title: `關於 ${appName}`, desktopVersion: "桌面版本", runtimeVersion: "Runtime 版本", nodeVersion: "Node 版本", channel: "更新通道", author: "作者", repository: "專案倉庫", local: "本機構建", community: "社群版", stable: "穩定版", signed: "已簽章發行構建", unsigned: "未簽章構建" },
     update: { eyebrow: "發行通道", title: "更新", desktopTitle: "桌面應用程式", description: "桌面外殼與 Runtime 分別更新，目前可用版本始終保留。", currentVersion: "目前版本", channel: "更新通道", status: "更新狀態", notChecked: "尚未檢查更新。", check: "檢查桌面更新", disabled: "目前社群版構建尚未簽章，桌面自動更新已關閉。", current: "目前已是最新版本。", available: "發現新版本 {version}。", notConfigured: "簽名更新服務尚未設定。" },
@@ -125,22 +115,18 @@ export const messages = {
       channels: { stable: "穩定版", preview: "預覽版" },
       messages: { idle: "尚未檢查 Runtime 更新。", not_configured: "未設定可信 Runtime 更新服務。", checking: "正在檢查 Runtime 更新。", available: "發現 Runtime {version}。", up_to_date: "目前 Runtime 已是最新版本。", downloading: "正在下載並驗證 Runtime。", restart_to_apply: "Runtime {version} 已準備完成，將在下次啟動安裝。", applied: "Runtime 更新已安裝。", check_failed: "Runtime 更新檢查失敗，目前版本未受影響。", download_failed: "Runtime 下載或驗證失敗，目前版本未受影響。", smoke_failed: "新 Runtime 啟動驗證失敗，已保留目前版本。", pinned: "目前 Runtime 已固定，不會自動更新。", bundled_restored: "已還原安裝包內建 Runtime。", startup_rollback: "新 Runtime 啟動失敗，已自動回復。" }
     },
-    error: { workspaceRequired: "請先選擇工作區。", unexpected: "操作失敗，請查看診斷資訊。", settingsSaveFailed: "設定儲存失敗，已恢復原設定。", workspaceSelectionFailed: "工作區選擇或儲存失敗。", diagnosticsExportFailed: "診斷包匯出失敗。", logsExportFailed: "日誌匯出失敗。", updateCheckFailed: "桌面更新檢查失敗。", runtimeUpdateCheckFailed: "Runtime 更新檢查失敗，目前版本未受影響。", runtimeUpdateDownloadFailed: "Runtime 下載或驗證失敗，目前版本未受影響。", runtimeRestoreFailed: "還原內建 Runtime 失敗。", initializationFailed: "桌面應用程式初始化失敗，請重新啟動或查看日誌。", eventChannelFailed: "狀態事件通道連線失敗，請重新整理執行狀態。" }
+    error: { unexpected: "操作失敗，請查看診斷資訊。", settingsSaveFailed: "設定儲存失敗，已恢復原設定。", diagnosticsExportFailed: "診斷包匯出失敗。", logsExportFailed: "日誌匯出失敗。", updateCheckFailed: "桌面更新檢查失敗。", runtimeUpdateCheckFailed: "Runtime 更新檢查失敗，目前版本未受影響。", runtimeUpdateDownloadFailed: "Runtime 下載或驗證失敗，目前版本未受影響。", runtimeRestoreFailed: "還原內建 Runtime 失敗。", initializationFailed: "桌面應用程式初始化失敗，請重新啟動或查看日誌。", eventChannelFailed: "狀態事件通道連線失敗，請重新整理執行狀態。" }
   },
   "en-US": {
     app: { name: appName, subtitle: "Local AI agent workspace" },
-    common: { continue: "Continue", back: "Back", start: "Start", retry: "Retry", open: "Open workspace", stop: "Stop", save: "Save", close: "Close", languageSelector: "Change language" },
-    features: { runtime: "Local runtime", runtimeValue: "Listens only on 127.0.0.1", vault: "Encrypted credential vault", vaultValue: "Keys remain encrypted on this device", workspace: "Managed workspace", workspaceValue: "Explicit directory scope" },
+    common: { continue: "Continue", back: "Back", start: "Start", retry: "Retry", open: "Open workbench", stop: "Stop", save: "Save", close: "Close", languageSelector: "Change language" },
+    features: { runtime: "Local runtime", runtimeValue: "Listens only on 127.0.0.1", vault: "Encrypted credential vault", vaultValue: "Keys remain encrypted on this device", workbench: "Independent workbench", workbenchValue: "Project folders are managed in the workbench" },
     onboarding: {
       welcomeTitle: `Welcome to ${appName}`,
       welcomeDescription: "The runtime, sessions, and credentials stay on this device.",
-      workspaceTitle: "Choose a workspace",
-      workspaceDescription: "The agent works only inside the directory you select.",
-      workspacePlaceholder: "No workspace selected",
-      chooseWorkspace: "Choose folder",
       modelTitle: "Configure a model",
       modelDescription: "After startup, open Model Settings to add a provider and credential.",
-      start: "Start workspace"
+      start: "Start workbench"
     },
     runtime: {
       idle: "Ready to start",
@@ -154,10 +140,10 @@ export const messages = {
       supervisor: "Runtime supervisor",
       state: "State",
       origin: "Local origin",
-      workspace: "Workspace",
       restarts: "Recovery attempts",
       errors: {
         artifactMissing: "The runtime artifact is incomplete. Reinstall the application.",
+        workdirUnavailable: "The isolated Runtime working directory could not be created. Check the application data directory permissions.",
         profilePrepareFailed: "The Runtime profile could not be prepared. Check the application data directory permissions.",
         helperUnavailable: "The desktop credential helper could not start. Reinstall the application.",
         credentialSessionFailed: "An encrypted credential session could not be created for this Runtime launch.",
@@ -170,13 +156,12 @@ export const messages = {
         outputClosed: "The runtime closed its output before it became ready.",
         healthCheckFailed: "The local runtime health check failed.",
         credentialChannelFailed: "The encrypted credential vault channel could not start.",
-        workspaceRegistrationFailed: "The runtime could not register the selected workspace. Choose the folder again.",
         taskFailed: "The runtime management task stopped unexpectedly. Retry or export diagnostics.",
         restartLimitReached: "The runtime reached its automatic recovery limit."
       }
     },
     navigation: { label: "Desktop navigation", onboarding: "Get started", runtime: "Runtime", diagnostics: "Diagnostics", update: "Updates", about: "About" },
-    diagnostics: { eyebrow: "Diagnostics", title: "Runtime diagnostics", description: "Export redacted status, version, and log information.", export: "Export diagnostics", exported: "Diagnostics exported", exportLogs: "Export logs", logsExported: "Logs exported", runtime: "Runtime", workspace: "Workspace" },
+    diagnostics: { eyebrow: "Diagnostics", title: "Runtime diagnostics", description: "Export redacted status, version, and log information.", export: "Export diagnostics", exported: "Diagnostics exported", exportLogs: "Export logs", logsExported: "Logs exported", runtime: "Runtime" },
     settings: { recovered: { corrupt: "The settings file was damaged. The original was backed up and defaults were restored.", future: "The settings file came from a newer version. The original was backed up and defaults were restored." } },
     about: { eyebrow: "Application information", title: `About ${appName}`, desktopVersion: "Desktop version", runtimeVersion: "Runtime version", nodeVersion: "Node version", channel: "Update channel", author: "Author", repository: "Repository", local: "Local build", community: "Community", stable: "Stable", signed: "Signed release build", unsigned: "Unsigned build" },
     update: { eyebrow: "Release channel", title: "Updates", desktopTitle: "Desktop application", description: "The Desktop shell and Runtime update independently while the last working version remains available.", currentVersion: "Current version", channel: "Update channel", status: "Update status", notChecked: "Updates have not been checked.", check: "Check Desktop", disabled: "This community build is unsigned, so Desktop automatic updates are disabled.", current: "This version is current.", available: "Version {version} is available.", notConfigured: "Signed updates are not configured." },
@@ -187,6 +172,6 @@ export const messages = {
       channels: { stable: "Stable", preview: "Preview" },
       messages: { idle: "Runtime updates have not been checked.", not_configured: "A trusted Runtime update service is not configured.", checking: "Checking for a Runtime update.", available: "Runtime {version} is available.", up_to_date: "The current Runtime is up to date.", downloading: "Downloading and verifying the Runtime.", restart_to_apply: "Runtime {version} is ready and will install at the next launch.", applied: "The Runtime update was installed.", check_failed: "The Runtime check failed. The current version was not changed.", download_failed: "The Runtime download or verification failed. The current version was not changed.", smoke_failed: "The new Runtime failed its startup check. The current version was kept.", pinned: "The current Runtime is pinned and will not update automatically.", bundled_restored: "The bundled Runtime was restored.", startup_rollback: "The new Runtime failed to start and was rolled back automatically." }
     },
-    error: { workspaceRequired: "Choose a workspace first.", unexpected: "The operation failed. Open diagnostics for details.", settingsSaveFailed: "The settings could not be saved. The previous value was restored.", workspaceSelectionFailed: "The workspace could not be selected or saved.", diagnosticsExportFailed: "Diagnostics could not be exported.", logsExportFailed: "Logs could not be exported.", updateCheckFailed: "The Desktop update check failed.", runtimeUpdateCheckFailed: "The Runtime update check failed. The current version was not changed.", runtimeUpdateDownloadFailed: "The Runtime download or verification failed. The current version was not changed.", runtimeRestoreFailed: "The bundled Runtime could not be restored.", initializationFailed: "The desktop application could not initialize. Restart it or inspect the logs.", eventChannelFailed: "The status event channel could not connect. Refresh the runtime status." }
+    error: { unexpected: "The operation failed. Open diagnostics for details.", settingsSaveFailed: "The settings could not be saved. The previous value was restored.", diagnosticsExportFailed: "Diagnostics could not be exported.", logsExportFailed: "Logs could not be exported.", updateCheckFailed: "The Desktop update check failed.", runtimeUpdateCheckFailed: "The Runtime update check failed. The current version was not changed.", runtimeUpdateDownloadFailed: "The Runtime download or verification failed. The current version was not changed.", runtimeRestoreFailed: "The bundled Runtime could not be restored.", initializationFailed: "The desktop application could not initialize. Restart it or inspect the logs.", eventChannelFailed: "The status event channel could not connect. Refresh the runtime status." }
   }
 } as const;

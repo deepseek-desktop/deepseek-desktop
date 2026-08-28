@@ -28,8 +28,9 @@ test("onboarding, language switching, and status views fully load", async ({ pag
   await page.getByLabel("切换语言").selectOption("en-US");
   await expect(page.getByRole("heading", { name: `Welcome to ${appConfig.productName}` })).toBeVisible();
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("heading", { name: "Choose a workspace" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue" })).toBeDisabled();
+  await expect(page.getByRole("heading", { name: "Configure a model" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start workbench" })).toBeEnabled();
+  await expect(page.getByText("Choose a workspace")).toHaveCount(0);
 
   await page.getByRole("button", { name: /Runtime/ }).click();
   await expect(page.getByRole("heading", { name: "Ready to start" })).toBeVisible();

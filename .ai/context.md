@@ -2,14 +2,16 @@
 
 ## 项目定位
 
-DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用 Tauri 2 管理本地 Runtime，在单个原生窗口中嵌入 Harness 工作台，并提供首次引导、工作区、模型凭据、诊断、关于和更新状态等桌面能力。
+DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用 Tauri 2 管理本地 Runtime，在单个原生窗口中嵌入 Harness 工作台，并提供首次引导、模型凭据、诊断、关于和更新状态等桌面能力。
 
 本仓库是独立 Git 仓库。虽然当前目录位于 SpringOpen 的 `views/` 下，但不得从 SpringOpen 父仓库接管、暂存或提交本仓库文件，也不得修改相邻的 `views/deepseek-harness`。
 
 ## 当前边界
 
 - Runtime 仅监听 `127.0.0.1` 随机端口，由 Rust Supervisor 启停、完成浏览器令牌握手、探活和回收；令牌化启动 URL 仅保存在进程内私有状态，公开状态与诊断只保留无令牌根地址。
+- Desktop 是稳定原生外壳，不选择、保存或注册用户项目目录；Runtime 工作台自行管理项目目录。Runtime 从应用数据目录内的独立 `runtime-workdir` 启动，Desktop 只依赖公开启动、健康和凭据协议。
 - Harness 工作台与桌面管理界面共用一个原生窗口，通过受控视图和原生菜单切换。
+- 窗口状态按显示器恢复；保存位置仍能落在已连接显示器时保持不变，目标显示器断开时回到当前主显示器可见区域。
 - 工作台 WebView 不获得通用 Tauri Shell、文件系统或任意 IPC 权限。
 - 模型凭据保存在跨平台本地加密凭据库中，不使用系统钥匙串，也不降级为 `.env` 或明文文件。
 - 加密凭据库主要防止意外明文泄漏；它不承诺抵御已经取得同一操作系统用户权限的恶意进程。

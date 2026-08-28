@@ -5,8 +5,6 @@ use thiserror::Error;
 pub enum DesktopError {
     #[error("runtime is already changing state")]
     RuntimeBusy,
-    #[error("workspace does not exist or is not a directory: {0}")]
-    InvalidWorkspace(String),
     #[error("runtime artifact is missing: {0}")]
     RuntimeArtifactMissing(String),
     #[error("runtime exited before readiness: {0}")]

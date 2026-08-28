@@ -1,7 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
-use std::sync::{Mutex, RwLock};
+use std::sync::Mutex;
 
 use chrono::Utc;
 use serde::Serialize;
@@ -17,7 +17,6 @@ const DIAGNOSTIC_LOG_BYTES: u64 = 128 * 1024;
 pub struct Diagnostics {
     paths: AppPaths,
     write_lock: Mutex<()>,
-    workspace: RwLock<Option<String>>,
 }
 
 impl Diagnostics {
@@ -25,13 +24,6 @@ impl Diagnostics {
         Self {
             paths,
             write_lock: Mutex::new(()),
-            workspace: RwLock::new(None),
-        }
-    }
-
-    pub fn set_workspace(&self, workspace: &str) {
-        if let Ok(mut current) = self.workspace.write() {
-            *current = Some(workspace.to_owned());
         }
     }
 
@@ -72,15 +64,6 @@ impl Diagnostics {
         let path = self.paths.diagnostics_dir.join(filename);
         let mut redacted_status = status.clone();
         redacted_status.url = status.url.as_ref().map(|url| redact(url));
-        redacted_status.workspace = status
-            .workspace
-            .as_ref()
-            .map(|_| "<workspace-redacted>".to_owned());
-        let mut redacted_settings = settings.clone();
-        redacted_settings.workspace = settings
-            .workspace
-            .as_ref()
-            .map(|_| "<workspace-redacted>".to_owned());
         let document = DiagnosticDocument {
             generated_at: Utc::now().to_rfc3339(),
             desktop_version: env!("DEEPSEEK_DESKTOP_APP_VERSION"),
@@ -88,7 +71,7 @@ impl Diagnostics {
             target: env!("DEEPSEEK_DESKTOP_TARGET"),
             status: redacted_status,
             runtime_update: runtime_update.clone(),
-            settings: redacted_settings,
+            settings: settings.clone(),
             recent_log: self.read_tail(),
         };
         write_json_atomic(&path, &document)?;
@@ -153,9 +136,6 @@ impl Diagnostics {
             self.paths.data_dir.to_string_lossy().into_owned(),
             "<data-dir-redacted>",
         )];
-        if let Ok(Some(workspace)) = self.workspace.read().map(|value| value.clone()) {
-            roots.push((workspace, "<workspace-redacted>"));
-        }
         if let Some(home) = std::env::var_os("HOME") {
             roots.push((home.to_string_lossy().into_owned(), "<home-redacted>"));
         }
@@ -245,10 +225,14 @@ fn redact_query_tokens(value: &str) -> String {
         let value_start = start + "?token=".len();
         output.push_str(&value[cursor..value_start]);
         output.push_str("<redacted>");
-        let token_length = value[value_start..]
-            .bytes()
-            .take_while(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-            .count();
+        let token_length = if value[value_start..].starts_with("<redacted>") {
+            "<redacted>".len()
+        } else {
+            value[value_start..]
+                .bytes()
+                .take_while(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+                .count()
+        };
         cursor = value_start + token_length;
         if token_length == 0 {
             cursor = value_start;
@@ -283,10 +267,14 @@ mod tests {
             redact("dsh web: http://127.0.0.1:43127/?token=unsafe_token"),
             "dsh web: http://127.0.0.1:43127/?token=<redacted>"
         );
+        assert_eq!(
+            redact("dsh web: http://127.0.0.1:43127/?token=<redacted>"),
+            "dsh web: http://127.0.0.1:43127/?token=<redacted>"
+        );
     }
 
     #[test]
-    fn redacts_registered_workspace_and_data_paths() {
+    fn redacts_application_data_paths() {
         let root = std::env::temp_dir().join(format!(
             "deepseek-desktop-diagnostics-{}",
             std::process::id()
@@ -302,16 +290,13 @@ mod tests {
         };
         fs::create_dir_all(&paths.logs_dir).unwrap();
         let diagnostics = Diagnostics::new(paths);
-        let workspace = root.join("workspace").to_string_lossy().into_owned();
-        diagnostics.set_workspace(&workspace);
 
         diagnostics.append(
             "test",
-            &format!("workspace={workspace} data={}", root.join("data").display()),
+            &format!("runtime={}", root.join("data/runtime-workdir").display()),
         );
 
         let log = fs::read_to_string(root.join("data/logs/desktop.log")).unwrap();
-        assert!(!log.contains(&workspace));
         assert!(!log.contains(&root.join("data").to_string_lossy().into_owned()));
         fs::remove_dir_all(root).unwrap();
     }
@@ -333,9 +318,6 @@ mod tests {
         };
         fs::create_dir_all(&paths.logs_dir).unwrap();
         let diagnostics = Diagnostics::new(paths);
-        let workspace = root.join("workspace").to_string_lossy().into_owned();
-        diagnostics.set_workspace(&workspace);
-        diagnostics.append("runtime", &format!("workspace={workspace}"));
         diagnostics.append("runtime", "Authorization: Bearer unsafe");
         diagnostics.append(
             "runtime",
@@ -345,8 +327,6 @@ mod tests {
         let exported = diagnostics.export_logs().unwrap();
         let log = fs::read_to_string(exported).unwrap();
         assert!(log.contains("desktop.log"));
-        assert!(log.contains("<workspace-redacted>"));
-        assert!(!log.contains(&workspace));
         assert!(!log.contains("unsafe"));
         assert!(!log.contains("runtime_launch_token"));
         assert!(log.contains("token=<redacted>"));

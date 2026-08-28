@@ -9,7 +9,7 @@ mod settings;
 mod updater;
 
 use std::sync::Arc;
-use std::{env, path::PathBuf, thread};
+use std::{env, thread};
 
 use contracts::{DesktopAbout, DesktopSettings, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus};
 use diagnostics::Diagnostics;
@@ -20,55 +20,14 @@ use settings::{AppPaths, SettingsStore};
 use tauri::{Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
+const MIN_REACHABLE_WIDTH: i64 = 160;
+const MIN_REACHABLE_HEIGHT: i64 = 80;
+
 struct AppState {
     settings: Arc<SettingsStore>,
     diagnostics: Arc<Diagnostics>,
     supervisor: Arc<RuntimeSupervisor>,
     runtime_updates: Arc<RuntimeUpdateManager>,
-}
-
-fn requested_workspace(arguments: &[String], working_directory: &str) -> Option<String> {
-    let value = arguments
-        .windows(2)
-        .find(|pair| pair[0] == "--workspace")
-        .map(|pair| pair[1].as_str())?;
-    let candidate = PathBuf::from(value);
-    let path = if candidate.is_absolute() {
-        candidate
-    } else {
-        PathBuf::from(working_directory).join(candidate)
-    };
-    path.canonicalize()
-        .ok()
-        .filter(|path| path.is_dir())
-        .map(|path| path.to_string_lossy().into_owned())
-}
-
-fn accept_workspace_argument(
-    app: &tauri::AppHandle,
-    arguments: &[String],
-    working_directory: &str,
-) {
-    let Some(workspace) = requested_workspace(arguments, working_directory) else {
-        return;
-    };
-    let Some(state) = app.try_state::<AppState>() else {
-        return;
-    };
-    let Ok(mut settings) = state.settings.get() else {
-        return;
-    };
-    let should_start = settings.onboarding_completed;
-    settings.workspace = Some(workspace.clone());
-    if state.settings.update(settings).is_err() {
-        return;
-    }
-    if should_start {
-        let supervisor = Arc::clone(&state.supervisor);
-        thread::spawn(move || {
-            let _ = supervisor.start(workspace);
-        });
-    }
 }
 
 #[tauri::command]
@@ -77,17 +36,14 @@ fn runtime_status(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus> {
 }
 
 #[tauri::command]
-async fn runtime_start(
-    state: State<'_, AppState>,
-    workspace: String,
-) -> DesktopResult<RuntimeStatus> {
+async fn runtime_start(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus> {
     let supervisor = Arc::clone(&state.supervisor);
     let recovery = Arc::clone(&supervisor);
     let updater = Arc::clone(&state.runtime_updates);
     match tauri::async_runtime::spawn_blocking(move || {
         let mut first_failure = None;
         loop {
-            match supervisor.start(workspace.clone()) {
+            match supervisor.start() {
                 Ok(status) => return Ok(status),
                 Err(error) if runtime_boot_failure(&error) => {
                     if first_failure.is_none() {
@@ -110,6 +66,67 @@ async fn runtime_start(
 
 fn runtime_boot_failure(error: &DesktopError) -> bool {
     error.permits_runtime_rollback()
+}
+
+fn repaired_window_position(
+    position: tauri::PhysicalPosition<i32>,
+    size: tauri::PhysicalSize<u32>,
+    monitors: &[(tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>)],
+    fallback: (tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>),
+) -> Option<tauri::PhysicalPosition<i32>> {
+    let window_left = i64::from(position.x);
+    let window_top = i64::from(position.y);
+    let window_right = window_left + i64::from(size.width);
+    let window_bottom = window_top + i64::from(size.height);
+    let required_width = MIN_REACHABLE_WIDTH.min(i64::from(size.width));
+    let required_height = MIN_REACHABLE_HEIGHT.min(i64::from(size.height));
+
+    let is_reachable = monitors.iter().any(|(monitor_position, monitor_size)| {
+        let monitor_left = i64::from(monitor_position.x);
+        let monitor_top = i64::from(monitor_position.y);
+        let monitor_right = monitor_left + i64::from(monitor_size.width);
+        let monitor_bottom = monitor_top + i64::from(monitor_size.height);
+        let visible_width = window_right.min(monitor_right) - window_left.max(monitor_left);
+        let visible_height = window_bottom.min(monitor_bottom) - window_top.max(monitor_top);
+        visible_width >= required_width && visible_height >= required_height
+    });
+    if is_reachable {
+        return None;
+    }
+
+    let (monitor_position, monitor_size) = fallback;
+    let x = i64::from(monitor_position.x)
+        + (i64::from(monitor_size.width) - i64::from(size.width)).max(0) / 2;
+    let y = i64::from(monitor_position.y)
+        + (i64::from(monitor_size.height) - i64::from(size.height)).max(0) / 2;
+    Some(tauri::PhysicalPosition::new(
+        x.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,
+        y.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,
+    ))
+}
+
+fn keep_window_reachable(window: &tauri::Window) -> tauri::Result<()> {
+    let monitors = window
+        .available_monitors()?
+        .into_iter()
+        .map(|monitor| (*monitor.position(), *monitor.size()))
+        .collect::<Vec<_>>();
+    let Some(first_monitor) = monitors.first().copied() else {
+        return Ok(());
+    };
+    let fallback = window
+        .primary_monitor()?
+        .map(|monitor| (*monitor.position(), *monitor.size()))
+        .unwrap_or(first_monitor);
+    if let Some(position) = repaired_window_position(
+        window.outer_position()?,
+        window.outer_size()?,
+        &monitors,
+        fallback,
+    ) {
+        window.set_position(tauri::Position::Physical(position))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -144,25 +161,6 @@ fn settings_update(
     let settings = state.settings.update(settings)?;
     native_menu::install(&app, &settings.locale)?;
     Ok(settings)
-}
-
-#[tauri::command]
-async fn workspace_choose(title: String) -> DesktopResult<Option<String>> {
-    let title = title.trim();
-    if title.is_empty() || title.chars().count() > 80 || title.chars().any(char::is_control) {
-        return Err(DesktopError::InvalidConfiguration(
-            "workspace dialog title is invalid".to_owned(),
-        ));
-    }
-    let title = title.to_owned();
-    tauri::async_runtime::spawn_blocking(move || {
-        Ok(rfd::FileDialog::new()
-            .set_title(&title)
-            .pick_folder()
-            .map(|path| path.to_string_lossy().into_owned()))
-    })
-    .await
-    .map_err(|error| DesktopError::Other(error.to_string()))?
 }
 
 #[tauri::command]
@@ -254,8 +252,7 @@ pub fn run() {
     runtime::install_crypto_provider().expect("failed to initialize the Rustls crypto provider");
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
-            |app, arguments, working_directory| {
-                accept_workspace_argument(app, &arguments, &working_directory);
+            |app, _arguments, _working_directory| {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
@@ -324,6 +321,7 @@ pub fn run() {
                 Arc::clone(&runtime_updates),
             );
             if let Some(window) = app.get_window("main") {
+                keep_window_reachable(&window)?;
                 let surface = Arc::clone(&supervisor);
                 window.on_window_event(move |event| {
                     if matches!(
@@ -343,13 +341,6 @@ pub fn run() {
             });
             let locale = app.state::<AppState>().settings.get()?.locale;
             native_menu::install(app.handle(), &locale)?;
-            let arguments = env::args().collect::<Vec<_>>();
-            let working_directory = env::current_dir().unwrap_or_default();
-            accept_workspace_argument(
-                app.handle(),
-                &arguments,
-                &working_directory.to_string_lossy(),
-            );
             runtime_updates.check_automatically();
             Ok(())
         })
@@ -360,7 +351,6 @@ pub fn run() {
             runtime_open,
             settings_get,
             settings_update,
-            workspace_choose,
             desktop_about,
             repository_open,
             update_check,
@@ -386,28 +376,8 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{requested_workspace, runtime_boot_failure};
+    use super::{repaired_window_position, runtime_boot_failure};
     use crate::error::DesktopError;
-
-    #[test]
-    fn resolves_an_explicit_workspace_argument() {
-        let current = std::env::current_dir().unwrap();
-        let arguments = vec![
-            "deepseek-desktop".to_owned(),
-            "--workspace".to_owned(),
-            ".".to_owned(),
-        ];
-        assert_eq!(
-            requested_workspace(&arguments, &current.to_string_lossy()),
-            Some(
-                current
-                    .canonicalize()
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned()
-            )
-        );
-    }
 
     #[test]
     fn rolls_back_only_for_runtime_boot_failures() {
@@ -421,16 +391,53 @@ mod tests {
             "health check failed".to_owned()
         )));
         assert!(!runtime_boot_failure(&DesktopError::RuntimeStartRejected(
-            "workspace registration failed".to_owned()
+            "configuration was rejected".to_owned()
         )));
         assert!(!runtime_boot_failure(&DesktopError::InvalidConfiguration(
             "settings are invalid".to_owned()
         )));
-        assert!(!runtime_boot_failure(&DesktopError::InvalidWorkspace(
-            "/missing".to_owned()
-        )));
         assert!(!runtime_boot_failure(&DesktopError::Io(
-            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "workspace")
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "data directory")
         )));
+    }
+
+    #[test]
+    fn preserves_a_saved_position_on_a_connected_external_monitor() {
+        let monitors = [
+            (
+                tauri::PhysicalPosition::new(0, 0),
+                tauri::PhysicalSize::new(2240, 1440),
+            ),
+            (
+                tauri::PhysicalPosition::new(2240, 0),
+                tauri::PhysicalSize::new(2240, 1440),
+            ),
+        ];
+        assert_eq!(
+            repaired_window_position(
+                tauri::PhysicalPosition::new(2500, 180),
+                tauri::PhysicalSize::new(1600, 1000),
+                &monitors,
+                monitors[0],
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn recenters_a_window_when_its_saved_monitor_is_disconnected() {
+        let monitors = [(
+            tauri::PhysicalPosition::new(0, 0),
+            tauri::PhysicalSize::new(2240, 1440),
+        )];
+        assert_eq!(
+            repaired_window_position(
+                tauri::PhysicalPosition::new(4256, 180),
+                tauri::PhysicalSize::new(1600, 1000),
+                &monitors,
+                monitors[0],
+            ),
+            Some(tauri::PhysicalPosition::new(320, 220))
+        );
     }
 }

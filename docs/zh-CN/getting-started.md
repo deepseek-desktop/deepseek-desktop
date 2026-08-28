@@ -22,10 +22,9 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 ## 首次使用
 
 1. 启动 DeepSeek Desktop，选择界面语言。
-2. 选择一个明确的工作区。Agent 的文件操作和命令执行以该目录为边界。
-3. 启动本地工作台。主程序会在 `127.0.0.1` 上申请随机端口，并在当前桌面窗口中自动进入工作台，不需要填写端口或打开第二个窗口。
-4. 打开工作台的模型设置，选择 Provider，并写入 API Key 或 OAuth grant。
-5. 创建会话并开始任务。模型未配置或外部 Provider 不可用时，Runtime 仍可进入设置和诊断页面，但真实模型请求不会被伪造成成功。
+2. 启动本地工作台。主程序会在 `127.0.0.1` 上申请随机端口，并在当前桌面窗口中自动进入工作台，不需要预先选择目录、填写端口或打开第二个窗口。
+3. 打开工作台的模型设置，选择 Provider，并写入 API Key 或 OAuth grant。
+4. 在工作台中按会话需要添加或切换项目目录，再创建会话并开始任务。模型未配置或外部 Provider 不可用时，Runtime 仍可进入设置和诊断页面，但真实模型请求不会被伪造成成功。
 
 ## 模型与插件
 
@@ -35,19 +34,19 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 插件来自独立开发者。安装前应查看插件来源、许可证和权限说明，不要安装来源不明或要求超出任务所需权限的插件。
 
-桌面端会通过 Harness 的正式工作区接口自动注册所选目录。进入工作台后会直接显示该工作区，不需要重复选择；注册失败时 Runtime 不会误报为已就绪。
+Desktop 不保存、选择或注册项目目录。项目目录完全由 Runtime 工作台自身管理，Desktop 与 Runtime 只通过本地服务启动地址、健康状态和凭据协议连接；上游调整工作区接口时不需要同步修改桌面首次引导。
 
 模型凭据由桌面专用 Credential Provider 写入本机加密凭据库。macOS、Windows 和 Linux 使用同一套 XChaCha20-Poly1305 认证加密、跨进程文件锁和原子写入机制，不访问系统钥匙串，也不会弹出系统凭据授权窗口。凭据库不可用或损坏时会明确失败，不会降级写入 `.credentials.yaml`、`.env`、日志、浏览器存储或其他明文文件。新增自定义 Provider 时，如果凭据写入失败，桌面 Runtime 会回滚本次新增的 Provider 配置，修复凭据库后可以直接重试，不会把失败的首次提交误报为 Provider ID 重复。
 
 Desktop Shell 完整提供简体中文、繁体中文和英文。当前锁定 Runtime 的上游界面只提供 `zh` 和 `en`：启动 Runtime 时，桌面语言桥会将简体中文和繁体中文映射为上游中文，将英文映射为上游英文，并通过原子更新 `dsh/settings.yaml` 保留其他设置与注释。繁体中文用户看到的工作区仍是上游简体中文；工程不会为了制造“全繁体”表象而直接改写上游构建产物。
 
-桌面端只创建一个操作系统窗口。Runtime 就绪后，受管工作台作为无 Tauri 权限的隔离子 WebView 覆盖常驻 Shell 并占满窗口内容区，不再保留重复的 Logo、状态和管理按钮。通过系统原生“视图”菜单可在“工作台”（`Command/Ctrl+1`）和“桌面管理”（`Command/Ctrl+2`）之间切换；运行状态、诊断、更新和关于页面都在原窗口内显示。应用退出时会保存窗口位置、尺寸、最大化和全屏状态，再次打开时优先恢复到上次使用的显示器；外接屏幕暂时断开时由系统窗口管理决定可见位置。工作台输入框和可编辑区域会关闭系统拼写检查、自动纠错、自动首字母大写和写作建议，确保 Provider ID、API 地址、模型名、代码和普通对话均按原文输入，不被 WebView 擅自替换。该策略只设置浏览器输入属性，不读取或改写输入值。
+桌面端只创建一个操作系统窗口。Runtime 就绪后，受管工作台作为无 Tauri 权限的隔离子 WebView 覆盖常驻 Shell 并占满窗口内容区，不再保留重复的 Logo、状态和管理按钮。通过系统原生“视图”菜单可在“工作台”（`Command/Ctrl+1`）和“桌面管理”（`Command/Ctrl+2`）之间切换；运行状态、诊断、更新和关于页面都在原窗口内显示。应用退出时会保存窗口位置、尺寸、最大化和全屏状态，再次打开时优先恢复到上次使用的显示器；原外接屏仍连接时保留原位置，外接屏已断开时自动居中到当前可见显示器。工作台输入框和可编辑区域会关闭系统拼写检查、自动纠错、自动首字母大写和写作建议，确保 Provider ID、API 地址、模型名、代码和普通对话均按原文输入，不被 WebView 擅自替换。该策略只设置浏览器输入属性，不读取或改写输入值。
 
 关于页面会显示构建版本、Runtime、作者和项目仓库。开发者可以通过 `.env` 的 `DESKTOP_APP_AUTHORS` 自定义作者，通过 `DESKTOP_APP_REPOSITORY` 自定义公开仓库地址；仓库地址留空时，GitHub Actions 使用当前工作流仓库地址，本地开发优先读取公开的 Git `origin`，本机路径类型的 `origin` 会回退到 `package.json` 或项目内置地址。
 
 ## Runtime 生命周期
 
-Runtime 状态包括 `idle`、`starting`、`ready`、`stopping`、`recovering` 和 `failed`。启动超时为 20 秒；意外退出后最多自动恢复两次，退避为 1 秒和 3 秒。超过上限后进入失败页，并生成诊断关联编号。
+Runtime 状态包括 `idle`、`starting`、`ready`、`stopping`、`recovering` 和 `failed`。启动超时为 45 秒；意外退出后最多自动恢复两次，超过上限后进入失败页，并生成诊断关联编号。
 
 主程序退出时会关闭完整 Node/Runtime 进程树：macOS 和 Linux 使用独立进程组，并由 Runtime 监控桌面父进程是否仍存活；Windows 使用带 `KILL_ON_JOB_CLOSE` 的 Job Object。即使桌面主进程异常消失，Runtime 也会自行结束。工作台页面只能访问当前受管回环 Origin，不获得 Tauri shell、文件系统或通用 IPC 权限。
 
@@ -57,8 +56,9 @@ DeepSeek Desktop 使用系统应用数据目录，不向安装目录写运行数
 
 | 内容 | 说明 |
 | --- | --- |
-| `settings.json` | Shell 语言、工作区、桌面更新与 Runtime 独立更新设置 |
+| `settings.json` | Shell 语言、首次引导、桌面更新与 Runtime 独立更新设置 |
 | `dsh/` | Runtime profile、会话、设置和插件数据 |
+| `runtime-workdir/` | Runtime 进程的独立内部工作目录，不代表用户项目目录 |
 | `credential-vault.json` | XChaCha20-Poly1305 加密后的模型凭据和 record 索引，不包含可读明文 |
 | `credential-vault.key` | 当前用户专用的本地凭据库密钥；Unix 权限固定为 `0600` |
 | `credential-session.json` | 仅保存当前 Runtime 短期授权 token 的 SHA-256 摘要，不保存 token 或模型凭据 |
@@ -75,14 +75,13 @@ macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows �
 
 ## 诊断与隐私
 
-诊断页面只在用户主动操作时导出内容。“导出日志”生成便于直接查看的脱敏纯文本日志，“导出诊断包”生成包含状态、版本和最近日志摘要的 JSON 文档。两种导出都会遮蔽 Authorization、API Key、Cookie、password、secret、Bearer token 和工作区路径。Credential Provider 调用 helper 时还必须携带每次 Runtime 启动生成的短期会话；真实 token 只通过 Runtime 标准输入交付，应用数据目录仅保存用于校验的 SHA-256 摘要，不进入命令参数或日志。Runtime 启动后会从自身环境中移除 Helper 路径、数据目录和短期会话，避免普通工具子进程通过继承环境直接调用 Helper；工作台 WebView 也没有 Tauri 文件系统或通用 IPC 权限。这些措施用于减少意外泄漏，不构成对同一操作系统用户下任意代码执行的安全隔离。
+诊断页面只在用户主动操作时导出内容。“导出日志”生成便于直接查看的脱敏纯文本日志，“导出诊断包”生成包含状态、版本和最近日志摘要的 JSON 文档。两种导出都会遮蔽 Authorization、API Key、Cookie、password、secret、Bearer token 和本机路径。Credential Provider 调用 helper 时还必须携带每次 Runtime 启动生成的短期会话；真实 token 只通过 Runtime 标准输入交付，应用数据目录仅保存用于校验的 SHA-256 摘要，不进入命令参数或日志。Runtime 启动后会从自身环境中移除 Helper 路径、数据目录和短期会话，避免普通工具子进程通过继承环境直接调用 Helper；工作台 WebView 也没有 Tauri 文件系统或通用 IPC 权限。这些措施用于减少意外泄漏，不构成对同一操作系统用户下任意代码执行的安全隔离。
 
 出现启动失败时依次检查：
 
-1. 所选工作区是否仍存在并可读写。
-2. 诊断编号和导出的脱敏日志中是否出现 `runtime-artifact-missing`、`runtime-timeout`、`runtime-exited` 或 `restart-limit-reached`。
-3. 应用数据目录中的加密凭据库是否可读写、是否被安全软件隔离或损坏。
-4. 外部模型 Provider 的地址、模型名、账号权限和网络是否可用。
+1. 诊断编号和导出的脱敏日志中是否出现 `runtime-artifact-missing`、`runtime-workdir-unavailable`、`runtime-timeout`、`runtime-exited` 或 `restart-limit-reached`。
+2. 应用数据目录是否可读写、是否被安全软件隔离或损坏。
+3. 外部模型 Provider 的地址、模型名、账号权限和网络是否可用。
 
 ## 更新与卸载
 
@@ -90,7 +89,7 @@ macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows �
 
 Runtime 更新可在“桌面管理 → 更新”中选择“自动下载并在下次启动安装”“发现后提醒”或“仅手动检查”，也可以固定当前版本。只有发行版内置了可信 Runtime 清单地址、公钥和发布者身份时该功能才会启用；默认社区配置不连接更新服务。下载的新 Runtime 会在应用数据目录中完成 SHA-256、签名、平台与协议校验，启动 smoke 通过后才切换；失败会保留当前版本并自动回滚，用户也可随时恢复安装包内置 Runtime。更详细的维护与离线恢复说明见 [Runtime 独立更新指南](runtime-updates.md)。
 
-卸载应用不会自动删除工作区或应用数据。需要完全清理时，先卸载 DeepSeek Desktop，再由用户主动删除系统应用数据目录。新版只使用社区版内置的本地加密凭据库，不访问系统钥匙串。
+卸载应用不会自动删除 Runtime 工作台管理的项目目录或应用数据。需要完全清理时，先卸载 DeepSeek Desktop，再由用户主动删除系统应用数据目录。新版只使用社区版内置的本地加密凭据库，不访问系统钥匙串。
 
 ## 开发者验证
 

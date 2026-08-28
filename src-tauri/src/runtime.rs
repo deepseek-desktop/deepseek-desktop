@@ -26,8 +26,8 @@ use crate::runtime_update::{RuntimeLocation, RuntimeStore, RuntimeUpdateManager}
 use crate::settings::{AppPaths, SettingsStore};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
+const RUNTIME_WORK_DIR_NAME: &str = concat!("runtime", "-workdir");
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
-const WORKSPACE_REGISTRATION_TIMEOUT: Duration = Duration::from_secs(5);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_RESTARTS: u8 = 2;
 const PROFILE_PACKAGE_DIGEST_FILE: &str = ".deepseek-desktop-source.sha256";
@@ -123,15 +123,14 @@ impl RuntimeSupervisor {
         Ok(self.lock_inner()?.status.clone())
     }
 
-    pub fn start(&self, workspace: String) -> DesktopResult<RuntimeStatus> {
+    pub fn start(&self) -> DesktopResult<RuntimeStatus> {
         let _operation = self.lock_operation()?;
-        validate_workspace(&workspace)?;
         let current = self.status()?;
-        if is_active_workspace(&current, &workspace) {
+        if is_active_runtime(&current) {
             return Ok(current);
         }
         self.stop_locked(false)?;
-        self.spawn_locked(workspace, 0, RuntimePhase::Starting)
+        self.spawn_locked(0, RuntimePhase::Starting)
     }
 
     pub fn stop(&self) -> DesktopResult<RuntimeStatus> {
@@ -142,7 +141,6 @@ impl RuntimeSupervisor {
     pub fn task_failed(&self, message: &str) -> DesktopResult<RuntimeStatus> {
         let status = self.status()?;
         self.fail(
-            status.workspace.as_deref().unwrap_or_default(),
             status.restart_count,
             "runtime-task-failed",
             DesktopError::RuntimeStartRejected(message.to_owned()),
@@ -307,24 +305,24 @@ impl RuntimeSupervisor {
         let _ = self.app.emit("desktop://surface", surface);
     }
 
-    fn spawn_locked(
-        &self,
-        workspace: String,
-        restart_count: u8,
-        phase: RuntimePhase,
-    ) -> DesktopResult<RuntimeStatus> {
-        self.diagnostics.set_workspace(&workspace);
+    fn spawn_locked(&self, restart_count: u8, phase: RuntimePhase) -> DesktopResult<RuntimeStatus> {
         self.publish(RuntimeStatus {
             phase,
-            workspace: Some(workspace.clone()),
             restart_count,
             ..RuntimeStatus::default()
         })?;
+        let runtime_working_directory = self.paths.data_dir.join(RUNTIME_WORK_DIR_NAME);
+        if let Err(error) = fs::create_dir_all(&runtime_working_directory) {
+            return self.fail(
+                restart_count,
+                "runtime-workdir-unavailable",
+                DesktopError::RuntimeStartRejected(error.to_string()),
+            );
+        }
         let location = match self.runtime_store.location() {
             Ok(location) => location,
             Err(error) => {
                 return self.fail(
-                    &workspace,
                     restart_count,
                     "runtime-artifact-missing",
                     DesktopError::RuntimeArtifactMissing(error.to_string()),
@@ -344,7 +342,7 @@ impl RuntimeSupervisor {
             } else {
                 DesktopError::RuntimeStartRejected(error.to_string())
             };
-            return self.fail(&workspace, restart_count, code, error);
+            return self.fail(restart_count, code, error);
         }
         let dsh_entry = runtime_dir.join(location.entry);
         let parent_watch =
@@ -352,7 +350,6 @@ impl RuntimeSupervisor {
         let locale_sync = runtime_dir.join("node_modules/deepseek-desktop-bundle/locale-sync.cjs");
         if !dsh_entry.is_file() {
             return self.fail(
-                &workspace,
                 restart_count,
                 "runtime-artifact-missing",
                 DesktopError::RuntimeArtifactMissing(dsh_entry.display().to_string()),
@@ -360,7 +357,6 @@ impl RuntimeSupervisor {
         }
         if !parent_watch.is_file() {
             return self.fail(
-                &workspace,
                 restart_count,
                 "runtime-artifact-missing",
                 DesktopError::RuntimeArtifactMissing(parent_watch.display().to_string()),
@@ -368,7 +364,6 @@ impl RuntimeSupervisor {
         }
         if !locale_sync.is_file() {
             return self.fail(
-                &workspace,
                 restart_count,
                 "runtime-artifact-missing",
                 DesktopError::RuntimeArtifactMissing(locale_sync.display().to_string()),
@@ -378,7 +373,6 @@ impl RuntimeSupervisor {
             Ok(helper) => helper,
             Err(error) => {
                 return self.fail(
-                    &workspace,
                     restart_count,
                     "runtime-helper-unavailable",
                     DesktopError::RuntimeStartRejected(error.to_string()),
@@ -389,7 +383,6 @@ impl RuntimeSupervisor {
             Ok(session) => session,
             Err(error) => {
                 return self.fail(
-                    &workspace,
                     restart_count,
                     "runtime-credential-session-failed",
                     DesktopError::RuntimeStartRejected(error.to_string()),
@@ -400,7 +393,6 @@ impl RuntimeSupervisor {
             Ok(environment) => environment,
             Err(error) => {
                 return self.fail(
-                    &workspace,
                     restart_count,
                     "runtime-environment-failed",
                     DesktopError::RuntimeStartRejected(error.to_string()),
@@ -423,7 +415,7 @@ impl RuntimeSupervisor {
                 "0",
                 "--no-open",
             ])
-            .current_dir(&workspace)
+            .current_dir(&runtime_working_directory)
             .env_clear()
             .envs(environment)
             .stdin(Stdio::piped())
@@ -434,7 +426,6 @@ impl RuntimeSupervisor {
             Ok(child) => child,
             Err(error) => {
                 return self.fail(
-                    &workspace,
                     restart_count,
                     "runtime-exited",
                     DesktopError::RuntimeBootFailed(format!(
@@ -447,7 +438,6 @@ impl RuntimeSupervisor {
             Ok(managed) => managed,
             Err(error) => {
                 return self.fail(
-                    &workspace,
                     restart_count,
                     "runtime-process-management-failed",
                     DesktopError::RuntimeStartRejected(error.to_string()),
@@ -470,7 +460,6 @@ impl RuntimeSupervisor {
         if let Err(error) = session_result {
             managed.terminate();
             return self.fail(
-                &workspace,
                 restart_count,
                 "runtime-credential-channel-failed",
                 DesktopError::RuntimeStartRejected(error.to_string()),
@@ -479,7 +468,6 @@ impl RuntimeSupervisor {
         let Some(stdout) = managed.child.stdout.take() else {
             managed.terminate();
             return self.fail(
-                &workspace,
                 restart_count,
                 "runtime-output-unavailable",
                 DesktopError::RuntimeStartRejected("runtime stdout is unavailable".to_owned()),
@@ -488,7 +476,6 @@ impl RuntimeSupervisor {
         let Some(stderr) = managed.child.stderr.take() else {
             managed.terminate();
             return self.fail(
-                &workspace,
                 restart_count,
                 "runtime-output-unavailable",
                 DesktopError::RuntimeStartRejected("runtime stderr is unavailable".to_owned()),
@@ -518,7 +505,6 @@ impl RuntimeSupervisor {
                     let message = format!("exit status {exit}");
                     managed.terminate();
                     return self.fail(
-                        &workspace,
                         restart_count,
                         "runtime-exited",
                         DesktopError::RuntimeExited(message),
@@ -528,7 +514,6 @@ impl RuntimeSupervisor {
                 Err(error) => {
                     managed.terminate();
                     return self.fail(
-                        &workspace,
                         restart_count,
                         "runtime-process-status-failed",
                         DesktopError::RuntimeStartRejected(error.to_string()),
@@ -539,7 +524,6 @@ impl RuntimeSupervisor {
             if remaining.is_zero() {
                 managed.terminate();
                 return self.fail(
-                    &workspace,
                     restart_count,
                     "runtime-timeout",
                     DesktopError::RuntimeBootFailed("runtime startup timed out".to_owned()),
@@ -551,7 +535,6 @@ impl RuntimeSupervisor {
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     managed.terminate();
                     return self.fail(
-                        &workspace,
                         restart_count,
                         "runtime-output-closed",
                         DesktopError::RuntimeExited(
@@ -566,26 +549,15 @@ impl RuntimeSupervisor {
             Err(error) => {
                 managed.terminate();
                 return self.fail(
-                    &workspace,
                     restart_count,
                     "runtime-health-check-failed",
                     DesktopError::RuntimeBootFailed(error.to_string()),
                 );
             }
         };
-        if let Err(error) = register_workspace(&runtime_http, &workspace) {
-            managed.terminate();
-            return self.fail(
-                &workspace,
-                restart_count,
-                "runtime-workspace-registration-failed",
-                DesktopError::RuntimeStartRejected(error.to_string()),
-            );
-        }
         let status = RuntimeStatus {
             phase: RuntimePhase::Ready,
-            url: Some(runtime_http.root_url.to_string()),
-            workspace: Some(workspace),
+            url: Some(runtime_http.to_string()),
             restart_count,
             diagnostic_id: None,
             error_code: None,
@@ -620,7 +592,6 @@ impl RuntimeSupervisor {
         let surface_result = self.show_management();
         let status = RuntimeStatus {
             phase: RuntimePhase::Idle,
-            workspace: previous.workspace,
             ..RuntimeStatus::default()
         };
         let status = self.publish(status)?;
@@ -630,7 +601,6 @@ impl RuntimeSupervisor {
 
     fn fail(
         &self,
-        workspace: &str,
         restart_count: u8,
         code: &str,
         error: DesktopError,
@@ -639,7 +609,6 @@ impl RuntimeSupervisor {
         let _ = self.show_management();
         let status = RuntimeStatus {
             phase: RuntimePhase::Failed,
-            workspace: Some(workspace.to_owned()),
             restart_count,
             diagnostic_id: Some(Uuid::new_v4().to_string()),
             error_code: Some(code.to_owned()),
@@ -725,13 +694,11 @@ impl RuntimeSupervisor {
                             .map(|process| process.child.try_wait())
                         {
                             Some(Ok(Some(exit))) => Some((
-                                inner.status.workspace.clone(),
                                 inner.status.restart_count,
                                 exit.to_string(),
                                 inner.process.take(),
                             )),
                             Some(Err(error)) => Some((
-                                inner.status.workspace.clone(),
                                 inner.status.restart_count,
                                 format!("process status unavailable: {error}"),
                                 inner.process.take(),
@@ -740,7 +707,7 @@ impl RuntimeSupervisor {
                         }
                     }
                 };
-                let Some((Some(workspace), restart_count, exit, process)) = restart else {
+                let Some((restart_count, exit, process)) = restart else {
                     continue;
                 };
                 if let Some(mut process) = process {
@@ -751,7 +718,7 @@ impl RuntimeSupervisor {
                     let Ok(inner) = supervisor.inner.lock() else {
                         break;
                     };
-                    recovery_event_is_current(&inner, &workspace, restart_count)
+                    recovery_event_is_current(&inner, restart_count)
                 };
                 if !recovery_is_current {
                     continue;
@@ -761,15 +728,13 @@ impl RuntimeSupervisor {
                     &format!("runtime exited unexpectedly: {exit}"),
                 );
                 if restart_count >= MAX_RESTARTS {
-                    if supervisor.recover_with_available_rollback(&workspace)
-                        != RollbackRecovery::Unavailable
+                    if supervisor.recover_with_available_rollback() != RollbackRecovery::Unavailable
                     {
                         continue;
                     }
                     let _ = supervisor.show_management();
                     let _ = supervisor.publish(RuntimeStatus {
                         phase: RuntimePhase::Failed,
-                        workspace: Some(workspace),
                         restart_count,
                         diagnostic_id: Some(Uuid::new_v4().to_string()),
                         error_code: Some("restart-limit-reached".to_owned()),
@@ -781,7 +746,6 @@ impl RuntimeSupervisor {
                 let _ = supervisor.show_management();
                 let _ = supervisor.publish(RuntimeStatus {
                     phase: RuntimePhase::Recovering,
-                    workspace: Some(workspace.clone()),
                     restart_count: next,
                     ..RuntimeStatus::default()
                 });
@@ -790,17 +754,16 @@ impl RuntimeSupervisor {
                 } else {
                     Duration::from_secs(3)
                 });
-                if let Err(error) =
-                    supervisor.spawn_locked(workspace.clone(), next, RuntimePhase::Recovering)
+                if let Err(error) = supervisor.spawn_locked(next, RuntimePhase::Recovering)
                     && error.permits_runtime_rollback()
                 {
-                    let _ = supervisor.recover_with_available_rollback(&workspace);
+                    let _ = supervisor.recover_with_available_rollback();
                 }
             }
         });
     }
 
-    fn recover_with_available_rollback(&self, workspace: &str) -> RollbackRecovery {
+    fn recover_with_available_rollback(&self) -> RollbackRecovery {
         loop {
             match self.runtime_updates.rollback_after_start_failure_wait() {
                 Ok(true) => {}
@@ -816,11 +779,10 @@ impl RuntimeSupervisor {
             let _ = self.show_management();
             let _ = self.publish(RuntimeStatus {
                 phase: RuntimePhase::Recovering,
-                workspace: Some(workspace.to_owned()),
                 restart_count: 0,
                 ..RuntimeStatus::default()
             });
-            match self.spawn_locked(workspace.to_owned(), 0, RuntimePhase::Recovering) {
+            match self.spawn_locked(0, RuntimePhase::Recovering) {
                 Ok(_) => return RollbackRecovery::Recovered,
                 Err(error) if error.permits_runtime_rollback() => {}
                 Err(_) => return RollbackRecovery::Rejected,
@@ -836,11 +798,10 @@ enum RollbackRecovery {
     Unavailable,
 }
 
-fn recovery_event_is_current(inner: &RuntimeInner, workspace: &str, restart_count: u8) -> bool {
+fn recovery_event_is_current(inner: &RuntimeInner, restart_count: u8) -> bool {
     !inner.manual_stop
         && inner.process.is_none()
         && inner.status.phase == RuntimePhase::Ready
-        && inner.status.workspace.as_deref() == Some(workspace)
         && inner.status.restart_count == restart_count
 }
 
@@ -870,8 +831,8 @@ pub(crate) fn smoke_runtime_service(location: &RuntimeLocation) -> DesktopResult
     ] {
         fs::create_dir_all(directory)?;
     }
-    let workspace = smoke_root.join("workspace");
-    fs::create_dir_all(&workspace)?;
+    let runtime_working_directory = smoke_root.join(RUNTIME_WORK_DIR_NAME);
+    fs::create_dir_all(&runtime_working_directory)?;
     prepare_runtime_profile(&paths, &location.runtime_dir, &location.node)?;
     let entry = location.runtime_dir.join(&location.entry);
     let helper = std::env::current_exe()?;
@@ -900,7 +861,7 @@ pub(crate) fn smoke_runtime_service(location: &RuntimeLocation) -> DesktopResult
             "0",
             "--no-open",
         ])
-        .current_dir(&workspace)
+        .current_dir(&runtime_working_directory)
         .env_clear()
         .envs(runtime_environment(
             &paths,
@@ -969,8 +930,7 @@ pub(crate) fn smoke_runtime_service(location: &RuntimeLocation) -> DesktopResult
                 }
             }
         };
-        let runtime_http = authenticate_runtime(&ready_url)?;
-        register_workspace(&runtime_http, workspace.to_string_lossy().as_ref())?;
+        authenticate_runtime(&ready_url)?;
         Ok(())
     })();
     managed.terminate();
@@ -1202,19 +1162,11 @@ fn configure_process_group(command: &mut Command) {
     command.creation_flags(CREATE_NO_WINDOW);
 }
 
-fn validate_workspace(workspace: &str) -> DesktopResult<()> {
-    if !Path::new(workspace).is_dir() {
-        return Err(DesktopError::InvalidWorkspace(workspace.to_owned()));
-    }
-    Ok(())
-}
-
-fn is_active_workspace(status: &RuntimeStatus, workspace: &str) -> bool {
-    status.workspace.as_deref() == Some(workspace)
-        && matches!(
-            status.phase,
-            RuntimePhase::Starting | RuntimePhase::Ready | RuntimePhase::Recovering
-        )
+fn is_active_runtime(status: &RuntimeStatus) -> bool {
+    matches!(
+        status.phase,
+        RuntimePhase::Starting | RuntimePhase::Ready | RuntimePhase::Recovering
+    )
 }
 
 #[cfg(any(test, windows))]
@@ -1258,12 +1210,7 @@ fn workbench_geometry(
     (tauri::PhysicalPosition::new(0, 0), window_size)
 }
 
-struct RuntimeHttpSession {
-    root_url: Url,
-    cookie: Option<HeaderValue>,
-}
-
-fn authenticate_runtime(url: &str) -> DesktopResult<RuntimeHttpSession> {
+fn authenticate_runtime(url: &str) -> DesktopResult<Url> {
     install_crypto_provider()?;
     let launch_url = Url::parse(url).map_err(|error| DesktopError::Other(error.to_string()))?;
     validate_runtime_launch_url(&launch_url)?;
@@ -1355,7 +1302,7 @@ fn authenticate_runtime(url: &str) -> DesktopResult<RuntimeHttpSession> {
             response.status()
         )));
     }
-    Ok(RuntimeHttpSession { root_url, cookie })
+    Ok(root_url)
 }
 
 fn validate_runtime_launch_url(url: &Url) -> DesktopResult<()> {
@@ -1393,76 +1340,6 @@ fn validate_runtime_launch_url(url: &Url) -> DesktopResult<()> {
         }
     }
     Ok(())
-}
-
-fn register_workspace(session: &RuntimeHttpSession, workspace: &str) -> DesktopResult<()> {
-    install_crypto_provider()?;
-    let endpoint = session
-        .root_url
-        .join("/api/workspace.create")
-        .map_err(|error| DesktopError::Other(error.to_string()))?;
-    let rpc_id = Uuid::new_v4().to_string();
-    let client = reqwest::blocking::Client::builder()
-        .timeout(WORKSPACE_REGISTRATION_TIMEOUT)
-        .build()
-        .map_err(|error| DesktopError::Other(error.to_string()))?;
-    let mut request = client
-        .post(endpoint)
-        .json(&workspace_registration_request(&rpc_id, workspace));
-    if let Some(cookie) = &session.cookie {
-        request = request.header(COOKIE, cookie.clone());
-    }
-    let response = request
-        .send()
-        .map_err(|error| DesktopError::Other(error.to_string()))?;
-    if !response.status().is_success() {
-        return Err(DesktopError::Other(format!(
-            "runtime workspace registration returned {}",
-            response.status()
-        )));
-    }
-    let envelope = response
-        .json::<serde_json::Value>()
-        .map_err(|error| DesktopError::Other(error.to_string()))?;
-    validate_workspace_registration_response(&rpc_id, &envelope)
-}
-
-fn workspace_registration_request(rpc_id: &str, workspace: &str) -> serde_json::Value {
-    serde_json::json!({
-        "type": "client-request",
-        "rpcId": rpc_id,
-        "method": "workspace.create",
-        "payload": { "path": workspace }
-    })
-}
-
-fn validate_workspace_registration_response(
-    rpc_id: &str,
-    envelope: &serde_json::Value,
-) -> DesktopResult<()> {
-    if envelope.get("type").and_then(serde_json::Value::as_str) != Some("server-response")
-        || envelope.get("rpcId").and_then(serde_json::Value::as_str) != Some(rpc_id)
-    {
-        return Err(DesktopError::Other(
-            "runtime workspace registration returned an invalid response".to_owned(),
-        ));
-    }
-    match envelope
-        .pointer("/result/ok")
-        .and_then(serde_json::Value::as_bool)
-    {
-        Some(true) => Ok(()),
-        Some(false) => {
-            let message = envelope
-                .pointer("/result/error/message")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("runtime rejected the workspace");
-            Err(DesktopError::Other(message.to_owned()))
-        }
-        None => Err(DesktopError::Other(
-            "runtime workspace registration returned an invalid result".to_owned(),
-        )),
-    }
 }
 
 pub fn install_crypto_provider() -> DesktopResult<()> {
@@ -1726,7 +1603,7 @@ mod tests {
     }
 
     #[test]
-    fn treats_repeated_start_for_active_workspace_as_idempotent() {
+    fn treats_repeated_start_for_active_runtime_as_idempotent() {
         for phase in [
             RuntimePhase::Starting,
             RuntimePhase::Ready,
@@ -1734,19 +1611,16 @@ mod tests {
         ] {
             let status = RuntimeStatus {
                 phase,
-                workspace: Some("/tmp/workspace".to_owned()),
                 ..RuntimeStatus::default()
             };
-            assert!(is_active_workspace(&status, "/tmp/workspace"));
-            assert!(!is_active_workspace(&status, "/tmp/other"));
+            assert!(is_active_runtime(&status));
         }
 
         let failed = RuntimeStatus {
             phase: RuntimePhase::Failed,
-            workspace: Some("/tmp/workspace".to_owned()),
             ..RuntimeStatus::default()
         };
-        assert!(!is_active_workspace(&failed, "/tmp/workspace"));
+        assert!(!is_active_runtime(&failed));
     }
 
     #[test]
@@ -1754,7 +1628,6 @@ mod tests {
         let mut inner = RuntimeInner {
             status: RuntimeStatus {
                 phase: RuntimePhase::Ready,
-                workspace: Some("/workspace".to_owned()),
                 restart_count: 1,
                 ..RuntimeStatus::default()
             },
@@ -1762,15 +1635,15 @@ mod tests {
             browser_launch_url: None,
             manual_stop: false,
         };
-        assert!(recovery_event_is_current(&inner, "/workspace", 1));
+        assert!(recovery_event_is_current(&inner, 1));
         inner.status.phase = RuntimePhase::Recovering;
-        assert!(!recovery_event_is_current(&inner, "/workspace", 1));
+        assert!(!recovery_event_is_current(&inner, 1));
         inner.status.phase = RuntimePhase::Ready;
         inner.status.restart_count = 0;
-        assert!(!recovery_event_is_current(&inner, "/workspace", 1));
+        assert!(!recovery_event_is_current(&inner, 1));
         inner.status.restart_count = 1;
         inner.manual_stop = true;
-        assert!(!recovery_event_is_current(&inner, "/workspace", 1));
+        assert!(!recovery_event_is_current(&inner, 1));
     }
 
     #[test]
@@ -1839,9 +1712,8 @@ mod tests {
         });
 
         install_crypto_provider().unwrap();
-        let session = authenticate_runtime(&format!("http://{address}")).unwrap();
-        assert_eq!(session.root_url.as_str(), format!("http://{address}/"));
-        assert!(session.cookie.is_none());
+        let root_url = authenticate_runtime(&format!("http://{address}")).unwrap();
+        assert_eq!(root_url.as_str(), format!("http://{address}/"));
         server.join().unwrap();
         assert!(rustls::crypto::CryptoProvider::get_default().is_some());
     }
@@ -1873,40 +1745,11 @@ mod tests {
                     b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                 )
                 .unwrap();
-
-            let (mut workspace, _) = listener.accept().unwrap();
-            let request = read_http_request(&mut workspace);
-            assert!(request.starts_with("POST /api/workspace.create HTTP/1.1"));
-            assert!(
-                request
-                    .to_ascii_lowercase()
-                    .contains("cookie: dsh-auth-test=session_value")
-            );
-            let body = request.split("\r\n\r\n").nth(1).unwrap();
-            let body: serde_json::Value = serde_json::from_str(body).unwrap();
-            assert_eq!(body["payload"]["path"], "/tmp/workspace");
-            let response = serde_json::json!({
-                "type": "server-response",
-                "rpcId": body["rpcId"],
-                "result": { "ok": true, "value": {} }
-            })
-            .to_string();
-            write!(
-                workspace,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                response.len(),
-                response
-            )
-            .unwrap();
         });
 
-        let session = authenticate_runtime(&format!("http://{address}/?token=test_token")).unwrap();
-        assert_eq!(session.root_url.as_str(), format!("http://{address}/"));
-        assert_eq!(
-            session.cookie.as_ref().unwrap().to_str().unwrap(),
-            "dsh-auth-test=session_value"
-        );
-        register_workspace(&session, "/tmp/workspace").unwrap();
+        let root_url =
+            authenticate_runtime(&format!("http://{address}/?token=test_token")).unwrap();
+        assert_eq!(root_url.as_str(), format!("http://{address}/"));
         server.join().unwrap();
     }
 
@@ -1923,57 +1766,6 @@ mod tests {
             let url = Url::parse(candidate).unwrap();
             assert!(validate_runtime_launch_url(&url).is_err(), "{candidate}");
         }
-    }
-
-    #[test]
-    fn builds_and_accepts_the_workspace_registration_contract() {
-        let request = workspace_registration_request("rpc-1", "/tmp/workspace");
-        assert_eq!(request["type"], "client-request");
-        assert_eq!(request["rpcId"], "rpc-1");
-        assert_eq!(request["method"], "workspace.create");
-        assert_eq!(request["payload"]["path"], "/tmp/workspace");
-
-        let response = serde_json::json!({
-            "type": "server-response",
-            "rpcId": "rpc-1",
-            "result": {
-                "ok": true,
-                "value": {
-                    "workspace": {
-                        "workspaceId": "workspace-1",
-                        "path": "/tmp/workspace",
-                        "title": "workspace",
-                        "sessionIds": [],
-                        "createdAt": "2026-08-25T00:00:00Z",
-                        "updatedAt": "2026-08-25T00:00:00Z"
-                    },
-                    "created": true
-                }
-            }
-        });
-        validate_workspace_registration_response("rpc-1", &response).unwrap();
-    }
-
-    #[test]
-    fn rejects_failed_or_mismatched_workspace_registration_responses() {
-        let rejected = serde_json::json!({
-            "type": "server-response",
-            "rpcId": "rpc-1",
-            "result": {
-                "ok": false,
-                "error": { "code": "invalid-path", "message": "workspace is unavailable" }
-            }
-        });
-        let error = validate_workspace_registration_response("rpc-1", &rejected).unwrap_err();
-        assert!(error.to_string().contains("workspace is unavailable"));
-
-        let mismatched = serde_json::json!({
-            "type": "server-response",
-            "rpcId": "rpc-2",
-            "result": { "ok": true, "value": {} }
-        });
-        let error = validate_workspace_registration_response("rpc-1", &mismatched).unwrap_err();
-        assert!(error.to_string().contains("invalid response"));
     }
 
     #[test]

@@ -207,10 +207,6 @@ fn migrate_settings(mut value: serde_json::Value) -> serde_json::Result<serde_js
             .as_object_mut()
             .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?;
         object.insert(
-            "schemaVersion".to_owned(),
-            serde_json::json!(current_settings_schema_version()),
-        );
-        object.insert(
             "runtimeUpdateChannel".to_owned(),
             serde_json::json!(env!("DEEPSEEK_DESKTOP_RUNTIME_UPDATE_CHANNEL")),
         );
@@ -223,6 +219,16 @@ fn migrate_settings(mut value: serde_json::Value) -> serde_json::Result<serde_js
             }),
         );
         object.insert("runtimePinnedVersion".to_owned(), serde_json::Value::Null);
+    }
+    if schema <= 2 {
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?;
+        object.remove("workspace");
+        object.insert(
+            "schemaVersion".to_owned(),
+            serde_json::json!(current_settings_schema_version()),
+        );
     }
     Ok(value)
 }
@@ -390,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn migrates_schema_one_without_losing_user_values() {
+    fn migrates_legacy_settings_without_retaining_desktop_workspace_state() {
         let value = serde_json::json!({
             "schemaVersion": 1,
             "locale": "en-US",
@@ -403,8 +409,9 @@ mod tests {
             serde_json::from_value(migrate_settings(value).unwrap()).unwrap();
         assert_eq!(settings.schema_version, current_settings_schema_version());
         assert_eq!(settings.locale, "en-US");
-        assert_eq!(settings.workspace.as_deref(), Some("/workspace"));
         assert_eq!(settings.runtime_update_mode, "notify");
+        let serialized = serde_json::to_value(settings).unwrap();
+        assert!(serialized.get("workspace").is_none());
     }
 
     #[test]

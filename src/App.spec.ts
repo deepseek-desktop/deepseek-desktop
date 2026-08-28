@@ -3,13 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import { appConfig } from "./app-config";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { checkRuntimeUpdate, chooseWorkspace, downloadRuntimeUpdate, exportDiagnostics, exportLogs, openRepository, openWorkbench, startRuntime } from "./desktop";
+import { checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, openRepository, openWorkbench, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   locale: "zh-CN",
-  workspace: null,
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
@@ -21,7 +20,6 @@ const settings: DesktopSettings = {
 const runtime: RuntimeStatus = {
   phase: "idle",
   url: null,
-  workspace: null,
   restartCount: 0,
   diagnosticId: null,
   errorCode: null
@@ -34,7 +32,6 @@ vi.mock("./desktop", () => ({
     availableVersion: "1.1.0", pendingVersion: null, channel: "stable", mode: "automatic", pinnedVersion: null,
     downloadedBytes: 0, totalBytes: 1024, message: "available"
   })),
-  chooseWorkspace: vi.fn(async () => null),
   exportDiagnostics: vi.fn(async () => ""),
   exportLogs: vi.fn(async () => ""),
   getAbout: vi.fn(async () => ({
@@ -77,9 +74,8 @@ vi.mock("./desktop", () => ({
 describe(`${appConfig.productName} shell`, () => {
   beforeEach(() => {
     Object.assign(settings, {
-      schemaVersion: 2,
+      schemaVersion: 3,
       locale: "zh-CN",
-      workspace: null,
       onboardingCompleted: false,
       updateChannel: "community",
       updateEnabled: false,
@@ -91,7 +87,6 @@ describe(`${appConfig.productName} shell`, () => {
     Object.assign(runtime, {
       phase: "idle",
       url: null,
-      workspace: null,
       restartCount: 0,
       diagnosticId: null,
       errorCode: null
@@ -112,34 +107,23 @@ describe(`${appConfig.productName} shell`, () => {
     expect(wrapper.text()).toContain("Diagnostics");
   });
 
-  it("does not advance past workspace selection until a directory is selected", async () => {
+  it("starts onboarding without requiring a Desktop workspace", async () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
     const continueButton = () => wrapper.findAll("button").find(button => button.text() === "继续");
     await continueButton()?.trigger("click");
-    expect(wrapper.text()).toContain("选择工作区");
-    expect(continueButton()?.attributes("disabled")).toBeDefined();
-    await continueButton()?.trigger("click");
-    expect(wrapper.text()).toContain("选择工作区");
-    expect(wrapper.findAll("button").find(button => button.text() === "启动工作台")).toBeUndefined();
-
-    vi.mocked(chooseWorkspace).mockResolvedValue("/tmp/dsh-workspace");
-    await wrapper.findAll("button").find(button => button.text() === "选择目录")?.trigger("click");
-    await flushPromises();
-    expect(continueButton()?.attributes("disabled")).toBeUndefined();
-    await continueButton()?.trigger("click");
     expect(wrapper.text()).toContain("配置模型");
+    expect(wrapper.text()).not.toContain("选择工作区");
+    expect(wrapper.findAll("button").find(button => button.text() === "启动工作台")).toBeDefined();
   });
 
-  it("retries an early failure with the persisted workspace", async () => {
-    settings.workspace = "/tmp/dsh-workspace";
+  it("retries an early failure without a Desktop workspace", async () => {
     settings.onboardingCompleted = true;
     runtime.phase = "failed";
     runtime.errorCode = "runtime-task-failed";
     vi.mocked(startRuntime).mockResolvedValue({
       ...runtime,
       phase: "ready",
-      workspace: settings.workspace,
       url: "http://127.0.0.1:49152",
       errorCode: null
     });
@@ -149,17 +133,15 @@ describe(`${appConfig.productName} shell`, () => {
     await wrapper.findAll("button").find(button => button.text() === "重试")?.trigger("click");
     await flushPromises();
 
-    expect(startRuntime).toHaveBeenCalledWith(settings.workspace);
+    expect(startRuntime).toHaveBeenCalledWith();
     expect(wrapper.text()).toContain("Runtime 已就绪");
   });
 
-  it("starts an idle runtime with the persisted workspace", async () => {
-    settings.workspace = "/tmp/dsh-workspace";
+  it("starts an idle runtime without a Desktop workspace", async () => {
     settings.onboardingCompleted = true;
     vi.mocked(startRuntime).mockResolvedValue({
       ...runtime,
       phase: "ready",
-      workspace: settings.workspace,
       url: "http://127.0.0.1:49152"
     });
 
@@ -170,7 +152,7 @@ describe(`${appConfig.productName} shell`, () => {
     await startButton?.trigger("click");
     await flushPromises();
 
-    expect(startRuntime).toHaveBeenCalledWith(settings.workspace);
+    expect(startRuntime).toHaveBeenCalledWith();
     expect(openWorkbench).toHaveBeenCalledOnce();
     expect(wrapper.text()).toContain("运行状态");
   });

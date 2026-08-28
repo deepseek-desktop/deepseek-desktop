@@ -4,7 +4,6 @@ export type DesktopSurface = "management" | "workbench";
 export interface RuntimeStatus {
   phase: RuntimePhase;
   url: string | null;
-  workspace: string | null;
   restartCount: number;
   diagnosticId: string | null;
   errorCode: string | null;
@@ -13,7 +12,6 @@ export interface RuntimeStatus {
 export interface DesktopSettings {
   schemaVersion: number;
   locale: "zh-CN" | "zh-TW" | "en-US";
-  workspace: string | null;
   onboardingCompleted: boolean;
   updateChannel: "community" | "stable";
   updateEnabled: boolean;
