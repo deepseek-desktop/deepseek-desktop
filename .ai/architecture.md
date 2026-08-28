@@ -23,8 +23,9 @@ RUNTIME_REPOSITORY / RUNTIME_REF
   -> scripts/runtime-update/ 各原生节点生成生产闭包
   -> 四平台描述一致性 + Ed25519 签名清单
   -> 应用数据目录 staging / 版本目录
-  -> SHA-256 + 来源 / 平台 / 协议 / 包版本校验
-  -> smoke -> 原子 current 指针 -> 失败回滚 previous / bundled
+  -> 有效期 / 防重放 + SHA-256 + 来源 / 平台 / 协议 / 包版本校验
+  -> 真实本地服务 smoke -> 原子 current 指针 -> 失败回滚 previous / bundled
+  -> 只保留 current / previous / pending 引用版本
 ```
 
 `target/` 是生成与缓存目录，不是源码事实。稳定工具链、Runtime 发布来源和第三方制品校验和由 `runtime/toolchain-lock.json` 维护。
@@ -38,7 +39,7 @@ RUNTIME_REPOSITORY / RUNTIME_REF
   -> 一次性票据 + 短期任务租约
   -> 受信任原生 Worker
   -> 复用 desktop:package
-  -> 流式上传 + BUILD-INFO / SHA-256 / 目标校验
+  -> 交付闭包扫描 + 流式上传 + BUILD-INFO / SHA-256 / 目标校验
   -> filesystem（默认）或可选 GitHub Provider
 ```
 
@@ -77,4 +78,5 @@ Apple Silicon 单机编排由 `scripts/release-system/local-all.mjs` 在同一�
 - 只信任受管的 loopback Origin，不允许任意远程页面进入桌面 IPC 域。
 - 凭据、`.env`、用户工作区和本机路径不得进入安装包、发布附件或诊断包。
 - 发布来源使用不可变 commit 和哈希作为事实，不以可移动 tag 单独作为信任依据。
-- Runtime 清单签名覆盖来源、兼容协议和制品哈希；更新客户端不跟随重定向，不解压链接、特殊文件或逃逸路径。
+- Runtime 清单签名覆盖有效期、来源、兼容协议和制品哈希；更新客户端按频道拒绝重放与降级，不跟随重定向，不解压链接、特殊文件或逃逸路径。
+- 打包 Worker 流式扫描实际交付闭包并在 `BUILD-INFO` 留下审计摘要；Controller 拒绝缺失摘要、来源不一致、超时、超限或敏感信息命中的制品。GitHub Actions 的第一方 Action 固定到不可变 commit SHA。

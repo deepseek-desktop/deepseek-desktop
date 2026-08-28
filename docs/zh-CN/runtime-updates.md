@@ -12,7 +12,7 @@ DeepSeek Desktop 把桌面外壳与 Harness Runtime 分开发布。模型适配�
 - **固定当前 Runtime**：停止检查、下载和待安装切换，直到取消固定。
 - **恢复内置 Runtime**：停止当前 Runtime，并把下次启动恢复到安装包内置版本。
 
-更新失败不会覆盖当前可用版本。应用先下载到 staging，校验签名、发布者、仓库、平台、协议、兼容版本、大小和 SHA-256，再解压到版本化目录。下次启动先执行 Node 与 Runtime CLI smoke，然后原子切换 `current` 指针。新版本启动失败或连续恢复失败时，会自动回滚上一版；上一版也不可用时使用安装包内置 Runtime。
+更新失败不会覆盖当前可用版本。应用先下载到 staging，校验签名、有效期、发布历史、发布者、仓库、平台、协议、兼容版本、大小和 SHA-256，再解压到版本化目录。下次启动先检查 Node 和 Runtime CLI，再在隔离临时目录真实启动本地 Runtime，完成 readiness、HTTP 探活和工作区注册后才原子切换 `current` 指针。新版本启动失败或连续恢复失败时，会自动回滚上一版；上一版也不可用时使用安装包内置 Runtime。更新器只保留 `current`、`previous` 和 `pending` 指针引用的版本，启动和失败清理都会移除遗留 staging 与孤立版本目录。
 
 离线环境可以长期使用当前或内置 Runtime。断网、服务器错误、下载中断、哈希不符或签名错误只会记录脱敏状态，不会影响当前 Runtime。诊断包包含当前版本、commit、来源和更新阶段，但不包含清单地址、令牌、公钥私钥或模型密钥。
 
@@ -58,6 +58,7 @@ corepack pnpm@11.7.0 runtime:update:manifest -- \
   --minimum-desktop 1.0.0 \
   --maximum-desktop 2.0.0 \
   --channel stable \
+  --valid-for-hours 168 \
   --base-url https://updates.example.com/runtime/stable/
 ```
 
@@ -74,6 +75,7 @@ corepack pnpm@11.7.0 runtime:update:manifest -- \
   "schemaVersion": 1,
   "publisher": "deepseek-desktop",
   "issuedAt": "2026-01-01T00:00:00.000Z",
+  "expiresAt": "2026-01-08T00:00:00.000Z",
   "runtimeVersion": "1.0.0",
   "channel": "stable",
   "desktopProtocolVersion": 1,
@@ -99,12 +101,12 @@ corepack pnpm@11.7.0 runtime:update:manifest -- \
 }
 ```
 
-客户端只接受当前平台制品、受信任发布者和配置公钥。`stable` 拒绝预发布 SemVer；候选版本必须高于当前版本，并落在 Desktop 兼容范围内。Runtime、Desktop 和凭据协议必须精确匹配，Runtime 仓库必须与安装包内置来源一致。压缩包拒绝绝对路径、父目录逃逸、重复路径、符号链接、特殊文件、超量文件和超限解压大小。
+客户端只接受当前平台制品、受信任发布者和配置公钥。清单必须在签名覆盖的 `issuedAt` 与 `expiresAt` 有效期内，签发时间最多允许 15 分钟时钟偏差；客户端按频道持久化已接受的最高版本、签发时间和 commit，拒绝旧版本、旧签发时间以及同版本替换 commit 的重放。`stable` 拒绝预发布 SemVer，但允许带构建元数据的稳定版本；候选版本必须高于当前版本，并落在 Desktop 兼容范围内。Runtime、Desktop 和凭据协议必须精确匹配，Runtime 仓库必须与安装包内置来源一致。压缩包拒绝绝对路径、父目录逃逸、重复路径、符号链接、特殊文件、超量文件和超限解压大小。
 
 ## 故障恢复
 
 - **下载或验签失败**：保留当前 Runtime，删除不完整 `.part` 文件后重试。
-- **启动 smoke 失败**：删除待安装指针，继续使用当前 Runtime。
+- **启动 smoke 失败**：删除待安装指针和孤立版本目录，继续使用当前 Runtime。
 - **切换后启动失败**：原子切回上一版并重新启动。
 - **上一版不可用**：删除外部 current 指针，恢复安装包内置 Runtime。
 - **固定版本**：取消固定前不应用已下载版本；取消后重新检查可获得最新可信版本。

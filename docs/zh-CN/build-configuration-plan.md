@@ -249,7 +249,7 @@ corepack pnpm@11.7.0 tauri:build
 - 三语 Shell、窗口标题、原生菜单、关于页、安装包名称和版本保持一致。
 - 替换一张源图后，各平台图标完整生成且非透明空白图。
 - `app:sync --check` 不产生工作区改动。
-- `.env` 不出现在 `dist`、Runtime staging、安装包和诊断包中。
+- 打包器流式扫描 `dist`、当前平台 Runtime staging、生成配置、原生 bundle、主程序和最终安装包；`.env`、真实凭据、私钥、符号链接、本机绝对路径不得进入交付闭包或诊断包，扫描摘要写入 `BUILD-INFO` 并由分布式 Controller 复核。
 
 ### Runtime 同步
 

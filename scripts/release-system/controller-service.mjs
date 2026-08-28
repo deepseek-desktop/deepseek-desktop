@@ -16,6 +16,7 @@ import {
 } from "./common.mjs";
 import { resolveRemoteTag } from "./git-source.mjs";
 import { publishWithProvider } from "./providers/index.mjs";
+import { scanArtifactPaths } from "../lib/artifact-scan.mjs";
 
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const shaPattern = /^[0-9a-f]{64}$/u;
@@ -280,6 +281,7 @@ export class ReleaseControllerService {
       const checksumText = await readFile(join(directory, "SHA256SUMS"), "utf8");
       scanTextArtifact(buildInfoName, buildInfoText);
       scanTextArtifact("SHA256SUMS", checksumText);
+      await scanArtifactPaths(installers.map(name => join(directory, name)));
       const buildInfo = JSON.parse(buildInfoText);
       if (buildInfo.application?.version !== release.version) throw new Error("BUILD-INFO application version does not match release plan");
       if (buildInfo.desktop?.commit !== release.source.commit || buildInfo.desktop?.dirty !== false) {
@@ -290,6 +292,14 @@ export class ReleaseControllerService {
       }
       if (buildInfo.target !== target.triple || buildInfo.channel !== release.channel || buildInfo.signed !== release.signed) {
         throw new Error("BUILD-INFO target or release channel does not match release plan");
+      }
+      if (buildInfo.artifactAudit?.schemaVersion !== 1
+        || buildInfo.artifactAudit?.scannerVersion !== 1
+        || !Number.isSafeInteger(buildInfo.artifactAudit?.fileCount)
+        || buildInfo.artifactAudit.fileCount <= 0
+        || !Number.isSafeInteger(buildInfo.artifactAudit?.byteCount)
+        || buildInfo.artifactAudit.byteCount <= 0) {
+        throw new Error("BUILD-INFO is missing a valid artifact security audit");
       }
       const checksums = parseChecksums(checksumText);
       for (const name of [...installers, buildInfoName]) {

@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { createMacDmg } from "./macos-dmg.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
+import { scanArtifactPaths } from "./lib/artifact-scan.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -68,13 +70,6 @@ async function sha256(path) {
   return createHash("sha256").update(await readFile(path)).digest("hex");
 }
 
-async function assertNoEnvironmentFiles(directory) {
-  const leaks = (await filesUnder(directory))
-    .filter(path => /^\.env(?:\.|$)/u.test(basename(path)))
-    .map(path => relative(root, path));
-  if (leaks.length > 0) throw new Error(`build output contains environment files: ${leaks.join(", ")}`);
-}
-
 runPnpm(["install", "--frozen-lockfile"]);
 runPnpm(["playwright:install"]);
 runPnpm(["app:sync"]);
@@ -117,6 +112,28 @@ for (const artifact of artifacts) {
   copiedArtifacts.push(output);
 }
 
+const primaryBinary = join(
+  root,
+  "src-tauri",
+  "target",
+  "release",
+  `${packageJson.name}${process.platform === "win32" ? ".exe" : ""}`
+);
+const scanRoots = [
+  join(root, "dist"),
+  join(root, "target", "generated", "app-config.json"),
+  join(root, "target", "generated", "tauri.conf.json"),
+  join(root, "target", "generated", "runtime-source.json"),
+  join(root, "target", "generated", "runtime-lock.json"),
+  join(root, "target", "generated", "branding"),
+  join(root, "runtime", "staging", target.triple),
+  bundleRoot,
+  ...await stat(primaryBinary).then(() => [primaryBinary], () => [])
+];
+const artifactAudit = await scanArtifactPaths(scanRoots, {
+  forbiddenRoots: [root, homedir(), process.env.USERPROFILE, process.env.HOME]
+});
+
 const dirty = git(["status", "--porcelain", "--untracked-files=all"]).length > 0;
 const buildInfoPath = join(outputRoot, `BUILD-INFO.${target.triple}.json`);
 await writeFile(buildInfoPath, `${JSON.stringify({
@@ -150,12 +167,13 @@ await writeFile(buildInfoPath, `${JSON.stringify({
     desktopProtocolVersion: config.runtimeUpdate.desktopProtocolVersion,
     runtimeProtocolVersion: config.runtimeUpdate.runtimeProtocolVersion,
     credentialProtocolVersion: config.runtimeUpdate.credentialProtocolVersion
-  }
+  },
+  artifactAudit
 }, null, 2)}\n`);
 
-await assertNoEnvironmentFiles(join(root, "target", "generated"));
-await assertNoEnvironmentFiles(bundleRoot);
-await assertNoEnvironmentFiles(outputRoot);
+await scanArtifactPaths([...copiedArtifacts, buildInfoPath], {
+  forbiddenRoots: [root, homedir(), process.env.USERPROFILE, process.env.HOME]
+});
 const checksumFiles = [...copiedArtifacts, buildInfoPath].sort((left, right) => basename(left).localeCompare(basename(right)));
 const checksumLines = [];
 for (const path of checksumFiles) checksumLines.push(`${await sha256(path)}  ${basename(path)}`);

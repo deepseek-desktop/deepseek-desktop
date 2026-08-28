@@ -18,7 +18,7 @@ use crate::contracts::{RuntimePhase, RuntimeStatus};
 use crate::credential_vault::RuntimeSession;
 use crate::diagnostics::Diagnostics;
 use crate::error::{DesktopError, DesktopResult};
-use crate::runtime_update::{RuntimeStore, RuntimeUpdateManager};
+use crate::runtime_update::{RuntimeLocation, RuntimeStore, RuntimeUpdateManager};
 use crate::settings::{AppPaths, SettingsStore};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
@@ -139,7 +139,7 @@ impl RuntimeSupervisor {
             status.workspace.as_deref().unwrap_or_default(),
             status.restart_count,
             "runtime-task-failed",
-            message,
+            DesktopError::RuntimeStartRejected(message.to_owned()),
         )
     }
 
@@ -304,10 +304,32 @@ impl RuntimeSupervisor {
             restart_count,
             ..RuntimeStatus::default()
         })?;
-        let location = self.runtime_store.location()?;
+        let location = match self.runtime_store.location() {
+            Ok(location) => location,
+            Err(error) => {
+                return self.fail(
+                    &workspace,
+                    restart_count,
+                    "runtime-artifact-missing",
+                    DesktopError::RuntimeArtifactMissing(error.to_string()),
+                );
+            }
+        };
         let runtime_dir = location.runtime_dir;
         let node = location.node;
-        self.prepare_profile(&runtime_dir, &node)?;
+        if let Err(error) = self.prepare_profile(&runtime_dir, &node) {
+            let code = if error.permits_runtime_rollback() {
+                "runtime-artifact-missing"
+            } else {
+                "runtime-profile-prepare-failed"
+            };
+            let error = if error.permits_runtime_rollback() {
+                error
+            } else {
+                DesktopError::RuntimeStartRejected(error.to_string())
+            };
+            return self.fail(&workspace, restart_count, code, error);
+        }
         let dsh_entry = runtime_dir.join(location.entry);
         let parent_watch =
             runtime_dir.join("node_modules/deepseek-desktop-bundle/parent-watch.cjs");
@@ -317,7 +339,7 @@ impl RuntimeSupervisor {
                 &workspace,
                 restart_count,
                 "runtime-artifact-missing",
-                &format!("missing {}", dsh_entry.display()),
+                DesktopError::RuntimeArtifactMissing(dsh_entry.display().to_string()),
             );
         }
         if !parent_watch.is_file() {
@@ -325,7 +347,7 @@ impl RuntimeSupervisor {
                 &workspace,
                 restart_count,
                 "runtime-artifact-missing",
-                &format!("missing {}", parent_watch.display()),
+                DesktopError::RuntimeArtifactMissing(parent_watch.display().to_string()),
             );
         }
         if !locale_sync.is_file() {
@@ -333,11 +355,42 @@ impl RuntimeSupervisor {
                 &workspace,
                 restart_count,
                 "runtime-artifact-missing",
-                &format!("missing {}", locale_sync.display()),
+                DesktopError::RuntimeArtifactMissing(locale_sync.display().to_string()),
             );
         }
-        let helper = std::env::current_exe()?;
-        let credential_session = RuntimeSession::create(&self.paths.data_dir)?;
+        let helper = match std::env::current_exe() {
+            Ok(helper) => helper,
+            Err(error) => {
+                return self.fail(
+                    &workspace,
+                    restart_count,
+                    "runtime-helper-unavailable",
+                    DesktopError::RuntimeStartRejected(error.to_string()),
+                );
+            }
+        };
+        let credential_session = match RuntimeSession::create(&self.paths.data_dir) {
+            Ok(session) => session,
+            Err(error) => {
+                return self.fail(
+                    &workspace,
+                    restart_count,
+                    "runtime-credential-session-failed",
+                    DesktopError::RuntimeStartRejected(error.to_string()),
+                );
+            }
+        };
+        let environment = match self.runtime_environment(&helper, &runtime_dir, &node) {
+            Ok(environment) => environment,
+            Err(error) => {
+                return self.fail(
+                    &workspace,
+                    restart_count,
+                    "runtime-environment-failed",
+                    DesktopError::RuntimeStartRejected(error.to_string()),
+                );
+            }
+        };
         let mut command = Command::new(&node);
         command
             .arg("--require")
@@ -356,7 +409,7 @@ impl RuntimeSupervisor {
             ])
             .current_dir(&workspace)
             .env_clear()
-            .envs(self.runtime_environment(&helper, &runtime_dir, &node)?)
+            .envs(environment)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -368,11 +421,23 @@ impl RuntimeSupervisor {
                     &workspace,
                     restart_count,
                     "runtime-exited",
-                    &format!("Runtime process could not start: {error}"),
+                    DesktopError::RuntimeBootFailed(format!(
+                        "Runtime process could not start: {error}"
+                    )),
                 );
             }
         };
-        let mut managed = ManagedChild::new(child, credential_session)?;
+        let mut managed = match ManagedChild::new(child, credential_session) {
+            Ok(managed) => managed,
+            Err(error) => {
+                return self.fail(
+                    &workspace,
+                    restart_count,
+                    "runtime-process-management-failed",
+                    DesktopError::RuntimeStartRejected(error.to_string()),
+                );
+            }
+        };
         let session_token = managed._credential_session.token().to_owned();
         let session_result = managed
             .child
@@ -392,19 +457,27 @@ impl RuntimeSupervisor {
                 &workspace,
                 restart_count,
                 "runtime-credential-channel-failed",
-                &error.to_string(),
+                DesktopError::RuntimeStartRejected(error.to_string()),
             );
         }
-        let stdout = managed
-            .child
-            .stdout
-            .take()
-            .ok_or_else(|| DesktopError::Other("runtime stdout is unavailable".to_owned()))?;
-        let stderr = managed
-            .child
-            .stderr
-            .take()
-            .ok_or_else(|| DesktopError::Other("runtime stderr is unavailable".to_owned()))?;
+        let Some(stdout) = managed.child.stdout.take() else {
+            managed.terminate();
+            return self.fail(
+                &workspace,
+                restart_count,
+                "runtime-output-unavailable",
+                DesktopError::RuntimeStartRejected("runtime stdout is unavailable".to_owned()),
+            );
+        };
+        let Some(stderr) = managed.child.stderr.take() else {
+            managed.terminate();
+            return self.fail(
+                &workspace,
+                restart_count,
+                "runtime-output-unavailable",
+                DesktopError::RuntimeStartRejected("runtime stderr is unavailable".to_owned()),
+            );
+        };
         let (ready_tx, ready_rx) = mpsc::channel::<String>();
         let stdout_diagnostics = Arc::clone(&self.diagnostics);
         thread::spawn(move || {
@@ -424,10 +497,27 @@ impl RuntimeSupervisor {
 
         let deadline = Instant::now() + STARTUP_TIMEOUT;
         let ready_url = loop {
-            if let Some(exit) = managed.child.try_wait()? {
-                let message = format!("exit status {exit}");
-                managed.terminate();
-                return self.fail(&workspace, restart_count, "runtime-exited", &message);
+            match managed.child.try_wait() {
+                Ok(Some(exit)) => {
+                    let message = format!("exit status {exit}");
+                    managed.terminate();
+                    return self.fail(
+                        &workspace,
+                        restart_count,
+                        "runtime-exited",
+                        DesktopError::RuntimeExited(message),
+                    );
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    managed.terminate();
+                    return self.fail(
+                        &workspace,
+                        restart_count,
+                        "runtime-process-status-failed",
+                        DesktopError::RuntimeStartRejected(error.to_string()),
+                    );
+                }
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
@@ -436,7 +526,7 @@ impl RuntimeSupervisor {
                     &workspace,
                     restart_count,
                     "runtime-timeout",
-                    "runtime startup timed out",
+                    DesktopError::RuntimeBootFailed("runtime startup timed out".to_owned()),
                 );
             }
             match ready_rx.recv_timeout(remaining.min(Duration::from_millis(200))) {
@@ -448,7 +538,9 @@ impl RuntimeSupervisor {
                         &workspace,
                         restart_count,
                         "runtime-output-closed",
-                        "runtime closed its output before readiness",
+                        DesktopError::RuntimeExited(
+                            "runtime closed its output before readiness".to_owned(),
+                        ),
                     );
                 }
             }
@@ -459,7 +551,7 @@ impl RuntimeSupervisor {
                 &workspace,
                 restart_count,
                 "runtime-health-check-failed",
-                &error.to_string(),
+                DesktopError::RuntimeBootFailed(error.to_string()),
             );
         }
         if let Err(error) = register_workspace(&ready_url, &workspace) {
@@ -468,7 +560,7 @@ impl RuntimeSupervisor {
                 &workspace,
                 restart_count,
                 "runtime-workspace-registration-failed",
-                &error.to_string(),
+                DesktopError::RuntimeStartRejected(error.to_string()),
             );
         }
         let status = RuntimeStatus {
@@ -521,9 +613,9 @@ impl RuntimeSupervisor {
         workspace: &str,
         restart_count: u8,
         code: &str,
-        message: &str,
+        error: DesktopError,
     ) -> DesktopResult<RuntimeStatus> {
-        self.diagnostics.append("supervisor", message);
+        self.diagnostics.append("supervisor", &error.to_string());
         let _ = self.show_management();
         let status = RuntimeStatus {
             phase: RuntimePhase::Failed,
@@ -534,7 +626,7 @@ impl RuntimeSupervisor {
             ..RuntimeStatus::default()
         };
         self.publish(status.clone())?;
-        Err(DesktopError::RuntimeExited(message.to_owned()))
+        Err(error)
     }
 
     fn publish(&self, status: RuntimeStatus) -> DesktopResult<RuntimeStatus> {
@@ -553,141 +645,17 @@ impl RuntimeSupervisor {
         runtime_dir: &Path,
         node: &Path,
     ) -> DesktopResult<HashMap<String, String>> {
-        let mut environment = HashMap::new();
-        for name in [
-            "PATH",
-            "HOME",
-            "USER",
-            "LOGNAME",
-            "TMPDIR",
-            "LANG",
-            "LC_ALL",
-            "XDG_RUNTIME_DIR",
-            "DBUS_SESSION_BUS_ADDRESS",
-            "APPDATA",
-            "LOCALAPPDATA",
-            "USERPROFILE",
-            "SystemRoot",
-            "WINDIR",
-            "COMSPEC",
-            "PATHEXT",
-        ] {
-            if let Ok(value) = std::env::var(name) {
-                environment.insert(name.to_owned(), value);
-            }
-        }
-        environment.insert(
-            "DSH_HOME".to_owned(),
-            self.paths.dsh_home.to_string_lossy().into_owned(),
-        );
-        environment.insert("DSH_TELEMETRY_DISABLED".to_owned(), "true".to_owned());
-        environment.insert(
-            "DEEPSEEK_DESKTOP_PARENT_PID".to_owned(),
-            std::process::id().to_string(),
-        );
-        environment.insert(
-            "DEEPSEEK_DESKTOP_HELPER_PATH".to_owned(),
-            helper.to_string_lossy().into_owned(),
-        );
-        environment.insert(
-            "DEEPSEEK_DESKTOP_DATA_DIR".to_owned(),
-            self.paths.data_dir.to_string_lossy().into_owned(),
-        );
-        environment.insert(
-            "DEEPSEEK_DESKTOP_LOCALE".to_owned(),
-            self.settings.get()?.locale,
-        );
-        environment.insert(
-            "DEEPSEEK_DESKTOP_NODE_PATH".to_owned(),
-            node.to_string_lossy().into_owned(),
-        );
-        environment.insert(
-            "DEEPSEEK_DESKTOP_PNPM_CLI".to_owned(),
-            runtime_dir
-                .join("node_modules/pnpm/bin/pnpm.cjs")
-                .to_string_lossy()
-                .into_owned(),
-        );
-        let runtime_bin = self.paths.data_dir.join("runtime-bin");
-        let mut search_paths = vec![runtime_bin];
-        if let Some(path) = std::env::var_os("PATH") {
-            search_paths.extend(std::env::split_paths(&path));
-        }
-        environment.insert(
-            "PATH".to_owned(),
-            std::env::join_paths(search_paths)
-                .map_err(|error| DesktopError::Other(error.to_string()))?
-                .to_string_lossy()
-                .into_owned(),
-        );
-        Ok(environment)
+        runtime_environment(
+            &self.paths,
+            &self.settings.get()?.locale,
+            helper,
+            runtime_dir,
+            node,
+        )
     }
 
     fn prepare_profile(&self, runtime_dir: &Path, node: &Path) -> DesktopResult<()> {
-        let profile = self.paths.dsh_home.join("profiles/desktop-web");
-        let modules = profile.join("node_modules");
-        fs::create_dir_all(&modules)?;
-        let manifest_path = profile.join("package.json");
-        let existing = fs::read_to_string(&manifest_path)
-            .ok()
-            .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok());
-        let manifest = merge_profile_manifest(existing);
-        fs::write(
-            manifest_path,
-            format!("{}\n", serde_json::to_string_pretty(&manifest)?),
-        )?;
-        if !profile.join("cordis.patch.yml").exists() {
-            fs::write(profile.join("cordis.patch.yml"), "[]\n")?;
-        }
-        if !profile.join("pnpm-workspace.yaml").exists() {
-            fs::write(
-                profile.join("pnpm-workspace.yaml"),
-                "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n",
-            )?;
-        }
-        for package in [
-            "deepseek-desktop-bundle",
-            "deepseek-desktop-credentials-vault",
-        ] {
-            let source = runtime_dir.join("node_modules").join(package);
-            let target = modules.join(package);
-            sync_profile_package(&source, &target)?;
-        }
-        self.prepare_package_manager(runtime_dir, node)?;
-        Ok(())
-    }
-
-    fn prepare_package_manager(&self, runtime_dir: &Path, node: &Path) -> DesktopResult<()> {
-        let pnpm_cli = runtime_dir.join("node_modules/pnpm/bin/pnpm.cjs");
-        if !pnpm_cli.is_file() {
-            return Err(DesktopError::RuntimeArtifactMissing(
-                pnpm_cli.display().to_string(),
-            ));
-        }
-        let runtime_bin = self.paths.data_dir.join("runtime-bin");
-        fs::create_dir_all(&runtime_bin)?;
-        #[cfg(windows)]
-        fs::write(
-            runtime_bin.join("pnpm.cmd"),
-            "@echo off\r\n\"%DEEPSEEK_DESKTOP_NODE_PATH%\" \"%DEEPSEEK_DESKTOP_PNPM_CLI%\" %*\r\n",
-        )?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-
-            let wrapper = runtime_bin.join("pnpm");
-            fs::write(
-                &wrapper,
-                "#!/bin/sh\nexec \"$DEEPSEEK_DESKTOP_NODE_PATH\" \"$DEEPSEEK_DESKTOP_PNPM_CLI\" \"$@\"\n",
-            )?;
-            fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700))?;
-        }
-        if !node.is_file() {
-            return Err(DesktopError::RuntimeArtifactMissing(
-                node.display().to_string(),
-            ));
-        }
-        Ok(())
+        prepare_runtime_profile(&self.paths, runtime_dir, node)
     }
 
     fn lock_inner(&self) -> DesktopResult<MutexGuard<'_, RuntimeInner>> {
@@ -703,6 +671,12 @@ impl RuntimeSupervisor {
             Err(TryLockError::Poisoned(error)) => Ok(error.into_inner()),
             Err(TryLockError::WouldBlock) => Err(DesktopError::RuntimeBusy),
         }
+    }
+
+    fn wait_for_operation(&self) -> MutexGuard<'_, ()> {
+        self.operation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn start_monitor(supervisor: &Arc<Self>) {
@@ -723,52 +697,48 @@ impl RuntimeSupervisor {
                         match inner
                             .process
                             .as_mut()
-                            .and_then(|process| process.child.try_wait().ok())
-                            .flatten()
+                            .map(|process| process.child.try_wait())
                         {
-                            Some(exit) => {
-                                inner.process.take();
-                                Some((
-                                    inner.status.workspace.clone(),
-                                    inner.status.restart_count,
-                                    exit.to_string(),
-                                ))
-                            }
-                            None => None,
+                            Some(Ok(Some(exit))) => Some((
+                                inner.status.workspace.clone(),
+                                inner.status.restart_count,
+                                exit.to_string(),
+                                inner.process.take(),
+                            )),
+                            Some(Err(error)) => Some((
+                                inner.status.workspace.clone(),
+                                inner.status.restart_count,
+                                format!("process status unavailable: {error}"),
+                                inner.process.take(),
+                            )),
+                            Some(Ok(None)) | None => None,
                         }
                     }
                 };
-                let Some((Some(workspace), restart_count, exit)) = restart else {
+                let Some((Some(workspace), restart_count, exit, process)) = restart else {
                     continue;
                 };
+                if let Some(mut process) = process {
+                    process.terminate();
+                }
+                let _operation = supervisor.wait_for_operation();
+                let recovery_is_current = {
+                    let Ok(inner) = supervisor.inner.lock() else {
+                        break;
+                    };
+                    recovery_event_is_current(&inner, &workspace, restart_count)
+                };
+                if !recovery_is_current {
+                    continue;
+                }
                 supervisor.diagnostics.append(
                     "supervisor",
                     &format!("runtime exited unexpectedly: {exit}"),
                 );
                 if restart_count >= MAX_RESTARTS {
-                    let mut recovered = false;
-                    while supervisor
-                        .runtime_updates
-                        .rollback_after_start_failure()
-                        .unwrap_or(false)
+                    if supervisor.recover_with_available_rollback(&workspace)
+                        != RollbackRecovery::Unavailable
                     {
-                        let _ = supervisor.show_management();
-                        let _ = supervisor.publish(RuntimeStatus {
-                            phase: RuntimePhase::Recovering,
-                            workspace: Some(workspace.clone()),
-                            restart_count: 0,
-                            ..RuntimeStatus::default()
-                        });
-                        if let Ok(_operation) = supervisor.operation.try_lock()
-                            && supervisor
-                                .spawn_locked(workspace.clone(), 0, RuntimePhase::Recovering)
-                                .is_ok()
-                        {
-                            recovered = true;
-                            break;
-                        }
-                    }
-                    if recovered {
                         continue;
                     }
                     let _ = supervisor.show_management();
@@ -795,13 +765,340 @@ impl RuntimeSupervisor {
                 } else {
                     Duration::from_secs(3)
                 });
-                let Ok(_operation) = supervisor.operation.try_lock() else {
-                    continue;
-                };
-                let _ = supervisor.spawn_locked(workspace, next, RuntimePhase::Recovering);
+                if let Err(error) =
+                    supervisor.spawn_locked(workspace.clone(), next, RuntimePhase::Recovering)
+                    && error.permits_runtime_rollback()
+                {
+                    let _ = supervisor.recover_with_available_rollback(&workspace);
+                }
             }
         });
     }
+
+    fn recover_with_available_rollback(&self, workspace: &str) -> RollbackRecovery {
+        loop {
+            match self.runtime_updates.rollback_after_start_failure_wait() {
+                Ok(true) => {}
+                Ok(false) => return RollbackRecovery::Unavailable,
+                Err(error) => {
+                    self.diagnostics.append(
+                        "runtime-update",
+                        &format!("Runtime rollback failed during recovery: {error}"),
+                    );
+                    return RollbackRecovery::Unavailable;
+                }
+            }
+            let _ = self.show_management();
+            let _ = self.publish(RuntimeStatus {
+                phase: RuntimePhase::Recovering,
+                workspace: Some(workspace.to_owned()),
+                restart_count: 0,
+                ..RuntimeStatus::default()
+            });
+            match self.spawn_locked(workspace.to_owned(), 0, RuntimePhase::Recovering) {
+                Ok(_) => return RollbackRecovery::Recovered,
+                Err(error) if error.permits_runtime_rollback() => {}
+                Err(_) => return RollbackRecovery::Rejected,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RollbackRecovery {
+    Recovered,
+    Rejected,
+    Unavailable,
+}
+
+fn recovery_event_is_current(inner: &RuntimeInner, workspace: &str, restart_count: u8) -> bool {
+    !inner.manual_stop
+        && inner.process.is_none()
+        && inner.status.phase == RuntimePhase::Ready
+        && inner.status.workspace.as_deref() == Some(workspace)
+        && inner.status.restart_count == restart_count
+}
+
+pub(crate) fn smoke_runtime_service(location: &RuntimeLocation) -> DesktopResult<()> {
+    let smoke_root = std::env::temp_dir().join(format!(
+        "deepseek-desktop-runtime-smoke-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    let cleanup = RuntimeSmokeDirectory(smoke_root.clone());
+    let paths = AppPaths {
+        data_dir: smoke_root.clone(),
+        dsh_home: smoke_root.join("dsh"),
+        logs_dir: smoke_root.join("logs"),
+        backups_dir: smoke_root.join("backups"),
+        diagnostics_dir: smoke_root.join("diagnostics"),
+        updates_dir: smoke_root.join("updates"),
+        settings_file: smoke_root.join("settings.json"),
+    };
+    for directory in [
+        &paths.data_dir,
+        &paths.dsh_home,
+        &paths.logs_dir,
+        &paths.backups_dir,
+        &paths.diagnostics_dir,
+        &paths.updates_dir,
+    ] {
+        fs::create_dir_all(directory)?;
+    }
+    let workspace = smoke_root.join("workspace");
+    fs::create_dir_all(&workspace)?;
+    prepare_runtime_profile(&paths, &location.runtime_dir, &location.node)?;
+    let entry = location.runtime_dir.join(&location.entry);
+    let helper = std::env::current_exe()?;
+    let credential_session = RuntimeSession::create(&paths.data_dir)?;
+    let mut command = Command::new(&location.node);
+    command
+        .arg("--require")
+        .arg(
+            location
+                .runtime_dir
+                .join("node_modules/deepseek-desktop-bundle/parent-watch.cjs"),
+        )
+        .arg("--require")
+        .arg(
+            location
+                .runtime_dir
+                .join("node_modules/deepseek-desktop-bundle/locale-sync.cjs"),
+        )
+        .arg(entry)
+        .args([
+            "--profile",
+            "desktop-web",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "0",
+            "--no-open",
+        ])
+        .current_dir(&workspace)
+        .env_clear()
+        .envs(runtime_environment(
+            &paths,
+            "en-US",
+            &helper,
+            &location.runtime_dir,
+            &location.node,
+        )?)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    configure_process_group(&mut command);
+    let child = command.spawn().map_err(|error| {
+        DesktopError::RuntimeBootFailed(format!("Runtime smoke could not start: {error}"))
+    })?;
+    let mut managed = ManagedChild::new(child, credential_session)?;
+    let token = managed._credential_session.token().to_owned();
+    let result = (|| {
+        let mut stdin = managed.child.stdin.take().ok_or_else(|| {
+            DesktopError::RuntimeStartRejected(
+                "Runtime smoke credential channel is unavailable".to_owned(),
+            )
+        })?;
+        stdin.write_all(token.as_bytes())?;
+        stdin.write_all(b"\n")?;
+        drop(stdin);
+        let stdout = managed.child.stdout.take().ok_or_else(|| {
+            DesktopError::RuntimeBootFailed("Runtime smoke stdout is unavailable".to_owned())
+        })?;
+        let stderr = managed.child.stderr.take().ok_or_else(|| {
+            DesktopError::RuntimeBootFailed("Runtime smoke stderr is unavailable".to_owned())
+        })?;
+        let (ready_tx, ready_rx) = mpsc::channel::<String>();
+        thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if let Some(url) = parse_ready_url(&line) {
+                    let _ = ready_tx.send(url);
+                }
+            }
+        });
+        thread::spawn(
+            move || {
+                for _ in BufReader::new(stderr).lines().map_while(Result::ok) {}
+            },
+        );
+        let deadline = Instant::now() + STARTUP_TIMEOUT;
+        let ready_url = loop {
+            if let Some(exit) = managed.child.try_wait()? {
+                return Err(DesktopError::RuntimeExited(format!(
+                    "Runtime smoke exited with {exit}"
+                )));
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(DesktopError::RuntimeBootFailed(
+                    "Runtime smoke startup timed out".to_owned(),
+                ));
+            }
+            match ready_rx.recv_timeout(remaining.min(Duration::from_millis(200))) {
+                Ok(url) => break url,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(DesktopError::RuntimeExited(
+                        "Runtime smoke closed stdout before readiness".to_owned(),
+                    ));
+                }
+            }
+        };
+        health_check(&ready_url)?;
+        register_workspace(&ready_url, workspace.to_string_lossy().as_ref())?;
+        Ok(())
+    })();
+    managed.terminate();
+    drop(cleanup);
+    result
+}
+
+struct RuntimeSmokeDirectory(PathBuf);
+
+impl Drop for RuntimeSmokeDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn runtime_environment(
+    paths: &AppPaths,
+    locale: &str,
+    helper: &Path,
+    runtime_dir: &Path,
+    node: &Path,
+) -> DesktopResult<HashMap<String, String>> {
+    let mut environment = HashMap::new();
+    for name in [
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "XDG_RUNTIME_DIR",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "USERPROFILE",
+        "SystemRoot",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+    ] {
+        if let Ok(value) = std::env::var(name) {
+            environment.insert(name.to_owned(), value);
+        }
+    }
+    environment.insert(
+        "DSH_HOME".to_owned(),
+        paths.dsh_home.to_string_lossy().into_owned(),
+    );
+    environment.insert("DSH_TELEMETRY_DISABLED".to_owned(), "true".to_owned());
+    environment.insert(
+        "DEEPSEEK_DESKTOP_PARENT_PID".to_owned(),
+        std::process::id().to_string(),
+    );
+    environment.insert(
+        "DEEPSEEK_DESKTOP_HELPER_PATH".to_owned(),
+        helper.to_string_lossy().into_owned(),
+    );
+    environment.insert(
+        "DEEPSEEK_DESKTOP_DATA_DIR".to_owned(),
+        paths.data_dir.to_string_lossy().into_owned(),
+    );
+    environment.insert("DEEPSEEK_DESKTOP_LOCALE".to_owned(), locale.to_owned());
+    environment.insert(
+        "DEEPSEEK_DESKTOP_NODE_PATH".to_owned(),
+        node.to_string_lossy().into_owned(),
+    );
+    environment.insert(
+        "DEEPSEEK_DESKTOP_PNPM_CLI".to_owned(),
+        runtime_dir
+            .join("node_modules/pnpm/bin/pnpm.cjs")
+            .to_string_lossy()
+            .into_owned(),
+    );
+    let mut search_paths = vec![paths.data_dir.join("runtime-bin")];
+    if let Some(path) = std::env::var_os("PATH") {
+        search_paths.extend(std::env::split_paths(&path));
+    }
+    environment.insert(
+        "PATH".to_owned(),
+        std::env::join_paths(search_paths)
+            .map_err(|error| DesktopError::Other(error.to_string()))?
+            .to_string_lossy()
+            .into_owned(),
+    );
+    Ok(environment)
+}
+
+fn prepare_runtime_profile(paths: &AppPaths, runtime_dir: &Path, node: &Path) -> DesktopResult<()> {
+    let profile = paths.dsh_home.join("profiles/desktop-web");
+    let modules = profile.join("node_modules");
+    fs::create_dir_all(&modules)?;
+    let manifest_path = profile.join("package.json");
+    let existing = fs::read_to_string(&manifest_path)
+        .ok()
+        .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok());
+    let manifest = merge_profile_manifest(existing);
+    fs::write(
+        manifest_path,
+        format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+    )?;
+    if !profile.join("cordis.patch.yml").exists() {
+        fs::write(profile.join("cordis.patch.yml"), "[]\n")?;
+    }
+    if !profile.join("pnpm-workspace.yaml").exists() {
+        fs::write(
+            profile.join("pnpm-workspace.yaml"),
+            "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n",
+        )?;
+    }
+    for package in [
+        "deepseek-desktop-bundle",
+        "deepseek-desktop-credentials-vault",
+    ] {
+        sync_profile_package(
+            &runtime_dir.join("node_modules").join(package),
+            &modules.join(package),
+        )?;
+    }
+    prepare_package_manager(paths, runtime_dir, node)
+}
+
+fn prepare_package_manager(paths: &AppPaths, runtime_dir: &Path, node: &Path) -> DesktopResult<()> {
+    let pnpm_cli = runtime_dir.join("node_modules/pnpm/bin/pnpm.cjs");
+    if !pnpm_cli.is_file() {
+        return Err(DesktopError::RuntimeArtifactMissing(
+            pnpm_cli.display().to_string(),
+        ));
+    }
+    let runtime_bin = paths.data_dir.join("runtime-bin");
+    fs::create_dir_all(&runtime_bin)?;
+    #[cfg(windows)]
+    fs::write(
+        runtime_bin.join("pnpm.cmd"),
+        "@echo off\r\n\"%DEEPSEEK_DESKTOP_NODE_PATH%\" \"%DEEPSEEK_DESKTOP_PNPM_CLI%\" %*\r\n",
+    )?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let wrapper = runtime_bin.join("pnpm");
+        fs::write(
+            &wrapper,
+            "#!/bin/sh\nexec \"$DEEPSEEK_DESKTOP_NODE_PATH\" \"$DEEPSEEK_DESKTOP_PNPM_CLI\" \"$@\"\n",
+        )?;
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700))?;
+    }
+    if !node.is_file() {
+        return Err(DesktopError::RuntimeArtifactMissing(
+            node.display().to_string(),
+        ));
+    }
+    Ok(())
 }
 
 impl Drop for RuntimeSupervisor {
@@ -1275,6 +1572,29 @@ mod tests {
             ..RuntimeStatus::default()
         };
         assert!(!is_active_workspace(&failed, "/tmp/workspace"));
+    }
+
+    #[test]
+    fn abandons_a_stale_monitor_recovery_after_an_intervening_operation() {
+        let mut inner = RuntimeInner {
+            status: RuntimeStatus {
+                phase: RuntimePhase::Ready,
+                workspace: Some("/workspace".to_owned()),
+                restart_count: 1,
+                ..RuntimeStatus::default()
+            },
+            process: None,
+            manual_stop: false,
+        };
+        assert!(recovery_event_is_current(&inner, "/workspace", 1));
+        inner.status.phase = RuntimePhase::Recovering;
+        assert!(!recovery_event_is_current(&inner, "/workspace", 1));
+        inner.status.phase = RuntimePhase::Ready;
+        inner.status.restart_count = 0;
+        assert!(!recovery_event_is_current(&inner, "/workspace", 1));
+        inner.status.restart_count = 1;
+        inner.manual_stop = true;
+        assert!(!recovery_event_is_current(&inner, "/workspace", 1));
     }
 
     #[test]

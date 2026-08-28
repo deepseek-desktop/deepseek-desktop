@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
-import { artifactName, assertSemVer, compareSemVer, hostTarget, parseArguments, sha256, supportedTargets } from "../runtime-update/common.mjs";
+import { artifactName, assertSemVer, compareSemVer, hostTarget, isPrereleaseSemVer, parseArguments, sha256, supportedTargets } from "../runtime-update/common.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -26,6 +26,8 @@ test("builds stable artifact names and validates SemVer", () => {
   assert.equal(compareSemVer("1.0.0-preview.2", "1.0.0-preview.10"), -1);
   assert.equal(compareSemVer("1.0.0", "1.0.0-preview.10"), 1);
   assert.equal(compareSemVer("1.0.0+build.1", "1.0.0+build.2"), 0);
+  assert.equal(isPrereleaseSemVer("1.0.0+build-linux"), false);
+  assert.equal(isPrereleaseSemVer("1.0.0-preview.1+build-linux"), true);
 });
 
 test("parses explicit maintainer arguments", () => {
@@ -93,6 +95,7 @@ test("creates a signed manifest only from a complete clean native target set", a
     const manifest = JSON.parse(payload.toString("utf8"));
     assert.deepEqual(Object.keys(manifest.artifacts).sort(), Object.values(supportedTargets).sort());
     assert.equal(manifest.desktopCommit, desktopCommit);
+    assert.ok(Date.parse(manifest.expiresAt) > Date.parse(manifest.issuedAt));
     assert.deepEqual(manifest.allowedOrigins, ["https://cdn.example.com"]);
     assert.match(manifest.artifacts[Object.values(supportedTargets)[0]].url, /^https:\/\/updates\.example\.com\/runtime\//u);
 

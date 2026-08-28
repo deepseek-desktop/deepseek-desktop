@@ -109,12 +109,7 @@ async fn runtime_start(
 }
 
 fn runtime_boot_failure(error: &DesktopError) -> bool {
-    matches!(
-        error,
-        DesktopError::RuntimeArtifactMissing(_)
-            | DesktopError::RuntimeExited(_)
-            | DesktopError::InvalidConfiguration(_)
-    )
+    error.permits_runtime_rollback()
 }
 
 #[tauri::command]
@@ -421,6 +416,15 @@ mod tests {
         )));
         assert!(runtime_boot_failure(&DesktopError::RuntimeExited(
             "exit 1".to_owned()
+        )));
+        assert!(runtime_boot_failure(&DesktopError::RuntimeBootFailed(
+            "health check failed".to_owned()
+        )));
+        assert!(!runtime_boot_failure(&DesktopError::RuntimeStartRejected(
+            "workspace registration failed".to_owned()
+        )));
+        assert!(!runtime_boot_failure(&DesktopError::InvalidConfiguration(
+            "settings are invalid".to_owned()
         )));
         assert!(!runtime_boot_failure(&DesktopError::InvalidWorkspace(
             "/missing".to_owned()

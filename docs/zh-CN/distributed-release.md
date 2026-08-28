@@ -10,11 +10,11 @@ DeepSeek Desktop 的分布式发布系统用开发者自己的原生计算机完
   -> 一次性任务票据
   -> macOS ARM64 / macOS x64 / Windows x64 / Linux x64 原生 Worker
   -> 现有 app:sync / runtime:sync / verify / desktop:package
-  -> Controller 流式接收并校验目标、BUILD-INFO 和 SHA-256
+  -> Worker 扫描交付闭包，Controller 流式接收并校验目标、BUILD-INFO 和 SHA-256
   -> filesystem / NAS（默认）或可选 GitHub Provider
 ```
 
-- **Controller**：保存发布状态、分配任务、签发一次性票据与短期租约、接收制品、校验来源和完整性、汇总 `SHA256SUMS`、调用发布 Provider。
+- **Controller**：保存发布状态、分配任务、签发一次性票据与短期租约、接收制品、校验来源、Worker 安全扫描摘要和完整性、汇总 `SHA256SUMS`、调用发布 Provider。HTTP 客户端为 JSON 响应和制品上传设置总时限，并限制响应大小，异常 Controller 不能无限占用 Worker。
 - **Worker**：自动识别本机平台，只领取与本机原生目标一致的任务，从锁定 Git commit 做干净 detached checkout，再调用现有打包命令。
 - **Provider**：只负责发布已经验证的制品。构建过程不知道最终上传到 filesystem、NAS 还是 GitHub。
 - **targets 配置**：`scripts/release-system/targets.json` 是目标 ID、宿主平台、Rust triple 和安装包类型的唯一映射。
@@ -163,7 +163,7 @@ Worker 会：
 4. 核对锁定 Runtime 仓库、ref 和 commit。
 5. 调用现有 `package:community` 或 `desktop:package` 完成全部门禁与原生打包。
 6. 流式上传安装包、`BUILD-INFO` 和平台 `SHA256SUMS`；上传过程同时校验声明大小和 SHA-256。
-7. Controller 验证 Desktop commit、Runtime commit、目标 triple、channel、signed、dirty 状态和敏感路径后才把任务标记为完成。
+7. Worker 对前端、平台 Runtime、生成配置、原生 bundle 和主程序执行流式敏感信息扫描；Controller 验证扫描摘要、Desktop commit、Runtime commit、目标 triple、channel、signed、dirty 状态、安装包及敏感路径后才把任务标记为完成。
 
 默认临时检出位于操作系统临时目录。排查失败时可增加 `--keep-work` 保留现场，也可用 `--work-root <目录>` 指定位置。
 

@@ -66,8 +66,15 @@ const phaseLabel = computed(() => t(`runtime.${runtime.value.phase}`));
 const runtimeStartLabel = computed(() => runtime.value.phase === "failed" ? t("common.retry") : t("common.start"));
 const runtimeErrorKeys: Record<string, string> = {
   "runtime-artifact-missing": "runtime.errors.artifactMissing",
+  "runtime-profile-prepare-failed": "runtime.errors.profilePrepareFailed",
+  "runtime-helper-unavailable": "runtime.errors.helperUnavailable",
+  "runtime-credential-session-failed": "runtime.errors.credentialSessionFailed",
+  "runtime-environment-failed": "runtime.errors.environmentFailed",
   "runtime-timeout": "runtime.errors.timeout",
   "runtime-exited": "runtime.errors.exited",
+  "runtime-process-management-failed": "runtime.errors.processManagementFailed",
+  "runtime-output-unavailable": "runtime.errors.outputUnavailable",
+  "runtime-process-status-failed": "runtime.errors.processStatusFailed",
   "runtime-output-closed": "runtime.errors.outputClosed",
   "runtime-health-check-failed": "runtime.errors.healthCheckFailed",
   "runtime-credential-channel-failed": "runtime.errors.credentialChannelFailed",
@@ -279,6 +286,8 @@ async function restoreRuntime(): Promise<void> {
 }
 
 async function selectRuntimeUpdateMode(value: Event): Promise<void> {
+  if (busy.value) return;
+  busy.value = true;
   const previous = settings.value.runtimeUpdateMode;
   settings.value.runtimeUpdateMode = (value.target as HTMLSelectElement).value as DesktopSettings["runtimeUpdateMode"];
   try {
@@ -287,10 +296,14 @@ async function selectRuntimeUpdateMode(value: Event): Promise<void> {
   } catch {
     settings.value.runtimeUpdateMode = previous;
     notice.value = t("error.settingsSaveFailed");
+  } finally {
+    busy.value = false;
   }
 }
 
 async function selectRuntimeUpdateChannel(value: Event): Promise<void> {
+  if (busy.value) return;
+  busy.value = true;
   const previous = settings.value.runtimeUpdateChannel;
   settings.value.runtimeUpdateChannel = (value.target as HTMLSelectElement).value as DesktopSettings["runtimeUpdateChannel"];
   try {
@@ -299,10 +312,14 @@ async function selectRuntimeUpdateChannel(value: Event): Promise<void> {
   } catch {
     settings.value.runtimeUpdateChannel = previous;
     notice.value = t("error.settingsSaveFailed");
+  } finally {
+    busy.value = false;
   }
 }
 
 async function toggleRuntimePin(value: Event): Promise<void> {
+  if (busy.value) return;
+  busy.value = true;
   const previous = settings.value.runtimePinnedVersion;
   settings.value.runtimePinnedVersion = (value.target as HTMLInputElement).checked
     ? runtimeUpdate.value?.currentVersion || about.value?.runtimeVersion || null
@@ -313,6 +330,8 @@ async function toggleRuntimePin(value: Event): Promise<void> {
   } catch {
     settings.value.runtimePinnedVersion = previous;
     notice.value = t("error.settingsSaveFailed");
+  } finally {
+    busy.value = false;
   }
 }
 
@@ -502,7 +521,7 @@ onBeforeUnmount(() => {
             <div><span>{{ t("runtimeUpdate.status") }}</span><strong>{{ runtimeUpdateDescription }}</strong></div>
             <div>
               <label for="runtime-update-mode">{{ t("runtimeUpdate.mode") }}</label>
-              <select id="runtime-update-mode" class="setting-select" :value="settings.runtimeUpdateMode" @change="selectRuntimeUpdateMode">
+              <select id="runtime-update-mode" class="setting-select" :value="settings.runtimeUpdateMode" :disabled="busy" @change="selectRuntimeUpdateMode">
                 <option value="automatic">{{ t("runtimeUpdate.modes.automatic") }}</option>
                 <option value="notify">{{ t("runtimeUpdate.modes.notify") }}</option>
                 <option value="manual">{{ t("runtimeUpdate.modes.manual") }}</option>
@@ -510,14 +529,14 @@ onBeforeUnmount(() => {
             </div>
             <div>
               <label for="runtime-update-channel">{{ t("runtimeUpdate.channel") }}</label>
-              <select id="runtime-update-channel" class="setting-select" :value="settings.runtimeUpdateChannel" @change="selectRuntimeUpdateChannel">
+              <select id="runtime-update-channel" class="setting-select" :value="settings.runtimeUpdateChannel" :disabled="busy" @change="selectRuntimeUpdateChannel">
                 <option value="stable">{{ t("runtimeUpdate.channels.stable") }}</option>
                 <option value="preview">{{ t("runtimeUpdate.channels.preview") }}</option>
               </select>
             </div>
             <div>
               <span>{{ t("runtimeUpdate.pin") }}</span>
-              <label class="toggle-label"><input type="checkbox" :checked="Boolean(settings.runtimePinnedVersion)" @change="toggleRuntimePin" />{{ t("runtimeUpdate.pinCurrent") }}</label>
+              <label class="toggle-label"><input type="checkbox" :checked="Boolean(settings.runtimePinnedVersion)" :disabled="busy" @change="toggleRuntimePin" />{{ t("runtimeUpdate.pinCurrent") }}</label>
             </div>
           </div>
           <footer class="actions wrap-actions">

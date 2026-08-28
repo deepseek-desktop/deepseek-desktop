@@ -63,6 +63,11 @@ export function compareSemVer(left, right) {
   return 0;
 }
 
+export function isPrereleaseSemVer(value) {
+  assertSemVer(value, "version");
+  return value.split("+", 1)[0].includes("-");
+}
+
 export async function sha256(path) {
   const digest = createHash("sha256");
   for await (const chunk of createReadStream(path)) digest.update(chunk);

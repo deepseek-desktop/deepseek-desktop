@@ -103,15 +103,15 @@ impl SettingsStore {
     pub fn update(&self, mut settings: DesktopSettings) -> DesktopResult<DesktopSettings> {
         settings.recovery_reason = None;
         validate(&settings)?;
+        let mut current = self
+            .current
+            .write()
+            .map_err(|_| DesktopError::Other("settings lock is poisoned".to_owned()))?;
         if self.path.exists() {
             let backup = self.backup_dir.join("settings.previous.json");
             fs::copy(&self.path, backup)?;
         }
         write_json_atomic(&self.path, &settings)?;
-        let mut current = self
-            .current
-            .write()
-            .map_err(|_| DesktopError::Other("settings lock is poisoned".to_owned()))?;
         *current = settings.clone();
         Ok(settings)
     }
@@ -284,6 +284,7 @@ fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Barrier};
 
     #[test]
     fn rejects_updates_for_community_channel() {
@@ -432,6 +433,51 @@ mod tests {
         let saved = store.update(store.get().unwrap()).unwrap();
 
         assert_eq!(saved.recovery_reason, None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn serializes_concurrent_settings_writes() {
+        let root = std::env::temp_dir().join(format!(
+            "deepseek-desktop-concurrent-settings-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let paths = AppPaths {
+            data_dir: root.clone(),
+            dsh_home: root.join("dsh"),
+            logs_dir: root.join("logs"),
+            backups_dir: root.join("backups"),
+            diagnostics_dir: root.join("diagnostics"),
+            updates_dir: root.join("updates"),
+            settings_file: root.join("settings.json"),
+        };
+        fs::create_dir_all(&paths.backups_dir).unwrap();
+        let store = Arc::new(SettingsStore::load(&paths).unwrap());
+        let barrier = Arc::new(Barrier::new(3));
+        let mut threads = Vec::new();
+        for locale in ["zh-TW", "en-US"] {
+            let store = Arc::clone(&store);
+            let barrier = Arc::clone(&barrier);
+            threads.push(std::thread::spawn(move || {
+                let settings = DesktopSettings {
+                    locale: locale.to_owned(),
+                    ..DesktopSettings::default()
+                };
+                barrier.wait();
+                store.update(settings).unwrap();
+            }));
+        }
+        barrier.wait();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let memory = store.get().unwrap();
+        let disk =
+            serde_json::from_slice::<DesktopSettings>(&fs::read(&paths.settings_file).unwrap())
+                .unwrap();
+        assert_eq!(disk.locale, memory.locale);
+        assert!(!root.join(".settings.json.tmp").exists());
         fs::remove_dir_all(root).unwrap();
     }
 }

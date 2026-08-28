@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { assertSourceRepository, detectHostTarget, loadTargets, parseArguments, sha256File } from "../release-system/common.mjs";
@@ -11,6 +12,7 @@ import { requestJson, uploadArtifact } from "../release-system/http-client.mjs";
 import { startReleaseServer } from "../release-system/http-server.mjs";
 import { ReleaseStateStore } from "../release-system/state-store.mjs";
 import { loadLocalAllConfig, macPathToParallelsShared } from "../release-system/local-all.mjs";
+import { scanArtifactPaths } from "../lib/artifact-scan.mjs";
 
 const desktopCommit = "a".repeat(40);
 const runtimeCommit = "b".repeat(40);
@@ -57,6 +59,56 @@ test("source repositories reject embedded HTTP credentials", () => {
   assert.equal(assertSourceRepository("ssh://git@git.example.com/team/desktop.git"), "ssh://git@git.example.com/team/desktop.git");
   assert.throws(() => assertSourceRepository("https://token@git.example.com/team/desktop.git"), /embedded HTTP credentials/u);
   assert.throws(() => assertSourceRepository("ssh://git:password@git.example.com/team/desktop.git"), /embedded password/u);
+});
+
+test("artifact scanner rejects environment files, local paths, and secrets", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-artifact-scan-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const clean = join(directory, "clean.bin");
+  await writeFile(clean, "portable artifact");
+  assert.deepEqual(await scanArtifactPaths([clean], { forbiddenRoots: [directory] }), {
+    schemaVersion: 1,
+    scannerVersion: 1,
+    fileCount: 1,
+    byteCount: 17
+  });
+  const secret = join(directory, "secret.bin");
+  await writeFile(secret, "sk-1234567890abcdefghij1234567890");
+  await assert.rejects(() => scanArtifactPaths([secret]), /API key/u);
+  await writeFile(secret, "AKIAIOSFODNN7EXAMPLE");
+  await scanArtifactPaths([secret]);
+  await writeFile(secret, "AKIA1234567890ABCDEF");
+  await assert.rejects(() => scanArtifactPaths([secret]), /AWS access key/u);
+  await writeFile(secret, `-----BEGIN PRIVATE KEY-----\n${"A".repeat(64)}\n-----END PRIVATE KEY-----\n`);
+  await assert.rejects(() => scanArtifactPaths([secret]), /private key/u);
+  await writeFile(secret, `${directory}/private`);
+  await assert.rejects(
+    () => scanArtifactPaths([secret], { forbiddenRoots: [directory] }),
+    /local path/u
+  );
+  await writeFile(secret, Buffer.concat([
+    Buffer.from([0]),
+    Buffer.from(`${directory}/private`, "utf16le")
+  ]));
+  await assert.rejects(
+    () => scanArtifactPaths([secret], { forbiddenRoots: [directory] }),
+    /local path/u
+  );
+  const environment = join(directory, ".env.production");
+  await writeFile(environment, "KEY=value\n");
+  await assert.rejects(() => scanArtifactPaths([environment]), /environment file/u);
+  const link = join(directory, "outside-link");
+  await symlink(clean, link);
+  await assert.rejects(() => scanArtifactPaths([link]), /symbolic link/u);
+});
+
+test("GitHub workflow pins first-party actions to immutable commits", async () => {
+  const workflow = await readFile(resolve(import.meta.dirname, "../../.github/workflows/community-build.yml"), "utf8");
+  const actions = [...workflow.matchAll(/uses:\s+(actions\/[^@\s]+)@([^\s#]+)/gu)];
+  assert.ok(actions.length > 0);
+  for (const [, name, revision] of actions) {
+    assert.match(revision, /^[a-f0-9]{40}$/u, `${name} must use a full commit SHA`);
+  }
 });
 
 test("release argument parser ignores the package-manager separator", () => {
@@ -170,7 +222,8 @@ test("distributed release HTTP smoke streams, validates, and publishes artifacts
     harness: { repository: runtimeRepository, commit: runtimeCommit },
     target: "aarch64-apple-darwin",
     channel: "local",
-    signed: false
+    signed: false,
+    artifactAudit: { schemaVersion: 1, scannerVersion: 1, fileCount: 3, byteCount: 1024 }
   }, null, 2)}\n`, "utf8");
   const checksum = Buffer.from(`${sha256(installer)}  ${installerName}\n${sha256(buildInfo)}  ${buildInfoName}\n`, "utf8");
   const fixtureFiles = new Map([
@@ -204,6 +257,29 @@ test("distributed release HTTP smoke streams, validates, and publishes artifacts
   assert.doesNotMatch(globalChecksums, /BUILD-INFO/u);
 });
 
+test("release HTTP client bounds response size and total request time", async t => {
+  const oversized = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ value: "x".repeat(2048) }));
+  });
+  await new Promise(resolve => oversized.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => oversized.close(resolve)));
+  const oversizedAddress = oversized.address();
+  await assert.rejects(
+    () => requestJson(`http://127.0.0.1:${oversizedAddress.port}`, "/", { responseLimit: 128 }),
+    /exceeds 128 bytes/u
+  );
+
+  const stalled = createServer(() => {});
+  await new Promise(resolve => stalled.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => stalled.close(resolve)));
+  const stalledAddress = stalled.address();
+  await assert.rejects(
+    () => requestJson(`http://127.0.0.1:${stalledAddress.port}`, "/", { timeoutMs: 50 }),
+    /timed out/u
+  );
+});
+
 test("completion rejects source facts and local path leakage", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deepseek-release-validation-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -227,6 +303,7 @@ test("completion rejects source facts and local path leakage", async t => {
       target: "aarch64-apple-darwin",
       channel: "local",
       signed: false,
+      artifactAudit: { schemaVersion: 1, scannerVersion: 1, fileCount: 3, byteCount: 1024 },
       leakedPath: "/Users/developer/private"
     })}\n`)]
   ]);

@@ -30,6 +30,7 @@ const EXTRACTED_LIMIT: u64 = 4 * 1024 * 1024 * 1024;
 const ENTRY_LIMIT: usize = 100_000;
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const SMOKE_TIMEOUT: Duration = Duration::from_secs(30);
+const MANIFEST_CLOCK_SKEW: chrono::TimeDelta = chrono::TimeDelta::minutes(15);
 
 #[derive(Clone, Debug)]
 pub struct RuntimeLocation {
@@ -84,6 +85,7 @@ struct RuntimeReleaseManifest {
     schema_version: u8,
     publisher: String,
     issued_at: String,
+    expires_at: String,
     runtime_version: String,
     channel: String,
     desktop_protocol_version: u32,
@@ -101,6 +103,16 @@ struct RuntimeReleaseManifest {
     #[serde(default)]
     allowed_origins: Vec<String>,
     artifacts: HashMap<String, RuntimeArtifact>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AcceptedManifest {
+    schema_version: u8,
+    channel: String,
+    issued_at: String,
+    runtime_version: String,
+    runtime_commit: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -164,14 +176,17 @@ impl RuntimeStore {
         let root = paths.updates_dir.join("runtime");
         let versions = root.join("versions");
         fs::create_dir_all(&versions)?;
-        Ok(Arc::new(Self {
+        let store = Arc::new(Self {
             current: root.join("current.json"),
             previous: root.join("previous.json"),
             pending: root.join("pending.json"),
             bundled: bundled_location(app)?,
             versions,
             root,
-        }))
+        });
+        store.cleanup_staging()?;
+        store.prune_versions()?;
+        Ok(store)
     }
 
     pub fn location(&self) -> DesktopResult<RuntimeLocation> {
@@ -215,6 +230,7 @@ impl RuntimeStore {
         }
         write_json_atomic(&self.current, &pointer)?;
         fs::remove_file(&self.pending)?;
+        self.prune_versions()?;
         Ok(Some(pointer))
     }
 
@@ -234,6 +250,7 @@ impl RuntimeStore {
                 }
             }
         }
+        self.prune_versions()?;
         Ok(true)
     }
 
@@ -253,7 +270,93 @@ impl RuntimeStore {
         if self.pending.exists() {
             fs::remove_file(&self.pending)?;
         }
+        self.prune_versions()?;
         Ok(())
+    }
+
+    fn cleanup_staging(&self) -> DesktopResult<()> {
+        let staging = self.root.join("staging");
+        if staging.exists() {
+            fs::remove_dir_all(&staging)?;
+        }
+        fs::create_dir_all(staging)?;
+        Ok(())
+    }
+
+    fn prune_versions(&self) -> DesktopResult<()> {
+        let mut retained = HashSet::new();
+        for pointer_path in [&self.current, &self.previous, &self.pending] {
+            if let Ok(Some(pointer)) = read_pointer(pointer_path)
+                && validate_pointer(&pointer).is_ok()
+            {
+                retained.insert(pointer.directory);
+            }
+        }
+        for entry in fs::read_dir(&self.versions)? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir()
+                && !retained.contains(entry.file_name().to_string_lossy().as_ref())
+            {
+                fs::remove_dir_all(path)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn accept_manifest(&self, payload: &RuntimeReleaseManifest) -> DesktopResult<()> {
+        let path = self.root.join(format!("accepted-{}.json", payload.channel));
+        let candidate_version = Version::parse(&payload.runtime_version).map_err(|error| {
+            DesktopError::InvalidConfiguration(format!("Runtime version is invalid: {error}"))
+        })?;
+        if let Ok(bytes) = fs::read(&path) {
+            let previous: AcceptedManifest = serde_json::from_slice(&bytes)?;
+            if previous.schema_version != 1 || previous.channel != payload.channel {
+                return Err(DesktopError::InvalidConfiguration(
+                    "accepted Runtime manifest history is invalid".to_owned(),
+                ));
+            }
+            let previous_version = Version::parse(&previous.runtime_version).map_err(|error| {
+                DesktopError::InvalidConfiguration(format!(
+                    "accepted Runtime version is invalid: {error}"
+                ))
+            })?;
+            let previous_issued = chrono::DateTime::parse_from_rfc3339(&previous.issued_at)
+                .map_err(|error| {
+                    DesktopError::InvalidConfiguration(format!(
+                        "accepted Runtime manifest issue time is invalid: {error}"
+                    ))
+                })?;
+            let candidate_issued = chrono::DateTime::parse_from_rfc3339(&payload.issued_at)
+                .map_err(|error| {
+                    DesktopError::InvalidConfiguration(format!(
+                        "Runtime manifest issue time is invalid: {error}"
+                    ))
+                })?;
+            if candidate_version < previous_version || candidate_issued < previous_issued {
+                return Err(DesktopError::InvalidConfiguration(
+                    "Runtime manifest replay or downgrade was rejected".to_owned(),
+                ));
+            }
+            if candidate_version == previous_version
+                && payload.runtime_commit != previous.runtime_commit
+            {
+                return Err(DesktopError::InvalidConfiguration(
+                    "Runtime manifest cannot replace an accepted version with another commit"
+                        .to_owned(),
+                ));
+            }
+        }
+        write_json_atomic(
+            &path,
+            &AcceptedManifest {
+                schema_version: 1,
+                channel: payload.channel.clone(),
+                issued_at: payload.issued_at.clone(),
+                runtime_version: payload.runtime_version.clone(),
+                runtime_commit: payload.runtime_commit.clone(),
+            },
+        )
     }
 }
 
@@ -357,6 +460,7 @@ impl RuntimeUpdateManager {
                 if self.store.pending.exists() {
                     let _ = fs::remove_file(&self.store.pending);
                 }
+                let _ = self.store.prune_versions();
                 self.publish(RuntimeUpdatePhase::Failed, "smoke-failed")
             }
         }
@@ -446,7 +550,11 @@ impl RuntimeUpdateManager {
                 return Err(error);
             }
         };
-        write_json_atomic(&self.store.pending, &pointer)?;
+        if let Err(error) = write_json_atomic(&self.store.pending, &pointer) {
+            let _ = self.store.prune_versions();
+            return Err(error);
+        }
+        self.store.prune_versions()?;
         let mut status = self.publish(RuntimeUpdatePhase::Staged, "restart-to-apply")?;
         status.available_version = Some(pointer.runtime_version.clone());
         status.pending_version = Some(pointer.runtime_version);
@@ -465,6 +573,18 @@ impl RuntimeUpdateManager {
 
     pub fn rollback_after_start_failure(&self) -> DesktopResult<bool> {
         let _operation = self.lock_operation()?;
+        self.rollback_after_start_failure_locked()
+    }
+
+    pub fn rollback_after_start_failure_wait(&self) -> DesktopResult<bool> {
+        let _operation = self
+            .operation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.rollback_after_start_failure_locked()
+    }
+
+    fn rollback_after_start_failure_locked(&self) -> DesktopResult<bool> {
         let rolled_back = self.store.rollback()?;
         if rolled_back {
             self.diagnostics.append(
@@ -521,6 +641,7 @@ impl RuntimeUpdateManager {
             ));
         }
         validate_artifact_url(&manifest_url, &artifact.url, &payload.allowed_origins)?;
+        self.store.accept_manifest(&payload)?;
         Ok(VerifiedRelease {
             manifest_url,
             payload,
@@ -538,52 +659,57 @@ impl RuntimeUpdateManager {
             .manifest_url
             .join(&release.artifact.url)
             .map_err(|error| DesktopError::InvalidConfiguration(error.to_string()))?;
-        download_verified(
-            &artifact_url,
-            &archive,
-            release.artifact.size,
-            &release.artifact.sha256,
-        )?;
-        if let Err(error) = secure_extract(&archive, &extracted) {
+        let result = (|| {
+            download_verified(
+                &artifact_url,
+                &archive,
+                release.artifact.size,
+                &release.artifact.sha256,
+            )?;
+            secure_extract(&archive, &extracted)?;
+            fs::remove_file(&archive)?;
+            let metadata: RuntimePackageMetadata =
+                serde_json::from_slice(&fs::read(extracted.join("runtime-package.json"))?)?;
+            validate_package_metadata(&metadata, &release.payload)?;
+            let pointer = RuntimePointer {
+                schema_version: 1,
+                directory: version_directory(&metadata.runtime_version, &metadata.runtime_commit)?,
+                runtime_version: metadata.runtime_version,
+                runtime_commit: metadata.runtime_commit,
+                target: metadata.target,
+                entry: metadata.entry,
+                node_file: metadata.node_file,
+                node_version: metadata.node_version,
+                node_module_abi: metadata.node_module_abi,
+                runtime_protocol_version: metadata.runtime_protocol_version,
+                credential_protocol_version: metadata.credential_protocol_version,
+                credential_provider_version: metadata.credential_provider_version,
+                market_version: metadata.market_version,
+                artifact_sha256: release.artifact.sha256.clone(),
+            };
+            let candidate = RuntimeLocation {
+                runtime_dir: extracted.join("runtime"),
+                node: extracted.join(&pointer.node_file),
+                entry: pointer.entry.clone(),
+                version: pointer.runtime_version.clone(),
+                commit: pointer.runtime_commit.clone(),
+                source: "updated".to_owned(),
+            };
+            validate_runtime_files(&candidate, &pointer)?;
+            let destination = self.store.versions.join(&pointer.directory);
+            if destination.exists() {
+                fs::remove_dir_all(&destination)?;
+            }
+            fs::rename(&extracted, destination)?;
+            Ok(pointer)
+        })();
+        if archive.exists() {
             let _ = fs::remove_file(&archive);
+        }
+        if extracted.exists() {
             let _ = fs::remove_dir_all(&extracted);
-            return Err(error);
         }
-        fs::remove_file(&archive)?;
-        let metadata: RuntimePackageMetadata =
-            serde_json::from_slice(&fs::read(extracted.join("runtime-package.json"))?)?;
-        validate_package_metadata(&metadata, &release.payload)?;
-        let pointer = RuntimePointer {
-            schema_version: 1,
-            directory: version_directory(&metadata.runtime_version, &metadata.runtime_commit)?,
-            runtime_version: metadata.runtime_version,
-            runtime_commit: metadata.runtime_commit,
-            target: metadata.target,
-            entry: metadata.entry,
-            node_file: metadata.node_file,
-            node_version: metadata.node_version,
-            node_module_abi: metadata.node_module_abi,
-            runtime_protocol_version: metadata.runtime_protocol_version,
-            credential_protocol_version: metadata.credential_protocol_version,
-            credential_provider_version: metadata.credential_provider_version,
-            market_version: metadata.market_version,
-            artifact_sha256: release.artifact.sha256.clone(),
-        };
-        let candidate = RuntimeLocation {
-            runtime_dir: extracted.join("runtime"),
-            node: extracted.join(&pointer.node_file),
-            entry: pointer.entry.clone(),
-            version: pointer.runtime_version.clone(),
-            commit: pointer.runtime_commit.clone(),
-            source: "updated".to_owned(),
-        };
-        validate_runtime_files(&candidate, &pointer)?;
-        let destination = self.store.versions.join(&pointer.directory);
-        if destination.exists() {
-            fs::remove_dir_all(&destination)?;
-        }
-        fs::rename(extracted, destination)?;
-        Ok(pointer)
+        result
     }
 
     fn publish(
@@ -783,16 +909,46 @@ fn validate_manifest_payload(
     config: &RuntimeUpdateConfig,
     channel: &str,
 ) -> DesktopResult<()> {
+    validate_manifest_payload_at(payload, config, channel, chrono::Utc::now())
+}
+
+fn validate_manifest_payload_at(
+    payload: &RuntimeReleaseManifest,
+    config: &RuntimeUpdateConfig,
+    channel: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> DesktopResult<()> {
     if payload.schema_version != 1 || payload.publisher != config.publisher {
         return Err(DesktopError::InvalidConfiguration(
             "Runtime manifest publisher is not trusted".to_owned(),
         ));
     }
-    chrono::DateTime::parse_from_rfc3339(&payload.issued_at).map_err(|error| {
+    let issued_at = chrono::DateTime::parse_from_rfc3339(&payload.issued_at).map_err(|error| {
         DesktopError::InvalidConfiguration(format!(
             "Runtime manifest issue time is invalid: {error}"
         ))
     })?;
+    let expires_at =
+        chrono::DateTime::parse_from_rfc3339(&payload.expires_at).map_err(|error| {
+            DesktopError::InvalidConfiguration(format!(
+                "Runtime manifest expiry time is invalid: {error}"
+            ))
+        })?;
+    if expires_at <= issued_at {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime manifest expiry must be later than its issue time".to_owned(),
+        ));
+    }
+    if issued_at > now + MANIFEST_CLOCK_SKEW {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime manifest issue time is too far in the future".to_owned(),
+        ));
+    }
+    if expires_at <= now {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime manifest has expired".to_owned(),
+        ));
+    }
     if payload.runtime_repository != config.runtime_repository {
         return Err(DesktopError::InvalidConfiguration(
             "Runtime manifest repository does not match the bundled Runtime source".to_owned(),
@@ -939,6 +1095,7 @@ fn smoke_candidate(location: &RuntimeLocation, pointer: &RuntimePointer) -> Desk
         &[entry.to_string_lossy().as_ref(), "--help"],
         Some(&location.runtime_dir),
     )?;
+    crate::runtime::smoke_runtime_service(location)?;
     Ok(())
 }
 
@@ -1517,10 +1674,12 @@ mod tests {
     }
 
     fn payload(channel: &str, version: &str) -> RuntimeReleaseManifest {
+        let now = chrono::Utc::now();
         RuntimeReleaseManifest {
             schema_version: 1,
             publisher: "test-publisher".to_owned(),
-            issued_at: "2026-08-28T00:00:00Z".to_owned(),
+            issued_at: (now - chrono::TimeDelta::minutes(1)).to_rfc3339(),
+            expires_at: (now + chrono::TimeDelta::hours(1)).to_rfc3339(),
             runtime_version: version.to_owned(),
             channel: channel.to_owned(),
             desktop_protocol_version: 1,
@@ -1607,6 +1766,47 @@ mod tests {
         assert!(
             verify_manifest(&signed(&wrong_repository, &key), &config(&key), "stable").is_err()
         );
+    }
+
+    #[test]
+    fn rejects_expired_future_and_replayed_manifests() {
+        let key = SigningKey::from_bytes(&[11; 32]);
+        let now = chrono::Utc::now();
+        let mut expired = payload("stable", "1.1.0");
+        expired.issued_at = (now - chrono::TimeDelta::hours(2)).to_rfc3339();
+        expired.expires_at = (now - chrono::TimeDelta::hours(1)).to_rfc3339();
+        assert!(validate_manifest_payload_at(&expired, &config(&key), "stable", now).is_err());
+
+        let mut future = payload("stable", "1.1.0");
+        future.issued_at = (now + chrono::TimeDelta::hours(1)).to_rfc3339();
+        future.expires_at = (now + chrono::TimeDelta::hours(2)).to_rfc3339();
+        assert!(validate_manifest_payload_at(&future, &config(&key), "stable", now).is_err());
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("runtime");
+        let versions = root.join("versions");
+        fs::create_dir_all(&versions).unwrap();
+        let store = RuntimeStore {
+            current: root.join("current.json"),
+            previous: root.join("previous.json"),
+            pending: root.join("pending.json"),
+            bundled: RuntimeLocation {
+                runtime_dir: temp.path().join("bundled"),
+                node: temp.path().join("node"),
+                entry: "entry.js".to_owned(),
+                version: "1.0.0".to_owned(),
+                commit: "b".repeat(40),
+                source: "bundled".to_owned(),
+            },
+            versions,
+            root,
+        };
+        let accepted = payload("stable", "1.2.0");
+        store.accept_manifest(&accepted).unwrap();
+        let mut replay = payload("stable", "1.1.0");
+        replay.issued_at = (now + chrono::TimeDelta::minutes(1)).to_rfc3339();
+        replay.expires_at = (now + chrono::TimeDelta::hours(1)).to_rfc3339();
+        assert!(store.accept_manifest(&replay).is_err());
     }
 
     #[test]
@@ -1744,9 +1944,16 @@ mod tests {
             market_version: "1.0.0".to_owned(),
             artifact_sha256: "a".repeat(64),
         };
+        fs::create_dir_all(store.versions.join(&pointer.directory)).unwrap();
+        let orphan = store.versions.join("0.9.0-cccccccccccc");
+        fs::create_dir_all(&orphan).unwrap();
         write_json_atomic(&store.current, &pointer).unwrap();
+        store.prune_versions().unwrap();
+        assert!(store.versions.join(&pointer.directory).is_dir());
+        assert!(!orphan.exists());
         assert!(store.rollback().unwrap());
         assert!(!store.current.exists());
+        assert!(!store.versions.join(&pointer.directory).exists());
         assert!(!store.rollback().unwrap());
     }
 }

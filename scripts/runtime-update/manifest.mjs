@@ -2,7 +2,7 @@ import { createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { assertSemVer, compareSemVer, parseArguments, sha256, supportedTargets } from "./common.mjs";
+import { assertSemVer, compareSemVer, isPrereleaseSemVer, parseArguments, sha256, supportedTargets } from "./common.mjs";
 
 function normalizeBaseUrl(value) {
   if (!value) return "";
@@ -39,6 +39,10 @@ const signingKeyPath = args.get("signing-key");
 if (!signingKeyPath) throw new Error("--signing-key is required");
 const channel = args.get("channel") || "stable";
 if (!new Set(["stable", "preview"]).has(channel)) throw new Error("--channel must be stable or preview");
+const validityHours = Number(args.get("valid-for-hours") || "168");
+if (!Number.isInteger(validityHours) || validityHours < 1 || validityHours > 24 * 30) {
+  throw new Error("--valid-for-hours must be an integer from 1 to 720");
+}
 const minimumDesktopVersion = assertSemVer(args.get("minimum-desktop") || "1.0.0", "minimum Desktop version");
 const maximumDesktopVersion = assertSemVer(args.get("maximum-desktop") || "2.0.0", "maximum Desktop version");
 if (compareSemVer(minimumDesktopVersion, maximumDesktopVersion) > 0) {
@@ -95,7 +99,7 @@ const unexpectedTargets = descriptorTargets.filter(target => !expectedTargets.in
 if (missingTargets.length > 0 || unexpectedTargets.length > 0) {
   throw new Error(`Runtime update target set mismatch; missing=${missingTargets.join(",") || "none"}; unexpected=${unexpectedTargets.join(",") || "none"}`);
 }
-if (channel === "stable" && first.runtimeVersion.includes("-")) {
+if (channel === "stable" && isPrereleaseSemVer(first.runtimeVersion)) {
   throw new Error("stable channel cannot publish a prerelease Runtime");
 }
 const artifacts = {};
@@ -120,10 +124,12 @@ for (const descriptor of descriptors) {
     sha256: artifactSha256
   };
 }
+const issuedAt = new Date();
 const payload = {
   schemaVersion: 1,
   publisher: args.get("publisher") || "deepseek-desktop",
-  issuedAt: new Date().toISOString(),
+  issuedAt: issuedAt.toISOString(),
+  expiresAt: new Date(issuedAt.getTime() + validityHours * 60 * 60 * 1000).toISOString(),
   runtimeVersion: first.runtimeVersion,
   channel,
   desktopProtocolVersion: 1,
