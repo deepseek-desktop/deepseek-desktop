@@ -14,6 +14,11 @@ export const CONFIG_KEYS = Object.freeze([
   "DESKTOP_APP_ICON",
   "RUNTIME_REPOSITORY",
   "RUNTIME_REF",
+  "RUNTIME_UPDATE_MANIFEST_URL",
+  "RUNTIME_UPDATE_CHANNEL",
+  "RUNTIME_AUTO_UPDATE",
+  "RUNTIME_UPDATE_PUBLISHER",
+  "RUNTIME_UPDATE_PUBLIC_KEY",
   "RELEASE_CHANNEL",
   "RELEASE_SIGNED"
 ]);
@@ -29,11 +34,21 @@ export const DEFAULT_CONFIG = Object.freeze({
   DESKTOP_APP_ICON: "src-tauri/icons/icon.png",
   RUNTIME_REPOSITORY: "https://github.com/deepseek-desktop/deepseek-harness.git",
   RUNTIME_REF: "",
+  RUNTIME_UPDATE_MANIFEST_URL: "",
+  RUNTIME_UPDATE_CHANNEL: "stable",
+  RUNTIME_AUTO_UPDATE: "true",
+  RUNTIME_UPDATE_PUBLISHER: "deepseek-desktop",
+  RUNTIME_UPDATE_PUBLIC_KEY: "",
   RELEASE_CHANNEL: "local",
   RELEASE_SIGNED: "false"
 });
 
-const OPTIONAL_EMPTY_KEYS = new Set(["DESKTOP_APP_REPOSITORY", "RUNTIME_REF"]);
+const OPTIONAL_EMPTY_KEYS = new Set([
+  "DESKTOP_APP_REPOSITORY",
+  "RUNTIME_REF",
+  "RUNTIME_UPDATE_MANIFEST_URL",
+  "RUNTIME_UPDATE_PUBLIC_KEY"
+]);
 
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const identifierPattern = /^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*)+$/u;
@@ -98,6 +113,31 @@ function normalizeRepository(value, name = "RUNTIME_REPOSITORY") {
   }
   if (/^[\w.-]+@[\w.-]+:.+/u.test(repository)) return repository;
   throw new Error(`${name} must be an HTTP(S), SSH, or Git repository URL`);
+}
+
+function normalizeRuntimeUpdateManifestUrl(value) {
+  if (!value) return "";
+  const url = new URL(value);
+  if (!["https:", "http:", "file:"].includes(url.protocol)) {
+    throw new Error("RUNTIME_UPDATE_MANIFEST_URL must use HTTPS, HTTP, or file");
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error("RUNTIME_UPDATE_MANIFEST_URL must not contain credentials, a query, or a fragment");
+  }
+  return url.toString();
+}
+
+function validateRuntimeUpdatePublicKey(value) {
+  if (!value) return;
+  let decoded;
+  try {
+    decoded = Buffer.from(value, "base64");
+  } catch {
+    throw new Error("RUNTIME_UPDATE_PUBLIC_KEY must be base64 encoded");
+  }
+  if (decoded.length !== 32 || decoded.toString("base64") !== value) {
+    throw new Error("RUNTIME_UPDATE_PUBLIC_KEY must encode exactly 32 Ed25519 public-key bytes");
+  }
 }
 
 export function normalizePublicRepository(value) {
@@ -196,6 +236,18 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
   const iconSource = normalizeRelativePath(values.DESKTOP_APP_ICON);
   const icon = await inspectPng(resolve(root, iconSource));
   const repository = normalizeRepository(values.RUNTIME_REPOSITORY);
+  const runtimeUpdateManifestUrl = normalizeRuntimeUpdateManifestUrl(values.RUNTIME_UPDATE_MANIFEST_URL);
+  assertText("RUNTIME_UPDATE_PUBLISHER", values.RUNTIME_UPDATE_PUBLISHER);
+  validateRuntimeUpdatePublicKey(values.RUNTIME_UPDATE_PUBLIC_KEY);
+  if (!new Set(["stable", "preview"]).has(values.RUNTIME_UPDATE_CHANNEL)) {
+    throw new Error("RUNTIME_UPDATE_CHANNEL must be stable or preview");
+  }
+  if (!new Set(["true", "false"]).has(values.RUNTIME_AUTO_UPDATE)) {
+    throw new Error("RUNTIME_AUTO_UPDATE must be true or false");
+  }
+  if (Boolean(runtimeUpdateManifestUrl) !== Boolean(values.RUNTIME_UPDATE_PUBLIC_KEY)) {
+    throw new Error("RUNTIME_UPDATE_MANIFEST_URL and RUNTIME_UPDATE_PUBLIC_KEY must be configured together");
+  }
   if (!new Set(["local", "community", "stable"]).has(values.RELEASE_CHANNEL)) {
     throw new Error("RELEASE_CHANNEL must be local, community, or stable");
   }
@@ -224,6 +276,16 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
     harness: {
       repository,
       ref: values.RUNTIME_REF
+    },
+    runtimeUpdate: {
+      manifestUrl: runtimeUpdateManifestUrl,
+      channel: values.RUNTIME_UPDATE_CHANNEL,
+      autoUpdate: values.RUNTIME_AUTO_UPDATE === "true" && !values.RUNTIME_REF,
+      publisher: values.RUNTIME_UPDATE_PUBLISHER,
+      publicKey: values.RUNTIME_UPDATE_PUBLIC_KEY,
+      desktopProtocolVersion: 1,
+      runtimeProtocolVersion: 1,
+      credentialProtocolVersion: 1
     },
     release: {
       channel: values.RELEASE_CHANNEL,

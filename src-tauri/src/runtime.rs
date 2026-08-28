@@ -18,6 +18,7 @@ use crate::contracts::{RuntimePhase, RuntimeStatus};
 use crate::credential_vault::RuntimeSession;
 use crate::diagnostics::Diagnostics;
 use crate::error::{DesktopError, DesktopResult};
+use crate::runtime_update::{RuntimeStore, RuntimeUpdateManager};
 use crate::settings::{AppPaths, SettingsStore};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
@@ -64,6 +65,8 @@ pub struct RuntimeSupervisor {
     paths: AppPaths,
     settings: Arc<SettingsStore>,
     diagnostics: Arc<Diagnostics>,
+    runtime_store: Arc<RuntimeStore>,
+    runtime_updates: Arc<RuntimeUpdateManager>,
     operation: Mutex<()>,
     inner: Mutex<RuntimeInner>,
     workbench_visible: AtomicBool,
@@ -88,12 +91,16 @@ impl RuntimeSupervisor {
         paths: AppPaths,
         settings: Arc<SettingsStore>,
         diagnostics: Arc<Diagnostics>,
+        runtime_store: Arc<RuntimeStore>,
+        runtime_updates: Arc<RuntimeUpdateManager>,
     ) -> Arc<Self> {
         let supervisor = Arc::new(Self {
             app,
             paths,
             settings,
             diagnostics,
+            runtime_store,
+            runtime_updates,
             operation: Mutex::new(()),
             inner: Mutex::new(RuntimeInner {
                 status: RuntimeStatus::default(),
@@ -297,10 +304,11 @@ impl RuntimeSupervisor {
             restart_count,
             ..RuntimeStatus::default()
         })?;
-        let runtime_dir = self.runtime_dir()?;
-        let node = self.node_binary()?;
+        let location = self.runtime_store.location()?;
+        let runtime_dir = location.runtime_dir;
+        let node = location.node;
         self.prepare_profile(&runtime_dir, &node)?;
-        let dsh_entry = runtime_dir.join(env!("DEEPSEEK_DESKTOP_RUNTIME_ENTRY"));
+        let dsh_entry = runtime_dir.join(location.entry);
         let parent_watch =
             runtime_dir.join("node_modules/deepseek-desktop-bundle/parent-watch.cjs");
         let locale_sync = runtime_dir.join("node_modules/deepseek-desktop-bundle/locale-sync.cjs");
@@ -353,7 +361,17 @@ impl RuntimeSupervisor {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         configure_process_group(&mut command);
-        let child = command.spawn()?;
+        let child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                return self.fail(
+                    &workspace,
+                    restart_count,
+                    "runtime-exited",
+                    &format!("Runtime process could not start: {error}"),
+                );
+            }
+        };
         let mut managed = ManagedChild::new(child, credential_session)?;
         let session_token = managed._credential_session.token().to_owned();
         let session_result = managed
@@ -527,53 +545,6 @@ impl RuntimeSupervisor {
 
     fn emit(&self, status: &RuntimeStatus) {
         let _ = self.app.emit("runtime://status", status);
-    }
-
-    fn runtime_dir(&self) -> DesktopResult<PathBuf> {
-        if cfg!(debug_assertions) {
-            if let Some(path) = std::env::var_os("DEEPSEEK_DESKTOP_RUNTIME_DIR") {
-                return Ok(PathBuf::from(path));
-            }
-            return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../runtime/staging")
-                .join(env!("DEEPSEEK_DESKTOP_TARGET")));
-        }
-        let resource_dir = self
-            .app
-            .path()
-            .resource_dir()
-            .map_err(|error| DesktopError::Other(error.to_string()))?;
-        Ok(node_compatible_path(&resource_dir)
-            .join("runtime/staging")
-            .join(env!("DEEPSEEK_DESKTOP_TARGET")))
-    }
-
-    fn node_binary(&self) -> DesktopResult<PathBuf> {
-        if cfg!(debug_assertions)
-            && let Some(path) = std::env::var_os("DEEPSEEK_DESKTOP_NODE_PATH")
-        {
-            return Ok(PathBuf::from(path));
-        }
-        let suffix = if cfg!(windows) { ".exe" } else { "" };
-        let sibling = std::env::current_exe()?.with_file_name(format!("node{suffix}"));
-        if sibling.is_file() {
-            return Ok(sibling);
-        }
-        if cfg!(debug_assertions) {
-            let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("binaries")
-                .join(format!(
-                    "node-{}{}",
-                    env!("DEEPSEEK_DESKTOP_TARGET"),
-                    suffix
-                ));
-            if development.is_file() {
-                return Ok(development);
-            }
-        }
-        Err(DesktopError::RuntimeArtifactMissing(
-            "Node sidecar".to_owned(),
-        ))
     }
 
     fn runtime_environment(
@@ -775,6 +746,31 @@ impl RuntimeSupervisor {
                     &format!("runtime exited unexpectedly: {exit}"),
                 );
                 if restart_count >= MAX_RESTARTS {
+                    let mut recovered = false;
+                    while supervisor
+                        .runtime_updates
+                        .rollback_after_start_failure()
+                        .unwrap_or(false)
+                    {
+                        let _ = supervisor.show_management();
+                        let _ = supervisor.publish(RuntimeStatus {
+                            phase: RuntimePhase::Recovering,
+                            workspace: Some(workspace.clone()),
+                            restart_count: 0,
+                            ..RuntimeStatus::default()
+                        });
+                        if let Ok(_operation) = supervisor.operation.try_lock()
+                            && supervisor
+                                .spawn_locked(workspace.clone(), 0, RuntimePhase::Recovering)
+                                .is_ok()
+                        {
+                            recovered = true;
+                            break;
+                        }
+                    }
+                    if recovered {
+                        continue;
+                    }
                     let _ = supervisor.show_management();
                     let _ = supervisor.publish(RuntimeStatus {
                         phase: RuntimePhase::Failed,
@@ -899,22 +895,8 @@ fn is_active_workspace(status: &RuntimeStatus, workspace: &str) -> bool {
         )
 }
 
-#[cfg(windows)]
-fn node_compatible_path(path: &Path) -> PathBuf {
-    use std::ffi::OsString;
-    use std::os::windows::ffi::{OsStrExt, OsStringExt};
-
-    let units = path.as_os_str().encode_wide().collect::<Vec<_>>();
-    PathBuf::from(OsString::from_wide(&strip_windows_verbatim_prefix(&units)))
-}
-
-#[cfg(not(windows))]
-fn node_compatible_path(path: &Path) -> PathBuf {
-    path.to_path_buf()
-}
-
 #[cfg(any(test, windows))]
-fn strip_windows_verbatim_prefix(path: &[u16]) -> Vec<u16> {
+pub(crate) fn strip_windows_verbatim_prefix(path: &[u16]) -> Vec<u16> {
     const BACKSLASH: u16 = b'\\' as u16;
     const QUESTION_MARK: u16 = b'?' as u16;
     const VERBATIM_PREFIX: [u16; 4] = [BACKSLASH, BACKSLASH, QUESTION_MARK, BACKSLASH];

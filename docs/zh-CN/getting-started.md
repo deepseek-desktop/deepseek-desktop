@@ -4,7 +4,7 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 桌面 Shell、应用程序和安装包统一使用固定上游提交中的侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 
-源码默认和文档示例版本固定为 `1.0.0`，实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，自动更新也未启用，因此不能作为已认证 Stable 版本宣传。
+源码默认和文档示例版本固定为 `1.0.0`，实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，桌面安装包自动更新也未启用，因此不能作为已认证 Stable 版本宣传。Runtime 独立更新只会在发行版预置可信签名清单与公钥时启用。
 
 工程源码位于仓库根目录。`runtime/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Runtime 来源；`runtime:sync` 在本地开发且 `RUNTIME_REF` 为空时自动选择 Runtime 仓库最新的 SemVer 版本标签，显式填写时使用指定来源，随后统一解析为不可变 commit。社区版和正式发布还必须匹配仓库内经过审计的固定 Runtime 提交，避免可变标签在无人复核时改变发行内容。同步结果写入当前构建专用的 `target/generated/runtime-lock.json`。Runtime 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
@@ -57,7 +57,7 @@ DeepSeek Desktop 使用系统应用数据目录，不向安装目录写运行数
 
 | 内容 | 说明 |
 | --- | --- |
-| `settings.json` | Shell 语言、主题、工作区和更新通道 |
+| `settings.json` | Shell 语言、工作区、桌面更新与 Runtime 独立更新设置 |
 | `dsh/` | Runtime profile、会话、设置和插件数据 |
 | `credential-vault.json` | XChaCha20-Poly1305 加密后的模型凭据和 record 索引，不包含可读明文 |
 | `credential-vault.key` | 当前用户专用的本地凭据库密钥；Unix 权限固定为 `0600` |
@@ -65,7 +65,7 @@ DeepSeek Desktop 使用系统应用数据目录，不向安装目录写运行数
 | `logs/` | 10 MB 单文件、最多 5 个轮转文件 |
 | `backups/` | 设置更新前的最近备份 |
 | `diagnostics/` | 用户主动导出的脱敏诊断文档 |
-| `updates/` | 未来签名更新的临时目录 |
+| `updates/runtime/` | Runtime 下载 staging、版本目录和原子切换指针；不包含模型凭据 |
 
 macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows 和 Linux 使用 Tauri 对应的平台应用数据目录。
 
@@ -86,7 +86,9 @@ macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows �
 
 ## 更新与卸载
 
-当前社区版构建默认并强制关闭自动更新。工程已保留 Tauri Updater 和 GitHub Releases 签名检查实现，但只有安装包签名、Updater 私钥、公钥、Apple/Windows 证书全部就绪，Stable 构建门禁才允许继续；社区版配置不会请求更新地址或安装未签名产物。
+桌面安装包和 Runtime 使用两条独立更新链路。当前社区版默认并强制关闭桌面安装包自动更新；只有安装包签名、Updater 私钥、公钥、Apple/Windows 证书全部就绪，Stable 构建门禁才允许继续。
+
+Runtime 更新可在“桌面管理 → 更新”中选择“自动下载并在下次启动安装”“发现后提醒”或“仅手动检查”，也可以固定当前版本。只有发行版内置了可信 Runtime 清单地址、公钥和发布者身份时该功能才会启用；默认社区配置不连接更新服务。下载的新 Runtime 会在应用数据目录中完成 SHA-256、签名、平台与协议校验，启动 smoke 通过后才切换；失败会保留当前版本并自动回滚，用户也可随时恢复安装包内置 Runtime。更详细的维护与离线恢复说明见 [Runtime 独立更新指南](runtime-updates.md)。
 
 卸载应用不会自动删除工作区或应用数据。需要完全清理时，先卸载 DeepSeek Desktop，再由用户主动删除系统应用数据目录。新版只使用社区版内置的本地加密凭据库，不访问系统钥匙串。
 

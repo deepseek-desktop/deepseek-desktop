@@ -15,6 +15,16 @@ export interface AppConfig {
     repository: string;
     ref: string;
   };
+  runtimeUpdate: {
+    manifestUrl: string;
+    channel: "stable" | "preview";
+    autoUpdate: boolean;
+    publisher: string;
+    publicKey: string;
+    desktopProtocolVersion: number;
+    runtimeProtocolVersion: number;
+    credentialProtocolVersion: number;
+  };
   release: {
     channel: "local" | "community" | "stable";
     signed: boolean;

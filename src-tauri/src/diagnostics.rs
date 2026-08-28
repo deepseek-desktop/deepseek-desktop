@@ -6,7 +6,7 @@ use std::sync::{Mutex, RwLock};
 use chrono::Utc;
 use serde::Serialize;
 
-use crate::contracts::{DesktopSettings, RuntimeStatus};
+use crate::contracts::{DesktopSettings, RuntimeStatus, RuntimeUpdateStatus};
 use crate::error::{DesktopError, DesktopResult};
 use crate::settings::{AppPaths, write_json_atomic};
 
@@ -61,6 +61,7 @@ impl Diagnostics {
     pub fn export(
         &self,
         status: &RuntimeStatus,
+        runtime_update: &RuntimeUpdateStatus,
         settings: &DesktopSettings,
     ) -> DesktopResult<PathBuf> {
         let _guard = self.write_lock.lock()?;
@@ -82,9 +83,10 @@ impl Diagnostics {
         let document = DiagnosticDocument {
             generated_at: Utc::now().to_rfc3339(),
             desktop_version: env!("DEEPSEEK_DESKTOP_APP_VERSION"),
-            runtime_version: env!("DEEPSEEK_DESKTOP_RUNTIME_VERSION"),
+            runtime_version: runtime_update.current_version.clone(),
             target: env!("DEEPSEEK_DESKTOP_TARGET"),
             status: redacted_status,
+            runtime_update: runtime_update.clone(),
             settings: redacted_settings,
             recent_log: self.read_tail(),
         };
@@ -171,9 +173,10 @@ impl Diagnostics {
 struct DiagnosticDocument {
     generated_at: String,
     desktop_version: &'static str,
-    runtime_version: &'static str,
+    runtime_version: String,
     target: &'static str,
     status: RuntimeStatus,
+    runtime_update: RuntimeUpdateStatus,
     settings: DesktopSettings,
     recent_log: String,
 }

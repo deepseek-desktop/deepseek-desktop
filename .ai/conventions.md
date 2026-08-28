@@ -11,6 +11,7 @@
 - 发行标签接受带或不带 `v` 前缀的完整 SemVer，例如 `1.0.0`、`v1.0.0` 和 `v0.1.0-community.13`；工作流入口必须执行严格 SemVer 校验。
 - GitHub Actions 的应用仓库地址必须来自工作流仓库上下文，不能使用 Windows 短路径副本或其他本地 clone 的文件型 `origin`。
 - 分布式发布源码必须使用不含嵌入凭据的通用 Git URL；构建、Controller 状态和发布 Provider 不得假定 GitHub 存在。
+- Runtime 独立更新清单和制品可由 filesystem 或普通 HTTP 服务承载，但必须使用配置公钥验证 Ed25519 签名；`RUNTIME_REF` 显式固定时默认关闭自动下载。
 
 ## 实现
 
@@ -21,6 +22,7 @@
 - 不引入明文凭据 fallback，不通过命令参数、长期环境变量或日志传递 API Key。
 - 不为临时验证修改产品源码；Runtime 补丁必须与锁定版本、marker 和验证脚本一起维护。
 - community/stable 分布式任务必须绑定受信任节点 ID；一次性票据和短期租约只保存摘要，公开 PR 不得自动触发本地 Worker。
+- Runtime 更新不得写应用安装目录，不得在用户机器拉源码或编译；Windows 的 smoke、替换和重启进程必须保持无控制台窗口。
 
 ## 验证
 

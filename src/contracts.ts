@@ -17,7 +17,28 @@ export interface DesktopSettings {
   onboardingCompleted: boolean;
   updateChannel: "community" | "stable";
   updateEnabled: boolean;
+  runtimeUpdateChannel: "stable" | "preview";
+  runtimeUpdateMode: "automatic" | "notify" | "manual";
+  runtimePinnedVersion: string | null;
   recoveryReason?: "corrupt" | "future" | null;
+}
+
+export type RuntimeUpdatePhase = "disabled" | "idle" | "checking" | "available" | "downloading" | "staged" | "applied" | "failed" | "rolled-back" | "pinned";
+
+export interface RuntimeUpdateStatus {
+  enabled: boolean;
+  phase: RuntimeUpdatePhase;
+  currentVersion: string;
+  currentCommit: string;
+  currentSource: "bundled" | "updated";
+  availableVersion: string | null;
+  pendingVersion: string | null;
+  channel: "stable" | "preview";
+  mode: "automatic" | "notify" | "manual";
+  pinnedVersion: string | null;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  message: string;
 }
 
 export interface DesktopAbout {

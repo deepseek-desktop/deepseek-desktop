@@ -1,17 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { appConfig } from "./app-config";
-import type { DesktopAbout, DesktopSettings, DesktopSurface, RuntimeStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopSettings, DesktopSurface, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
 
 const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 
 const browserSettings: DesktopSettings = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   locale: "zh-CN",
   workspace: null,
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
+  runtimeUpdateChannel: appConfig.runtimeUpdate.channel,
+  runtimeUpdateMode: appConfig.runtimeUpdate.autoUpdate ? "automatic" : "notify",
+  runtimePinnedVersion: null,
   recoveryReason: null
 };
 
@@ -96,6 +99,49 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     };
   }
   return invoke<UpdateStatus>("update_check");
+}
+
+function browserRuntimeUpdateStatus(): RuntimeUpdateStatus {
+  return {
+    enabled: Boolean(appConfig.runtimeUpdate.manifestUrl && appConfig.runtimeUpdate.publicKey),
+    phase: appConfig.runtimeUpdate.manifestUrl ? "idle" : "disabled",
+    currentVersion: appConfig.harness.ref.replace(/^dsh-v/u, "") || "development",
+    currentCommit: "development",
+    currentSource: "bundled",
+    availableVersion: null,
+    pendingVersion: null,
+    channel: browserSettings.runtimeUpdateChannel,
+    mode: browserSettings.runtimeUpdateMode,
+    pinnedVersion: browserSettings.runtimePinnedVersion,
+    downloadedBytes: 0,
+    totalBytes: null,
+    message: appConfig.runtimeUpdate.manifestUrl ? "idle" : "not-configured"
+  };
+}
+
+export async function getRuntimeUpdateStatus(): Promise<RuntimeUpdateStatus> {
+  if (!inTauri()) return browserRuntimeUpdateStatus();
+  return invoke<RuntimeUpdateStatus>("runtime_update_status");
+}
+
+export async function checkRuntimeUpdate(): Promise<RuntimeUpdateStatus> {
+  if (!inTauri()) return browserRuntimeUpdateStatus();
+  return invoke<RuntimeUpdateStatus>("runtime_update_check");
+}
+
+export async function downloadRuntimeUpdate(): Promise<RuntimeUpdateStatus> {
+  if (!inTauri()) return browserRuntimeUpdateStatus();
+  return invoke<RuntimeUpdateStatus>("runtime_update_download");
+}
+
+export async function restoreBundledRuntime(): Promise<RuntimeUpdateStatus> {
+  if (!inTauri()) return browserRuntimeUpdateStatus();
+  return invoke<RuntimeUpdateStatus>("runtime_update_restore_bundled");
+}
+
+export async function onRuntimeUpdateStatus(handler: (status: RuntimeUpdateStatus) => void): Promise<UnlistenFn> {
+  if (!inTauri()) return () => undefined;
+  return listen<RuntimeUpdateStatus>("runtime-update://status", event => handler(event.payload));
 }
 
 export async function exportDiagnostics(): Promise<string> {

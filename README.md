@@ -141,6 +141,14 @@ corepack pnpm@11.7.0 desktop:package
 
 可复制 `.env.example` 为 `.env` 来定制应用元数据和 Runtime 来源。配置优先级为“命令行环境变量 > `.env` > 内置默认值”；`.env` 不会进入 Runtime、安装包、诊断包或发布目录。`RUNTIME_REF` 默认留空，本地开发会自动选择最新版本标签；社区版和正式发布仍受仓库内固定 Runtime 来源约束。`DESKTOP_APP_REPOSITORY` 默认留空：GitHub Actions 使用当前工作流仓库地址，本地开发读取公开的 Git `origin`；若 `origin` 只是本机路径，则继续读取 `package.json` 或项目内置仓库地址。作者和仓库地址会显示在关于页，仓库地址可直接用系统浏览器打开。
 
+## Runtime 独立更新
+
+DeepSeek Desktop 将桌面外壳与 Harness Runtime 分开更新。安装包内始终保留一份经过构建验证的 Runtime；可信更新服务可另外发布 macOS arm64、macOS x64、Windows x64 和 Linux x64 的原生 Runtime 生产闭包。用户机器只下载当前平台的压缩制品，不拉取源码、不安装构建工具，也不在本机编译 Runtime。
+
+“桌面管理 → 更新”提供三种方式：自动下载并在下次启动安装、发现后提醒、仅手动检查；也可以固定当前 Runtime 或恢复安装包内置版本。候选版本只有在签名清单、发布者、仓库、平台、协议、桌面版本范围、Node ABI、凭据插件、DSH Market、大小和 SHA-256 全部匹配后才会进入 staging。下次启动会先执行 smoke，再原子切换；启动失败或运行恢复达到上限时自动回滚上一版，上一版不可用时回到安装包内置版。更新目录只位于系统应用数据目录，不修改应用安装目录。
+
+默认 `.env.example` 没有配置更新清单和公钥，因此不会连接任何 Runtime 更新服务。发行维护者必须配置 `RUNTIME_UPDATE_MANIFEST_URL`、`RUNTIME_UPDATE_PUBLIC_KEY` 和可信发布者；显式设置 `RUNTIME_REF` 的开发构建默认关闭自动下载，避免联调版本被替换。清单可放在 filesystem/NAS、普通 HTTPS 静态站点、GitHub、GitLab、Gitee、Gitea 或自建服务，不依赖 GitHub Release API。完整用户行为、安全边界、清单格式和发布命令见 [Runtime 独立更新指南](docs/zh-CN/runtime-updates.md)。
+
 单台主机只构建其原生目标。默认和示例版本始终使用 `1.0.0`。符合 SemVer 的标签都会触发 GitHub Actions，可带或不带 `v` 前缀，例如 `1.0.0`、`v1.0.0`、`v0.1.0-community.13`；完整 SemVer 校验会在构建开始时执行，非法标签不会进入发行。全部平台通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。发布构建从标签注入真实版本，不需要修改源码中的默认或示例版本。
 
 ## 分布式本地发布
@@ -182,7 +190,7 @@ corepack pnpm@11.7.0 release:publish -- \
 
 ## 发布边界
 
-当前社区版没有可信发布者身份，自动更新保持关闭。macOS 产物只有 ad-hoc Bundle 签名，没有 Apple Developer ID 签名和公证。未来 Stable 版本必须通过 `pnpm release:check stable`，提供 Updater、Apple 和 Windows 签名材料，并完成对应平台的干净系统安装验收。
+当前社区版没有安装包可信发布者身份，因此桌面应用安装包自动更新保持关闭。Runtime 独立更新是另一条边界：只有构建时明确配置可信 Ed25519 清单与发布者的发行版才会启用，未配置时不联网检查。macOS 产物只有 ad-hoc Bundle 签名，没有 Apple Developer ID 签名和公证。未来 Stable 桌面版本必须通过 `pnpm release:check stable`，提供 Updater、Apple 和 Windows 签名材料，并完成对应平台的干净系统安装验收。
 
 本地分布式节点或可选 CI 会构建 macOS arm64/x64、Windows x64 和 Linux x64 产物。macOS arm64 与 Windows x64 还必须完成真实安装、启动、正常退出、孤儿进程、卸载和重装验收；某个平台构建成功不代表其他平台已经完成安装验收。
 

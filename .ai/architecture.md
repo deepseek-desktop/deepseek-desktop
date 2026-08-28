@@ -18,6 +18,13 @@ RUNTIME_REPOSITORY / RUNTIME_REF
   -> target/generated/runtime-lock.json
   -> runtime/scripts/stage-runtime.mjs
   -> Tauri sidecar / resources
+
+可信 Runtime 更新配置
+  -> scripts/runtime-update/ 各原生节点生成生产闭包
+  -> 四平台描述一致性 + Ed25519 签名清单
+  -> 应用数据目录 staging / 版本目录
+  -> SHA-256 + 来源 / 平台 / 协议 / 包版本校验
+  -> smoke -> 原子 current 指针 -> 失败回滚 previous / bundled
 ```
 
 `target/` 是生成与缓存目录，不是源码事实。稳定工具链、Runtime 发布来源和第三方制品校验和由 `runtime/toolchain-lock.json` 维护。
@@ -41,15 +48,17 @@ RUNTIME_REPOSITORY / RUNTIME_REF
 
 - `src/`：Vue 3 桌面管理 Shell、三语国际化、类型化 IPC 和视图状态。
 - `src-tauri/src/runtime.rs`：Runtime 状态机、进程生命周期、探活、恢复、工作区注册和嵌入式工作台。
+- `src-tauri/src/runtime_update.rs`：签名 Runtime 清单、平台下载、受限解压、版本指针、smoke、切换与回滚。
 - `src-tauri/src/credential_vault.rs`：本地加密凭据库、短期 Runtime 会话授权及旧索引迁移。
 - `src-tauri/src/settings.rs`：原子设置读写、损坏或未来 schema 隔离恢复。
 - `src-tauri/src/diagnostics.rs`：日志轮转、脱敏和诊断导出。
 - `src-tauri/src/native_menu.rs`：跨平台原生菜单及页面切换入口。
-- `src-tauri/src/updater.rs`：更新配置边界；社区版保持关闭。
+- `src-tauri/src/updater.rs`：桌面安装包更新边界；与 Runtime 独立更新分离，社区版保持关闭。
 - `runtime/packages/credentials-vault/`：Harness Credential Provider 代理，通过 stdin/stdout JSON 调用桌面 helper。
 - `runtime/patches/`：针对锁定 Runtime 的最小桌面集成补丁，必须有 marker 和验证。
 - `scripts/`：配置同步、Runtime 构建、发行门禁、平台打包和工具链引导。
 - `scripts/release-system/`：平台无关的本地发布 Controller、Worker、目标协议和 filesystem/GitHub Provider。
+- `scripts/runtime-update/`：原生 Runtime 更新制品、四平台描述汇总和 Ed25519 清单签名。
 - `.github/workflows/community-build.yml`：社区版原生平台构建矩阵。
 
 ## 运行链路
@@ -59,9 +68,11 @@ RUNTIME_REPOSITORY / RUNTIME_REF
 3. Runtime 通过受限会话调用桌面凭据 helper，不接收长期明文环境变量。
 4. readiness 通过后，同一原生窗口切换到受管 Harness Origin。
 5. Runtime 异常退出时按有限次数恢复；用户主动停止或应用退出时清理进程树。
+6. 已配置可信更新服务时，候选 Runtime 下载到应用数据目录并在下次启动 smoke 后切换；失败回滚上一版或内置基线。
 
 ## 安全边界
 
 - 只信任受管的 loopback Origin，不允许任意远程页面进入桌面 IPC 域。
 - 凭据、`.env`、用户工作区和本机路径不得进入安装包、发布附件或诊断包。
 - 发布来源使用不可变 commit 和哈希作为事实，不以可移动 tag 单独作为信任依据。
+- Runtime 清单签名覆盖来源、兼容协议和制品哈希；更新客户端不跟随重定向，不解压链接、特殊文件或逃逸路径。

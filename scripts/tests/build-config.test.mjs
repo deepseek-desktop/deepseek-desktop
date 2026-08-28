@@ -29,6 +29,16 @@ test("uses built-in defaults without an env file", async () => {
   assert.equal(config.repository, "https://github.com/deepseek-desktop/deepseek-desktop");
   assert.equal(config.harness.repository, DEFAULT_CONFIG.RUNTIME_REPOSITORY);
   assert.equal(config.harness.ref, "");
+  assert.deepEqual(config.runtimeUpdate, {
+    manifestUrl: "",
+    channel: "stable",
+    autoUpdate: true,
+    publisher: "deepseek-desktop",
+    publicKey: "",
+    desktopProtocolVersion: 1,
+    runtimeProtocolVersion: 1,
+    credentialProtocolVersion: 1
+  });
   assert.deepEqual(config.release, { channel: "local", signed: false });
   assert.equal(config.toolchain.nodeVersion, "24.16.0");
   assert.equal(config.toolchain.rustVersion, "1.98.0");
@@ -57,6 +67,11 @@ test("loads every declared value from an env file before applying environment ov
     "DESKTOP_APP_ICON=src-tauri/icons/icon.png",
     "RUNTIME_REPOSITORY=git@github.com:example/deepseek-harness.git",
     "RUNTIME_REF=release-candidate",
+    "RUNTIME_UPDATE_MANIFEST_URL=https://updates.example.com/runtime/manifest.json",
+    "RUNTIME_UPDATE_CHANNEL=preview",
+    "RUNTIME_AUTO_UPDATE=true",
+    "RUNTIME_UPDATE_PUBLISHER=example-desktop",
+    `RUNTIME_UPDATE_PUBLIC_KEY=${Buffer.alloc(32, 7).toString("base64")}`,
     "RELEASE_CHANNEL=community",
     "RELEASE_SIGNED=true"
   ].join("\n"));
@@ -75,6 +90,10 @@ test("loads every declared value from an env file before applying environment ov
     assert.equal(config.repository, "https://git.example.com/team/desktop");
     assert.equal(config.harness.repository, "git@github.com:example/deepseek-harness.git");
     assert.equal(config.harness.ref, "release-candidate");
+    assert.equal(config.runtimeUpdate.manifestUrl, "https://updates.example.com/runtime/manifest.json");
+    assert.equal(config.runtimeUpdate.channel, "preview");
+    assert.equal(config.runtimeUpdate.autoUpdate, false);
+    assert.equal(config.runtimeUpdate.publisher, "example-desktop");
     assert.deepEqual(config.release, { channel: "community", signed: true });
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -96,6 +115,51 @@ test("validates explicit release metadata", async () => {
     environment: { RELEASE_SIGNED: "yes" },
     envFile: resolve(root, "target/missing.env")
   }), /true or false/u);
+});
+
+test("validates Runtime update configuration and disables automatic updates for a fixed ref", async () => {
+  const publicKey = Buffer.alloc(32, 3).toString("base64");
+  const config = await loadBuildConfig(root, {
+    environment: {
+      RUNTIME_REF: "dsh-v1.0.0",
+      RUNTIME_UPDATE_MANIFEST_URL: "file:///tmp/runtime-manifest.json",
+      RUNTIME_UPDATE_PUBLIC_KEY: publicKey,
+      RUNTIME_AUTO_UPDATE: "true"
+    },
+    envFile: resolve(root, "target/missing.env")
+  });
+  assert.equal(config.runtimeUpdate.autoUpdate, false);
+  await assert.rejects(loadBuildConfig(root, {
+    environment: { RUNTIME_UPDATE_CHANNEL: "nightly" },
+    envFile: resolve(root, "target/missing.env")
+  }), /stable or preview/u);
+  await assert.rejects(loadBuildConfig(root, {
+    environment: { RUNTIME_AUTO_UPDATE: "yes" },
+    envFile: resolve(root, "target/missing.env")
+  }), /true or false/u);
+  await assert.rejects(loadBuildConfig(root, {
+    environment: { RUNTIME_UPDATE_MANIFEST_URL: "https://updates.example.com/runtime.json" },
+    envFile: resolve(root, "target/missing.env")
+  }), /must be configured together/u);
+  await assert.rejects(loadBuildConfig(root, {
+    environment: { RUNTIME_UPDATE_PUBLIC_KEY: publicKey },
+    envFile: resolve(root, "target/missing.env")
+  }), /must be configured together/u);
+  await assert.rejects(loadBuildConfig(root, {
+    environment: { RUNTIME_UPDATE_PUBLISHER: "\n" },
+    envFile: resolve(root, "target/missing.env")
+  }), /must not be empty/u);
+  await assert.rejects(loadBuildConfig(root, {
+    environment: { RUNTIME_UPDATE_PUBLIC_KEY: "not-a-key" },
+    envFile: resolve(root, "target/missing.env")
+  }), /32 Ed25519/u);
+  await assert.rejects(loadBuildConfig(root, {
+    environment: {
+      RUNTIME_UPDATE_MANIFEST_URL: "https://updates.example.com/runtime.json?token=secret",
+      RUNTIME_UPDATE_PUBLIC_KEY: publicKey
+    },
+    envFile: resolve(root, "target/missing.env")
+  }), /query/u);
 });
 
 test("accepts empty Harness ref and Desktop repository for automatic resolution", () => {

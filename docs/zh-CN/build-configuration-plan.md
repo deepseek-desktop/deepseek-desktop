@@ -39,6 +39,13 @@ DESKTOP_APP_ICON=src-tauri/icons/icon.png
 # Harness Runtime 来源
 RUNTIME_REPOSITORY=https://github.com/deepseek-desktop/deepseek-harness.git
 RUNTIME_REF=
+
+# Runtime 独立更新；未配置地址和公钥时完全禁用
+RUNTIME_UPDATE_MANIFEST_URL=
+RUNTIME_UPDATE_CHANNEL=stable
+RUNTIME_AUTO_UPDATE=true
+RUNTIME_UPDATE_PUBLISHER=deepseek-desktop
+RUNTIME_UPDATE_PUBLIC_KEY=
 ```
 
 内置默认值与上述示例保持一致，但不能通过读取 `.env.example` 获得默认值；默认值应由统一配置加载器持有，确保删除 `.env` 和 `.env.example` 后仍能正常开发、测试和打包。`DESKTOP_APP_REPOSITORY` 留空时，GitHub Actions 使用当前工作流仓库地址，本地开发读取公开的 Git `origin`；若 `origin` 只是本机路径，则继续读取 `package.json` 或项目内置仓库地址。`RUNTIME_REF` 留空时，本地开发自动选择 Runtime 仓库中最新的 SemVer 版本标签，社区版和正式发布则必须匹配 `runtime/toolchain-lock.json` 中经过审计的固定仓库与 commit。

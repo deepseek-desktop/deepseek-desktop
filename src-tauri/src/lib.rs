@@ -4,16 +4,18 @@ mod diagnostics;
 mod error;
 mod native_menu;
 mod runtime;
+mod runtime_update;
 mod settings;
 mod updater;
 
 use std::sync::Arc;
 use std::{env, path::PathBuf, thread};
 
-use contracts::{DesktopAbout, DesktopSettings, RuntimeStatus, UpdateStatus};
+use contracts::{DesktopAbout, DesktopSettings, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus};
 use diagnostics::Diagnostics;
 use error::{DesktopError, DesktopResult};
 use runtime::RuntimeSupervisor;
+use runtime_update::{RuntimeStore, RuntimeUpdateManager};
 use settings::{AppPaths, SettingsStore};
 use tauri::{Manager, State};
 use tauri_plugin_opener::OpenerExt;
@@ -22,6 +24,7 @@ struct AppState {
     settings: Arc<SettingsStore>,
     diagnostics: Arc<Diagnostics>,
     supervisor: Arc<RuntimeSupervisor>,
+    runtime_updates: Arc<RuntimeUpdateManager>,
 }
 
 fn requested_workspace(arguments: &[String], working_directory: &str) -> Option<String> {
@@ -80,10 +83,38 @@ async fn runtime_start(
 ) -> DesktopResult<RuntimeStatus> {
     let supervisor = Arc::clone(&state.supervisor);
     let recovery = Arc::clone(&supervisor);
-    match tauri::async_runtime::spawn_blocking(move || supervisor.start(workspace)).await {
+    let updater = Arc::clone(&state.runtime_updates);
+    match tauri::async_runtime::spawn_blocking(move || {
+        let mut first_failure = None;
+        loop {
+            match supervisor.start(workspace.clone()) {
+                Ok(status) => return Ok(status),
+                Err(error) if runtime_boot_failure(&error) => {
+                    if first_failure.is_none() {
+                        first_failure = Some(error);
+                    }
+                    if !updater.rollback_after_start_failure()? {
+                        return Err(first_failure.expect("Runtime failure was captured"));
+                    }
+                }
+                Err(error) => return Err(first_failure.unwrap_or(error)),
+            }
+        }
+    })
+    .await
+    {
         Ok(result) => result,
         Err(error) => recovery.task_failed(&error.to_string()),
     }
+}
+
+fn runtime_boot_failure(error: &DesktopError) -> bool {
+    matches!(
+        error,
+        DesktopError::RuntimeArtifactMissing(_)
+            | DesktopError::RuntimeExited(_)
+            | DesktopError::InvalidConfiguration(_)
+    )
 }
 
 #[tauri::command]
@@ -140,17 +171,53 @@ async fn workspace_choose(title: String) -> DesktopResult<Option<String>> {
 }
 
 #[tauri::command]
-fn desktop_about() -> DesktopAbout {
-    DesktopAbout {
-        desktop_version: env!("DEEPSEEK_DESKTOP_APP_VERSION"),
-        runtime_version: env!("DEEPSEEK_DESKTOP_RUNTIME_VERSION"),
-        runtime_commit: env!("DEEPSEEK_DESKTOP_RUNTIME_COMMIT"),
-        node_version: env!("DEEPSEEK_DESKTOP_NODE_VERSION"),
-        authors: env!("DEEPSEEK_DESKTOP_APP_AUTHORS"),
-        repository: env!("DEEPSEEK_DESKTOP_APP_REPOSITORY"),
-        channel: env!("DEEPSEEK_DESKTOP_RELEASE_CHANNEL"),
+fn desktop_about(state: State<'_, AppState>) -> DesktopResult<DesktopAbout> {
+    let runtime = state.runtime_updates.status()?;
+    Ok(DesktopAbout {
+        desktop_version: env!("DEEPSEEK_DESKTOP_APP_VERSION").to_owned(),
+        runtime_version: runtime.current_version,
+        runtime_commit: runtime.current_commit,
+        node_version: env!("DEEPSEEK_DESKTOP_NODE_VERSION").to_owned(),
+        authors: env!("DEEPSEEK_DESKTOP_APP_AUTHORS").to_owned(),
+        repository: env!("DEEPSEEK_DESKTOP_APP_REPOSITORY").to_owned(),
+        channel: env!("DEEPSEEK_DESKTOP_RELEASE_CHANNEL").to_owned(),
         signed_release: env!("DEEPSEEK_DESKTOP_SIGNED_RELEASE") == "true",
-    }
+    })
+}
+
+#[tauri::command]
+fn runtime_update_status(state: State<'_, AppState>) -> DesktopResult<RuntimeUpdateStatus> {
+    state.runtime_updates.status()
+}
+
+#[tauri::command]
+async fn runtime_update_check(state: State<'_, AppState>) -> DesktopResult<RuntimeUpdateStatus> {
+    let updates = Arc::clone(&state.runtime_updates);
+    tauri::async_runtime::spawn_blocking(move || updates.check())
+        .await
+        .map_err(|error| DesktopError::Other(error.to_string()))?
+}
+
+#[tauri::command]
+async fn runtime_update_download(state: State<'_, AppState>) -> DesktopResult<RuntimeUpdateStatus> {
+    let updates = Arc::clone(&state.runtime_updates);
+    tauri::async_runtime::spawn_blocking(move || updates.download())
+        .await
+        .map_err(|error| DesktopError::Other(error.to_string()))?
+}
+
+#[tauri::command]
+async fn runtime_update_restore_bundled(
+    state: State<'_, AppState>,
+) -> DesktopResult<RuntimeUpdateStatus> {
+    let supervisor = Arc::clone(&state.supervisor);
+    let updates = Arc::clone(&state.runtime_updates);
+    tauri::async_runtime::spawn_blocking(move || {
+        supervisor.stop()?;
+        updates.restore_bundled()
+    })
+    .await
+    .map_err(|error| DesktopError::Other(error.to_string()))?
 }
 
 #[tauri::command]
@@ -170,9 +237,11 @@ async fn update_check(
 
 #[tauri::command]
 fn diagnostics_export(state: State<'_, AppState>) -> DesktopResult<String> {
-    let path = state
-        .diagnostics
-        .export(&state.supervisor.status()?, &state.settings.get()?)?;
+    let path = state.diagnostics.export(
+        &state.supervisor.status()?,
+        &state.runtime_updates.status()?,
+        &state.settings.get()?,
+    )?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -242,11 +311,22 @@ pub fn run() {
             let paths = AppPaths::resolve(&app_handle)?;
             let settings = Arc::new(SettingsStore::load(&paths)?);
             let diagnostics = Arc::new(Diagnostics::new(paths.clone()));
+            let runtime_store = RuntimeStore::resolve(&app_handle, &paths)?;
+            let runtime_updates = RuntimeUpdateManager::new(
+                app_handle.clone(),
+                Arc::clone(&settings),
+                Arc::clone(&diagnostics),
+                Arc::clone(&runtime_store),
+            )?;
+            runtime_updates.recover_invalid_current()?;
+            runtime_updates.apply_pending_on_startup()?;
             let supervisor = RuntimeSupervisor::new(
                 app_handle,
                 paths,
                 Arc::clone(&settings),
                 Arc::clone(&diagnostics),
+                runtime_store,
+                Arc::clone(&runtime_updates),
             );
             if let Some(window) = app.get_window("main") {
                 let surface = Arc::clone(&supervisor);
@@ -264,6 +344,7 @@ pub fn run() {
                 settings,
                 diagnostics,
                 supervisor,
+                runtime_updates: Arc::clone(&runtime_updates),
             });
             let locale = app.state::<AppState>().settings.get()?.locale;
             native_menu::install(app.handle(), &locale)?;
@@ -274,6 +355,7 @@ pub fn run() {
                 &arguments,
                 &working_directory.to_string_lossy(),
             );
+            runtime_updates.check_automatically();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -287,6 +369,10 @@ pub fn run() {
             desktop_about,
             repository_open,
             update_check,
+            runtime_update_status,
+            runtime_update_check,
+            runtime_update_download,
+            runtime_update_restore_bundled,
             diagnostics_export,
             logs_export
         ]);
@@ -305,7 +391,8 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::requested_workspace;
+    use super::{requested_workspace, runtime_boot_failure};
+    use crate::error::DesktopError;
 
     #[test]
     fn resolves_an_explicit_workspace_argument() {
@@ -325,5 +412,21 @@ mod tests {
                     .into_owned()
             )
         );
+    }
+
+    #[test]
+    fn rolls_back_only_for_runtime_boot_failures() {
+        assert!(runtime_boot_failure(&DesktopError::RuntimeArtifactMissing(
+            "entry".to_owned()
+        )));
+        assert!(runtime_boot_failure(&DesktopError::RuntimeExited(
+            "exit 1".to_owned()
+        )));
+        assert!(!runtime_boot_failure(&DesktopError::InvalidWorkspace(
+            "/missing".to_owned()
+        )));
+        assert!(!runtime_boot_failure(&DesktopError::Io(
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "workspace")
+        )));
     }
 }

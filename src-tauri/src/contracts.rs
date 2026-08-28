@@ -33,6 +33,12 @@ pub struct DesktopSettings {
     pub onboarding_completed: bool,
     pub update_channel: String,
     pub update_enabled: bool,
+    #[serde(default = "default_runtime_update_channel")]
+    pub runtime_update_channel: String,
+    #[serde(default = "default_runtime_update_mode")]
+    pub runtime_update_mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_pinned_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery_reason: Option<String>,
 }
@@ -46,25 +52,40 @@ impl Default for DesktopSettings {
             onboarding_completed: false,
             update_channel: "community".to_owned(),
             update_enabled: false,
+            runtime_update_channel: default_runtime_update_channel(),
+            runtime_update_mode: default_runtime_update_mode(),
+            runtime_pinned_version: None,
             recovery_reason: None,
         }
     }
 }
 
 pub const fn current_settings_schema_version() -> u8 {
-    1
+    2
+}
+
+fn default_runtime_update_channel() -> String {
+    env!("DEEPSEEK_DESKTOP_RUNTIME_UPDATE_CHANNEL").to_owned()
+}
+
+fn default_runtime_update_mode() -> String {
+    if env!("DEEPSEEK_DESKTOP_RUNTIME_AUTO_UPDATE") == "true" {
+        "automatic".to_owned()
+    } else {
+        "notify".to_owned()
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopAbout {
-    pub desktop_version: &'static str,
-    pub runtime_version: &'static str,
-    pub runtime_commit: &'static str,
-    pub node_version: &'static str,
-    pub authors: &'static str,
-    pub repository: &'static str,
-    pub channel: &'static str,
+    pub desktop_version: String,
+    pub runtime_version: String,
+    pub runtime_commit: String,
+    pub node_version: String,
+    pub authors: String,
+    pub repository: String,
+    pub channel: String,
     pub signed_release: bool,
 }
 
@@ -75,5 +96,39 @@ pub struct UpdateStatus {
     pub channel: String,
     pub current_version: String,
     pub available_version: Option<String>,
+    pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum RuntimeUpdatePhase {
+    Disabled,
+    #[default]
+    Idle,
+    Checking,
+    Available,
+    Downloading,
+    Staged,
+    Applied,
+    Failed,
+    RolledBack,
+    Pinned,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeUpdateStatus {
+    pub enabled: bool,
+    pub phase: RuntimeUpdatePhase,
+    pub current_version: String,
+    pub current_commit: String,
+    pub current_source: String,
+    pub available_version: Option<String>,
+    pub pending_version: Option<String>,
+    pub channel: String,
+    pub mode: String,
+    pub pinned_version: Option<String>,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
     pub message: String,
 }

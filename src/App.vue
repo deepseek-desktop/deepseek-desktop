@@ -2,19 +2,24 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import deepSeekDesktopLogo from "./assets/deepseek-desktop.svg";
-import type { DesktopAbout, DesktopSettings, RuntimeStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopSettings, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
 import {
+  checkRuntimeUpdate,
   checkForUpdates,
   chooseWorkspace,
+  downloadRuntimeUpdate,
   exportDiagnostics,
   exportLogs,
   getAbout,
   getRuntimeStatus,
+  getRuntimeUpdateStatus,
   getSettings,
   onDesktopSurface,
   onRuntimeStatus,
+  onRuntimeUpdateStatus,
   openWorkbench,
   openRepository,
+  restoreBundledRuntime,
   saveSettings,
   startRuntime,
   stopRuntime
@@ -37,18 +42,23 @@ const runtime = ref<RuntimeStatus>({
   errorCode: null
 });
 const settings = ref<DesktopSettings>({
-  schemaVersion: 1,
+  schemaVersion: 2,
   locale: normalizeLocale(navigator.language),
   workspace: null,
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
+  runtimeUpdateChannel: "stable",
+  runtimeUpdateMode: "automatic",
+  runtimePinnedVersion: null,
   recoveryReason: null
 });
 const about = ref<DesktopAbout | null>(null);
 const update = ref<UpdateStatus | null>(null);
+const runtimeUpdate = ref<RuntimeUpdateStatus | null>(null);
 let unlisten: (() => void) | undefined;
 let unlistenSurface: (() => void) | undefined;
+let unlistenRuntimeUpdate: (() => void) | undefined;
 const workbenchVisible = ref(false);
 let workbenchOpening = false;
 
@@ -92,6 +102,14 @@ const updateDescription = computed(() => {
   }[update.value.message] || "update.current";
   return t(messageKey, { version: update.value.availableVersion || "" });
 });
+const runtimeUpdateDescription = computed(() => {
+  if (!runtimeUpdate.value) return t("runtimeUpdate.messages.idle");
+  const key = `runtimeUpdate.messages.${runtimeUpdate.value.message.replaceAll("-", "_")}`;
+  return t(key, {
+    version: runtimeUpdate.value.availableVersion || runtimeUpdate.value.pendingVersion || ""
+  });
+});
+const canDownloadRuntime = computed(() => runtimeUpdate.value?.phase === "available" && !busy.value);
 const canStart = computed(() => Boolean(settings.value.workspace) && !busy.value);
 const canContinueOnboarding = computed(() => onboardingStep.value !== 1 || Boolean(settings.value.workspace));
 
@@ -223,6 +241,81 @@ async function checkUpdate(): Promise<void> {
   }
 }
 
+async function checkRuntime(): Promise<void> {
+  busy.value = true;
+  try {
+    runtimeUpdate.value = await checkRuntimeUpdate();
+    notice.value = runtimeUpdateDescription.value;
+  } catch {
+    notice.value = t("error.runtimeUpdateCheckFailed");
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function downloadRuntime(): Promise<void> {
+  busy.value = true;
+  try {
+    runtimeUpdate.value = await downloadRuntimeUpdate();
+    notice.value = runtimeUpdateDescription.value;
+  } catch {
+    notice.value = t("error.runtimeUpdateDownloadFailed");
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function restoreRuntime(): Promise<void> {
+  busy.value = true;
+  try {
+    runtimeUpdate.value = await restoreBundledRuntime();
+    about.value = await getAbout();
+    notice.value = runtimeUpdateDescription.value;
+  } catch {
+    notice.value = t("error.runtimeRestoreFailed");
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function selectRuntimeUpdateMode(value: Event): Promise<void> {
+  const previous = settings.value.runtimeUpdateMode;
+  settings.value.runtimeUpdateMode = (value.target as HTMLSelectElement).value as DesktopSettings["runtimeUpdateMode"];
+  try {
+    await persistSettings();
+    runtimeUpdate.value = await getRuntimeUpdateStatus();
+  } catch {
+    settings.value.runtimeUpdateMode = previous;
+    notice.value = t("error.settingsSaveFailed");
+  }
+}
+
+async function selectRuntimeUpdateChannel(value: Event): Promise<void> {
+  const previous = settings.value.runtimeUpdateChannel;
+  settings.value.runtimeUpdateChannel = (value.target as HTMLSelectElement).value as DesktopSettings["runtimeUpdateChannel"];
+  try {
+    await persistSettings();
+    runtimeUpdate.value = await getRuntimeUpdateStatus();
+  } catch {
+    settings.value.runtimeUpdateChannel = previous;
+    notice.value = t("error.settingsSaveFailed");
+  }
+}
+
+async function toggleRuntimePin(value: Event): Promise<void> {
+  const previous = settings.value.runtimePinnedVersion;
+  settings.value.runtimePinnedVersion = (value.target as HTMLInputElement).checked
+    ? runtimeUpdate.value?.currentVersion || about.value?.runtimeVersion || null
+    : null;
+  try {
+    await persistSettings();
+    runtimeUpdate.value = await getRuntimeUpdateStatus();
+  } catch {
+    settings.value.runtimePinnedVersion = previous;
+    notice.value = t("error.settingsSaveFailed");
+  }
+}
+
 async function visitRepository(): Promise<void> {
   try {
     await openRepository();
@@ -233,10 +326,11 @@ async function visitRepository(): Promise<void> {
 
 onMounted(async () => {
   try {
-    [settings.value, runtime.value, about.value] = await Promise.all([
+    [settings.value, runtime.value, about.value, runtimeUpdate.value] = await Promise.all([
       getSettings(),
       getRuntimeStatus(),
-      getAbout()
+      getAbout(),
+      getRuntimeUpdateStatus()
     ]);
     locale.value = settings.value.locale;
     view.value = settings.value.onboardingCompleted ? "runtime" : "onboarding";
@@ -255,6 +349,9 @@ onMounted(async () => {
     unlistenSurface = await onDesktopSurface(surface => {
       workbenchVisible.value = surface === "workbench";
     });
+    unlistenRuntimeUpdate = await onRuntimeUpdateStatus(status => {
+      runtimeUpdate.value = status;
+    });
   } catch {
     notice.value = t("error.eventChannelFailed");
   }
@@ -264,6 +361,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   unlisten?.();
   unlistenSurface?.();
+  unlistenRuntimeUpdate?.();
 });
 </script>
 
@@ -387,13 +485,45 @@ onBeforeUnmount(() => {
             <h1>{{ t("update.title") }}</h1>
             <p>{{ t("update.description") }}</p>
           </div>
-          <div class="plain-list">
+          <h2 class="subsection-title">{{ t("update.desktopTitle") }}</h2>
+          <div class="plain-list compact-list">
             <div><span>{{ t("update.currentVersion") }}</span><strong>{{ about?.desktopVersion || "-" }}</strong></div>
             <div><span>{{ t("update.channel") }}</span><strong>{{ aboutChannel }}</strong></div>
             <div><span>{{ t("update.status") }}</span><strong>{{ updateDescription }}</strong></div>
           </div>
           <footer class="actions">
             <button class="button secondary" @click="checkUpdate">{{ t("update.check") }}</button>
+          </footer>
+          <h2 class="subsection-title">{{ t("runtimeUpdate.title") }}</h2>
+          <div v-if="runtimeUpdate" class="plain-list compact-list">
+            <div><span>{{ t("runtimeUpdate.currentVersion") }}</span><strong>{{ runtimeUpdate.currentVersion }}</strong></div>
+            <div><span>{{ t("runtimeUpdate.source") }}</span><strong>{{ t(`runtimeUpdate.sources.${runtimeUpdate.currentSource}`) }}</strong></div>
+            <div><span>{{ t("runtimeUpdate.commit") }}</span><code>{{ runtimeUpdate.currentCommit.slice(0, 12) }}</code></div>
+            <div><span>{{ t("runtimeUpdate.status") }}</span><strong>{{ runtimeUpdateDescription }}</strong></div>
+            <div>
+              <label for="runtime-update-mode">{{ t("runtimeUpdate.mode") }}</label>
+              <select id="runtime-update-mode" class="setting-select" :value="settings.runtimeUpdateMode" @change="selectRuntimeUpdateMode">
+                <option value="automatic">{{ t("runtimeUpdate.modes.automatic") }}</option>
+                <option value="notify">{{ t("runtimeUpdate.modes.notify") }}</option>
+                <option value="manual">{{ t("runtimeUpdate.modes.manual") }}</option>
+              </select>
+            </div>
+            <div>
+              <label for="runtime-update-channel">{{ t("runtimeUpdate.channel") }}</label>
+              <select id="runtime-update-channel" class="setting-select" :value="settings.runtimeUpdateChannel" @change="selectRuntimeUpdateChannel">
+                <option value="stable">{{ t("runtimeUpdate.channels.stable") }}</option>
+                <option value="preview">{{ t("runtimeUpdate.channels.preview") }}</option>
+              </select>
+            </div>
+            <div>
+              <span>{{ t("runtimeUpdate.pin") }}</span>
+              <label class="toggle-label"><input type="checkbox" :checked="Boolean(settings.runtimePinnedVersion)" @change="toggleRuntimePin" />{{ t("runtimeUpdate.pinCurrent") }}</label>
+            </div>
+          </div>
+          <footer class="actions wrap-actions">
+            <button class="button secondary" :disabled="busy" @click="restoreRuntime">{{ t("runtimeUpdate.restoreBundled") }}</button>
+            <button class="button secondary" :disabled="busy || !runtimeUpdate?.enabled" @click="checkRuntime">{{ t("runtimeUpdate.check") }}</button>
+            <button class="button primary" :disabled="!canDownloadRuntime" @click="downloadRuntime">{{ t("runtimeUpdate.download") }}</button>
           </footer>
         </template>
 

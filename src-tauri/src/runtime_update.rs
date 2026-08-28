@@ -1,0 +1,1752 @@
+use std::collections::{HashMap, HashSet};
+use std::fs::{self, File};
+use std::io::{Read, Write};
+use std::path::{Component, Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use base64::Engine;
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use flate2::read::GzDecoder;
+use reqwest::blocking::{Client, Response};
+use reqwest::redirect::Policy;
+use semver::Version;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use tauri::{AppHandle, Emitter, Manager};
+use url::Url;
+use uuid::Uuid;
+
+use crate::contracts::{RuntimeUpdatePhase, RuntimeUpdateStatus};
+use crate::diagnostics::Diagnostics;
+use crate::error::{DesktopError, DesktopResult};
+use crate::settings::{AppPaths, SettingsStore, write_json_atomic};
+
+const MANIFEST_LIMIT: u64 = 1024 * 1024;
+const ARCHIVE_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
+const EXTRACTED_LIMIT: u64 = 4 * 1024 * 1024 * 1024;
+const ENTRY_LIMIT: usize = 100_000;
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+const SMOKE_TIMEOUT: Duration = Duration::from_secs(30);
+
+#[derive(Clone, Debug)]
+pub struct RuntimeLocation {
+    pub runtime_dir: PathBuf,
+    pub node: PathBuf,
+    pub entry: String,
+    pub version: String,
+    pub commit: String,
+    pub source: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct RuntimeStore {
+    root: PathBuf,
+    versions: PathBuf,
+    current: PathBuf,
+    previous: PathBuf,
+    pending: PathBuf,
+    bundled: RuntimeLocation,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct RuntimePointer {
+    schema_version: u8,
+    directory: String,
+    runtime_version: String,
+    runtime_commit: String,
+    target: String,
+    entry: String,
+    node_file: String,
+    node_version: String,
+    node_module_abi: String,
+    runtime_protocol_version: u32,
+    credential_protocol_version: u32,
+    credential_provider_version: String,
+    market_version: String,
+    artifact_sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SignedManifestEnvelope {
+    schema_version: u8,
+    signed_payload: String,
+    signature: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeReleaseManifest {
+    schema_version: u8,
+    publisher: String,
+    issued_at: String,
+    runtime_version: String,
+    channel: String,
+    desktop_protocol_version: u32,
+    runtime_protocol_version: u32,
+    credential_protocol_version: u32,
+    minimum_desktop_version: String,
+    maximum_desktop_version: String,
+    runtime_commit: String,
+    runtime_repository: String,
+    desktop_commit: String,
+    credential_provider_version: String,
+    market_version: String,
+    node_version: String,
+    node_module_abi: String,
+    #[serde(default)]
+    allowed_origins: Vec<String>,
+    artifacts: HashMap<String, RuntimeArtifact>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeArtifact {
+    url: String,
+    size: u64,
+    sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimePackageMetadata {
+    schema_version: u8,
+    target: String,
+    runtime_version: String,
+    runtime_commit: String,
+    entry: String,
+    node_file: String,
+    node_version: String,
+    node_module_abi: String,
+    runtime_protocol_version: u32,
+    credential_protocol_version: u32,
+    credential_provider_version: String,
+    market_version: String,
+}
+
+#[derive(Clone, Debug)]
+struct VerifiedRelease {
+    manifest_url: Url,
+    payload: RuntimeReleaseManifest,
+    artifact: RuntimeArtifact,
+}
+
+#[derive(Clone, Debug)]
+struct RuntimeUpdateConfig {
+    manifest_url: Option<Url>,
+    publisher: String,
+    public_key: Option<VerifyingKey>,
+    desktop_version: Version,
+    target: String,
+    runtime_repository: String,
+    desktop_protocol_version: u32,
+    runtime_protocol_version: u32,
+    credential_protocol_version: u32,
+}
+
+pub struct RuntimeUpdateManager {
+    app: AppHandle,
+    settings: Arc<SettingsStore>,
+    diagnostics: Arc<Diagnostics>,
+    store: Arc<RuntimeStore>,
+    config: RuntimeUpdateConfig,
+    status: Mutex<RuntimeUpdateStatus>,
+    available: Mutex<Option<VerifiedRelease>>,
+    operation: Mutex<()>,
+}
+
+impl RuntimeStore {
+    pub fn resolve(app: &AppHandle, paths: &AppPaths) -> DesktopResult<Arc<Self>> {
+        let root = paths.updates_dir.join("runtime");
+        let versions = root.join("versions");
+        fs::create_dir_all(&versions)?;
+        Ok(Arc::new(Self {
+            current: root.join("current.json"),
+            previous: root.join("previous.json"),
+            pending: root.join("pending.json"),
+            bundled: bundled_location(app)?,
+            versions,
+            root,
+        }))
+    }
+
+    pub fn location(&self) -> DesktopResult<RuntimeLocation> {
+        match read_pointer(&self.current)? {
+            Some(pointer) => self.location_for_pointer(&pointer),
+            None => Ok(self.bundled.clone()),
+        }
+    }
+
+    fn location_for_pointer(&self, pointer: &RuntimePointer) -> DesktopResult<RuntimeLocation> {
+        validate_pointer(pointer)?;
+        let root = self.versions.join(&pointer.directory);
+        let runtime_dir = root.join("runtime");
+        let node = root.join(&pointer.node_file);
+        let entry = runtime_dir.join(&pointer.entry);
+        if !runtime_dir.is_dir() || !node.is_file() || !entry.is_file() {
+            return Err(DesktopError::RuntimeArtifactMissing(
+                "installed Runtime is incomplete".to_owned(),
+            ));
+        }
+        Ok(RuntimeLocation {
+            runtime_dir,
+            node,
+            entry: pointer.entry.clone(),
+            version: pointer.runtime_version.clone(),
+            commit: pointer.runtime_commit.clone(),
+            source: "updated".to_owned(),
+        })
+    }
+
+    fn activate_pending(&self) -> DesktopResult<Option<RuntimePointer>> {
+        let Some(pointer) = read_pointer(&self.pending)? else {
+            return Ok(None);
+        };
+        let location = self.location_for_pointer(&pointer)?;
+        smoke_candidate(&location, &pointer)?;
+        if let Some(current) = read_pointer(&self.current)? {
+            write_json_atomic(&self.previous, &current)?;
+        } else if self.previous.exists() {
+            fs::remove_file(&self.previous)?;
+        }
+        write_json_atomic(&self.current, &pointer)?;
+        fs::remove_file(&self.pending)?;
+        Ok(Some(pointer))
+    }
+
+    fn rollback(&self) -> DesktopResult<bool> {
+        if !self.current.exists() {
+            return Ok(false);
+        }
+        match read_pointer(&self.previous) {
+            Ok(Some(previous)) if self.location_for_pointer(&previous).is_ok() => {
+                write_json_atomic(&self.current, &previous)?;
+                fs::remove_file(&self.previous)?;
+            }
+            Ok(Some(_)) | Ok(None) | Err(_) => {
+                fs::remove_file(&self.current)?;
+                if self.previous.exists() {
+                    fs::remove_file(&self.previous)?;
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    fn restore_bundled(&self) -> DesktopResult<()> {
+        if self.current.exists() {
+            match read_pointer(&self.current) {
+                Ok(Some(current)) => write_json_atomic(&self.previous, &current)?,
+                Ok(None) => {}
+                Err(_) => {
+                    if self.previous.exists() {
+                        fs::remove_file(&self.previous)?;
+                    }
+                }
+            }
+            fs::remove_file(&self.current)?;
+        }
+        if self.pending.exists() {
+            fs::remove_file(&self.pending)?;
+        }
+        Ok(())
+    }
+}
+
+impl RuntimeUpdateManager {
+    pub fn new(
+        app: AppHandle,
+        settings: Arc<SettingsStore>,
+        diagnostics: Arc<Diagnostics>,
+        store: Arc<RuntimeStore>,
+    ) -> DesktopResult<Arc<Self>> {
+        let config = RuntimeUpdateConfig::from_build()?;
+        let current = store.location().unwrap_or_else(|_| store.bundled.clone());
+        let saved = settings.get()?;
+        let enabled = config.manifest_url.is_some() && config.public_key.is_some();
+        Ok(Arc::new(Self {
+            app,
+            settings,
+            diagnostics,
+            store,
+            status: Mutex::new(RuntimeUpdateStatus {
+                enabled,
+                phase: if enabled {
+                    RuntimeUpdatePhase::Idle
+                } else {
+                    RuntimeUpdatePhase::Disabled
+                },
+                current_version: current.version,
+                current_commit: current.commit,
+                current_source: current.source,
+                channel: saved.runtime_update_channel,
+                mode: saved.runtime_update_mode,
+                pinned_version: saved.runtime_pinned_version,
+                message: if enabled { "idle" } else { "not-configured" }.to_owned(),
+                ..RuntimeUpdateStatus::default()
+            }),
+            available: Mutex::new(None),
+            operation: Mutex::new(()),
+            config,
+        }))
+    }
+
+    pub fn status(&self) -> DesktopResult<RuntimeUpdateStatus> {
+        let settings = self.settings.get()?;
+        let location = self
+            .store
+            .location()
+            .unwrap_or_else(|_| self.store.bundled.clone());
+        let mut status = self.lock_status()?.clone();
+        let stale_available = {
+            let mut available = self.lock_available()?;
+            let stale = available.as_ref().is_some_and(|release| {
+                release.payload.channel != settings.runtime_update_channel
+                    || settings.runtime_pinned_version.is_some()
+            });
+            if stale {
+                *available = None;
+            }
+            stale
+        };
+        status.current_version = location.version;
+        status.current_commit = location.commit;
+        status.current_source = location.source;
+        status.channel = settings.runtime_update_channel;
+        status.mode = settings.runtime_update_mode;
+        status.pinned_version = settings.runtime_pinned_version;
+        if status.pinned_version.is_some() {
+            status.phase = RuntimeUpdatePhase::Pinned;
+            status.message = "pinned".to_owned();
+            status.available_version = None;
+        } else if stale_available || status.phase == RuntimeUpdatePhase::Pinned {
+            status.phase = RuntimeUpdatePhase::Idle;
+            status.message = "idle".to_owned();
+            status.available_version = None;
+        }
+        Ok(status)
+    }
+
+    pub fn apply_pending_on_startup(&self) -> DesktopResult<RuntimeUpdateStatus> {
+        let _operation = self.lock_operation()?;
+        let settings = self.settings.get()?;
+        if settings.runtime_pinned_version.is_some() {
+            return self.publish(RuntimeUpdatePhase::Pinned, "pinned");
+        }
+        match self.store.activate_pending() {
+            Ok(Some(pointer)) => {
+                self.diagnostics.append(
+                    "runtime-update",
+                    &format!(
+                        "activated Runtime {} ({})",
+                        pointer.runtime_version, pointer.runtime_commit
+                    ),
+                );
+                self.publish(RuntimeUpdatePhase::Applied, "applied")
+            }
+            Ok(None) => self.status(),
+            Err(error) => {
+                self.diagnostics.append(
+                    "runtime-update",
+                    &format!("pending Runtime rejected: {error}"),
+                );
+                if self.store.pending.exists() {
+                    let _ = fs::remove_file(&self.store.pending);
+                }
+                self.publish(RuntimeUpdatePhase::Failed, "smoke-failed")
+            }
+        }
+    }
+
+    pub fn recover_invalid_current(&self) -> DesktopResult<RuntimeUpdateStatus> {
+        let _operation = self.lock_operation()?;
+        if let Err(error) = self.store.location() {
+            self.diagnostics.append(
+                "runtime-update",
+                &format!("installed Runtime pointer rejected; restoring bundled baseline: {error}"),
+            );
+            self.store.restore_bundled()?;
+            return self.publish(RuntimeUpdatePhase::RolledBack, "bundled-restored");
+        }
+        self.status()
+    }
+
+    pub fn check(&self) -> DesktopResult<RuntimeUpdateStatus> {
+        let _operation = self.lock_operation()?;
+        *self.lock_available()? = None;
+        let settings = self.settings.get()?;
+        if settings.runtime_pinned_version.is_some() {
+            return self.publish(RuntimeUpdatePhase::Pinned, "pinned");
+        }
+        if !self.status()?.enabled {
+            return self.publish(RuntimeUpdatePhase::Disabled, "not-configured");
+        }
+        self.publish(RuntimeUpdatePhase::Checking, "checking")?;
+        let release = match self.fetch_release(&settings.runtime_update_channel) {
+            Ok(release) => release,
+            Err(error) => {
+                self.diagnostics
+                    .append("runtime-update", &format!("update check failed: {error}"));
+                self.publish(RuntimeUpdatePhase::Failed, "check-failed")?;
+                return Err(error);
+            }
+        };
+        let current = Version::parse(&self.status()?.current_version).map_err(|error| {
+            DesktopError::InvalidConfiguration(format!(
+                "current Runtime version is invalid: {error}"
+            ))
+        })?;
+        let candidate = Version::parse(&release.payload.runtime_version).map_err(|error| {
+            DesktopError::InvalidConfiguration(format!(
+                "candidate Runtime version is invalid: {error}"
+            ))
+        })?;
+        if candidate <= current {
+            *self.lock_available()? = None;
+            return self.publish(RuntimeUpdatePhase::Idle, "up-to-date");
+        }
+        let version = release.payload.runtime_version.clone();
+        *self.lock_available()? = Some(release);
+        let mut status = self.publish(RuntimeUpdatePhase::Available, "available")?;
+        status.available_version = Some(version);
+        self.set_status(status)
+    }
+
+    pub fn download(&self) -> DesktopResult<RuntimeUpdateStatus> {
+        let _operation = self.lock_operation()?;
+        let settings = self.settings.get()?;
+        if settings.runtime_pinned_version.is_some() {
+            return self.publish(RuntimeUpdatePhase::Pinned, "pinned");
+        }
+        let release = self.lock_available()?.clone().ok_or_else(|| {
+            DesktopError::InvalidConfiguration("check for a Runtime update first".to_owned())
+        })?;
+        if release.payload.channel != settings.runtime_update_channel {
+            *self.lock_available()? = None;
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime update channel changed; check for updates again".to_owned(),
+            ));
+        }
+        let mut status = self.publish(RuntimeUpdatePhase::Downloading, "downloading")?;
+        status.available_version = Some(release.payload.runtime_version.clone());
+        status.total_bytes = Some(release.artifact.size);
+        self.set_status(status)?;
+        let pointer = match self.download_release(&release) {
+            Ok(pointer) => pointer,
+            Err(error) => {
+                self.diagnostics.append(
+                    "runtime-update",
+                    &format!("Runtime download rejected: {error}"),
+                );
+                self.publish(RuntimeUpdatePhase::Failed, "download-failed")?;
+                return Err(error);
+            }
+        };
+        write_json_atomic(&self.store.pending, &pointer)?;
+        let mut status = self.publish(RuntimeUpdatePhase::Staged, "restart-to-apply")?;
+        status.available_version = Some(pointer.runtime_version.clone());
+        status.pending_version = Some(pointer.runtime_version);
+        status.downloaded_bytes = release.artifact.size;
+        status.total_bytes = Some(release.artifact.size);
+        self.set_status(status)
+    }
+
+    pub fn restore_bundled(&self) -> DesktopResult<RuntimeUpdateStatus> {
+        let _operation = self.lock_operation()?;
+        self.store.restore_bundled()?;
+        self.diagnostics
+            .append("runtime-update", "restored bundled Runtime baseline");
+        self.publish(RuntimeUpdatePhase::RolledBack, "bundled-restored")
+    }
+
+    pub fn rollback_after_start_failure(&self) -> DesktopResult<bool> {
+        let _operation = self.lock_operation()?;
+        let rolled_back = self.store.rollback()?;
+        if rolled_back {
+            self.diagnostics.append(
+                "runtime-update",
+                "rolled back Runtime after startup failure",
+            );
+            self.publish(RuntimeUpdatePhase::RolledBack, "startup-rollback")?;
+        }
+        Ok(rolled_back)
+    }
+
+    pub fn check_automatically(self: &Arc<Self>) {
+        let settings = match self.settings.get() {
+            Ok(settings) => settings,
+            Err(_) => return,
+        };
+        if settings.runtime_update_mode == "manual" || settings.runtime_pinned_version.is_some() {
+            return;
+        }
+        let manager = Arc::clone(self);
+        thread::spawn(move || {
+            if manager.check().is_ok()
+                && manager.settings.get().is_ok_and(|current| {
+                    current.runtime_update_mode == "automatic"
+                        && current.runtime_pinned_version.is_none()
+                })
+            {
+                let _ = manager.download();
+            }
+        });
+    }
+
+    fn fetch_release(&self, channel: &str) -> DesktopResult<VerifiedRelease> {
+        let manifest_url = self.config.manifest_url.clone().ok_or_else(|| {
+            DesktopError::InvalidConfiguration(
+                "Runtime update manifest is not configured".to_owned(),
+            )
+        })?;
+        let bytes = read_url_limited(&manifest_url, MANIFEST_LIMIT, None)?;
+        let payload = verify_manifest(&bytes, &self.config, channel)?;
+        let artifact = payload
+            .artifacts
+            .get(&self.config.target)
+            .cloned()
+            .ok_or_else(|| {
+                DesktopError::InvalidConfiguration(
+                    "Runtime manifest has no artifact for this platform".to_owned(),
+                )
+            })?;
+        validate_sha256(&artifact.sha256)?;
+        if artifact.size == 0 || artifact.size > ARCHIVE_LIMIT {
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime artifact size is outside the allowed range".to_owned(),
+            ));
+        }
+        validate_artifact_url(&manifest_url, &artifact.url, &payload.allowed_origins)?;
+        Ok(VerifiedRelease {
+            manifest_url,
+            payload,
+            artifact,
+        })
+    }
+
+    fn download_release(&self, release: &VerifiedRelease) -> DesktopResult<RuntimePointer> {
+        let staging = self.store.root.join("staging");
+        fs::create_dir_all(&staging)?;
+        let token = Uuid::new_v4().to_string();
+        let archive = staging.join(format!("{token}.tar.gz"));
+        let extracted = staging.join(format!("{token}.unpacked"));
+        let artifact_url = release
+            .manifest_url
+            .join(&release.artifact.url)
+            .map_err(|error| DesktopError::InvalidConfiguration(error.to_string()))?;
+        download_verified(
+            &artifact_url,
+            &archive,
+            release.artifact.size,
+            &release.artifact.sha256,
+        )?;
+        if let Err(error) = secure_extract(&archive, &extracted) {
+            let _ = fs::remove_file(&archive);
+            let _ = fs::remove_dir_all(&extracted);
+            return Err(error);
+        }
+        fs::remove_file(&archive)?;
+        let metadata: RuntimePackageMetadata =
+            serde_json::from_slice(&fs::read(extracted.join("runtime-package.json"))?)?;
+        validate_package_metadata(&metadata, &release.payload)?;
+        let pointer = RuntimePointer {
+            schema_version: 1,
+            directory: version_directory(&metadata.runtime_version, &metadata.runtime_commit)?,
+            runtime_version: metadata.runtime_version,
+            runtime_commit: metadata.runtime_commit,
+            target: metadata.target,
+            entry: metadata.entry,
+            node_file: metadata.node_file,
+            node_version: metadata.node_version,
+            node_module_abi: metadata.node_module_abi,
+            runtime_protocol_version: metadata.runtime_protocol_version,
+            credential_protocol_version: metadata.credential_protocol_version,
+            credential_provider_version: metadata.credential_provider_version,
+            market_version: metadata.market_version,
+            artifact_sha256: release.artifact.sha256.clone(),
+        };
+        let candidate = RuntimeLocation {
+            runtime_dir: extracted.join("runtime"),
+            node: extracted.join(&pointer.node_file),
+            entry: pointer.entry.clone(),
+            version: pointer.runtime_version.clone(),
+            commit: pointer.runtime_commit.clone(),
+            source: "updated".to_owned(),
+        };
+        validate_runtime_files(&candidate, &pointer)?;
+        let destination = self.store.versions.join(&pointer.directory);
+        if destination.exists() {
+            fs::remove_dir_all(&destination)?;
+        }
+        fs::rename(extracted, destination)?;
+        Ok(pointer)
+    }
+
+    fn publish(
+        &self,
+        phase: RuntimeUpdatePhase,
+        message: &str,
+    ) -> DesktopResult<RuntimeUpdateStatus> {
+        let mut status = self.status()?;
+        status.phase = phase;
+        status.message = message.to_owned();
+        status.downloaded_bytes = 0;
+        status.total_bytes = None;
+        status.available_version = self
+            .lock_available()?
+            .as_ref()
+            .map(|release| release.payload.runtime_version.clone());
+        status.pending_version =
+            read_pointer(&self.store.pending)?.map(|pointer| pointer.runtime_version);
+        self.set_status(status)
+    }
+
+    fn set_status(&self, status: RuntimeUpdateStatus) -> DesktopResult<RuntimeUpdateStatus> {
+        *self.lock_status()? = status.clone();
+        let _ = self.app.emit("runtime-update://status", &status);
+        Ok(status)
+    }
+
+    fn lock_status(&self) -> DesktopResult<MutexGuard<'_, RuntimeUpdateStatus>> {
+        self.status
+            .lock()
+            .map_err(|_| DesktopError::Other("Runtime update status lock is poisoned".to_owned()))
+    }
+
+    fn lock_available(&self) -> DesktopResult<MutexGuard<'_, Option<VerifiedRelease>>> {
+        self.available
+            .lock()
+            .map_err(|_| DesktopError::Other("Runtime update release lock is poisoned".to_owned()))
+    }
+
+    fn lock_operation(&self) -> DesktopResult<MutexGuard<'_, ()>> {
+        self.operation
+            .try_lock()
+            .map_err(|_| DesktopError::RuntimeBusy)
+    }
+}
+
+impl RuntimeUpdateConfig {
+    fn from_build() -> DesktopResult<Self> {
+        let manifest_url = match env!("DEEPSEEK_DESKTOP_RUNTIME_UPDATE_MANIFEST_URL") {
+            "" => None,
+            value => Some(Url::parse(value).map_err(|error| {
+                DesktopError::InvalidConfiguration(format!(
+                    "Runtime update manifest URL is invalid: {error}"
+                ))
+            })?),
+        };
+        let public_key = match env!("DEEPSEEK_DESKTOP_RUNTIME_UPDATE_PUBLIC_KEY") {
+            "" => None,
+            value => Some(parse_public_key(value)?),
+        };
+        Ok(Self {
+            manifest_url,
+            publisher: env!("DEEPSEEK_DESKTOP_RUNTIME_UPDATE_PUBLISHER").to_owned(),
+            public_key,
+            desktop_version: Version::parse(env!("DEEPSEEK_DESKTOP_APP_VERSION")).map_err(
+                |error| {
+                    DesktopError::InvalidConfiguration(format!(
+                        "Desktop version is invalid: {error}"
+                    ))
+                },
+            )?,
+            target: env!("DEEPSEEK_DESKTOP_TARGET").to_owned(),
+            runtime_repository: env!("DEEPSEEK_DESKTOP_RUNTIME_REPOSITORY").to_owned(),
+            desktop_protocol_version: 1,
+            runtime_protocol_version: env!("DEEPSEEK_DESKTOP_RUNTIME_PROTOCOL_VERSION")
+                .parse()
+                .map_err(|_| {
+                    DesktopError::InvalidConfiguration("Runtime protocol is invalid".to_owned())
+                })?,
+            credential_protocol_version: env!("DEEPSEEK_DESKTOP_CREDENTIAL_PROTOCOL_VERSION")
+                .parse()
+                .map_err(|_| {
+                    DesktopError::InvalidConfiguration("credential protocol is invalid".to_owned())
+                })?,
+        })
+    }
+}
+
+fn bundled_location(app: &AppHandle) -> DesktopResult<RuntimeLocation> {
+    let runtime_dir = if cfg!(debug_assertions) {
+        std::env::var_os("DEEPSEEK_DESKTOP_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../runtime/staging")
+                    .join(env!("DEEPSEEK_DESKTOP_TARGET"))
+            })
+    } else {
+        let resource_dir = app
+            .path()
+            .resource_dir()
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        node_compatible_path(&resource_dir)
+            .join("runtime/staging")
+            .join(env!("DEEPSEEK_DESKTOP_TARGET"))
+    };
+    let node = bundled_node_binary()?;
+    Ok(RuntimeLocation {
+        runtime_dir,
+        node,
+        entry: env!("DEEPSEEK_DESKTOP_RUNTIME_ENTRY").to_owned(),
+        version: env!("DEEPSEEK_DESKTOP_RUNTIME_VERSION").to_owned(),
+        commit: env!("DEEPSEEK_DESKTOP_RUNTIME_COMMIT").to_owned(),
+        source: "bundled".to_owned(),
+    })
+}
+
+fn bundled_node_binary() -> DesktopResult<PathBuf> {
+    if cfg!(debug_assertions)
+        && let Some(path) = std::env::var_os("DEEPSEEK_DESKTOP_NODE_PATH")
+    {
+        return Ok(PathBuf::from(path));
+    }
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    let sibling = std::env::current_exe()?.with_file_name(format!("node{suffix}"));
+    if sibling.is_file() {
+        return Ok(sibling);
+    }
+    if cfg!(debug_assertions) {
+        let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join(format!(
+                "node-{}{}",
+                env!("DEEPSEEK_DESKTOP_TARGET"),
+                suffix
+            ));
+        if development.is_file() {
+            return Ok(development);
+        }
+    }
+    Err(DesktopError::RuntimeArtifactMissing(
+        "Node sidecar".to_owned(),
+    ))
+}
+
+fn verify_manifest(
+    bytes: &[u8],
+    config: &RuntimeUpdateConfig,
+    channel: &str,
+) -> DesktopResult<RuntimeReleaseManifest> {
+    let envelope: SignedManifestEnvelope = serde_json::from_slice(bytes)?;
+    if envelope.schema_version != 1 {
+        return Err(DesktopError::InvalidConfiguration(
+            "unsupported Runtime update envelope".to_owned(),
+        ));
+    }
+    let payload_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&envelope.signed_payload)
+        .map_err(|error| {
+            DesktopError::InvalidConfiguration(format!(
+                "Runtime manifest payload is invalid: {error}"
+            ))
+        })?;
+    let signature_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&envelope.signature)
+        .map_err(|error| {
+            DesktopError::InvalidConfiguration(format!(
+                "Runtime manifest signature is invalid: {error}"
+            ))
+        })?;
+    let signature = Signature::from_slice(&signature_bytes).map_err(|error| {
+        DesktopError::InvalidConfiguration(format!(
+            "Runtime manifest signature is invalid: {error}"
+        ))
+    })?;
+    config
+        .public_key
+        .as_ref()
+        .ok_or_else(|| {
+            DesktopError::InvalidConfiguration(
+                "Runtime update public key is not configured".to_owned(),
+            )
+        })?
+        .verify(&payload_bytes, &signature)
+        .map_err(|_| {
+            DesktopError::InvalidConfiguration(
+                "Runtime manifest signature verification failed".to_owned(),
+            )
+        })?;
+    let payload: RuntimeReleaseManifest = serde_json::from_slice(&payload_bytes)?;
+    validate_manifest_payload(&payload, config, channel)?;
+    Ok(payload)
+}
+
+fn validate_manifest_payload(
+    payload: &RuntimeReleaseManifest,
+    config: &RuntimeUpdateConfig,
+    channel: &str,
+) -> DesktopResult<()> {
+    if payload.schema_version != 1 || payload.publisher != config.publisher {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime manifest publisher is not trusted".to_owned(),
+        ));
+    }
+    chrono::DateTime::parse_from_rfc3339(&payload.issued_at).map_err(|error| {
+        DesktopError::InvalidConfiguration(format!(
+            "Runtime manifest issue time is invalid: {error}"
+        ))
+    })?;
+    if payload.runtime_repository != config.runtime_repository {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime manifest repository does not match the bundled Runtime source".to_owned(),
+        ));
+    }
+    let version = Version::parse(&payload.runtime_version).map_err(|error| {
+        DesktopError::InvalidConfiguration(format!("Runtime version is invalid: {error}"))
+    })?;
+    if payload.channel != channel || !matches!(channel, "stable" | "preview") {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime update channel does not match settings".to_owned(),
+        ));
+    }
+    if channel == "stable" && !version.pre.is_empty() {
+        return Err(DesktopError::InvalidConfiguration(
+            "stable channel rejected a prerelease Runtime".to_owned(),
+        ));
+    }
+    let minimum = Version::parse(&payload.minimum_desktop_version).map_err(|error| {
+        DesktopError::InvalidConfiguration(format!("minimum Desktop version is invalid: {error}"))
+    })?;
+    let maximum = Version::parse(&payload.maximum_desktop_version).map_err(|error| {
+        DesktopError::InvalidConfiguration(format!("maximum Desktop version is invalid: {error}"))
+    })?;
+    if minimum > maximum {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime Desktop compatibility range is invalid".to_owned(),
+        ));
+    }
+    if config.desktop_version < minimum || config.desktop_version > maximum {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime is not compatible with this Desktop version".to_owned(),
+        ));
+    }
+    if payload.desktop_protocol_version != config.desktop_protocol_version
+        || payload.runtime_protocol_version != config.runtime_protocol_version
+        || payload.credential_protocol_version != config.credential_protocol_version
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime protocol compatibility check failed".to_owned(),
+        ));
+    }
+    if payload.runtime_commit.len() != 40
+        || !payload
+            .runtime_commit
+            .chars()
+            .all(|value| value.is_ascii_hexdigit())
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime commit must be a full Git commit".to_owned(),
+        ));
+    }
+    if payload.desktop_commit.len() != 40
+        || !payload
+            .desktop_commit
+            .chars()
+            .all(|value| value.is_ascii_hexdigit())
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Desktop commit must be a full Git commit".to_owned(),
+        ));
+    }
+    if payload.credential_provider_version.trim().is_empty()
+        || payload.market_version.trim().is_empty()
+        || payload.node_version.trim().is_empty()
+        || payload.node_module_abi.trim().is_empty()
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime compatibility metadata is incomplete".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_package_metadata(
+    metadata: &RuntimePackageMetadata,
+    payload: &RuntimeReleaseManifest,
+) -> DesktopResult<()> {
+    if metadata.schema_version != 1
+        || metadata.target != env!("DEEPSEEK_DESKTOP_TARGET")
+        || metadata.runtime_version != payload.runtime_version
+        || metadata.runtime_commit != payload.runtime_commit
+        || metadata.node_version != payload.node_version
+        || metadata.node_module_abi != payload.node_module_abi
+        || metadata.runtime_protocol_version != payload.runtime_protocol_version
+        || metadata.credential_protocol_version != payload.credential_protocol_version
+        || metadata.credential_provider_version != payload.credential_provider_version
+        || metadata.market_version != payload.market_version
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime package metadata does not match its signed manifest".to_owned(),
+        ));
+    }
+    validate_relative_file(&metadata.entry)?;
+    validate_relative_file(&metadata.node_file)?;
+    Ok(())
+}
+
+fn validate_runtime_files(
+    location: &RuntimeLocation,
+    pointer: &RuntimePointer,
+) -> DesktopResult<()> {
+    let entry = location.runtime_dir.join(&pointer.entry);
+    let credential = location
+        .runtime_dir
+        .join("node_modules/deepseek-desktop-credentials-vault/package.json");
+    let market = location
+        .runtime_dir
+        .join("node_modules/dshmarket/package.json");
+    for path in [&entry, &location.node, &credential, &market] {
+        if !path.is_file() {
+            return Err(DesktopError::RuntimeArtifactMissing(
+                path.display().to_string(),
+            ));
+        }
+    }
+    let credential_manifest: serde_json::Value = serde_json::from_slice(&fs::read(credential)?)?;
+    let market_manifest: serde_json::Value = serde_json::from_slice(&fs::read(market)?)?;
+    if credential_manifest
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        != Some(pointer.credential_provider_version.as_str())
+        || market_manifest
+            .get("version")
+            .and_then(serde_json::Value::as_str)
+            != Some(pointer.market_version.as_str())
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime package versions do not match metadata".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn smoke_candidate(location: &RuntimeLocation, pointer: &RuntimePointer) -> DesktopResult<()> {
+    validate_runtime_files(location, pointer)?;
+    let node_version = run_smoke_command(&location.node, &["--version"], None)?;
+    let node_module_abi =
+        run_smoke_command(&location.node, &["-p", "process.versions.modules"], None)?;
+    validate_node_identity(&node_version, &node_module_abi, pointer)?;
+    let entry = location.runtime_dir.join(&location.entry);
+    run_smoke_command(
+        &location.node,
+        &[entry.to_string_lossy().as_ref(), "--help"],
+        Some(&location.runtime_dir),
+    )?;
+    Ok(())
+}
+
+fn validate_node_identity(
+    version_output: &str,
+    abi_output: &str,
+    pointer: &RuntimePointer,
+) -> DesktopResult<()> {
+    let actual_version = version_output.trim().trim_start_matches('v');
+    let actual_abi = abi_output.trim();
+    if actual_version != pointer.node_version || actual_abi != pointer.node_module_abi {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime Node version or native module ABI does not match signed metadata".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn run_smoke_command(
+    command: &Path,
+    arguments: &[&str],
+    cwd: Option<&Path>,
+) -> DesktopResult<String> {
+    let mut process = Command::new(command);
+    process
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .env_clear();
+    if let Some(cwd) = cwd {
+        process.current_dir(cwd);
+    }
+    configure_hidden_process(&mut process);
+    let mut child = process.spawn()?;
+    let deadline = Instant::now() + SMOKE_TIMEOUT;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return if status.success() {
+                let mut output = String::new();
+                if let Some(mut stdout) = child.stdout.take() {
+                    stdout.read_to_string(&mut output)?;
+                }
+                Ok(output)
+            } else {
+                Err(DesktopError::Other(format!(
+                    "Runtime smoke exited with {status}"
+                )))
+            };
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(DesktopError::Other("Runtime smoke timed out".to_owned()));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn secure_extract(archive: &Path, destination: &Path) -> DesktopResult<()> {
+    if destination.exists() {
+        fs::remove_dir_all(destination)?;
+    }
+    fs::create_dir_all(destination)?;
+    let decoder = GzDecoder::new(File::open(archive)?);
+    let mut archive = tar::Archive::new(decoder);
+    let mut count = 0usize;
+    let mut total = 0u64;
+    let mut paths = HashSet::new();
+    for item in archive
+        .entries()
+        .map_err(|error| DesktopError::Other(error.to_string()))?
+    {
+        let mut entry = item.map_err(|error| DesktopError::Other(error.to_string()))?;
+        count += 1;
+        if count > ENTRY_LIMIT {
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime archive has too many entries".to_owned(),
+            ));
+        }
+        let kind = entry.header().entry_type();
+        if !kind.is_file() && !kind.is_dir() {
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime archive contains links or special files".to_owned(),
+            ));
+        }
+        let size = entry
+            .header()
+            .size()
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        total = total.checked_add(size).ok_or_else(|| {
+            DesktopError::InvalidConfiguration("Runtime archive size overflow".to_owned())
+        })?;
+        if total > EXTRACTED_LIMIT {
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime archive expands beyond the allowed size".to_owned(),
+            ));
+        }
+        let path = entry
+            .path()
+            .map_err(|error| DesktopError::Other(error.to_string()))?
+            .into_owned();
+        validate_archive_path(&path)?;
+        if !paths.insert(archive_path_key(&path)) {
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime archive contains duplicate paths".to_owned(),
+            ));
+        }
+        entry
+            .unpack_in(destination)
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn archive_path_key(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+fn read_url_limited(url: &Url, limit: u64, expected_size: Option<u64>) -> DesktopResult<Vec<u8>> {
+    match url.scheme() {
+        "file" => {
+            let path = url.to_file_path().map_err(|_| {
+                DesktopError::InvalidConfiguration("file URL is invalid".to_owned())
+            })?;
+            let metadata = fs::metadata(&path)?;
+            if metadata.len() > limit || expected_size.is_some_and(|size| size != metadata.len()) {
+                return Err(DesktopError::InvalidConfiguration(
+                    "download size does not match the signed manifest".to_owned(),
+                ));
+            }
+            Ok(fs::read(path)?)
+        }
+        "https" | "http" => {
+            let response = http_client()?
+                .get(url.clone())
+                .send()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            read_response_limited(response, limit, expected_size)
+        }
+        _ => Err(DesktopError::InvalidConfiguration(
+            "unsupported Runtime update URL scheme".to_owned(),
+        )),
+    }
+}
+
+fn read_response_limited(
+    mut response: Response,
+    limit: u64,
+    expected_size: Option<u64>,
+) -> DesktopResult<Vec<u8>> {
+    if !response.status().is_success() {
+        return Err(DesktopError::Other(format!(
+            "Runtime update server returned {}",
+            response.status()
+        )));
+    }
+    if response
+        .content_length()
+        .is_some_and(|size| size > limit || expected_size.is_some_and(|expected| expected != size))
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "download size does not match the signed manifest".to_owned(),
+        ));
+    }
+    let mut bytes = Vec::new();
+    let mut limited = response.by_ref().take(limit + 1);
+    limited.read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit || expected_size.is_some_and(|size| size != bytes.len() as u64) {
+        return Err(DesktopError::InvalidConfiguration(
+            "download size does not match the signed manifest".to_owned(),
+        ));
+    }
+    Ok(bytes)
+}
+
+fn download_verified(
+    url: &Url,
+    destination: &Path,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> DesktopResult<()> {
+    let temporary = destination.with_extension("part");
+    if temporary.exists() {
+        fs::remove_file(&temporary)?;
+    }
+    let result = (|| {
+        if expected_size == 0 || expected_size > ARCHIVE_LIMIT {
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime artifact size is outside the allowed range".to_owned(),
+            ));
+        }
+        let mut output = File::create(&temporary)?;
+        let (written, digest) = match url.scheme() {
+            "file" => {
+                let path = url.to_file_path().map_err(|_| {
+                    DesktopError::InvalidConfiguration("file URL is invalid".to_owned())
+                })?;
+                if fs::metadata(&path)?.len() != expected_size {
+                    return Err(DesktopError::InvalidConfiguration(
+                        "download size does not match the signed manifest".to_owned(),
+                    ));
+                }
+                stream_to_file(File::open(path)?, &mut output, expected_size)?
+            }
+            "https" | "http" => {
+                let response = http_client()?
+                    .get(url.clone())
+                    .send()
+                    .map_err(|error| DesktopError::Other(error.to_string()))?;
+                if !response.status().is_success() {
+                    return Err(DesktopError::Other(format!(
+                        "Runtime update server returned {}",
+                        response.status()
+                    )));
+                }
+                if response
+                    .content_length()
+                    .is_some_and(|size| size != expected_size)
+                {
+                    return Err(DesktopError::InvalidConfiguration(
+                        "download size does not match the signed manifest".to_owned(),
+                    ));
+                }
+                stream_to_file(response, &mut output, expected_size)?
+            }
+            _ => {
+                return Err(DesktopError::InvalidConfiguration(
+                    "unsupported Runtime update URL scheme".to_owned(),
+                ));
+            }
+        };
+        if written != expected_size {
+            return Err(DesktopError::InvalidConfiguration(
+                "download size does not match the signed manifest".to_owned(),
+            ));
+        }
+        if !digest.eq_ignore_ascii_case(expected_sha256) {
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime artifact SHA-256 verification failed".to_owned(),
+            ));
+        }
+        output.sync_all()?;
+        fs::rename(&temporary, destination)?;
+        Ok(())
+    })();
+    if result.is_err() && temporary.exists() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn stream_to_file<R: Read>(
+    mut reader: R,
+    output: &mut File,
+    expected_size: u64,
+) -> DesktopResult<(u64, String)> {
+    let mut digest = Sha256::new();
+    let mut written = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        written = written.checked_add(count as u64).ok_or_else(|| {
+            DesktopError::InvalidConfiguration("Runtime artifact size overflow".to_owned())
+        })?;
+        if written > expected_size || written > ARCHIVE_LIMIT {
+            return Err(DesktopError::InvalidConfiguration(
+                "download size does not match the signed manifest".to_owned(),
+            ));
+        }
+        digest.update(&buffer[..count]);
+        output.write_all(&buffer[..count])?;
+    }
+    Ok((written, format!("{:x}", digest.finalize())))
+}
+
+fn http_client() -> DesktopResult<Client> {
+    crate::runtime::install_crypto_provider()?;
+    Client::builder()
+        .timeout(DOWNLOAD_TIMEOUT)
+        .redirect(Policy::none())
+        .user_agent(concat!(
+            "DeepSeek-Desktop/",
+            env!("DEEPSEEK_DESKTOP_APP_VERSION")
+        ))
+        .build()
+        .map_err(|error| DesktopError::Other(error.to_string()))
+}
+
+fn validate_artifact_url(
+    manifest: &Url,
+    artifact: &str,
+    allowed_origins: &[String],
+) -> DesktopResult<()> {
+    let candidate = manifest
+        .join(artifact)
+        .map_err(|error| DesktopError::InvalidConfiguration(error.to_string()))?;
+    if candidate.username() != ""
+        || candidate.password().is_some()
+        || candidate.fragment().is_some()
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime artifact URL contains credentials or a fragment".to_owned(),
+        ));
+    }
+    let origin = url_origin(&candidate)?;
+    let manifest_origin = url_origin(manifest)?;
+    let mut origin_allowed = origin == manifest_origin;
+    for allowed in allowed_origins {
+        origin_allowed |= normalize_allowed_origin(allowed)? == origin;
+    }
+    if !origin_allowed {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime artifact origin is not trusted by the signed manifest".to_owned(),
+        ));
+    }
+    if candidate.scheme() == "file" {
+        let manifest_path = manifest.to_file_path().map_err(|_| {
+            DesktopError::InvalidConfiguration("manifest file URL is invalid".to_owned())
+        })?;
+        let candidate_path = candidate.to_file_path().map_err(|_| {
+            DesktopError::InvalidConfiguration("artifact file URL is invalid".to_owned())
+        })?;
+        let base = manifest_path.parent().ok_or_else(|| {
+            DesktopError::InvalidConfiguration("manifest path has no parent".to_owned())
+        })?;
+        let canonical_base = base.canonicalize()?;
+        let canonical_candidate = candidate_path.canonicalize()?;
+        if !canonical_candidate.starts_with(canonical_base) {
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime artifact escapes the manifest directory".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn url_origin(url: &Url) -> DesktopResult<String> {
+    match url.scheme() {
+        "file" => Ok("file://".to_owned()),
+        "http" | "https" => Ok(url.origin().ascii_serialization()),
+        _ => Err(DesktopError::InvalidConfiguration(
+            "unsupported update URL scheme".to_owned(),
+        )),
+    }
+}
+
+fn normalize_allowed_origin(value: &str) -> DesktopResult<String> {
+    let url = Url::parse(value).map_err(|error| {
+        DesktopError::InvalidConfiguration(format!("allowed Runtime origin is invalid: {error}"))
+    })?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.username() != ""
+        || url.password().is_some()
+        || url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "allowed Runtime origin must be a credential-free HTTP(S) origin".to_owned(),
+        ));
+    }
+    url_origin(&url)
+}
+
+fn parse_public_key(value: &str) -> DesktopResult<VerifyingKey> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(value)
+        .map_err(|error| {
+            DesktopError::InvalidConfiguration(format!("Runtime public key is invalid: {error}"))
+        })?;
+    let bytes: [u8; 32] = bytes.try_into().map_err(|_| {
+        DesktopError::InvalidConfiguration("Runtime public key must contain 32 bytes".to_owned())
+    })?;
+    VerifyingKey::from_bytes(&bytes).map_err(|error| {
+        DesktopError::InvalidConfiguration(format!("Runtime public key is invalid: {error}"))
+    })
+}
+
+fn read_pointer(path: &Path) -> DesktopResult<Option<RuntimePointer>> {
+    match fs::read(path) {
+        Ok(bytes) => {
+            let pointer: RuntimePointer = serde_json::from_slice(&bytes)?;
+            if pointer.schema_version != 1 {
+                return Err(DesktopError::InvalidConfiguration(
+                    "unsupported Runtime pointer schema".to_owned(),
+                ));
+            }
+            Ok(Some(pointer))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn version_directory(version: &str, commit: &str) -> DesktopResult<String> {
+    Version::parse(version)
+        .map_err(|error| DesktopError::InvalidConfiguration(error.to_string()))?;
+    if commit.len() != 40 || !commit.chars().all(|value| value.is_ascii_hexdigit()) {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime commit must be a full Git commit".to_owned(),
+        ));
+    }
+    Ok(format!("{version}-{}", &commit[..12]))
+}
+
+fn validate_pointer(pointer: &RuntimePointer) -> DesktopResult<()> {
+    validate_directory_name(&pointer.directory)?;
+    validate_relative_file(&pointer.entry)?;
+    validate_relative_file(&pointer.node_file)?;
+    validate_sha256(&pointer.artifact_sha256)?;
+    let expected_directory = version_directory(&pointer.runtime_version, &pointer.runtime_commit)?;
+    if pointer.directory != expected_directory
+        || pointer.target != env!("DEEPSEEK_DESKTOP_TARGET")
+        || pointer.runtime_protocol_version
+            != env!("DEEPSEEK_DESKTOP_RUNTIME_PROTOCOL_VERSION")
+                .parse::<u32>()
+                .unwrap_or(0)
+        || pointer.credential_protocol_version
+            != env!("DEEPSEEK_DESKTOP_CREDENTIAL_PROTOCOL_VERSION")
+                .parse::<u32>()
+                .unwrap_or(0)
+        || Version::parse(&pointer.node_version).is_err()
+        || pointer.node_module_abi.parse::<u32>().is_err()
+        || Version::parse(&pointer.credential_provider_version).is_err()
+        || Version::parse(&pointer.market_version).is_err()
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "installed Runtime pointer is incompatible or inconsistent".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_directory_name(value: &str) -> DesktopResult<()> {
+    if value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\']) {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime directory name is unsafe".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_relative_file(value: &str) -> DesktopResult<()> {
+    let path = Path::new(value);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+        || path.components().any(|component| match component {
+            Component::Normal(name) => unsafe_archive_name(name.to_string_lossy().as_ref()),
+            _ => true,
+        })
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime package path is unsafe".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_archive_path(path: &Path) -> DesktopResult<()> {
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+        || path.components().any(|component| match component {
+            Component::Normal(name) => unsafe_archive_name(name.to_string_lossy().as_ref()),
+            _ => true,
+        })
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime archive path is unsafe".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn unsafe_archive_name(name: &str) -> bool {
+    if name.is_empty() || name.ends_with([' ', '.']) || name.contains([':', '\0']) {
+        return true;
+    }
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    matches!(
+        stem.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
+fn validate_sha256(value: &str) -> DesktopResult<()> {
+    if value.len() != 64 || !value.chars().all(|character| character.is_ascii_hexdigit()) {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime artifact SHA-256 is invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn configure_hidden_process(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(windows)]
+fn configure_hidden_process(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(windows)]
+fn node_compatible_path(path: &Path) -> PathBuf {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+    let units = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    PathBuf::from(OsString::from_wide(
+        &crate::runtime::strip_windows_verbatim_prefix(&units),
+    ))
+}
+
+#[cfg(not(windows))]
+fn node_compatible_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use tempfile::TempDir;
+
+    fn config(key: &SigningKey) -> RuntimeUpdateConfig {
+        RuntimeUpdateConfig {
+            manifest_url: None,
+            publisher: "test-publisher".to_owned(),
+            public_key: Some(key.verifying_key()),
+            desktop_version: Version::parse("1.0.0").unwrap(),
+            target: env!("DEEPSEEK_DESKTOP_TARGET").to_owned(),
+            runtime_repository: "https://example.invalid/runtime.git".to_owned(),
+            desktop_protocol_version: 1,
+            runtime_protocol_version: 1,
+            credential_protocol_version: 1,
+        }
+    }
+
+    fn payload(channel: &str, version: &str) -> RuntimeReleaseManifest {
+        RuntimeReleaseManifest {
+            schema_version: 1,
+            publisher: "test-publisher".to_owned(),
+            issued_at: "2026-08-28T00:00:00Z".to_owned(),
+            runtime_version: version.to_owned(),
+            channel: channel.to_owned(),
+            desktop_protocol_version: 1,
+            runtime_protocol_version: 1,
+            credential_protocol_version: 1,
+            minimum_desktop_version: "1.0.0".to_owned(),
+            maximum_desktop_version: "2.0.0".to_owned(),
+            runtime_commit: "a".repeat(40),
+            runtime_repository: "https://example.invalid/runtime.git".to_owned(),
+            desktop_commit: "b".repeat(40),
+            credential_provider_version: "1.0.0".to_owned(),
+            market_version: "1.0.0".to_owned(),
+            node_version: "24.16.0".to_owned(),
+            node_module_abi: "137".to_owned(),
+            allowed_origins: Vec::new(),
+            artifacts: HashMap::from([(
+                env!("DEEPSEEK_DESKTOP_TARGET").to_owned(),
+                RuntimeArtifact {
+                    url: "runtime.tar.gz".to_owned(),
+                    size: 1,
+                    sha256: "a".repeat(64),
+                },
+            )]),
+        }
+    }
+
+    fn signed(payload: &RuntimeReleaseManifest, key: &SigningKey) -> Vec<u8> {
+        let bytes = serde_json::to_vec(payload).unwrap();
+        serde_json::to_vec(&SignedManifestEnvelope {
+            schema_version: 1,
+            signed_payload: base64::engine::general_purpose::STANDARD.encode(&bytes),
+            signature: base64::engine::general_purpose::STANDARD
+                .encode(key.sign(&bytes).to_bytes()),
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn verifies_signed_stable_and_preview_manifests() {
+        let key = SigningKey::from_bytes(&[7; 32]);
+        assert!(
+            verify_manifest(
+                &signed(&payload("stable", "1.1.0"), &key),
+                &config(&key),
+                "stable"
+            )
+            .is_ok()
+        );
+        assert!(
+            verify_manifest(
+                &signed(&payload("preview", "1.1.0-beta.1"), &key),
+                &config(&key),
+                "preview"
+            )
+            .is_ok()
+        );
+        assert!(
+            verify_manifest(
+                &signed(&payload("stable", "1.1.0-beta.1"), &key),
+                &config(&key),
+                "stable"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_tampering_wrong_publisher_and_incompatible_protocols() {
+        let key = SigningKey::from_bytes(&[9; 32]);
+        let mut bytes = signed(&payload("stable", "1.1.0"), &key);
+        let last = bytes.len() - 2;
+        bytes[last] ^= 1;
+        assert!(verify_manifest(&bytes, &config(&key), "stable").is_err());
+
+        let mut wrong = payload("stable", "1.1.0");
+        wrong.publisher = "other".to_owned();
+        assert!(verify_manifest(&signed(&wrong, &key), &config(&key), "stable").is_err());
+        wrong.publisher = "test-publisher".to_owned();
+        wrong.runtime_protocol_version = 2;
+        assert!(verify_manifest(&signed(&wrong, &key), &config(&key), "stable").is_err());
+
+        let mut wrong_repository = payload("stable", "1.1.0");
+        wrong_repository.runtime_repository = "https://example.invalid/other.git".to_owned();
+        assert!(
+            verify_manifest(&signed(&wrong_repository, &key), &config(&key), "stable").is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_malicious_archive_paths_and_links() {
+        assert!(validate_archive_path(Path::new("../escape")).is_err());
+        assert!(validate_archive_path(Path::new("/absolute")).is_err());
+        assert!(validate_archive_path(Path::new("./runtime/package.json")).is_err());
+        assert!(validate_archive_path(Path::new("runtime/CON.txt")).is_err());
+        assert!(validate_archive_path(Path::new("runtime/name. ")).is_err());
+        assert!(validate_archive_path(Path::new("runtime/package.json")).is_ok());
+        assert_eq!(
+            archive_path_key(Path::new("Runtime/Package.json")),
+            archive_path_key(Path::new("runtime/package.json"))
+        );
+
+        let temp = TempDir::new().unwrap();
+        let archive_path = temp.path().join("link.tar.gz");
+        let encoder = GzEncoder::new(File::create(&archive_path).unwrap(), Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Symlink);
+        header.set_size(0);
+        header.set_cksum();
+        archive
+            .append_link(&mut header, "link", "../../escape")
+            .unwrap();
+        archive.finish().unwrap();
+        assert!(secure_extract(&archive_path, &temp.path().join("out")).is_err());
+    }
+
+    #[test]
+    fn normalizes_trusted_origins_and_rejects_origin_paths() {
+        let manifest = Url::parse("https://updates.example.com/runtime/manifest.json").unwrap();
+        assert!(
+            validate_artifact_url(
+                &manifest,
+                "https://cdn.example.com/runtime.tar.gz",
+                &["https://cdn.example.com:443".to_owned()]
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_artifact_url(
+                &manifest,
+                "https://cdn.example.com/runtime.tar.gz",
+                &["https://cdn.example.com/files".to_owned()]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn validates_the_packaged_node_version_and_module_abi() {
+        let pointer = RuntimePointer {
+            schema_version: 1,
+            directory: "1.1.0-aaaaaaaaaaaa".to_owned(),
+            runtime_version: "1.1.0".to_owned(),
+            runtime_commit: "a".repeat(40),
+            target: env!("DEEPSEEK_DESKTOP_TARGET").to_owned(),
+            entry: "entry.js".to_owned(),
+            node_file: "node".to_owned(),
+            node_version: "24.16.0".to_owned(),
+            node_module_abi: "137".to_owned(),
+            runtime_protocol_version: 1,
+            credential_protocol_version: 1,
+            credential_provider_version: "1.0.0".to_owned(),
+            market_version: "1.0.0".to_owned(),
+            artifact_sha256: "a".repeat(64),
+        };
+        assert!(validate_node_identity("v24.16.0\n", "137\n", &pointer).is_ok());
+        assert!(validate_node_identity("v24.16.1\n", "137\n", &pointer).is_err());
+        assert!(validate_node_identity("v24.16.0\n", "138\n", &pointer).is_err());
+        assert!(validate_pointer(&pointer).is_ok());
+        let mut unsafe_pointer = pointer.clone();
+        unsafe_pointer.entry = "../entry.js".to_owned();
+        assert!(validate_pointer(&unsafe_pointer).is_err());
+        let mut mismatched_pointer = pointer;
+        mismatched_pointer.directory = "1.1.0-bbbbbbbbbbbb".to_owned();
+        assert!(validate_pointer(&mismatched_pointer).is_err());
+    }
+
+    #[test]
+    fn streams_verified_downloads_and_removes_partial_files() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source.tar.gz");
+        let destination = temp.path().join("runtime.tar.gz");
+        let bytes = vec![42u8; 128 * 1024];
+        fs::write(&source, &bytes).unwrap();
+        let url = Url::from_file_path(&source).unwrap();
+        let hash = format!("{:x}", Sha256::digest(&bytes));
+        download_verified(&url, &destination, bytes.len() as u64, &hash).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), bytes);
+
+        fs::remove_file(&destination).unwrap();
+        assert!(
+            download_verified(&url, &destination, bytes.len() as u64, &"0".repeat(64)).is_err()
+        );
+        assert!(!destination.with_extension("part").exists());
+    }
+
+    #[test]
+    fn pointer_switch_rolls_back_to_previous_and_then_bundled() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("runtime");
+        let versions = root.join("versions");
+        fs::create_dir_all(&versions).unwrap();
+        let store = RuntimeStore {
+            current: root.join("current.json"),
+            previous: root.join("previous.json"),
+            pending: root.join("pending.json"),
+            bundled: RuntimeLocation {
+                runtime_dir: temp.path().join("bundled"),
+                node: temp.path().join("node"),
+                entry: "entry.js".to_owned(),
+                version: "1.0.0".to_owned(),
+                commit: "b".repeat(40),
+                source: "bundled".to_owned(),
+            },
+            versions,
+            root,
+        };
+        let pointer = RuntimePointer {
+            schema_version: 1,
+            directory: "1.1.0-aaaaaaaaaaaa".to_owned(),
+            runtime_version: "1.1.0".to_owned(),
+            runtime_commit: "a".repeat(40),
+            target: env!("DEEPSEEK_DESKTOP_TARGET").to_owned(),
+            entry: "entry.js".to_owned(),
+            node_file: "node".to_owned(),
+            node_version: "24.16.0".to_owned(),
+            node_module_abi: "137".to_owned(),
+            runtime_protocol_version: 1,
+            credential_protocol_version: 1,
+            credential_provider_version: "1.0.0".to_owned(),
+            market_version: "1.0.0".to_owned(),
+            artifact_sha256: "a".repeat(64),
+        };
+        write_json_atomic(&store.current, &pointer).unwrap();
+        assert!(store.rollback().unwrap());
+        assert!(!store.current.exists());
+        assert!(!store.rollback().unwrap());
+    }
+}

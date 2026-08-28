@@ -142,7 +142,15 @@ await writeFile(buildInfoPath, `${JSON.stringify({
   },
   target: target.triple,
   channel,
-  signed: config.release.signed
+  signed: config.release.signed,
+  runtimeUpdate: {
+    enabled: Boolean(config.runtimeUpdate.manifestUrl && config.runtimeUpdate.publicKey),
+    channel: config.runtimeUpdate.channel,
+    publisher: config.runtimeUpdate.publisher,
+    desktopProtocolVersion: config.runtimeUpdate.desktopProtocolVersion,
+    runtimeProtocolVersion: config.runtimeUpdate.runtimeProtocolVersion,
+    credentialProtocolVersion: config.runtimeUpdate.credentialProtocolVersion
+  }
 }, null, 2)}\n`);
 
 await assertNoEnvironmentFiles(join(root, "target", "generated"));

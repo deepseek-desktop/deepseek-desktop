@@ -119,6 +119,10 @@ fn main() {
         required_string(&runtime, &["runtime", "commit"]),
     );
     emit(
+        "DEEPSEEK_DESKTOP_RUNTIME_REPOSITORY",
+        required_string(&runtime, &["runtime", "sourceUrl"]),
+    );
+    emit(
         "DEEPSEEK_DESKTOP_RUNTIME_ENTRY",
         required_string(&runtime, &["runtime", "entry"]),
     );
@@ -129,6 +133,44 @@ fn main() {
     emit(
         "DEEPSEEK_DESKTOP_NODE_VERSION",
         required_string(&runtime, &["node", "version"]),
+    );
+    emit(
+        "DEEPSEEK_DESKTOP_RUNTIME_UPDATE_MANIFEST_URL",
+        required_string(&app, &["runtimeUpdate", "manifestUrl"]),
+    );
+    emit(
+        "DEEPSEEK_DESKTOP_RUNTIME_UPDATE_CHANNEL",
+        required_string(&app, &["runtimeUpdate", "channel"]),
+    );
+    emit(
+        "DEEPSEEK_DESKTOP_RUNTIME_AUTO_UPDATE",
+        if required_bool(&app, &["runtimeUpdate", "autoUpdate"]) {
+            "true"
+        } else {
+            "false"
+        },
+    );
+    emit(
+        "DEEPSEEK_DESKTOP_RUNTIME_UPDATE_PUBLISHER",
+        required_string(&app, &["runtimeUpdate", "publisher"]),
+    );
+    emit(
+        "DEEPSEEK_DESKTOP_RUNTIME_UPDATE_PUBLIC_KEY",
+        required_string(&app, &["runtimeUpdate", "publicKey"]),
+    );
+    emit(
+        "DEEPSEEK_DESKTOP_RUNTIME_PROTOCOL_VERSION",
+        &app["runtimeUpdate"]["runtimeProtocolVersion"]
+            .as_u64()
+            .expect("runtime protocol version must be an integer")
+            .to_string(),
+    );
+    emit(
+        "DEEPSEEK_DESKTOP_CREDENTIAL_PROTOCOL_VERSION",
+        &app["runtimeUpdate"]["credentialProtocolVersion"]
+            .as_u64()
+            .expect("credential protocol version must be an integer")
+            .to_string(),
     );
     let target = std::env::var("TARGET").expect("Cargo TARGET is required");
     println!("cargo:rustc-env=DEEPSEEK_DESKTOP_TARGET={target}");

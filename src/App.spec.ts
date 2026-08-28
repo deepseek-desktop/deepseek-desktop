@@ -3,16 +3,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import { appConfig } from "./app-config";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { chooseWorkspace, exportDiagnostics, exportLogs, openRepository, openWorkbench, startRuntime } from "./desktop";
+import { checkRuntimeUpdate, chooseWorkspace, downloadRuntimeUpdate, exportDiagnostics, exportLogs, openRepository, openWorkbench, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   locale: "zh-CN",
   workspace: null,
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
+  runtimeUpdateChannel: "stable",
+  runtimeUpdateMode: "automatic",
+  runtimePinnedVersion: null,
   recoveryReason: null
 };
 const runtime: RuntimeStatus = {
@@ -26,6 +29,11 @@ const runtime: RuntimeStatus = {
 
 vi.mock("./desktop", () => ({
   checkForUpdates: vi.fn(),
+  checkRuntimeUpdate: vi.fn(async () => ({
+    enabled: true, phase: "available", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
+    availableVersion: "1.1.0", pendingVersion: null, channel: "stable", mode: "automatic", pinnedVersion: null,
+    downloadedBytes: 0, totalBytes: 1024, message: "available"
+  })),
   chooseWorkspace: vi.fn(async () => null),
   exportDiagnostics: vi.fn(async () => ""),
   exportLogs: vi.fn(async () => ""),
@@ -40,12 +48,28 @@ vi.mock("./desktop", () => ({
     signedRelease: false
   })),
   getRuntimeStatus: vi.fn(async () => ({ ...runtime })),
+  getRuntimeUpdateStatus: vi.fn(async () => ({
+    enabled: true, phase: "idle", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
+    availableVersion: null, pendingVersion: null, channel: "stable", mode: "automatic", pinnedVersion: null,
+    downloadedBytes: 0, totalBytes: null, message: "idle"
+  })),
   getSettings: vi.fn(async () => ({ ...settings })),
   onRuntimeStatus: vi.fn(async () => () => undefined),
+  onRuntimeUpdateStatus: vi.fn(async () => () => undefined),
   onDesktopSurface: vi.fn(async () => () => undefined),
   openRepository: vi.fn(),
   openWorkbench: vi.fn(),
   saveSettings: vi.fn(async value => value),
+  downloadRuntimeUpdate: vi.fn(async () => ({
+    enabled: true, phase: "staged", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
+    availableVersion: "1.1.0", pendingVersion: "1.1.0", channel: "stable", mode: "automatic", pinnedVersion: null,
+    downloadedBytes: 1024, totalBytes: 1024, message: "restart-to-apply"
+  })),
+  restoreBundledRuntime: vi.fn(async () => ({
+    enabled: true, phase: "rolled-back", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
+    availableVersion: null, pendingVersion: null, channel: "stable", mode: "automatic", pinnedVersion: null,
+    downloadedBytes: 0, totalBytes: null, message: "bundled-restored"
+  })),
   startRuntime: vi.fn(),
   stopRuntime: vi.fn(async () => ({ ...runtime }))
 }));
@@ -53,12 +77,15 @@ vi.mock("./desktop", () => ({
 describe(`${appConfig.productName} shell`, () => {
   beforeEach(() => {
     Object.assign(settings, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       locale: "zh-CN",
       workspace: null,
       onboardingCompleted: false,
       updateChannel: "community",
       updateEnabled: false,
+      runtimeUpdateChannel: "stable",
+      runtimeUpdateMode: "automatic",
+      runtimePinnedVersion: null,
       recoveryReason: null
     });
     Object.assign(runtime, {
@@ -182,5 +209,20 @@ describe(`${appConfig.productName} shell`, () => {
     expect(repository.text()).toBe(appConfig.repository);
     await repository.trigger("click");
     expect(openRepository).toHaveBeenCalledOnce();
+  });
+
+  it("checks and stages an independent Runtime update", async () => {
+    settings.onboardingCompleted = true;
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+    await wrapper.findAll("button").find(button => button.text().includes("更新"))?.trigger("click");
+    await wrapper.findAll("button").find(button => button.text() === "检查 Runtime")?.trigger("click");
+    await flushPromises();
+    expect(checkRuntimeUpdate).toHaveBeenCalledOnce();
+    expect(wrapper.text()).toContain("发现 Runtime 1.1.0");
+    await wrapper.findAll("button").find(button => button.text().includes("下载并等待"))?.trigger("click");
+    await flushPromises();
+    expect(downloadRuntimeUpdate).toHaveBeenCalledOnce();
+    expect(wrapper.text()).toContain("下次启动安装");
   });
 });

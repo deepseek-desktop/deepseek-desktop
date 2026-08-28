@@ -61,12 +61,24 @@ pub struct SettingsStore {
 impl SettingsStore {
     pub fn load(paths: &AppPaths) -> DesktopResult<Self> {
         let current = match fs::read_to_string(&paths.settings_file) {
-            Ok(text) => match serde_json::from_str::<DesktopSettings>(&text) {
-                Ok(settings) if settings.schema_version > current_settings_schema_version() => {
+            Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(value)
+                    if value
+                        .get("schemaVersion")
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some_and(|version| {
+                            version > u64::from(current_settings_schema_version())
+                        }) =>
+                {
                     quarantine_settings(paths, "future")?
                 }
-                Ok(settings) if validate(&settings).is_ok() => settings,
-                Ok(_) | Err(_) => quarantine_settings(paths, "corrupt")?,
+                Ok(value) => match migrate_settings(value)
+                    .and_then(serde_json::from_value::<DesktopSettings>)
+                {
+                    Ok(settings) if validate(&settings).is_ok() => settings,
+                    Ok(_) | Err(_) => quarantine_settings(paths, "corrupt")?,
+                },
+                Err(_) => quarantine_settings(paths, "corrupt")?,
             },
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 DesktopSettings::default()
@@ -180,6 +192,41 @@ fn quarantine_settings(paths: &AppPaths, reason: &str) -> DesktopResult<DesktopS
     Ok(settings)
 }
 
+fn migrate_settings(mut value: serde_json::Value) -> serde_json::Result<serde_json::Value> {
+    let schema = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(1);
+    if schema > u64::from(current_settings_schema_version()) {
+        return Err(serde::de::Error::custom(
+            "settings schema is from a future version",
+        ));
+    }
+    if schema == 1 {
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?;
+        object.insert(
+            "schemaVersion".to_owned(),
+            serde_json::json!(current_settings_schema_version()),
+        );
+        object.insert(
+            "runtimeUpdateChannel".to_owned(),
+            serde_json::json!(env!("DEEPSEEK_DESKTOP_RUNTIME_UPDATE_CHANNEL")),
+        );
+        object.insert(
+            "runtimeUpdateMode".to_owned(),
+            serde_json::json!(if env!("DEEPSEEK_DESKTOP_RUNTIME_AUTO_UPDATE") == "true" {
+                "automatic"
+            } else {
+                "notify"
+            }),
+        );
+        object.insert("runtimePinnedVersion".to_owned(), serde_json::Value::Null);
+    }
+    Ok(value)
+}
+
 fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
     if settings.schema_version != current_settings_schema_version() {
         return Err(DesktopError::InvalidConfiguration(format!(
@@ -204,6 +251,33 @@ fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
             "community builds cannot enable automatic updates".to_owned(),
         ));
     }
+    if !matches!(
+        settings.runtime_update_channel.as_str(),
+        "stable" | "preview"
+    ) {
+        return Err(DesktopError::InvalidConfiguration(format!(
+            "unsupported runtime update channel {}",
+            settings.runtime_update_channel
+        )));
+    }
+    if !matches!(
+        settings.runtime_update_mode.as_str(),
+        "automatic" | "notify" | "manual"
+    ) {
+        return Err(DesktopError::InvalidConfiguration(format!(
+            "unsupported runtime update mode {}",
+            settings.runtime_update_mode
+        )));
+    }
+    if settings
+        .runtime_pinned_version
+        .as_deref()
+        .is_some_and(|version| semver::Version::parse(version).is_err())
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "runtime pinned version must be valid SemVer".to_owned(),
+        ));
+    }
     Ok(())
 }
 
@@ -218,6 +292,21 @@ mod tests {
             ..DesktopSettings::default()
         };
         assert!(validate(&settings).is_err());
+    }
+
+    #[test]
+    fn accepts_only_semver_runtime_pins() {
+        let valid = DesktopSettings {
+            runtime_pinned_version: Some("1.0.0".to_owned()),
+            ..DesktopSettings::default()
+        };
+        assert!(validate(&valid).is_ok());
+
+        let invalid = DesktopSettings {
+            runtime_pinned_version: Some("latest".to_owned()),
+            ..DesktopSettings::default()
+        };
+        assert!(validate(&invalid).is_err());
     }
 
     #[test]
@@ -297,6 +386,27 @@ mod tests {
         );
         assert!(paths.backups_dir.join("settings.future.json").is_file());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn migrates_schema_one_without_losing_user_values() {
+        let value = serde_json::json!({
+            "schemaVersion": 1,
+            "locale": "en-US",
+            "workspace": "/workspace",
+            "onboardingCompleted": true,
+            "updateChannel": "community",
+            "updateEnabled": false
+        });
+        let settings: DesktopSettings =
+            serde_json::from_value(migrate_settings(value).unwrap()).unwrap();
+        assert_eq!(settings.schema_version, current_settings_schema_version());
+        assert_eq!(settings.locale, "en-US");
+        assert_eq!(settings.workspace.as_deref(), Some("/workspace"));
+        assert!(matches!(
+            settings.runtime_update_mode.as_str(),
+            "automatic" | "notify"
+        ));
     }
 
     #[test]
