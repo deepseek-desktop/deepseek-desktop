@@ -62,23 +62,25 @@ test("source repositories reject embedded HTTP credentials", () => {
 });
 
 test("artifact scanner uses precise CI roots and the real local home", () => {
+  const platformPath = value => resolve(value).replaceAll("\\", "/");
+  const projectRoot = platformPath("/Users/runner/work/deepseek-desktop/deepseek-desktop");
+  const runnerWorkspace = platformPath("/Users/runner/work/deepseek-desktop");
+  const runnerTemp = platformPath("/Users/runner/work/_temp");
   assert.deepEqual(
-    artifactForbiddenRoots("/Users/runner/work/deepseek-desktop/deepseek-desktop", {
+    artifactForbiddenRoots(projectRoot, {
       CI: "true",
-      HOME: "/Users/runner",
-      GITHUB_WORKSPACE: "/Users/runner/work/deepseek-desktop/deepseek-desktop",
-      RUNNER_WORKSPACE: "/Users/runner/work/deepseek-desktop",
-      RUNNER_TEMP: "/Users/runner/work/_temp"
-    }, "/Users/runner"),
-    [
-      "/Users/runner/work/deepseek-desktop/deepseek-desktop",
-      "/Users/runner/work/deepseek-desktop",
-      "/Users/runner/work/_temp"
-    ]
+      HOME: platformPath("/Users/runner"),
+      GITHUB_WORKSPACE: projectRoot,
+      RUNNER_WORKSPACE: runnerWorkspace,
+      RUNNER_TEMP: runnerTemp
+    }, platformPath("/Users/runner")),
+    [projectRoot, runnerWorkspace, runnerTemp]
   );
+  const localRoot = platformPath("/workspace/deepseek-desktop");
+  const localHome = platformPath("/Users/developer");
   assert.deepEqual(
-    artifactForbiddenRoots("/workspace/deepseek-desktop", { CI: "false", HOME: "/Users/developer" }, "/Users/developer"),
-    ["/workspace/deepseek-desktop", "/Users/developer"]
+    artifactForbiddenRoots(localRoot, { CI: "false", HOME: localHome }, localHome),
+    [localRoot, localHome]
   );
 });
 
