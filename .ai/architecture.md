@@ -22,6 +22,21 @@ RUNTIME_REPOSITORY / RUNTIME_REF
 
 `target/` 是生成与缓存目录，不是源码事实。稳定工具链、Runtime 发布来源和第三方制品校验和由 `runtime/toolchain-lock.json` 维护。
 
+## 分布式发布链路
+
+```text
+通用 Git URL + tag
+  -> scripts/release-system/ Controller
+  -> 锁定 Desktop commit / Runtime commit / 原生 targets
+  -> 一次性票据 + 短期任务租约
+  -> 受信任原生 Worker
+  -> 复用 desktop:package
+  -> 流式上传 + BUILD-INFO / SHA-256 / 目标校验
+  -> filesystem（默认）或可选 GitHub Provider
+```
+
+四平台映射只由 `scripts/release-system/targets.json` 定义。Controller 状态和制品位于 `target/release-controller/`，Worker 默认使用系统临时目录；二者都不是源码事实。构建与发布 Provider 解耦，代码托管平台不参与节点授权。
+
 ## 代码职责
 
 - `src/`：Vue 3 桌面管理 Shell、三语国际化、类型化 IPC 和视图状态。
@@ -34,6 +49,7 @@ RUNTIME_REPOSITORY / RUNTIME_REF
 - `runtime/packages/credentials-vault/`：Harness Credential Provider 代理，通过 stdin/stdout JSON 调用桌面 helper。
 - `runtime/patches/`：针对锁定 Runtime 的最小桌面集成补丁，必须有 marker 和验证。
 - `scripts/`：配置同步、Runtime 构建、发行门禁、平台打包和工具链引导。
+- `scripts/release-system/`：平台无关的本地发布 Controller、Worker、目标协议和 filesystem/GitHub Provider。
 - `.github/workflows/community-build.yml`：社区版原生平台构建矩阵。
 
 ## 运行链路

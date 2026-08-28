@@ -10,6 +10,7 @@
 - 原生窗口和浏览器标题显示真实桌面版本；显示值有 `v` 时保持不变，没有时自动补齐，构建元数据中的 SemVer 本身不增加前缀。
 - 发行标签接受带或不带 `v` 前缀的完整 SemVer，例如 `1.0.0`、`v1.0.0` 和 `v0.1.0-community.13`；工作流入口必须执行严格 SemVer 校验。
 - GitHub Actions 的应用仓库地址必须来自工作流仓库上下文，不能使用 Windows 短路径副本或其他本地 clone 的文件型 `origin`。
+- 分布式发布源码必须使用不含嵌入凭据的通用 Git URL；构建、Controller 状态和发布 Provider 不得假定 GitHub 存在。
 
 ## 实现
 
@@ -19,6 +20,7 @@
 - 设置、索引和生成配置采用原子写入；损坏数据应隔离，不静默覆盖。
 - 不引入明文凭据 fallback，不通过命令参数、长期环境变量或日志传递 API Key。
 - 不为临时验证修改产品源码；Runtime 补丁必须与锁定版本、marker 和验证脚本一起维护。
+- community/stable 分布式任务必须绑定受信任节点 ID；一次性票据和短期租约只保存摘要，公开 PR 不得自动触发本地 Worker。
 
 ## 验证
 
@@ -35,6 +37,7 @@ corepack pnpm@11.7.0 runtime:smoke
 ```bash
 corepack pnpm@11.7.0 app:sync --check
 corepack pnpm@11.7.0 runtime:sync --check
+corepack pnpm@11.7.0 release:smoke
 ```
 
 只报告实际执行过的验证。当前机器不能替代其他操作系统的真机安装与运行结论。

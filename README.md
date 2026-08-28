@@ -143,11 +143,48 @@ corepack pnpm@11.7.0 desktop:package
 
 单台主机只构建其原生目标。默认和示例版本始终使用 `1.0.0`。符合 SemVer 的标签都会触发 GitHub Actions，可带或不带 `v` 前缀，例如 `1.0.0`、`v1.0.0`、`v0.1.0-community.13`；完整 SemVer 校验会在构建开始时执行，非法标签不会进入发行。全部平台通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。发布构建从标签注入真实版本，不需要修改源码中的默认或示例版本。
 
+## 分布式本地发布
+
+仓库内置平台无关的本地发布系统，不要求 GitHub Actions、自托管 Runner、虚拟机，也不要求任何一位开发者同时拥有四种系统。macOS ARM64、macOS Intel、Windows x64 和 Linux x64 节点只领取本机能够原生完成的任务；Controller 锁定 tag、Desktop commit、Runtime commit 和目标平台，校验各节点上传的 `BUILD-INFO`、目标类型、大小与 SHA-256，全部目标齐备后再汇总发布。
+
+常用命令如下：
+
+```bash
+# 发布维护者：启动本地 Controller；默认仅监听本机回环地址
+corepack pnpm@11.7.0 release:controller
+
+# 各构建节点：查看本机自动识别出的节点 ID 和原生目标
+corepack pnpm@11.7.0 release:worker -- --identify
+
+# 发布维护者：从已存在且指向当前干净 HEAD 的 tag 创建四平台任务
+corepack pnpm@11.7.0 release:create -- --tag v1.0.0 \
+  --trusted-node macos-arm64=mac-arm-node.macos-arm64 \
+  --trusted-node macos-x64=mac-intel-node.macos-x64 \
+  --trusted-node windows-x64=windows-node.windows-x64 \
+  --trusted-node linux-x64=linux-node.linux-x64
+
+# 构建节点：使用私下收到的一次性票据领取并完成本机任务
+corepack pnpm@11.7.0 release:worker -- \
+  --controller https://release-controller.example \
+  --node-id mac-arm-node.macos-arm64 \
+  --token-file /private/path/macos-arm64.token
+
+# 发布维护者：全部任务完成后默认发布到本地文件系统或 NAS
+corepack pnpm@11.7.0 release:publish -- \
+  --release <release-id> \
+  --provider filesystem \
+  --destination /Volumes/releases/deepseek-desktop
+```
+
+源码可通过 `release:create --source <通用 Git URL>` 指向 GitHub、GitLab、Gitee、Gitea 或其他标准 Git 服务。构建与发布上传完全解耦；filesystem 是默认 Provider，GitHub 只是可选 Provider。跨机器运行 Controller 时必须配置 TLS，任务票据只能私下交给预先登记的受信任节点。公开 Pull Request 不会触发或授权本地 Worker 执行代码。
+
+完整的多节点部署、TLS、任务重试、Linux 可选旧基线容器、filesystem/GitHub Provider 和故障恢复说明见[分布式本地发布指南](docs/zh-CN/distributed-release.md)。
+
 ## 发布边界
 
 当前社区版没有可信发布者身份，自动更新保持关闭。macOS 产物只有 ad-hoc Bundle 签名，没有 Apple Developer ID 签名和公证。未来 Stable 版本必须通过 `pnpm release:check stable`，提供 Updater、Apple 和 Windows 签名材料，并完成对应平台的干净系统安装验收。
 
-CI 会构建 macOS arm64/x64、Windows x64 和 Linux x64 产物。macOS arm64 与 Windows x64 还必须完成真实安装、启动、正常退出、孤儿进程、卸载和重装验收；某个平台构建成功不代表其他平台已经完成安装验收。
+本地分布式节点或可选 CI 会构建 macOS arm64/x64、Windows x64 和 Linux x64 产物。macOS arm64 与 Windows x64 还必须完成真实安装、启动、正常退出、孤儿进程、卸载和重装验收；某个平台构建成功不代表其他平台已经完成安装验收。
 
 应用鱼形标识沿用固定上游 Runtime 提交中的侧边栏几何与主墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "id": "macos-arm64",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "triple": "aarch64-apple-darwin",
+      "installerExtensions": [".dmg"],
+      "installerCount": 1
+    },
+    {
+      "id": "macos-x64",
+      "platform": "darwin",
+      "architecture": "x64",
+      "triple": "x86_64-apple-darwin",
+      "installerExtensions": [".dmg"],
+      "installerCount": 1
+    },
+    {
+      "id": "windows-x64",
+      "platform": "win32",
+      "architecture": "x64",
+      "triple": "x86_64-pc-windows-msvc",
+      "installerExtensions": [".exe"],
+      "installerCount": 1
+    },
+    {
+      "id": "linux-x64",
+      "platform": "linux",
+      "architecture": "x64",
+      "triple": "x86_64-unknown-linux-gnu",
+      "installerExtensions": [".AppImage", ".deb"],
+      "installerCount": 2,
+      "optionalContainer": true
+    }
+  ]
+}
