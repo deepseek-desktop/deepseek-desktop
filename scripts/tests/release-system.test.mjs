@@ -12,7 +12,7 @@ import { requestJson, uploadArtifact } from "../release-system/http-client.mjs";
 import { startReleaseServer } from "../release-system/http-server.mjs";
 import { ReleaseStateStore } from "../release-system/state-store.mjs";
 import { loadLocalAllConfig, macPathToParallelsShared } from "../release-system/local-all.mjs";
-import { scanArtifactPaths } from "../lib/artifact-scan.mjs";
+import { artifactForbiddenRoots, scanArtifactPaths } from "../lib/artifact-scan.mjs";
 
 const desktopCommit = "a".repeat(40);
 const runtimeCommit = "b".repeat(40);
@@ -61,6 +61,27 @@ test("source repositories reject embedded HTTP credentials", () => {
   assert.throws(() => assertSourceRepository("ssh://git:password@git.example.com/team/desktop.git"), /embedded password/u);
 });
 
+test("artifact scanner uses precise CI roots and the real local home", () => {
+  assert.deepEqual(
+    artifactForbiddenRoots("/Users/runner/work/deepseek-desktop/deepseek-desktop", {
+      CI: "true",
+      HOME: "/Users/runner",
+      GITHUB_WORKSPACE: "/Users/runner/work/deepseek-desktop/deepseek-desktop",
+      RUNNER_WORKSPACE: "/Users/runner/work/deepseek-desktop",
+      RUNNER_TEMP: "/Users/runner/work/_temp"
+    }, "/Users/runner"),
+    [
+      "/Users/runner/work/deepseek-desktop/deepseek-desktop",
+      "/Users/runner/work/deepseek-desktop",
+      "/Users/runner/work/_temp"
+    ]
+  );
+  assert.deepEqual(
+    artifactForbiddenRoots("/workspace/deepseek-desktop", { CI: "false", HOME: "/Users/developer" }, "/Users/developer"),
+    ["/workspace/deepseek-desktop", "/Users/developer"]
+  );
+});
+
 test("artifact scanner rejects environment files, local paths, and secrets", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deepseek-artifact-scan-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -83,6 +104,18 @@ test("artifact scanner rejects environment files, local paths, and secrets", asy
   await assert.rejects(() => scanArtifactPaths([secret]), /AWS access key/u);
   await writeFile(secret, `-----BEGIN PRIVATE KEY-----\n${"A".repeat(64)}\n-----END PRIVATE KEY-----\n`);
   await assert.rejects(() => scanArtifactPaths([secret]), /private key/u);
+  await writeFile(secret, Buffer.from(`-----BEGIN PRIVATE KEY-----\n${"A".repeat(64)}\n-----END PRIVATE KEY-----\n`, "utf16le"));
+  await assert.rejects(() => scanArtifactPaths([secret]), /private key/u);
+  await writeFile(secret, Buffer.concat([
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 0, 2, 0, 3, 0, 4]),
+    Buffer.from(`-----BEGIN PRIVATE KEY-----\n${"A".repeat(64)}\n-----END PRIVATE KEY-----\n`)
+  ]));
+  await scanArtifactPaths([secret]);
+  await writeFile(secret, Buffer.concat([
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 0, 2, 0, 3, 0, 4]),
+    Buffer.from("sk-1234567890abcdefghij1234567890")
+  ]));
+  await assert.rejects(() => scanArtifactPaths([secret]), /API key/u);
   await writeFile(secret, `${directory}/private`);
   await assert.rejects(
     () => scanArtifactPaths([secret], { forbiddenRoots: [directory] }),

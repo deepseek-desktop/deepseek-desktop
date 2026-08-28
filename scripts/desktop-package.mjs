@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { createMacDmg } from "./macos-dmg.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
-import { scanArtifactPaths } from "./lib/artifact-scan.mjs";
+import { artifactForbiddenRoots, scanArtifactPaths } from "./lib/artifact-scan.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -24,6 +23,7 @@ const targets = {
 };
 const target = targets[`${process.platform}-${process.arch}`];
 if (!target) throw new Error(`unsupported packaging host ${process.platform}-${process.arch}`);
+const forbiddenRoots = artifactForbiddenRoots(root);
 process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH?.trim()
   || join(root, "target", "playwright-browsers");
 
@@ -131,7 +131,7 @@ const scanRoots = [
   ...await stat(primaryBinary).then(() => [primaryBinary], () => [])
 ];
 const artifactAudit = await scanArtifactPaths(scanRoots, {
-  forbiddenRoots: [root, homedir(), process.env.USERPROFILE, process.env.HOME]
+  forbiddenRoots
 });
 
 const dirty = git(["status", "--porcelain", "--untracked-files=all"]).length > 0;
@@ -172,7 +172,7 @@ await writeFile(buildInfoPath, `${JSON.stringify({
 }, null, 2)}\n`);
 
 await scanArtifactPaths([...copiedArtifacts, buildInfoPath], {
-  forbiddenRoots: [root, homedir(), process.env.USERPROFILE, process.env.HOME]
+  forbiddenRoots
 });
 const checksumFiles = [...copiedArtifacts, buildInfoPath].sort((left, right) => basename(left).localeCompare(basename(right)));
 const checksumLines = [];
