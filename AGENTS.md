@@ -24,7 +24,7 @@
 4. `.ai/context.md`
 5. `.ai/todo.md`
 
-涉及架构、构建、凭据、Runtime 或发布时，再读取 `.ai/architecture.md`、`.ai/conventions.md`、相关 `.ai/decisions/` 与 `.ai/memory/verification.md`。不要依靠历史对话代替仓库事实。
+涉及架构、构建、凭据、Runtime 或发布时，再读取 `.ai/architecture.md`、`.ai/conventions.md`、相关 `.ai/decisions/` 与 `.ai/memory/verification.md`。发布任务还必须读取 `.ai/skills/release-workflow.md`，按其中的方案选择、最短反馈路径、安全门禁和报告模板执行。不要依靠历史对话代替仓库事实。
 
 ## 修改规则
 
