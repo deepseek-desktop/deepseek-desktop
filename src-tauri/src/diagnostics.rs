@@ -71,6 +71,7 @@ impl Diagnostics {
         );
         let path = self.paths.diagnostics_dir.join(filename);
         let mut redacted_status = status.clone();
+        redacted_status.url = status.url.as_ref().map(|url| redact(url));
         redacted_status.workspace = status
             .workspace
             .as_ref()
@@ -220,11 +221,41 @@ pub fn redact(value: &str) -> String {
             {
                 output.push_str("<redacted>");
             } else {
-                output.push_str(&line.replace("Bearer ", "Bearer <redacted>"));
+                output.push_str(&redact_query_tokens(
+                    &line.replace("Bearer ", "Bearer <redacted>"),
+                ));
             }
             output.push_str(ending);
             output
         })
+}
+
+fn redact_query_tokens(value: &str) -> String {
+    let lower = value.to_ascii_lowercase();
+    let mut output = String::with_capacity(value.len());
+    let mut cursor = 0;
+    loop {
+        let remaining = &lower[cursor..];
+        let relative = match (remaining.find("?token="), remaining.find("&token=")) {
+            (Some(left), Some(right)) => left.min(right),
+            (Some(index), None) | (None, Some(index)) => index,
+            (None, None) => break,
+        };
+        let start = cursor + relative;
+        let value_start = start + "?token=".len();
+        output.push_str(&value[cursor..value_start]);
+        output.push_str("<redacted>");
+        let token_length = value[value_start..]
+            .bytes()
+            .take_while(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            .count();
+        cursor = value_start + token_length;
+        if token_length == 0 {
+            cursor = value_start;
+        }
+    }
+    output.push_str(&value[cursor..]);
+    output
 }
 
 impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, ()>>> for DesktopError {
@@ -247,6 +278,10 @@ mod tests {
         assert_eq!(
             redact("ready\r\npassword=unsafe\r\n"),
             "ready\r\n<redacted>\r\n"
+        );
+        assert_eq!(
+            redact("dsh web: http://127.0.0.1:43127/?token=unsafe_token"),
+            "dsh web: http://127.0.0.1:43127/?token=<redacted>"
         );
     }
 
@@ -302,6 +337,10 @@ mod tests {
         diagnostics.set_workspace(&workspace);
         diagnostics.append("runtime", &format!("workspace={workspace}"));
         diagnostics.append("runtime", "Authorization: Bearer unsafe");
+        diagnostics.append(
+            "runtime",
+            "dsh web: http://127.0.0.1:43127/?token=runtime_launch_token",
+        );
 
         let exported = diagnostics.export_logs().unwrap();
         let log = fs::read_to_string(exported).unwrap();
@@ -309,6 +348,8 @@ mod tests {
         assert!(log.contains("<workspace-redacted>"));
         assert!(!log.contains(&workspace));
         assert!(!log.contains("unsafe"));
+        assert!(!log.contains("runtime_launch_token"));
+        assert!(log.contains("token=<redacted>"));
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -49,7 +49,7 @@ const settings = ref<DesktopSettings>({
   updateChannel: "community",
   updateEnabled: false,
   runtimeUpdateChannel: "stable",
-  runtimeUpdateMode: "automatic",
+  runtimeUpdateMode: "notify",
   runtimePinnedVersion: null,
   recoveryReason: null
 });

@@ -36,7 +36,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   RUNTIME_REF: "",
   RUNTIME_UPDATE_MANIFEST_URL: "",
   RUNTIME_UPDATE_CHANNEL: "stable",
-  RUNTIME_AUTO_UPDATE: "true",
+  RUNTIME_AUTO_UPDATE: "false",
   RUNTIME_UPDATE_PUBLISHER: "deepseek-desktop",
   RUNTIME_UPDATE_PUBLIC_KEY: "",
   RELEASE_CHANNEL: "local",

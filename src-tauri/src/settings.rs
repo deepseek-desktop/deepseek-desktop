@@ -404,10 +404,7 @@ mod tests {
         assert_eq!(settings.schema_version, current_settings_schema_version());
         assert_eq!(settings.locale, "en-US");
         assert_eq!(settings.workspace.as_deref(), Some("/workspace"));
-        assert!(matches!(
-            settings.runtime_update_mode.as_str(),
-            "automatic" | "notify"
-        ));
+        assert_eq!(settings.runtime_update_mode, "notify");
     }
 
     #[test]

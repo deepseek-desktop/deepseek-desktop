@@ -14,6 +14,10 @@ use tauri_plugin_opener::OpenerExt;
 use url::Url;
 use uuid::Uuid;
 
+use reqwest::StatusCode;
+use reqwest::header::{COOKIE, HeaderValue, LOCATION, SET_COOKIE};
+use reqwest::redirect::Policy;
+
 use crate::contracts::{RuntimePhase, RuntimeStatus};
 use crate::credential_vault::RuntimeSession;
 use crate::diagnostics::Diagnostics;
@@ -75,6 +79,7 @@ pub struct RuntimeSupervisor {
 struct RuntimeInner {
     status: RuntimeStatus,
     process: Option<ManagedChild>,
+    browser_launch_url: Option<String>,
     manual_stop: bool,
 }
 
@@ -105,6 +110,7 @@ impl RuntimeSupervisor {
             inner: Mutex::new(RuntimeInner {
                 status: RuntimeStatus::default(),
                 process: None,
+                browser_launch_url: None,
                 manual_stop: false,
             }),
             workbench_visible: AtomicBool::new(false),
@@ -144,8 +150,18 @@ impl RuntimeSupervisor {
     }
 
     pub fn open_runtime(&self) -> DesktopResult<()> {
-        let status = self.status()?;
-        let raw_url = status.url.ok_or(DesktopError::RuntimeNotReady)?;
+        let (status_url, browser_launch_url) = {
+            let inner = self.lock_inner()?;
+            (
+                inner
+                    .status
+                    .url
+                    .clone()
+                    .ok_or(DesktopError::RuntimeNotReady)?,
+                inner.browser_launch_url.clone(),
+            )
+        };
+        let raw_url = browser_launch_url.unwrap_or(status_url);
         let url = Url::parse(&raw_url).map_err(|error| DesktopError::Other(error.to_string()))?;
         if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") {
             return Err(DesktopError::Other(
@@ -545,16 +561,19 @@ impl RuntimeSupervisor {
                 }
             }
         };
-        if let Err(error) = health_check(&ready_url) {
-            managed.terminate();
-            return self.fail(
-                &workspace,
-                restart_count,
-                "runtime-health-check-failed",
-                DesktopError::RuntimeBootFailed(error.to_string()),
-            );
-        }
-        if let Err(error) = register_workspace(&ready_url, &workspace) {
+        let runtime_http = match authenticate_runtime(&ready_url) {
+            Ok(runtime_http) => runtime_http,
+            Err(error) => {
+                managed.terminate();
+                return self.fail(
+                    &workspace,
+                    restart_count,
+                    "runtime-health-check-failed",
+                    DesktopError::RuntimeBootFailed(error.to_string()),
+                );
+            }
+        };
+        if let Err(error) = register_workspace(&runtime_http, &workspace) {
             managed.terminate();
             return self.fail(
                 &workspace,
@@ -565,7 +584,7 @@ impl RuntimeSupervisor {
         }
         let status = RuntimeStatus {
             phase: RuntimePhase::Ready,
-            url: Some(ready_url),
+            url: Some(runtime_http.root_url.to_string()),
             workspace: Some(workspace),
             restart_count,
             diagnostic_id: None,
@@ -575,6 +594,7 @@ impl RuntimeSupervisor {
             let mut inner = self.lock_inner()?;
             inner.manual_stop = false;
             inner.process = Some(managed);
+            inner.browser_launch_url = Some(ready_url);
             inner.status = status.clone();
         }
         self.emit(&status);
@@ -630,7 +650,12 @@ impl RuntimeSupervisor {
     }
 
     fn publish(&self, status: RuntimeStatus) -> DesktopResult<RuntimeStatus> {
-        self.lock_inner()?.status = status.clone();
+        let mut inner = self.lock_inner()?;
+        if status.phase != RuntimePhase::Ready {
+            inner.browser_launch_url = None;
+        }
+        inner.status = status.clone();
+        drop(inner);
         self.emit(&status);
         Ok(status)
     }
@@ -944,8 +969,8 @@ pub(crate) fn smoke_runtime_service(location: &RuntimeLocation) -> DesktopResult
                 }
             }
         };
-        health_check(&ready_url)?;
-        register_workspace(&ready_url, workspace.to_string_lossy().as_ref())?;
+        let runtime_http = authenticate_runtime(&ready_url)?;
+        register_workspace(&runtime_http, workspace.to_string_lossy().as_ref())?;
         Ok(())
     })();
     managed.terminate();
@@ -1233,14 +1258,95 @@ fn workbench_geometry(
     (tauri::PhysicalPosition::new(0, 0), window_size)
 }
 
-fn health_check(url: &str) -> DesktopResult<()> {
+struct RuntimeHttpSession {
+    root_url: Url,
+    cookie: Option<HeaderValue>,
+}
+
+fn authenticate_runtime(url: &str) -> DesktopResult<RuntimeHttpSession> {
     install_crypto_provider()?;
+    let launch_url = Url::parse(url).map_err(|error| DesktopError::Other(error.to_string()))?;
+    validate_runtime_launch_url(&launch_url)?;
+    let mut root_url = launch_url.clone();
+    root_url.set_path("/");
+    root_url.set_query(None);
+    root_url.set_fragment(None);
     let client = reqwest::blocking::Client::builder()
         .timeout(HEALTH_TIMEOUT)
+        .redirect(Policy::none())
         .build()
         .map_err(|error| DesktopError::Other(error.to_string()))?;
-    let response = client
-        .get(url)
+
+    let cookie = if launch_url.query().is_some() {
+        let exchange = client
+            .get(launch_url.clone())
+            .send()
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        if exchange.status() != StatusCode::SEE_OTHER {
+            return Err(DesktopError::Other(format!(
+                "runtime browser authentication returned {}",
+                exchange.status()
+            )));
+        }
+        let location = exchange
+            .headers()
+            .get(LOCATION)
+            .ok_or_else(|| {
+                DesktopError::Other(
+                    "runtime browser authentication omitted its redirect".to_owned(),
+                )
+            })?
+            .to_str()
+            .map_err(|_| {
+                DesktopError::Other(
+                    "runtime browser authentication returned an invalid redirect".to_owned(),
+                )
+            })?;
+        let redirected = launch_url
+            .join(location)
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        if redirected != root_url {
+            return Err(DesktopError::Other(
+                "runtime browser authentication redirected outside the managed root".to_owned(),
+            ));
+        }
+        let set_cookie = exchange
+            .headers()
+            .get(SET_COOKIE)
+            .ok_or_else(|| {
+                DesktopError::Other(
+                    "runtime browser authentication omitted its session cookie".to_owned(),
+                )
+            })?
+            .to_str()
+            .map_err(|_| {
+                DesktopError::Other(
+                    "runtime browser authentication returned an invalid session cookie".to_owned(),
+                )
+            })?;
+        let pair = set_cookie
+            .split(';')
+            .next()
+            .filter(|value| value.contains('=') && !value.trim().is_empty())
+            .ok_or_else(|| {
+                DesktopError::Other(
+                    "runtime browser authentication returned an empty session cookie".to_owned(),
+                )
+            })?;
+        Some(HeaderValue::from_str(pair).map_err(|_| {
+            DesktopError::Other(
+                "runtime browser authentication returned an invalid session cookie".to_owned(),
+            )
+        })?)
+    } else {
+        None
+    };
+
+    let mut request = client.get(root_url.clone());
+    if let Some(cookie) = &cookie {
+        request = request.header(COOKIE, cookie.clone());
+    }
+    let response = request
         .send()
         .map_err(|error| DesktopError::Other(error.to_string()))?;
     if !response.status().is_success() {
@@ -1249,18 +1355,50 @@ fn health_check(url: &str) -> DesktopResult<()> {
             response.status()
         )));
     }
+    Ok(RuntimeHttpSession { root_url, cookie })
+}
+
+fn validate_runtime_launch_url(url: &Url) -> DesktopResult<()> {
+    if url.scheme() != "http"
+        || url.host_str() != Some("127.0.0.1")
+        || url.port().is_none()
+        || url.path() != "/"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(DesktopError::Other(
+            "runtime readiness URL is outside the managed loopback origin".to_owned(),
+        ));
+    }
+    if let Some(query) = url.query() {
+        let mut pairs = url.query_pairs();
+        let Some((name, token)) = pairs.next() else {
+            return Err(DesktopError::Other(
+                "runtime readiness URL contains an invalid query".to_owned(),
+            ));
+        };
+        if name != "token"
+            || token.is_empty()
+            || token.len() > 512
+            || !token
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            || pairs.next().is_some()
+            || !query.starts_with("token=")
+        {
+            return Err(DesktopError::Other(
+                "runtime readiness URL contains an invalid browser token".to_owned(),
+            ));
+        }
+    }
     Ok(())
 }
 
-fn register_workspace(url: &str, workspace: &str) -> DesktopResult<()> {
+fn register_workspace(session: &RuntimeHttpSession, workspace: &str) -> DesktopResult<()> {
     install_crypto_provider()?;
-    let base = Url::parse(url).map_err(|error| DesktopError::Other(error.to_string()))?;
-    if base.scheme() != "http" || base.host_str() != Some("127.0.0.1") || base.port().is_none() {
-        return Err(DesktopError::Other(
-            "runtime workspace endpoint is outside the managed loopback origin".to_owned(),
-        ));
-    }
-    let endpoint = base
+    let endpoint = session
+        .root_url
         .join("/api/workspace.create")
         .map_err(|error| DesktopError::Other(error.to_string()))?;
     let rpc_id = Uuid::new_v4().to_string();
@@ -1268,9 +1406,13 @@ fn register_workspace(url: &str, workspace: &str) -> DesktopResult<()> {
         .timeout(WORKSPACE_REGISTRATION_TIMEOUT)
         .build()
         .map_err(|error| DesktopError::Other(error.to_string()))?;
-    let response = client
+    let mut request = client
         .post(endpoint)
-        .json(&workspace_registration_request(&rpc_id, workspace))
+        .json(&workspace_registration_request(&rpc_id, workspace));
+    if let Some(cookie) = &session.cookie {
+        request = request.header(COOKIE, cookie.clone());
+    }
+    let response = request
         .send()
         .map_err(|error| DesktopError::Other(error.to_string()))?;
     if !response.status().is_success() {
@@ -1531,7 +1673,36 @@ impl Drop for WindowsJob {
 mod tests {
     use super::*;
     use std::io::{Read, Write};
-    use std::net::TcpListener;
+    use std::net::{TcpListener, TcpStream};
+
+    fn read_http_request(stream: &mut TcpStream) -> String {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut bytes = Vec::new();
+        let mut buffer = [0_u8; 2048];
+        loop {
+            let length = stream.read(&mut buffer).unwrap();
+            if length == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&buffer[..length]);
+            let Some(headers_end) = bytes.windows(4).position(|part| part == b"\r\n\r\n") else {
+                continue;
+            };
+            let headers_end = headers_end + 4;
+            let headers = String::from_utf8_lossy(&bytes[..headers_end]).to_ascii_lowercase();
+            let content_length = headers
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length:"))
+                .and_then(|value| value.trim().parse::<usize>().ok())
+                .unwrap_or_default();
+            if bytes.len() >= headers_end + content_length {
+                break;
+            }
+        }
+        String::from_utf8(bytes).unwrap()
+    }
 
     #[test]
     fn parses_only_managed_ready_urls() {
@@ -1540,6 +1711,10 @@ mod tests {
             Some("http://127.0.0.1:43127".to_owned())
         );
         assert_eq!(parse_ready_url("dsh web: http://localhost:43127"), None);
+        assert_eq!(
+            parse_ready_url("dsh web: http://127.0.0.1:43127/?token=test_token"),
+            Some("http://127.0.0.1:43127/?token=test_token".to_owned())
+        );
         assert_eq!(parse_ready_url("noise"), None);
     }
 
@@ -1584,6 +1759,7 @@ mod tests {
                 ..RuntimeStatus::default()
             },
             process: None,
+            browser_launch_url: None,
             manual_stop: false,
         };
         assert!(recovery_event_is_current(&inner, "/workspace", 1));
@@ -1650,7 +1826,7 @@ mod tests {
     }
 
     #[test]
-    fn installs_crypto_provider_and_checks_loopback_runtime() {
+    fn installs_crypto_provider_and_checks_legacy_loopback_runtime() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
@@ -1663,9 +1839,90 @@ mod tests {
         });
 
         install_crypto_provider().unwrap();
-        health_check(&format!("http://{address}")).unwrap();
+        let session = authenticate_runtime(&format!("http://{address}")).unwrap();
+        assert_eq!(session.root_url.as_str(), format!("http://{address}/"));
+        assert!(session.cookie.is_none());
         server.join().unwrap();
         assert!(rustls::crypto::CryptoProvider::get_default().is_some());
+    }
+
+    #[test]
+    fn exchanges_the_runtime_browser_token_before_health_checks() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut exchange, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut exchange);
+            assert!(request.starts_with("GET /?token=test_token HTTP/1.1"));
+            exchange
+                .write_all(
+                    b"HTTP/1.1 303 See Other\r\nLocation: /\r\nSet-Cookie: dsh-auth-test=session_value; Path=/; HttpOnly\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+
+            let (mut health, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut health);
+            assert!(request.starts_with("GET / HTTP/1.1"));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("cookie: dsh-auth-test=session_value")
+            );
+            health
+                .write_all(
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+
+            let (mut workspace, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut workspace);
+            assert!(request.starts_with("POST /api/workspace.create HTTP/1.1"));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("cookie: dsh-auth-test=session_value")
+            );
+            let body = request.split("\r\n\r\n").nth(1).unwrap();
+            let body: serde_json::Value = serde_json::from_str(body).unwrap();
+            assert_eq!(body["payload"]["path"], "/tmp/workspace");
+            let response = serde_json::json!({
+                "type": "server-response",
+                "rpcId": body["rpcId"],
+                "result": { "ok": true, "value": {} }
+            })
+            .to_string();
+            write!(
+                workspace,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response.len(),
+                response
+            )
+            .unwrap();
+        });
+
+        let session = authenticate_runtime(&format!("http://{address}/?token=test_token")).unwrap();
+        assert_eq!(session.root_url.as_str(), format!("http://{address}/"));
+        assert_eq!(
+            session.cookie.as_ref().unwrap().to_str().unwrap(),
+            "dsh-auth-test=session_value"
+        );
+        register_workspace(&session, "/tmp/workspace").unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn rejects_unmanaged_runtime_readiness_queries() {
+        for candidate in [
+            "http://localhost:43127/?token=test_token",
+            "http://127.0.0.1:43127/?other=value",
+            "http://127.0.0.1:43127/?token=first&token=second",
+            "http://127.0.0.1:43127/?token=invalid%20token",
+            "http://127.0.0.1:43127/?token=valid#fragment",
+            "http://127.0.0.1:43127/workbench?token=valid",
+        ] {
+            let url = Url::parse(candidate).unwrap();
+            assert!(validate_runtime_launch_url(&url).is_err(), "{candidate}");
+        }
     }
 
     #[test]

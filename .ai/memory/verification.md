@@ -2,20 +2,21 @@
 
 ## 最近可信验证
 
-日期：2026-08-28
+日期：2026-08-29
 
-同步官方 Runtime `dsh-v0.1.2-alpha.1`（`cd5ef8148158c3a752a658978873241fdf8e2bbc`），并完成分布式本地发布系统与 Runtime 独立更新协议后：
+同步官方 Runtime `dsh-v0.1.2-alpha.1`（`cd5ef8148158c3a752a658978873241fdf8e2bbc`），兼容新版浏览器令牌认证并将 Runtime 更新默认方式改为“发现后提醒”后：
 
 - `corepack pnpm@11.7.0 app:sync --check`：通过，生成配置与工作区一致。
 - `corepack pnpm@11.7.0 runtime:sync --check`：通过，来源、commit、CLI 入口、部署闭包和制品哈希均与生成锁一致。
-- `corepack pnpm@11.7.0 verify`：通过；配置、分布式发布和 Runtime 更新协议测试 41 项、Vue 测试 7 项、Rust 测试 46 项、Clippy `-D warnings`、3 个 locale / 143 个 key、原生 Runtime 错误码与前端映射门禁、凭据代理回归和 Runtime manifest 校验全部通过。
+- `corepack pnpm@11.7.0 verify`：通过；配置、分布式发布和 Runtime 更新协议测试 42 项、Vue 测试 7 项、Rust 测试 48 项、Clippy `-D warnings`、3 个 locale / 143 个 key、凭据代理回归和 Runtime manifest 校验全部通过。
 - `corepack pnpm@11.7.0 release:smoke`：通过本地 Controller HTTP、一次性节点票据、短期租约、制品上传、完整性校验和 filesystem 发布闭环。
 - `corepack pnpm@11.7.0 release:local-all -- --check`：通过真实四环境预检；macOS ARM64 原生、Rosetta macOS x64、Docker Linux x64 和 Parallels Windows x64 均成功识别目标并访问同一临时 TLS Controller，单环境探测耗时约 0.5 至 0.9 秒。
 - `corepack pnpm@11.7.0 release:worker -- --identify`：当前 macOS ARM64 节点可正确识别为 `macos-arm64`，不会领取其他平台任务。
-- 当前 macOS 原生 Runtime 闭包：24925 个文件、494 个包；`corepack pnpm@11.7.0 runtime:smoke` 完成启动、父进程退出清理验证。
+- 当前 macOS 原生 Runtime 闭包：24925 个文件、494 个包；`corepack pnpm@11.7.0 runtime:smoke` 使用 Runtime `0.1.2-alpha.1` 完成令牌认证、HTTP 探活、工作区注册、启停和父进程退出清理验证。
 - `corepack pnpm@11.7.0 test:e2e`：1 项 Playwright 测试通过。
 - `corepack pnpm@11.7.0 vault:smoke src-tauri/target/release/deepseek-desktop`：通过 release 二进制的本地加密凭据写入、描述、读取、删除和明文泄漏检查。
-- `corepack pnpm@11.7.0 desktop:package`：通过完整同步、门禁、验证、E2E、Runtime smoke、macOS ARM64 原生应用与 DMG 构建；生成 `DeepSeek Desktop_1.0.0_aarch64.dmg`、`BUILD-INFO.aarch64-apple-darwin.json` 和 `SHA256SUMS`。最终使用支持错位 UTF-16LE 的扫描器复扫 49,922 个文件、986,494,611 字节，未发现 `.env`、密钥、本机绝对路径或符号链接泄漏。
+- `corepack pnpm@11.7.0 desktop:package`：通过完整 Runtime 同步、发布门禁、重复完整验证、E2E、Runtime smoke、macOS ARM64 release 应用与 DMG 构建；生成 `DeepSeek Desktop_1.0.0_aarch64.dmg`、`BUILD-INFO.aarch64-apple-darwin.json` 和 `SHA256SUMS`。
+- Rust 回归覆盖令牌入口约束、303 会话 Cookie 交换、认证健康检查、认证工作区注册及旧版无令牌兼容；诊断测试确认 `?token=` 启动凭证在写入和导出时均被脱敏，公开 Runtime 状态只包含无令牌根地址。
 - Runtime 更新候选版本现在必须通过真实服务启动、HTTP 健康检查和工作区注册后才能切换；已覆盖过期/未来/回放清单拒绝、下载中断清理、旧版本保留与清理、并发设置写入及不可回滚配置错误测试。
 - `corepack pnpm@11.7.0 runtime:update:package -- --output <目录>`：通过公开一键入口同步并生成 macOS ARM64 Runtime 更新制品；制品为 88,724,342 字节，描述中的大小和 SHA-256 与实际文件一致，归档安全扫描未发现绝对路径、父目录逃逸或 `.env`。
 - `corepack pnpm@11.7.0 preflight:docker`：通过，在 GitHub 兼容的 Linux/amd64 模拟环境完成官方 Runtime 构建、Desktop 公共 CI 门禁、24841 个文件 / 495 个包的 Runtime 闭包校验及 Playwright 测试；容器按约定跳过仅适合原生宿主执行的 Runtime smoke。

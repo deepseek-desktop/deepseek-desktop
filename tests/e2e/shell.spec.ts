@@ -39,7 +39,7 @@ test("onboarding, language switching, and status views fully load", async ({ pag
   await expect(page.getByRole("heading", { name: "Updates", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Desktop application" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Independent Runtime update" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Update behavior" })).toHaveValue("automatic");
+  await expect(page.getByRole("combobox", { name: "Update behavior" })).toHaveValue("notify");
   await expect(page.getByRole("combobox", { name: "Runtime channel" })).toHaveValue("stable");
   await expect(page.getByRole("button", { name: "Restore bundled Runtime" })).toBeVisible();
   await page.getByRole("button", { name: /About/ }).click();

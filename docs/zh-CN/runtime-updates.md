@@ -7,7 +7,7 @@ DeepSeek Desktop 把桌面外壳与 Harness Runtime 分开发布。模型适配�
 发行版未配置可信更新服务时，Runtime 更新页显示“未配置”，应用不会连接任何更新地址。启用后可选择：
 
 - **自动下载，下次启动安装**：后台发现新版本后下载并校验，退出应用前不替换正在运行的 Runtime。
-- **发现后提醒**：只提示版本，由用户决定是否下载。
+- **发现后提醒（默认）**：只提示版本，由用户决定是否下载。
 - **仅手动检查**：只有点击“检查 Runtime”时访问更新服务。
 - **固定当前 Runtime**：停止检查、下载和待安装切换，直到取消固定。
 - **恢复内置 Runtime**：停止当前 Runtime，并把下次启动恢复到安装包内置版本。
@@ -21,7 +21,7 @@ DeepSeek Desktop 把桌面外壳与 Harness Runtime 分开发布。模型适配�
 ```dotenv
 RUNTIME_UPDATE_MANIFEST_URL=https://updates.example.com/runtime/stable/manifest.json
 RUNTIME_UPDATE_CHANNEL=stable
-RUNTIME_AUTO_UPDATE=true
+RUNTIME_AUTO_UPDATE=false
 RUNTIME_UPDATE_PUBLISHER=deepseek-desktop
 RUNTIME_UPDATE_PUBLIC_KEY=<Ed25519 原始 32 字节公钥的 Base64>
 ```

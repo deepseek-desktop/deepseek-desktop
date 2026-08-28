@@ -32,7 +32,7 @@ test("uses built-in defaults without an env file", async () => {
   assert.deepEqual(config.runtimeUpdate, {
     manifestUrl: "",
     channel: "stable",
-    autoUpdate: true,
+    autoUpdate: false,
     publisher: "deepseek-desktop",
     publicKey: "",
     desktopProtocolVersion: 1,

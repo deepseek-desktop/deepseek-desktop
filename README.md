@@ -145,7 +145,7 @@ corepack pnpm@11.7.0 desktop:package
 
 DeepSeek Desktop 将桌面外壳与 Harness Runtime 分开更新。安装包内始终保留一份经过构建验证的 Runtime；可信更新服务可另外发布 macOS arm64、macOS x64、Windows x64 和 Linux x64 的原生 Runtime 生产闭包。用户机器只下载当前平台的压缩制品，不拉取源码、不安装构建工具，也不在本机编译 Runtime。
 
-“桌面管理 → 更新”提供三种方式：自动下载并在下次启动安装、发现后提醒、仅手动检查；也可以固定当前 Runtime 或恢复安装包内置版本。候选版本只有在未过期且未重放的签名清单、发布者、仓库、平台、协议、桌面版本范围、Node ABI、凭据插件、DSH Market、大小和 SHA-256 全部匹配后才会进入 staging。下次启动会在隔离目录真实启动本地服务并完成 readiness、HTTP 探活和工作区注册，再原子切换；启动失败或运行恢复达到上限时自动回滚上一版，上一版不可用时回到安装包内置版。更新器只保留当前、上一版和待安装版本，并清理中断的 staging。更新目录只位于系统应用数据目录，不修改应用安装目录。
+“桌面管理 → 更新”提供三种方式：自动下载并在下次启动安装、发现后提醒、仅手动检查；默认使用“发现后提醒”，由用户确认后再下载，也可以固定当前 Runtime 或恢复安装包内置版本。候选版本只有在未过期且未重放的签名清单、发布者、仓库、平台、协议、桌面版本范围、Node ABI、凭据插件、DSH Market、大小和 SHA-256 全部匹配后才会进入 staging。下次启动会在隔离目录真实启动本地服务并完成 readiness、HTTP 探活和工作区注册，再原子切换；启动失败或运行恢复达到上限时自动回滚上一版，上一版不可用时回到安装包内置版。更新器只保留当前、上一版和待安装版本，并清理中断的 staging。更新目录只位于系统应用数据目录，不修改应用安装目录。
 
 默认 `.env.example` 没有配置更新清单和公钥，因此不会连接任何 Runtime 更新服务。发行维护者必须配置 `RUNTIME_UPDATE_MANIFEST_URL`、`RUNTIME_UPDATE_PUBLIC_KEY` 和可信发布者；显式设置 `RUNTIME_REF` 的开发构建默认关闭自动下载，避免联调版本被替换。清单可放在 filesystem/NAS、普通 HTTPS 静态站点、GitHub、GitLab、Gitee、Gitea 或自建服务，不依赖 GitHub Release API。完整用户行为、安全边界、清单格式和发布命令见 [Runtime 独立更新指南](docs/zh-CN/runtime-updates.md)。
 
