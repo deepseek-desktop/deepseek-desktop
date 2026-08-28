@@ -6,11 +6,13 @@ import { CredentialProvider, parseCredentialKey } from "@deepseek-ai/dsh-credent
 const HELPER_ARGUMENT = "--credential-vault-helper";
 const HELPER_SESSION = readFileSync(0, "utf8").trim();
 const HELPER_PATH = process.env.DEEPSEEK_DESKTOP_HELPER_PATH;
+const HELPER_SCRIPT = process.env.DEEPSEEK_DESKTOP_HELPER_SCRIPT;
 const HELPER_DATA_DIR = process.env.DEEPSEEK_DESKTOP_DATA_DIR;
 const OPERATIONS = Symbol("operations");
 const CLOSED = Symbol("closed");
 
 delete process.env.DEEPSEEK_DESKTOP_HELPER_PATH;
+delete process.env.DEEPSEEK_DESKTOP_HELPER_SCRIPT;
 delete process.env.DEEPSEEK_DESKTOP_DATA_DIR;
 
 if (!HELPER_SESSION) {
@@ -29,7 +31,7 @@ function helperEnvironment() {
 function callHelper(request) {
   return new Promise((resolve, reject) => {
     if (!HELPER_PATH) throw new Error("credentials-vault: desktop credential helper is not configured");
-    const child = spawn(HELPER_PATH, [HELPER_ARGUMENT], {
+    const child = spawn(HELPER_PATH, [...(HELPER_SCRIPT ? [HELPER_SCRIPT] : []), HELPER_ARGUMENT], {
       env: helperEnvironment(),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true

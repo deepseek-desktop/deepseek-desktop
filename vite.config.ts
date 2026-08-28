@@ -13,20 +13,20 @@ function loadAppConfig(): Record<string, unknown> {
   }
 }
 
-function appTitle(productName: string): Plugin {
+function appTitle(windowTitle: string): Plugin {
   return {
     name: "deepseek-desktop-app-title",
     transformIndexHtml(html) {
-      return html.replace(/<title>.*?<\/title>/u, `<title>${productName}</title>`);
+      return html.replace(/<title>.*?<\/title>/u, `<title>${windowTitle}</title>`);
     }
   };
 }
 
 export default defineConfig(() => {
   const appConfig = loadAppConfig();
-  const productName = String(appConfig.productName);
+  const windowTitle = String(appConfig.windowTitle);
   return {
-    plugins: [vue(), appTitle(productName)],
+    plugins: [vue(), appTitle(windowTitle)],
     define: {
       __APP_CONFIG__: JSON.stringify(appConfig)
     },

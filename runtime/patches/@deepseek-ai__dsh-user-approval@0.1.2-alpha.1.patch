@@ -1,8 +1,7 @@
 diff --git a/lib/index.js b/lib/index.js
-index 61602104fecb324ff7db983589a9112060254054..2369978a74edc755a96536fc7895f12c1493eb77 100644
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -35,9 +35,9 @@ const OUTCOMES = [
+@@ -35,8 +35,8 @@
  /** Every {@link ApprovalPolicy}, for option advertisement and runtime validation of untrusted policy strings. */
  const APPROVAL_POLICIES = ["ask", "never"];
  /** Model-facing statement for the deterministic `'never'` policy. */
@@ -13,12 +12,10 @@ index 61602104fecb324ff7db983589a9112060254054..2369978a74edc755a96536fc7895f12c
 +const ASK_SENTENCE = "Approval policy: ask. Operations permitted by the current sandbox run directly. Requests for broader access are sent to the active client for confirmation; without an interactive client, they fail closed.";
  /**
  * The session's approval-policy override: the last `approval/policy` event in
- * the log, or undefined when the session never switched (callers apply the
 diff --git a/lib/invariant.js b/lib/invariant.js
-index 1dd84b9529762d3a4afecd464f9203e5f7317de8..983cdd7eed6a7b33615baa14ff1d0536bef8a694 100644
 --- a/lib/invariant.js
 +++ b/lib/invariant.js
-@@ -35,9 +35,9 @@ const OUTCOMES = [
+@@ -35,8 +35,8 @@
  /** Every {@link ApprovalPolicy}, for option advertisement and runtime validation of untrusted policy strings. */
  const APPROVAL_POLICIES = ["ask", "never"];
  /** Model-facing statement for the deterministic `'never'` policy. */
@@ -29,12 +26,10 @@ index 1dd84b9529762d3a4afecd464f9203e5f7317de8..983cdd7eed6a7b33615baa14ff1d0536
 +const ASK_SENTENCE = "Approval policy: ask. Operations permitted by the current sandbox run directly. Requests for broader access are sent to the active client for confirmation; without an interactive client, they fail closed.";
  /**
  * The session's approval-policy override: the last `approval/policy` event in
- * the log, or undefined when the session never switched (callers apply the
 diff --git a/lib/types/index.js b/lib/types/index.js
-index aa5a0cd4363affed3b1c80ee4c33ffec21ae66d0..651f10bfb1bbc2733cc1531dbbaafcce9cddae24 100644
 --- a/lib/types/index.js
 +++ b/lib/types/index.js
-@@ -15,9 +15,9 @@ const OUTCOMES = ['allowed-once', 'rejected', 'cancelled', 'unavailable'];
+@@ -15,8 +15,8 @@
  /** Every {@link ApprovalPolicy}, for option advertisement and runtime validation of untrusted policy strings. */
  export const APPROVAL_POLICIES = ['ask', 'never'];
  /** Model-facing statement for the deterministic `'never'` policy. */
@@ -45,4 +40,3 @@ index aa5a0cd4363affed3b1c80ee4c33ffec21ae66d0..651f10bfb1bbc2733cc1531dbbaafcce
 +const ASK_SENTENCE = 'Approval policy: ask. Operations permitted by the current sandbox run directly. Requests for broader access are sent to the active client for confirmation; without an interactive client, they fail closed.';
  /**
   * The session's approval-policy override: the last `approval/policy` event in
-  * the log, or undefined when the session never switched (callers apply the

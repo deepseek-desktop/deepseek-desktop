@@ -1,8 +1,7 @@
 diff --git a/lib/client.js b/lib/client.js
-index fff5f43f9aa239e2c0524103e77398e0988bb7e0..70c0e23e4ccbcce08db235581b79922649961183 100644
 --- a/lib/client.js
 +++ b/lib/client.js
-@@ -1100,11 +1100,7 @@ window.__ModuleLoader__.load({
+@@ -1140,11 +1140,7 @@
  			const [models, setModels] = (0, react.useState)([]);
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
@@ -15,7 +14,7 @@ index fff5f43f9aa239e2c0524103e77398e0988bb7e0..70c0e23e4ccbcce08db235581b799226
  			const [committed, setCommitted] = (0, react.useState)(false);
  			const disabled = props.readOnly || busy;
  			/** Everything but the key stops being editable once the provider exists. */
-@@ -1120,6 +1116,7 @@ window.__ModuleLoader__.load({
+@@ -1160,6 +1156,7 @@
  			const createOnce = async () => {
  				const keyRef = deriveKeyRef(route);
  				const storesKey = keyValue.length > 0;
@@ -23,38 +22,31 @@ index fff5f43f9aa239e2c0524103e77398e0988bb7e0..70c0e23e4ccbcce08db235581b799226
  				if (!committed) {
  					const profile = {
  						...displayName.length === 0 ? {} : { displayName },
-@@ -1138,14 +1135,34 @@ window.__ModuleLoader__.load({
- 						expectedRevision: openedAt
- 					});
- 					if (!response.result.ok) return response.result.error.message;
+@@ -1174,11 +1171,30 @@
+ 						value: profile
+ 					}], openedAt);
+ 					if (!response.ok) return response.error.message;
 -					setCommitted(true);
-+					profileRevision = response.result.value.revision;
++					profileRevision = response.value.revision;
  				}
  				if (storesKey) {
--					const stored = await api.credentials.set({
--						ref: keyRef,
--						value: keyValue
--					});
--					if (!stored.result.ok) return stored.result.error.message;
+-					const stored = await api.credentials.set(keyRef, keyValue);
+-					if (!stored.ok) return stored.error.message;
 +					let failure;
 +					try {
-+						const stored = await api.credentials.set({
-+							ref: keyRef,
-+							value: keyValue
-+						});
-+						if (!stored.result.ok) failure = stored.result.error.message;
++						const stored = await api.credentials.set(keyRef, keyValue);
++						if (!stored.ok) failure = stored.error.message;
 +					} catch (error) {
 +						failure = messageOf(error);
 +					}
 +					if (failure !== void 0) {
 +						if (profileRevision !== void 0) {
 +							try {
-+								const rollback = await api.settings.mutate({
-+									ns: NS$1,
-+									ops: [{ op: "unset", path: ["providers", route] }],
-+									expectedRevision: profileRevision
-+								});
-+								if (!rollback.result.ok) setCommitted(true);
++								const rollback = await api.settings.mutate(NS$1, [{
++									op: "unset",
++									path: ["providers", route]
++								}], profileRevision);
++								if (!rollback.ok) setCommitted(true);
 +							} catch {
 +								setCommitted(true);
 +							}

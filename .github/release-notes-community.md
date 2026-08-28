@@ -4,6 +4,10 @@
 
 ## 主要变化
 
+- Runtime 已同步至官方 `0.1.2-alpha.1`，锁定提交 `cd5ef8148158`，并适配新的 Python Runtime 部署根包名
+- 上游 `dsh-web-fetch-http` 已进入桌面 Runtime 闭包，为联网检索提供新版运行时实现
+- 原生窗口标题增加桌面版本号；版本缺少 `v` 时自动补齐，便于用户准确反馈问题版本
+- 桌面凭据、授权策略、模型保存回滚和会话展示补丁已迁移并重新校验到新版 Runtime 包结构
 - 修复 Windows 短路径构建副本的仓库地址自动解析，GitHub Actions 始终使用当前工作流仓库链接
 - 发行标签支持完整 SemVer 的带 `v` 和无 `v` 两种格式，并在构建入口严格校验
 - Runtime 来源和 Rust 工具链增加不可变提交与 SHA-256 校验，公开发行不会因移动 tag 或本机缓存发生漂移
@@ -27,6 +31,6 @@
 
 # DeepSeek Desktop Community Edition
 
-This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.7.0. This release strengthens immutable Runtime and Rust toolchain verification, encrypts the credential record index with safe legacy migration, improves settings recovery and diagnostics, and reduces repeated Runtime profile synchronization.
+This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.7.0. This release updates the Runtime to upstream 0.1.2-alpha.1, includes its HTTP web-fetch implementation, migrates the Desktop integration patches, and shows the exact Desktop version in the native window title.
 
 The macOS application has an ad-hoc integrity signature but is not signed or notarized with an Apple Developer ID. Windows and Linux community artifacts do not carry a trusted publisher signature. Automatic updates remain disabled.

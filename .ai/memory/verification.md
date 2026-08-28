@@ -2,19 +2,16 @@
 
 ## 最近可信验证
 
-日期：2026-08-27
+日期：2026-08-28
 
-源码审计治理提交 `b693290` 上完成：
+同步官方 Runtime `dsh-v0.1.2-alpha.1`（`cd5ef8148158c3a752a658978873241fdf8e2bbc`）并完成 Desktop 适配后：
 
-- `corepack pnpm@11.7.0 verify`：通过。
-- 配置测试：19 项通过。
-- Vue 测试：6 项通过。
-- Rust 测试：33 项通过。
-- Clippy `-D warnings`：通过。
-- 国际化一致性：3 个 locale、99 个 key 通过。
-- `corepack pnpm@11.7.0 test:e2e`：通过。
-- `corepack pnpm@11.7.0 runtime:smoke`：通过。
-- 使用锁定来源执行真实 `runtime:sync`：通过，解析到 `runtime/toolchain-lock.json` 中固定 commit。
+- `corepack pnpm@11.7.0 runtime:sync --check`：通过，来源、commit、CLI 入口、部署闭包和制品哈希均与生成锁一致。
+- `corepack pnpm@11.7.0 verify`：通过；配置测试 26 项、Vue 测试 6 项、Rust 测试 33 项、Clippy `-D warnings`、3 个 locale / 99 个 key、凭据代理回归和 Runtime manifest 校验全部通过。
+- 当前 macOS 原生 Runtime 闭包：24925 个文件、494 个包；`corepack pnpm@11.7.0 runtime:smoke` 完成 2/2 稳定性循环及父进程退出清理验证。
+- `corepack pnpm@11.7.0 test:e2e`：1 项 Playwright 测试通过。
+- `corepack pnpm@11.7.0 preflight:docker`：通过，在 GitHub 兼容的 Linux/amd64 模拟环境完成官方 Runtime 构建、Desktop 公共 CI 门禁、24841 个文件 / 495 个包的 Runtime 闭包校验及 Playwright 测试；容器按约定跳过仅适合原生宿主执行的 Runtime smoke。
+- 窗口标题版本格式已覆盖测试：版本已有 `v` 时保持不变，没有 `v` 时补齐；默认和示例版本仍为 `1.0.0`。
 
 ## 能力边界
 

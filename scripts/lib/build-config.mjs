@@ -39,6 +39,10 @@ const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-
 const identifierPattern = /^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*)+$/u;
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
+export function formatDisplayVersion(version) {
+  return version.startsWith("v") ? version : `v${version}`;
+}
+
 function assertKnownKeys(values, source) {
   const unknown = Object.keys(values)
     .filter(key => (
@@ -202,10 +206,13 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
   assertText("runtime/toolchain-lock.json node.version", toolchainLock.node?.version || "");
   assertText("runtime/toolchain-lock.json toolchain.rust", toolchainLock.toolchain?.rust || "");
   const year = new Date().getUTCFullYear();
+  const displayVersion = formatDisplayVersion(values.DESKTOP_APP_VERSION);
   return Object.freeze({
     schemaVersion: 3,
     productName: values.DESKTOP_APP_NAME,
     version: values.DESKTOP_APP_VERSION,
+    displayVersion,
+    windowTitle: `${values.DESKTOP_APP_NAME} ${displayVersion}`,
     identifier: values.DESKTOP_APP_IDENTIFIER,
     slug: values.DESKTOP_APP_SLUG,
     description: values.DESKTOP_APP_DESCRIPTION,

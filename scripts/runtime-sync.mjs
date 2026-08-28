@@ -264,13 +264,16 @@ async function deployHarnessClosure(sourceRoot, workspacePackages, cli, destinat
   const originalLock = await readFile(lockPath);
   try {
     const manifest = JSON.parse(originalManifest.toString("utf8"));
+    if (typeof manifest.name !== "string" || manifest.name.trim() === "") {
+      throw new Error("Harness Python Runtime deployment manifest must declare a package name");
+    }
     manifest.dependencies = { ...manifest.dependencies, [cli.manifest.name]: "workspace:^" };
     await writeJson(manifestPath, manifest);
     runPnpm(["install", "--lockfile-only", "--ignore-scripts", "--config.auto-install-peers=false"], sourceRoot);
     runPnpm(["install", "--frozen-lockfile", "--ignore-scripts", "--config.auto-install-peers=false"], sourceRoot);
     await rm(destination, { recursive: true, force: true });
     runPnpm([
-      "--filter", "dsh-jsonrpc-agent-pkg", "deploy", "--legacy", "--prod",
+      "--filter", manifest.name, "deploy", "--legacy", "--prod",
       "--config.node-linker=hoisted", "--config.auto-install-peers=false",
       "--config.link-workspace-packages=true", destination
     ], sourceRoot);

@@ -26,7 +26,7 @@ export function applyPackagePatch(directory, patchFile) {
   if (assertCompleted(forwardCheck)) {
     const applyResult = invokeGitApply(directory, patchFile, []);
     if (!assertCompleted(applyResult)) {
-      throw new Error(`failed to apply ${patchFile}: ${applyResult.stderr || applyResult.stdout}`);
+      throw new Error(`failed to apply ${patchFile} in ${directory}: ${applyResult.stderr || applyResult.stdout}`);
     }
     return "applied";
   }
@@ -34,5 +34,5 @@ export function applyPackagePatch(directory, patchFile) {
   const reverseCheck = invokeGitApply(directory, patchFile, ["--reverse", "--check"]);
   if (assertCompleted(reverseCheck)) return "already-applied";
 
-  throw new Error(`patch does not apply: ${patchFile}: ${forwardCheck.stderr || forwardCheck.stdout}`);
+  throw new Error(`patch does not apply: ${patchFile} in ${directory}: ${forwardCheck.stderr || forwardCheck.stdout}`);
 }

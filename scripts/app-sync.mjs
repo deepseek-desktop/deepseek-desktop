@@ -44,7 +44,7 @@ try {
     identifier: config.identifier,
     app: {
       ...baseTauri.app,
-      windows: baseTauri.app.windows.map((window, index) => index === 0 ? { ...window, title: config.productName } : window)
+      windows: baseTauri.app.windows.map((window, index) => index === 0 ? { ...window, title: config.windowTitle } : window)
     },
     bundle: {
       ...baseTauri.bundle,

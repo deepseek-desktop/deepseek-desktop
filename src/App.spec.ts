@@ -31,8 +31,8 @@ vi.mock("./desktop", () => ({
   exportLogs: vi.fn(async () => ""),
   getAbout: vi.fn(async () => ({
     desktopVersion: appConfig.version,
-    runtimeVersion: "0.1.1-rc.2",
-    runtimeCommit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+    runtimeVersion: "0.1.2-alpha.1",
+    runtimeCommit: "cd5ef8148158c3a752a658978873241fdf8e2bbc",
     nodeVersion: "24.16.0",
     authors: appConfig.authors.join(", "),
     repository: appConfig.repository,

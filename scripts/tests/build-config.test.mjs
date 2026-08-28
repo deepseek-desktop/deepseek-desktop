@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 
 import {
   DEFAULT_CONFIG,
+  formatDisplayVersion,
   loadBuildConfig,
   normalizePublicRepository,
   resolveBuildValues,
@@ -14,10 +15,17 @@ import {
 
 const root = resolve(import.meta.dirname, "../..");
 
+test("adds the display prefix only when it is missing", () => {
+  assert.equal(formatDisplayVersion("1.0.0"), "v1.0.0");
+  assert.equal(formatDisplayVersion("v1.0.0"), "v1.0.0");
+});
+
 test("uses built-in defaults without an env file", async () => {
   const config = await loadBuildConfig(root, { environment: {}, envFile: resolve(root, "target/missing.env") });
   assert.equal(config.productName, DEFAULT_CONFIG.DESKTOP_APP_NAME);
   assert.equal(config.version, DEFAULT_CONFIG.DESKTOP_APP_VERSION);
+  assert.equal(config.displayVersion, `v${DEFAULT_CONFIG.DESKTOP_APP_VERSION}`);
+  assert.equal(config.windowTitle, `${DEFAULT_CONFIG.DESKTOP_APP_NAME} v${DEFAULT_CONFIG.DESKTOP_APP_VERSION}`);
   assert.equal(config.repository, "https://github.com/deepseek-desktop/deepseek-desktop");
   assert.equal(config.harness.repository, DEFAULT_CONFIG.RUNTIME_REPOSITORY);
   assert.equal(config.harness.ref, "");
@@ -59,6 +67,8 @@ test("loads every declared value from an env file before applying environment ov
     });
     assert.equal(config.productName, "命令行桌面");
     assert.equal(config.version, "2.3.4-preview.5");
+    assert.equal(config.displayVersion, "v2.3.4-preview.5");
+    assert.equal(config.windowTitle, "命令行桌面 v2.3.4-preview.5");
     assert.equal(config.identifier, "example.custom.desktop");
     assert.equal(config.slug, "custom-desktop");
     assert.deepEqual(config.authors, ["Alice", "Bob"]);

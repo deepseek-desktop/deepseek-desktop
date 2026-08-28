@@ -2,6 +2,8 @@ export interface AppConfig {
   schemaVersion: number;
   productName: string;
   version: string;
+  displayVersion: string;
+  windowTitle: string;
   identifier: string;
   slug: string;
   description: string;

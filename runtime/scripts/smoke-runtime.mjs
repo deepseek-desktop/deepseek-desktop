@@ -82,9 +82,19 @@ const dshHome = join(smokeRoot, "home");
 const profile = join(dshHome, "profiles", "desktop-web");
 const desktopModules = join(profile, "node_modules");
 const runtimeBin = join(smokeRoot, "data", "runtime-bin");
+const credentialHelperScript = join(smokeRoot, "credential-helper.mjs");
 await rm(smokeRoot, { recursive: true, force: true });
 await mkdir(desktopModules, { recursive: true });
 await mkdir(runtimeBin, { recursive: true });
+await writeFile(credentialHelperScript, `
+import { readFileSync } from "node:fs";
+if (!process.argv.includes("--credential-vault-helper")) process.exit(2);
+const request = JSON.parse(readFileSync(0, "utf8"));
+let value = null;
+if (request.operation === "describe-ref" || request.operation === "describe-record") value = { configured: false };
+else if (request.operation === "list-records") value = { records: [] };
+process.stdout.write(JSON.stringify({ ok: true, value }));
+`);
 await writeFile(join(profile, "package.json"), `${JSON.stringify({
   name: "deepseek-desktop-web-profile",
   private: true,
@@ -115,7 +125,8 @@ const environment = {
   LANG: process.env.LANG,
   DSH_HOME: dshHome,
   DSH_TELEMETRY_DISABLED: "true",
-  DEEPSEEK_DESKTOP_HELPER_PATH: process.execPath,
+  DEEPSEEK_DESKTOP_HELPER_PATH: node,
+  DEEPSEEK_DESKTOP_HELPER_SCRIPT: credentialHelperScript,
   DEEPSEEK_DESKTOP_DATA_DIR: join(smokeRoot, "data"),
   DEEPSEEK_DESKTOP_PARENT_PID: String(process.pid),
   DEEPSEEK_DESKTOP_LOCALE: "zh-TW",
@@ -207,7 +218,7 @@ async function runCycle(index) {
     const ready = await new Promise((resolveReady, reject) => {
       const timer = setTimeout(() => reject(new Error(`runtime readiness timed out on cycle ${index}:\n${output}`)), 20_000);
       const inspect = chunk => {
-        const match = String(chunk).match(/dsh web: (http:\/\/127\.0\.0\.1:\d+)/);
+        const match = String(chunk).match(/dsh web: (http:\/\/[^\s]+)/u);
         if (match) {
           clearTimeout(timer);
           resolveReady(match[1]);
@@ -222,7 +233,14 @@ async function runCycle(index) {
     });
     const readyUrl = new URL(ready);
     if (readyUrl.hostname !== "127.0.0.1" || !readyUrl.port) throw new Error(`unexpected readiness origin ${ready}`);
-    const response = await fetch(ready);
+    if (!readyUrl.searchParams.get("token")) throw new Error("runtime readiness URL is missing its browser session token");
+    const exchange = await fetch(ready, { redirect: "manual" });
+    const cookie = exchange.headers.get("set-cookie")?.split(";", 1)[0];
+    if (exchange.status !== 303 || exchange.headers.get("location") !== "/" || !cookie) {
+      throw new Error(`runtime browser token exchange failed with ${exchange.status}`);
+    }
+    const cleanUrl = new URL("/", readyUrl);
+    const response = await fetch(cleanUrl, { headers: { cookie } });
     if (!response.ok) throw new Error(`runtime health check returned ${response.status}`);
     const body = await response.text();
     if (!body.toLowerCase().includes("html")) throw new Error("runtime did not return an HTML shell");
@@ -240,7 +258,7 @@ async function verifyParentDeathCleanup() {
   const launcher = join(smokeRoot, "orphan-cleanup-launcher.mjs");
   await writeFile(launcher, `
 import { spawn } from "node:child_process";
-const [node, parentWatch, localeSync, dsh, cwd, dshHome, dataDir] = process.argv.slice(2);
+const [node, parentWatch, localeSync, dsh, cwd, dshHome, dataDir, credentialHelperScript] = process.argv.slice(2);
 const child = spawn(node, ["--require", parentWatch, "--require", localeSync, dsh, "--profile", "desktop-web", "--host", "127.0.0.1", "--port", "0", "--no-open"], {
   cwd,
   detached: true,
@@ -251,7 +269,8 @@ const child = spawn(node, ["--require", parentWatch, "--require", localeSync, ds
     LANG: process.env.LANG,
     DSH_HOME: dshHome,
     DSH_TELEMETRY_DISABLED: "true",
-    DEEPSEEK_DESKTOP_HELPER_PATH: process.execPath,
+    DEEPSEEK_DESKTOP_HELPER_PATH: node,
+    DEEPSEEK_DESKTOP_HELPER_SCRIPT: credentialHelperScript,
     DEEPSEEK_DESKTOP_DATA_DIR: dataDir,
     DEEPSEEK_DESKTOP_PARENT_PID: String(process.pid),
     DEEPSEEK_DESKTOP_LOCALE: "zh-TW",
@@ -269,7 +288,7 @@ setTimeout(() => {
   process.exit(0);
 }, 1_000);
 `);
-  const launched = spawnSync(process.execPath, [launcher, node, parentWatch, localeSync, dsh, smokeRoot, dshHome, join(smokeRoot, "data")], {
+  const launched = spawnSync(process.execPath, [launcher, node, parentWatch, localeSync, dsh, smokeRoot, dshHome, join(smokeRoot, "data"), credentialHelperScript], {
     cwd: smokeRoot,
     encoding: "utf8",
     timeout: 5_000

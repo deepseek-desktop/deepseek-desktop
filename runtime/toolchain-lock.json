@@ -36,8 +36,8 @@
   },
   "runtimeSource": {
     "repository": "https://github.com/deepseek-desktop/deepseek-harness.git",
-    "ref": "dsh-v0.1.1-rc.2",
-    "commit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
+    "ref": "dsh-v0.1.2-alpha.1",
+    "commit": "cd5ef8148158c3a752a658978873241fdf8e2bbc"
   },
   "bundledPackages": {
     "dshmarket": {
@@ -92,29 +92,33 @@
       "id": "bundled-market-fallback"
     },
     {
-      "packageName": "@deepseek-ai/dsh-client-runtime",
-      "file": "@deepseek-ai__dsh-client-runtime@0.1.1-rc.2.patch",
+      "packageName": "@deepseek-ai/dsh-client-ui-chat",
+      "file": "@deepseek-ai__dsh-client-ui-chat@0.1.2-alpha.1.patch",
       "moduleFile": "lib/client.js",
-      "markers": ["Provider authentication failed. Verify the credential, endpoint, model access, and account permissions."],
-      "id": "neutral-auth-failure"
+      "markers": [
+        "Provider authentication failed. Verify the credential, endpoint, model access, and account permissions.",
+        "if (provenance.label === \"@deepseek-ai/dsh-system-prompt\") return null;",
+        "function SystemPromptNodeView()"
+      ],
+      "id": "desktop-chat-presentation"
     },
     {
-      "packageName": "@deepseek-ai/dsh-client-ui-conversation",
-      "file": "@deepseek-ai__dsh-client-ui-conversation@0.1.1-rc.2.patch",
+      "packageName": "@deepseek-ai/dsh-client-ui-trajectory",
+      "file": "@deepseek-ai__dsh-client-ui-trajectory@0.1.2-alpha.1.patch",
       "moduleFile": "lib/client.js",
-      "markers": ["if (provenance.label === \"@deepseek-ai/dsh-system-prompt\") return null;"],
-      "id": "hide-system-policy-context"
+      "markers": ["Provider authentication failed. Verify the credential, endpoint, model access, and account permissions."],
+      "id": "neutral-auth-failure-trajectory"
     },
     {
       "packageName": "@deepseek-ai/dsh-client-ui-settings-models",
-      "file": "@deepseek-ai__dsh-client-ui-settings-models@0.1.1-rc.2.patch",
+      "file": "@deepseek-ai__dsh-client-ui-settings-models@0.1.2-alpha.1.patch",
       "moduleFile": "lib/client.js",
-      "markers": ["profileRevision = response.result.value.revision", "ops: [{ op: \"unset\", path: [\"providers\", route] }]"],
+      "markers": ["profileRevision = response.value.revision", "const rollback = await api.settings.mutate", "if (!rollback.ok) setCommitted(true);"],
       "id": "provider-credential-rollback"
     },
     {
       "packageName": "@deepseek-ai/dsh-user-approval",
-      "file": "@deepseek-ai__dsh-user-approval@0.1.1-rc.2.patch",
+      "file": "@deepseek-ai__dsh-user-approval@0.1.2-alpha.1.patch",
       "moduleFile": "lib/index.js",
       "markers": ["Operations permitted by the current sandbox run directly.", "without an interactive client, they fail closed."],
       "id": "desktop-policy-context"

@@ -174,7 +174,7 @@ corepack pnpm@11.7.0 tauri:build
 以下硬编码入口已经统一治理：
 
 - `package.json` 和 Runtime workspace 包版本。
-- `src-tauri/tauri.conf.json` 的产品名称、版本、Identifier、窗口标题、描述、版权和图标。
+- `src-tauri/tauri.conf.json` 的产品名称、版本、Identifier、窗口标题、描述、版权和图标；窗口标题使用真实发行版本，且仅在缺少时补齐 `v` 前缀。
 - `src-tauri/Cargo.toml` 中影响发行的版本和描述；Rust crate 内部名称不属于用户可见品牌，无需为定制发行动态重命名。
 - `src/i18n/messages.ts` 中的应用名称和欢迎、关于文案。
 - `src-tauri/src/native_menu.rs` 中的应用名称、关于和退出文案。
@@ -208,10 +208,10 @@ corepack pnpm@11.7.0 tauri:build
   "harness": {
     "repository": "https://github.com/deepseek-desktop/deepseek-harness.git",
     "requestedRef": null,
-    "resolvedRef": "dsh-v0.1.1-rc.2",
+    "resolvedRef": "dsh-v0.1.2-alpha.1",
     "commit": "resolved immutable commit",
     "packageName": "@deepseek-ai/dsh",
-    "version": "0.1.1-rc.2",
+    "version": "0.1.2-alpha.1",
     "sha256": "resolved runtime digest"
   },
   "target": "target triple",

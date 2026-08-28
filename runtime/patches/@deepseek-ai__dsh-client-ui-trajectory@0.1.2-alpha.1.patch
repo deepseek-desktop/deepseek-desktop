@@ -1,0 +1,21 @@
+diff --git a/lib/client.js b/lib/client.js
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -195,7 +195,7 @@
+ 			"details.toolCalls": "工具调用",
+ 			"details.subtoolCalls": "子工具调用",
+ 			"details.error": "错误",
+-			"details.failure.auth": "API 密钥无效",
++			"details.failure.auth": "提供方认证失败，请检查凭据、API 地址、模型权限和账户权限。",
+ 			"details.retry": "重试",
+ 			"details.scheduled": "已计划",
+ 			"details.retryDelay": "重试延迟",
+@@ -372,7 +372,7 @@
+ 			"details.toolCalls": "Tool calls",
+ 			"details.subtoolCalls": "Subtool calls",
+ 			"details.error": "Error",
+-			"details.failure.auth": "API key is invalid",
++			"details.failure.auth": "Provider authentication failed. Verify the credential, endpoint, model access, and account permissions.",
+ 			"details.retry": "Retry",
+ 			"details.scheduled": "Scheduled",
+ 			"details.retryDelay": "Retry delay",
