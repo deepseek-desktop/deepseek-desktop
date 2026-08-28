@@ -59,6 +59,142 @@ corepack pnpm@11.7.0 release:local-all -- --check
 
 该预检不会创建发行任务，也不会生成安装包。它会检查 Rosetta x64 Node、Docker Linux x64、Parallels Windows x64 的 Node/Git/Corepack/MSVC，以及四个环境到临时 TLS Controller 的连接。任一环境失败时先修环境，不要创建 tag 后再反复等待完整构建失败。
 
+## GitHub 托管社区版发布
+
+这是当前已经跑通的远程兜底与公开发布路径。它不替代本地 Controller / Worker 架构，但适合在没有四台长期在线原生节点时完成一次公开社区版发行。唯一工作流是 `.github/workflows/community-build.yml`：普通 `master` 推送只运行公共质量门禁，符合完整 SemVer 的 tag 才会在门禁通过后并行构建四个平台并创建预发行 Release。
+
+### 1. 创建 tag 前
+
+先在本地完成便宜验证，再进入远程长任务：
+
+```bash
+corepack pnpm@11.7.0 verify
+corepack pnpm@11.7.0 test:e2e
+corepack pnpm@11.7.0 runtime:smoke
+corepack pnpm@11.7.0 release:local-all -- --check
+git diff --check
+git status --short --branch
+```
+
+发布协议、路径或制品扫描变化时，必须在对应原生系统补跑相关 Node 测试。尤其是 Windows 路径断言，应通过 `node:path` 的 `resolve()` 生成平台期望值，不能把 Unix 风格字面量直接作为跨平台期望。
+
+发布前刷新远程事实，确认工作区干净、`master` 已同步、候选 tag 未被占用：
+
+```bash
+git fetch origin --tags
+git rev-list --left-right --count master...origin/master
+git status --porcelain
+git ls-remote --tags origin refs/tags/v1.0.0
+```
+
+`git rev-list` 预期为 `0 0`，`git status --porcelain` 和 `git ls-remote` 预期为空。若 tag 已存在，不移动、不删除、不强推；修复后选择下一个未使用的 SemVer。
+
+### 2. 推送发行
+
+仅在用户已经明确授权发布时，创建指向当前已验证 commit 的 annotated tag：
+
+```bash
+tag="v1.0.0"
+git tag -a "$tag" -m 'DeepSeek Desktop 1.0.0'
+git push origin master "$tag"
+```
+
+带 `v` 和不带 `v` 的完整 SemVer 都受支持；显示层补 `v` 的规则不改变实际 tag。推送 `master` 和 tag 会产生两个不同 ref 的工作流：tag run 是正式候选，`master` run 只有公共门禁。确认 tag run 已创建后，可以取消同一 commit 的 `master` 重复 run，不能取消 tag run：
+
+```bash
+repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+sha="$(git rev-parse HEAD)"
+tag_run_id=""
+for ((attempt = 1; attempt <= 30; attempt++)); do
+  tag_run_id="$(gh run list --repo "$repo" --commit "$sha" --branch "$tag" \
+    --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+  [ -n "$tag_run_id" ] && break
+  sleep 2
+done
+master_run_id="$(gh run list --repo "$repo" --commit "$sha" --branch master \
+  --limit 10 --json databaseId,status --jq \
+  'map(select(.status != "completed")) | first | .databaseId // empty')"
+if [ -n "$master_run_id" ]; then
+  gh run cancel "$master_run_id" --repo "$repo"
+fi
+test -n "$tag_run_id"
+```
+
+### 3. 跟踪与失败恢复
+
+按 `shell-quality -> native-build 四平台 -> publish-release` 的顺序观察，不要只看工作流总状态：
+
+```bash
+gh run view "$tag_run_id" --repo "$repo" --json status,conclusion,jobs
+```
+
+失败时先下载失败 job 的完整日志，再按第一次有效错误定位：
+
+```bash
+failed_job_id="$(gh run view "$tag_run_id" --repo "$repo" --json jobs --jq \
+  '.jobs[] | select(.conclusion == "failure") | .databaseId' | head -n 1)"
+test -n "$failed_job_id"
+job_log="$(mktemp)"
+gh api "repos/$repo/actions/jobs/$failed_job_id/logs" > "$job_log"
+rg -in -C 4 'error|failed|AssertionError|forbidden' "$job_log"
+```
+
+已经成功的平台不证明失败平台也可用，但可以帮助缩小范围。修复后完成本地与对应原生系统验证，创建新 commit，并使用下一个未使用的 SemVer tag。绝不把失败 tag 移到新 commit，也不在失败 run 上手工拼接不同源码生成的资产。`publish-release` 依赖四个平台全部成功；矩阵不完整时应保持无 Release。
+
+`v1.0.3` 的一次成功观测基线是：公共门禁约 9 分钟，macOS ARM64 约 13 分钟，Linux x64 约 16 分钟，Windows x64 约 28 分钟，macOS x64 约 38 分钟，Release 汇总约 30 秒；矩阵并行后的总时长约 49 分钟。该数据只用于判断明显卡住或评估本地提速，不能作为固定 SLA。
+
+### 4. 发布验收
+
+`publish-release` 成功后必须再次读取 Release，而不是只依赖绿色工作流：
+
+```bash
+gh release view "$tag" --repo "$repo" \
+  --json name,tagName,url,isDraft,isPrerelease,publishedAt,assets
+```
+
+社区版预期为非草稿预发行版，并且只公开以下六项：
+
+- macOS Apple 芯片 DMG。
+- macOS Intel DMG。
+- Windows x64 NSIS EXE。
+- Linux x64 AppImage。
+- Linux x64 DEB。
+- 汇总 `SHA256SUMS`。
+
+`BUILD-INFO` 只用于流水线内部校验，不应成为公开附件。下载体积很小的 `SHA256SUMS`，把其中五个安装包名称与 GitHub `assets[].digest` 的 SHA-256 逐项比较：
+
+```bash
+audit_dir="$(mktemp -d)"
+gh release download "$tag" --repo "$repo" --pattern SHA256SUMS --dir "$audit_dir"
+gh release view "$tag" --repo "$repo" --json assets > "$audit_dir/assets.json"
+AUDIT_DIR="$audit_dir" node --input-type=module <<'NODE'
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+const root = process.env.AUDIT_DIR;
+const release = JSON.parse(readFileSync(join(root, "assets.json"), "utf8"));
+const lines = readFileSync(join(root, "SHA256SUMS"), "utf8").trim().split(/\r?\n/u);
+const sums = new Map(lines.map(line => [line.slice(66).trimStart(), line.slice(0, 64)]));
+const installers = release.assets.filter(asset => asset.name !== "SHA256SUMS");
+if (installers.length !== 5 || sums.size !== 5) throw new Error("unexpected release asset count");
+for (const asset of installers) {
+  if (sums.get(asset.name) !== asset.digest?.replace(/^sha256:/u, "")) {
+    throw new Error(`digest mismatch: ${asset.name}`);
+  }
+}
+console.log("verified 5 installer digests");
+NODE
+```
+
+缺项、多项、重名、摘要不一致或 Release 仍为 draft 都不算完成。最后确认 tag 指向发行 commit、`master` 与远程同步、独立仓库工作区干净，并检查 SpringOpen 父仓库没有接管本目录改动。
+
+### 已验证的扫描器边界
+
+- `NO_STRIP=1` 只能出现在 Linux 打包步骤；全局设置会让 macOS 动态库保留构建机路径。
+- AppImage 的根内相对符号链接可以发布；绝对链接、根外逃逸和循环必须拒绝。
+- CI 只扫描本项目 workspace、Runner workspace 和临时目录等精确根路径；不要把整个通用 Runner home 当作私有路径，否则会误判依赖自身携带的公开上游构建路径。本地构建仍必须扫描真实用户 home。
+- PEM 私钥模式只应用于 UTF-8 / UTF-16 文本；二进制库可能包含公开自检向量，但二进制仍须检查 API、AWS、GitHub 令牌和本机路径。
+- 扫描器或路径测试有变更时，至少使用一个 Windows 原生 Node 环境执行 `node --test scripts/tests/release-system.test.mjs`，不能只在 macOS 上推断 Windows 结果。
+
 ## 单机四环境完整发行
 
 ### 前置条件

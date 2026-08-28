@@ -11,6 +11,7 @@
 - 已建立不依赖托管 Runner 的分布式本地发布协议：四平台原生节点、一次性票据、短期租约、通用 Git 来源、流式制品校验、filesystem 默认发布和可选 GitHub Provider。
 - Apple Silicon 单机可通过 `release:local-all` 协调原生 macOS ARM64、Rosetta macOS x64、Docker Linux x64 和 Parallels Windows x64 四个隔离 Worker，并汇总真实目标耗时。
 - `.ai/skills/release-workflow.md` 已作为 Agent 统一发布运行手册，固化方案选择、最短反馈路径、提速、安全门禁、故障恢复、验收边界和报告格式。
+- Agent 发布手册同时固化 GitHub 托管社区版的成功路径：本地前置门禁、不可变 SemVer tag、重复分支 run 取消、四平台 job 诊断、新 tag 恢复、Release 资产与 SHA-256 验收。
 - 已建立 Runtime 独立更新协议：四平台原生生产闭包、Ed25519 签名清单、清单有效期与反回放、流式下载、兼容性与包版本验证、受限解压、真实服务启动 smoke、原子切换、上一版回滚、内置基线恢复和无引用旧版本清理。
 - 本地打包和分布式发布均扫描实际交付闭包，拒绝 `.env`、密钥、本机绝对路径及符号链接泄漏；发布 HTTP 客户端具备响应大小和总时限边界，CI 第三方 Action 使用不可变 commit。
 - CI 的 `NO_STRIP` 仅允许出现在 Linux AppImage 打包步骤；macOS 与 Windows 不继承该变量。制品扫描协议 v2 允许 AppImage 根目录内的可移植相对链接，同时拒绝绝对链接、根外逃逸和循环；CI 使用项目工作区与 Runner 临时目录等精确根路径。PEM 私钥检查覆盖 UTF-8/UTF-16 文本，不误判 `libgnutls` 等系统库内置的公开自检向量；二进制仍扫描令牌和本机路径。
