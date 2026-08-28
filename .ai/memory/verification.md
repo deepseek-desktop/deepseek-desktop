@@ -20,6 +20,7 @@
 - `corepack pnpm@11.7.0 runtime:update:package -- --output <目录>`：通过公开一键入口同步并生成 macOS ARM64 Runtime 更新制品；制品为 88,724,342 字节，描述中的大小和 SHA-256 与实际文件一致，归档安全扫描未发现绝对路径、父目录逃逸或 `.env`。
 - `corepack pnpm@11.7.0 preflight:docker`：通过，在 GitHub 兼容的 Linux/amd64 模拟环境完成官方 Runtime 构建、Desktop 公共 CI 门禁、24841 个文件 / 495 个包的 Runtime 闭包校验及 Playwright 测试；容器按约定跳过仅适合原生宿主执行的 Runtime smoke。
 - 窗口标题版本格式已覆盖测试：版本已有 `v` 时保持不变，没有 `v` 时补齐；默认和示例版本仍为 `1.0.0`。
+- `v1.0.0` 托管发布在 macOS ARM64 节点被制品扫描拦截：全局 `NO_STRIP=1` 令 `sharp-libvips` 动态库保留 GitHub Runner 绝对路径；Linux 节点则因 AppImage 合法的 `.DirIcon` 内部链接被 v1 扫描器拒绝。现已将 `NO_STRIP` 严格限定为两个 Linux 打包步骤，并将扫描协议升级为 v2：允许根内相对链接、拒绝绝对链接和根外逃逸，Controller 同步要求 v2 审计；定向 10 项发布系统测试及完整 `corepack pnpm@11.7.0 verify` 均通过。
 
 ## 能力边界
 

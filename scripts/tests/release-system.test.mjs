@@ -64,15 +64,17 @@ test("source repositories reject embedded HTTP credentials", () => {
 test("artifact scanner rejects environment files, local paths, and secrets", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deepseek-artifact-scan-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const clean = join(directory, "clean.bin");
+  const scanRoot = join(directory, "root");
+  await mkdir(scanRoot);
+  const clean = join(scanRoot, "clean.bin");
   await writeFile(clean, "portable artifact");
   assert.deepEqual(await scanArtifactPaths([clean], { forbiddenRoots: [directory] }), {
     schemaVersion: 1,
-    scannerVersion: 1,
+    scannerVersion: 2,
     fileCount: 1,
     byteCount: 17
   });
-  const secret = join(directory, "secret.bin");
+  const secret = join(scanRoot, "secret.bin");
   await writeFile(secret, "sk-1234567890abcdefghij1234567890");
   await assert.rejects(() => scanArtifactPaths([secret]), /API key/u);
   await writeFile(secret, "AKIAIOSFODNN7EXAMPLE");
@@ -94,12 +96,23 @@ test("artifact scanner rejects environment files, local paths, and secrets", asy
     () => scanArtifactPaths([secret], { forbiddenRoots: [directory] }),
     /local path/u
   );
-  const environment = join(directory, ".env.production");
+  const environment = join(scanRoot, ".env.production");
   await writeFile(environment, "KEY=value\n");
   await assert.rejects(() => scanArtifactPaths([environment]), /environment file/u);
-  const link = join(directory, "outside-link");
-  await symlink(clean, link);
-  await assert.rejects(() => scanArtifactPaths([link]), /symbolic link/u);
+  await rm(secret);
+  await rm(environment);
+  const internalLink = join(scanRoot, "internal-link");
+  await symlink("clean.bin", internalLink);
+  assert.equal((await scanArtifactPaths([scanRoot])).fileCount, 1);
+  const outside = join(directory, "outside.bin");
+  await writeFile(outside, "outside root");
+  const outsideLink = join(scanRoot, "outside-link");
+  await symlink("../outside.bin", outsideLink);
+  await assert.rejects(() => scanArtifactPaths([scanRoot]), /symbolic link escaping/u);
+  await rm(outsideLink);
+  const absoluteLink = join(scanRoot, "absolute-link");
+  await symlink(clean, absoluteLink);
+  await assert.rejects(() => scanArtifactPaths([scanRoot]), /absolute symbolic link/u);
 });
 
 test("GitHub workflow pins first-party actions to immutable commits", async () => {
@@ -109,6 +122,10 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   for (const [, name, revision] of actions) {
     assert.match(revision, /^[a-f0-9]{40}$/u, `${name} must use a full commit SHA`);
   }
+  const noStripAssignments = [...workflow.matchAll(/NO_STRIP:\s+"1"/gu)];
+  const linuxPackageSteps = [...workflow.matchAll(/if: runner\.os == 'Linux'[^\n]*\n\s+run:[^\n]*\n\s+env:\n\s+NO_STRIP:\s+"1"/gu)];
+  assert.equal(noStripAssignments.length, 2, "NO_STRIP must only be assigned by Linux package steps");
+  assert.equal(linuxPackageSteps.length, 2, "both Linux package paths must disable stripping");
 });
 
 test("release argument parser ignores the package-manager separator", () => {
@@ -223,7 +240,7 @@ test("distributed release HTTP smoke streams, validates, and publishes artifacts
     target: "aarch64-apple-darwin",
     channel: "local",
     signed: false,
-    artifactAudit: { schemaVersion: 1, scannerVersion: 1, fileCount: 3, byteCount: 1024 }
+    artifactAudit: { schemaVersion: 1, scannerVersion: 2, fileCount: 3, byteCount: 1024 }
   }, null, 2)}\n`, "utf8");
   const checksum = Buffer.from(`${sha256(installer)}  ${installerName}\n${sha256(buildInfo)}  ${buildInfoName}\n`, "utf8");
   const fixtureFiles = new Map([
@@ -303,7 +320,7 @@ test("completion rejects source facts and local path leakage", async t => {
       target: "aarch64-apple-darwin",
       channel: "local",
       signed: false,
-      artifactAudit: { schemaVersion: 1, scannerVersion: 1, fileCount: 3, byteCount: 1024 },
+      artifactAudit: { schemaVersion: 1, scannerVersion: 2, fileCount: 3, byteCount: 1024 },
       leakedPath: "/Users/developer/private"
     })}\n`)]
   ]);

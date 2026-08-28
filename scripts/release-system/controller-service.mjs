@@ -294,7 +294,7 @@ export class ReleaseControllerService {
         throw new Error("BUILD-INFO target or release channel does not match release plan");
       }
       if (buildInfo.artifactAudit?.schemaVersion !== 1
-        || buildInfo.artifactAudit?.scannerVersion !== 1
+        || buildInfo.artifactAudit?.scannerVersion !== 2
         || !Number.isSafeInteger(buildInfo.artifactAudit?.fileCount)
         || buildInfo.artifactAudit.fileCount <= 0
         || !Number.isSafeInteger(buildInfo.artifactAudit?.byteCount)

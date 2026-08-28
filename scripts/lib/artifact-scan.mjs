@@ -1,8 +1,8 @@
 import { createReadStream } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { lstat, readdir, readlink, realpath } from "node:fs/promises";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
-const SCANNER_VERSION = 1;
+const SCANNER_VERSION = 2;
 const CARRY_BYTES = 2048;
 const secretPatterns = [
   { pattern: /\bsk-(?!example|test|placeholder)[A-Za-z0-9._-]{20,}\b/iu, label: "API key" },
@@ -14,19 +14,41 @@ const secretPatterns = [
   }
 ];
 
-async function filesUnder(path) {
+function isInside(root, path) {
+  const offset = relative(root, path);
+  return offset === "" || (offset !== ".." && !offset.startsWith(`..${sep}`) && !isAbsolute(offset));
+}
+
+async function filesUnderPath(path, root, visitedDirectories) {
   const info = await lstat(path);
-  if (info.isSymbolicLink()) throw new Error(`${path} contains a symbolic link`);
-  if (info.isFile()) return [path];
+  if (info.isSymbolicLink()) {
+    const link = await readlink(path);
+    if (isAbsolute(link)) throw new Error(`${path} contains an absolute symbolic link`);
+    const target = await realpath(path);
+    if (!isInside(root, target)) throw new Error(`${path} contains a symbolic link escaping the scan root`);
+    return filesUnderPath(target, root, visitedDirectories);
+  }
+  if (info.isFile()) return [await realpath(path)];
   if (!info.isDirectory()) return [];
+  const directory = await realpath(path);
+  if (!isInside(root, directory)) throw new Error(`${path} escapes the scan root`);
+  if (visitedDirectories.has(directory)) return [];
+  visitedDirectories.add(directory);
   const files = [];
   for (const entry of await readdir(path, { withFileTypes: true })) {
     const child = resolve(path, entry.name);
-    if (entry.isDirectory()) files.push(...await filesUnder(child));
-    else if (entry.isFile()) files.push(child);
-    else if (entry.isSymbolicLink()) throw new Error(`${child} contains a symbolic link`);
+    if (entry.isDirectory()) files.push(...await filesUnderPath(child, root, visitedDirectories));
+    else if (entry.isFile()) files.push(await realpath(child));
+    else if (entry.isSymbolicLink()) files.push(...await filesUnderPath(child, root, visitedDirectories));
   }
   return files;
+}
+
+async function filesUnder(path) {
+  const info = await lstat(path);
+  if (info.isSymbolicLink()) throw new Error(`${path} cannot be a symbolic-link scan root`);
+  const root = await realpath(info.isDirectory() ? path : dirname(path));
+  return filesUnderPath(path, root, new Set());
 }
 
 function normalizedRoots(values) {
