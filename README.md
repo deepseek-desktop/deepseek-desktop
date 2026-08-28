@@ -155,6 +155,20 @@ DeepSeek Desktop 将桌面外壳与 Harness Runtime 分开更新。安装包内�
 
 仓库内置平台无关的本地发布系统，不要求 GitHub Actions、自托管 Runner、虚拟机，也不要求任何一位开发者同时拥有四种系统。macOS ARM64、macOS Intel、Windows x64 和 Linux x64 节点只领取本机能够原生完成的任务；Controller 锁定 tag、Desktop commit、Runtime commit 和目标平台，校验各节点上传的 `BUILD-INFO`、目标类型、大小与 SHA-256，全部目标齐备后再汇总发布。
 
+Apple Silicon Mac 也可以把同一台物理电脑上的原生 macOS、Rosetta、Docker 和 Parallels Windows 作为四个隔离 Worker，一条命令并行生成四平台安装包。首次使用先确认环境：
+
+```bash
+corepack pnpm@11.7.0 release:local-all -- --check
+```
+
+检查通过且版本 tag 已存在、指向当前干净 HEAD 并已推送到源码仓库后执行：
+
+```bash
+corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0
+```
+
+该入口会自动准备经过 SHA-256 校验的 macOS x64 Node，复用 Docker 构建 Linux x64，并自动识别单个 Parallels Windows 虚拟机；四个 Worker 仍调用现有 `package:community`，一次性票据只通过标准输入传递，跨环境连接使用本次运行临时生成的 TLS。默认产物汇总到 `release/local-all/<tag>/`，各目标耗时写入 `target/local-release/runs/<run-id>/summary.json`。机器配置不同时可复制 `.deepseek-release.local.example.json` 为不提交 Git 的 `.deepseek-release.local.json`。这是一台物理机上的多环境编排，不会把 Windows 或 Linux 安装包伪装成 macOS 直接交叉编译的结果。
+
 常用命令如下：
 
 ```bash
@@ -186,7 +200,7 @@ corepack pnpm@11.7.0 release:publish -- \
 
 源码可通过 `release:create --source <通用 Git URL>` 指向 GitHub、GitLab、Gitee、Gitea 或其他标准 Git 服务。构建与发布上传完全解耦；filesystem 是默认 Provider，GitHub 只是可选 Provider。跨机器运行 Controller 时必须配置 TLS，任务票据只能私下交给预先登记的受信任节点。公开 Pull Request 不会触发或授权本地 Worker 执行代码。
 
-完整的多节点部署、TLS、任务重试、Linux 可选旧基线容器、filesystem/GitHub Provider 和故障恢复说明见[分布式本地发布指南](docs/zh-CN/distributed-release.md)。
+完整的单机四环境准备、多节点部署、TLS、任务重试、Linux 可选旧基线容器、filesystem/GitHub Provider 和故障恢复说明见[分布式本地发布指南](docs/zh-CN/distributed-release.md)。
 
 ## 发布边界
 

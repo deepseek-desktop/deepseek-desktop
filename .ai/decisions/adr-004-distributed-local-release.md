@@ -24,3 +24,7 @@ filesystem 是默认发布 Provider。GitHub 是可选适配器，不参与构�
 - 公开 Pull Request 和外部 Webhook 不自动签发票据或触发本地 Worker。
 - 任务绑定完整 Desktop/Runtime commit、tag、目标 triple、channel、signed 和制品哈希；脏来源、来源漂移、错误目标和本机路径泄漏直接失败。
 - Linux 旧基线容器只作为显式可选能力，不成为普通开发者或其他平台的依赖。
+
+## 单机便捷编排
+
+Apple Silicon 维护者可以选择 `release:local-all`，在同一台物理 Mac 上把原生 macOS、Rosetta、Docker 和 Parallels Windows 作为四个隔离 Worker。该命令仍使用本 ADR 的 Controller、目标绑定、一次性票据、不可变源码和制品校验；它只负责准备环境、临时 TLS、并行启动及 filesystem 汇总，不增加交叉打包捷径，也不改变多台原生节点仍是最高可信发行方式的判断。

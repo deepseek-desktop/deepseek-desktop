@@ -22,6 +22,7 @@
 - 不引入明文凭据 fallback，不通过命令参数、长期环境变量或日志传递 API Key。
 - 不为临时验证修改产品源码；Runtime 补丁必须与锁定版本、marker 和验证脚本一起维护。
 - community/stable 分布式任务必须绑定受信任节点 ID；一次性票据和短期租约只保存摘要，公开 PR 不得自动触发本地 Worker。
+- `release:local-all` 只能把同一 Apple Silicon Mac 内彼此隔离且能报告正确平台的原生、Rosetta、Docker 和 Parallels 环境作为 Worker；票据只能经标准输入传递，非回环 Controller 流量必须使用临时 TLS。
 - Runtime 更新不得写应用安装目录，不得在用户机器拉源码或编译；Windows 的 smoke、替换和重启进程必须保持无控制台窗口。
 
 ## 验证

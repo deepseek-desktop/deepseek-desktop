@@ -44,6 +44,8 @@ RUNTIME_REPOSITORY / RUNTIME_REF
 
 四平台映射只由 `scripts/release-system/targets.json` 定义。Controller 状态和制品位于 `target/release-controller/`，Worker 默认使用系统临时目录；二者都不是源码事实。构建与发布 Provider 解耦，代码托管平台不参与节点授权。
 
+Apple Silicon 单机编排由 `scripts/release-system/local-all.mjs` 在同一协议上协调 macOS ARM64、Rosetta macOS x64、Docker Linux x64 和 Parallels Windows x64。它自动建立短期 TLS、通过标准输入传递一次性票据并复用 Worker；不是第五套 Controller，也不绕过目标识别或安装包校验。
+
 ## 代码职责
 
 - `src/`：Vue 3 桌面管理 Shell、三语国际化、类型化 IPC 和视图状态。

@@ -1,15 +1,13 @@
 import { hostname, tmpdir } from "node:os";
 import { chmod, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 
 import {
   assertNodeId,
-  assertSourceRepository,
   detectHostTarget,
   flag,
-  loadTargets,
   option,
   options,
   parseArguments,
@@ -22,18 +20,11 @@ import { cloneLockedSource } from "./git-source.mjs";
 import { requestJson, uploadArtifact } from "./http-client.mjs";
 import { ensureAdminToken, startReleaseServer } from "./http-server.mjs";
 import { ReleaseStateStore } from "./state-store.mjs";
-import { parseReleaseTag } from "../lib/release-tag.mjs";
+import { createReleasePlan } from "./release-plan.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const defaultControllerRoot = join(root, "target", "release-controller");
 const defaultControllerUrl = "http://127.0.0.1:47821";
-
-function git(args, cwd = root) {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${(result.stderr || result.stdout).trim()}`);
-  return result.stdout.trim();
-}
 
 function run(command, args, { cwd, env = process.env, shell = false } = {}) {
   return new Promise((resolvePromise, reject) => {
@@ -124,38 +115,28 @@ async function createCommand(parsed) {
   const adminTokenFile = resolve(option(parsed, "admin-token-file", join(defaultControllerRoot, "admin-token")));
   const adminToken = await readToken(adminTokenFile, "DISTRIBUTED_RELEASE_ADMIN_TOKEN");
   const tag = requireOption(parsed, "tag");
-  const { version } = parseReleaseTag(tag);
   const channel = option(parsed, "channel", "community");
   const signed = flag(parsed, "signed");
-  const status = git(["status", "--porcelain", "--untracked-files=all"]);
-  if (status) throw new Error("distributed release creation requires a clean Desktop worktree");
-  const commit = git(["rev-parse", `${tag}^{commit}`]);
-  if (git(["rev-parse", "HEAD"]) !== commit) throw new Error(`release tag ${tag} must point at current HEAD`);
-  const repository = assertSourceRepository(option(parsed, "source", git(["remote", "get-url", "origin"])));
-  const lock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
-  const runtime = lock.runtimeSource;
-  if (!runtime?.repository || !runtime?.ref || !runtime?.commit) throw new Error("runtime/toolchain-lock.json has no immutable Runtime source");
-  const targetConfig = await loadTargets();
-  const requestedTargetIds = options(parsed, "target");
-  const targetIds = requestedTargetIds.length > 0 ? requestedTargetIds : targetConfig.targets.map(target => target.id);
   const trustedNodes = parseTrustedNodes(options(parsed, "trusted-node"));
+  const input = await createReleasePlan({
+    root,
+    tag,
+    channel,
+    signed,
+    sourceRepository: option(parsed, "source"),
+    productName: option(parsed, "product-name", "DeepSeek Desktop"),
+    requestedTargetIds: options(parsed, "target"),
+    trustedNodes
+  });
   const result = await requestJson(controller, "/v1/releases", {
     method: "POST",
     token: adminToken,
-    body: {
-      productName: option(parsed, "product-name", "DeepSeek Desktop"),
-      version,
-      channel,
-      signed,
-      source: { repository, tag, commit },
-      runtime,
-      targets: targetIds.map(id => ({ id, trustedNodeId: trustedNodes.get(id) || "" }))
-    }
+    body: input
   });
   const ticketDirectory = resolve(option(parsed, "ticket-dir", join(root, "target", "release-tickets", result.release.id)));
   console.log(`Created distributed release ${result.release.id} for ${tag}.`);
   console.log(`Controller status: ${controller}/v1/releases/${result.release.id}`);
-  for (const targetId of targetIds) {
+  for (const targetId of input.targets.map(target => target.id)) {
     const path = await writeTicket(ticketDirectory, targetId, result.tickets[targetId]);
     console.log(`${targetId} worker ticket: ${path}`);
   }
@@ -262,8 +243,18 @@ async function workerCommand(parsed) {
   const controller = option(parsed, "controller", defaultControllerUrl);
   const tokenFileValue = option(parsed, "token-file");
   const tokenFile = tokenFileValue ? resolve(tokenFileValue) : "";
-  const ticket = process.env.DISTRIBUTED_RELEASE_WORKER_TOKEN?.trim() || (tokenFile ? (await readFile(tokenFile, "utf8")).trim() : "");
-  if (!ticket) throw new Error("worker requires --token-file or DISTRIBUTED_RELEASE_WORKER_TOKEN");
+  const tokenFromStdin = flag(parsed, "token-stdin")
+    ? (await new Promise((resolvePromise, reject) => {
+      const chunks = [];
+      process.stdin.on("data", chunk => chunks.push(chunk));
+      process.stdin.on("end", () => resolvePromise(Buffer.concat(chunks).toString("utf8").trim()));
+      process.stdin.on("error", reject);
+    }))
+    : "";
+  const ticket = process.env.DISTRIBUTED_RELEASE_WORKER_TOKEN?.trim()
+    || (tokenFile ? (await readFile(tokenFile, "utf8")).trim() : "")
+    || tokenFromStdin;
+  if (!ticket) throw new Error("worker requires --token-file, --token-stdin, or DISTRIBUTED_RELEASE_WORKER_TOKEN");
   const claim = await requestJson(controller, "/v1/worker/claim", {
     method: "POST",
     body: {

@@ -31,6 +31,52 @@ corepack pnpm@11.7.0 desktop:package
 
 该命令继续负责配置同步、Runtime 同步、验证、E2E、Runtime smoke 和当前原生平台安装包构建。分布式 Worker 复用的也是这条链路，没有第二套 Tauri 打包实现。
 
+## 一台 Apple Silicon Mac 构建四平台
+
+`release:local-all` 是分布式协议之上的单机便捷编排器。它把一台物理 Mac 中的四个隔离执行环境视为四个受信任节点：
+
+| 目标 | 执行环境 | 产物 |
+| --- | --- | --- |
+| macOS ARM64 | 当前 macOS 原生 Node / Rust | ARM64 DMG |
+| macOS x64 | Rosetta 2 + 锁定并校验的 x64 Node / Rust | Intel DMG |
+| Linux x64 | Docker Desktop `linux/amd64` 容器 | AppImage、DEB |
+| Windows x64 | Parallels Windows 中的 x64 Node / MSVC | NSIS EXE |
+
+需要准备：
+
+1. Apple Silicon Mac 已安装 Rosetta 2。
+2. Docker Desktop 已启动。
+3. Parallels Desktop 已安装 Tools；Windows 虚拟机中已有 x64 Node.js、Git、Corepack 和包含 C++ x64 工具的 Visual Studio Build Tools。
+4. Windows 使用 Parallels Shared Network，并能访问宿主机地址；默认是 `10.211.55.2`。
+5. 发行 tag 已存在、指向当前干净 HEAD，并已推送到 Worker 可访问的标准 Git 仓库。
+
+先执行不会创建发行任务的真实网络与工具链检查：
+
+```bash
+corepack pnpm@11.7.0 release:local-all -- --check
+```
+
+该检查会自动下载 `runtime/toolchain-lock.json` 固定的 macOS x64 Node 归档并校验 SHA-256，准备或复用 Linux x64 Docker 镜像，检查 Windows x64 Node / Git / Corepack / MSVC，并让四个环境分别通过临时 TLS 请求同一个 Controller 健康接口。
+
+检查通过后，一键创建、并行构建、校验和汇总四平台社区版：
+
+```bash
+corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0
+```
+
+默认结果位于 `release/local-all/v1.0.0/`，每个 Worker 的真实耗时和最终状态位于 `target/local-release/runs/<run-id>/summary.json`。也可以只验证或构建一个目标：
+
+```bash
+corepack pnpm@11.7.0 release:local-all -- --check --target windows-x64
+corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --target linux-x64
+```
+
+机器设置与默认值不同时，将 `.deepseek-release.local.example.json` 复制为 `.deepseek-release.local.json`，修改 Docker 镜像、Windows 虚拟机名称、宿主机地址、Windows 工作目录或汇总目录。该本地文件已被 Git 忽略，不得放入密码、令牌或其他凭据。命令行的 `--windows-vm`、`--windows-host`、`--docker-image` 和 `--destination` 可以临时覆盖配置；`--rebuild-docker` 强制重建 Linux Worker 镜像。
+
+Controller 只在本次运行期间监听，非回环流量始终使用临时 CA 签发的 TLS。Worker 票据绑定目标和节点，只通过进程标准输入传递，不写入 Docker 参数、Parallels 命令或日志。Controller 状态保存在对应 run 目录，构建失败时不会发布残缺目标。
+
+这条命令证明的是一台物理机完成四种隔离环境打包，不等同于四种真实硬件验收。尤其 Apple Silicon 上的 Windows x64 与 Linux x64 使用系统模拟层，发行前仍应在目标系统完成安装、启动、Runtime、凭据和卸载验证。缺少任何环境时命令会明确失败，不会偷偷改用错误目标。
+
 ## 发布维护者
 
 ### 1. 准备 tag 和受信任节点

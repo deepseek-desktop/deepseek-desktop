@@ -5,11 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertSourceRepository, detectHostTarget, loadTargets, sha256File } from "../release-system/common.mjs";
+import { assertSourceRepository, detectHostTarget, loadTargets, parseArguments, sha256File } from "../release-system/common.mjs";
 import { ReleaseControllerService } from "../release-system/controller-service.mjs";
 import { requestJson, uploadArtifact } from "../release-system/http-client.mjs";
 import { startReleaseServer } from "../release-system/http-server.mjs";
 import { ReleaseStateStore } from "../release-system/state-store.mjs";
+import { loadLocalAllConfig, macPathToParallelsShared } from "../release-system/local-all.mjs";
 
 const desktopCommit = "a".repeat(40);
 const runtimeCommit = "b".repeat(40);
@@ -56,6 +57,44 @@ test("source repositories reject embedded HTTP credentials", () => {
   assert.equal(assertSourceRepository("ssh://git@git.example.com/team/desktop.git"), "ssh://git@git.example.com/team/desktop.git");
   assert.throws(() => assertSourceRepository("https://token@git.example.com/team/desktop.git"), /embedded HTTP credentials/u);
   assert.throws(() => assertSourceRepository("ssh://git:password@git.example.com/team/desktop.git"), /embedded password/u);
+});
+
+test("release argument parser ignores the package-manager separator", () => {
+  const parsed = parseArguments(["--", "--check", "--target", "linux-x64"]);
+  assert.equal(parsed.options.has(""), false);
+  assert.deepEqual(parsed.options.get("check"), ["true"]);
+  assert.deepEqual(parsed.options.get("target"), ["linux-x64"]);
+});
+
+test("single-host release config is strict and maps macOS paths into Parallels shares", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-local-all-config-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const validPath = join(directory, "valid.json");
+  await writeFile(validPath, `${JSON.stringify({
+    schemaVersion: 1,
+    docker: { image: "local/deepseek-builder:1.0.0", rebuild: true },
+    windows: { vm: "Windows 11", controllerHost: "10.211.55.2" },
+    destination: "release/local-all"
+  })}\n`);
+  const config = await loadLocalAllConfig(validPath, { explicit: true });
+  assert.equal(config.docker.image, "local/deepseek-builder:1.0.0");
+  assert.equal(config.windows.adapter, "parallels");
+  assert.equal(config.windows.workRoot, "C:\\DeepSeekDesktopRelease");
+  assert.equal(
+    macPathToParallelsShared("/Users/developer/project/worker.mjs", { hostHome: "/Users/developer", guestHome: "\\\\Mac\\Home" }),
+    "\\\\Mac\\Home\\project\\worker.mjs"
+  );
+
+  const unknownPath = join(directory, "unknown.json");
+  await writeFile(unknownPath, `${JSON.stringify({ schemaVersion: 1, target: "windows-x64" })}\n`);
+  await assert.rejects(() => loadLocalAllConfig(unknownPath, { explicit: true }), /unknown keys: target/u);
+  const unsafeHostPath = join(directory, "unsafe-host.json");
+  await writeFile(unsafeHostPath, `${JSON.stringify({ schemaVersion: 1, windows: { controllerHost: "host\nname" } })}\n`);
+  await assert.rejects(() => loadLocalAllConfig(unsafeHostPath, { explicit: true }), /single line/u);
+  assert.throws(
+    () => macPathToParallelsShared("/private/tmp/worker.mjs", { hostHome: "/Users/developer", guestHome: "\\\\Mac\\Home" }),
+    /must be under/u
+  );
 });
 
 test("official tasks require a trusted node and reject ticket misuse", async t => {

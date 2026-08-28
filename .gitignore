@@ -19,6 +19,7 @@ test-results/
 .env.*
 !.env.example
 *.local
+.deepseek-release.local.json
 
 # Logs and temporary files
 *.log

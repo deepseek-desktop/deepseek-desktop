@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "docker": {
+    "image": "deepseek-desktop-local-linux-x64:1.0.0",
+    "rebuild": false
+  },
+  "windows": {
+    "adapter": "parallels",
+    "vm": "Windows 11",
+    "controllerHost": "10.211.55.2",
+    "autoStart": true,
+    "workRoot": "C:\\DeepSeekDesktopRelease",
+    "sharedHome": "\\\\Mac\\Home"
+  },
+  "destination": "release/local-all"
+}
