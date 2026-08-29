@@ -39,7 +39,7 @@ corepack pnpm@11.7.0 desktop:package
 corepack pnpm@11.7.0 release:prepare -- --tag v1.0.0
 ```
 
-准备阶段执行固定依赖安装、`app:sync`、`runtime:sync`、发行门禁、`verify` 和 E2E，并将经过核验的生成配置与公共 Runtime 闭包写入内容寻址缓存。输出的 descriptor 和签名 receipt 绑定 tag、Desktop/Runtime 完整 commit、目标集合、源码树、Runtime 补丁与 lock、精确 Node/ABI、Rust/pnpm/Tauri 版本、channel、签名模式、dirty 状态和 24 小时有效期。Worker 仍调用 `desktop:package`，但只有 receipt 与任务完全一致时才省略已经完成的公共门禁；否则自动回到完整构建或拒绝正式发行。
+准备阶段执行固定依赖安装、`app:sync`、`runtime:sync`、发行门禁、`verify` 和 E2E，并将经过核验的生成配置与公共 Runtime 闭包写入内容寻址缓存。输出的 descriptor 和签名 receipt 绑定 tag、Desktop/Runtime 完整 commit、目标集合、源码树、Runtime 补丁与 lock、精确 Node/ABI、Rust/pnpm/Tauri 版本、channel、签名模式、dirty 状态和 24 小时有效期。Worker 仍调用 `desktop:package`，但只有 receipt 与任务完全一致时才省略已经完成的公共门禁；否则自动回到完整构建或拒绝正式发行。Tauri 的内层命令只编译前端，避免 prepared Worker 在 receipt 核验后再次覆盖生成配置；所有公开构建入口仍负责先执行或校验 `app:sync`。
 
 ## 一台 Apple Silicon Mac 构建四平台
 

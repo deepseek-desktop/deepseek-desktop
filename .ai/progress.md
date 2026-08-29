@@ -15,6 +15,7 @@
 - 已建立不依赖托管 Runner 的分布式本地发布协议：四平台原生节点、一次性票据、短期租约、通用 Git 来源、流式制品校验、filesystem 默认发布和可选 GitHub Provider。
 - Apple Silicon 单机可通过 `release:local-all` 协调原生 macOS ARM64、Rosetta macOS x64、Docker Linux x64 和 Parallels Windows x64 四个隔离 Worker，并汇总真实目标耗时。
 - 本地四平台发行已增加 `release:prepare` 公共门禁、签名准备凭据、Runtime 内容寻址缓存、目标隔离 Cargo 缓存、自适应并发、失败目标重试和分阶段耗时记录；Worker 仍复用唯一 `desktop:package` 打包事实来源。
+- Linux 本地发行镜像身份绑定 Dockerfile SHA-256 与固定 Node/ABI，系统依赖变化会自动废弃旧镜像；Tauri 内层仅执行前端编译，prepared Worker 不会在 receipt 核验后重复改写配置和 Windows 品牌图标。
 - 单机四环境源码交付改用 tag/commit 锁定并在临时 bare 仓库中经 `git bundle verify` 校验的本地 bundle；统一 Runtime 部署显式携带四目标 Koffi、Sharp/libvips 等可选原生包，Rust 编译路径重映射规则进入 Cargo 缓存身份，避免 Windows 当前目录依赖、节点 SSH 依赖、跨架构缺包和本机路径泄漏。
 - Runtime 平台 smoke 使用仅允许 `127.0.0.1` 的有界原生 HTTP 客户端，在 readiness 地址出现后等待端口真正接受请求并同时检查子进程存活，消除 Linux 启动竞态与 Rosetta Undici 套接字兼容失败。
 - Runtime 正式启动、候选更新 smoke 和打包 smoke 统一在加载实时配置 profile 前启用 Node 内部模块访问，避免新目标闭包因 HMR 启动契约不一致失败，同时保持原生 Runtime 的实时重载体验。

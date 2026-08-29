@@ -16,6 +16,8 @@
 4. Runtime 闭包使用内容寻址缓存，按 Runtime/补丁/lock/Node ABI/目标 triple/配置隔离并在命中前逐文件校验。Cargo target 按目标、flags 和签名模式持久隔离。
 5. `release:local-all` 在准备成功后才调度 Worker，默认按内存限制并发，只重试失败目标；构建与 Provider 上传继续解耦。
 6. 暂不引入 `sccache`。固定 Cargo target 已带来主要本地增量收益，而跨平台 `sccache` 二进制、服务端缓存和签名信任会增加新的供应链边界。
+7. Tauri 的内层 `beforeBuildCommand` 只执行前端类型检查与 Vite 构建。所有公开构建入口仍在外层执行或验证 `app:sync`，prepared Worker 因此不会在凭据核验后再次改写生成配置和品牌资源。
+8. Linux 镜像身份同时绑定固定 Node/ABI 与 Dockerfile SHA-256。系统依赖或 Dockerfile 变化会自动废弃旧镜像，不能只因 Node 版本相同就复用过期环境。
 
 ## 后果
 

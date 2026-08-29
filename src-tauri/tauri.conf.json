@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "node scripts/with-pnpm.mjs dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "node scripts/with-pnpm.mjs build",
+    "beforeBuildCommand": "node scripts/with-pnpm.mjs frontend:build",
     "frontendDist": "../dist"
   },
   "app": {

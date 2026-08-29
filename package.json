@@ -20,7 +20,8 @@
   "scripts": {
     "app:sync": "node scripts/app-sync.mjs",
     "dev": "node scripts/app-sync.mjs && vite",
-    "build": "node scripts/app-sync.mjs && vue-tsc --noEmit && vite build",
+    "build": "node scripts/app-sync.mjs && node scripts/with-pnpm.mjs frontend:build",
+    "frontend:build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
     "test": "node scripts/app-sync.mjs && vitest run",
     "test:config": "node --test scripts/tests/*.test.mjs",

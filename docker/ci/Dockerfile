@@ -2,6 +2,9 @@ FROM mcr.microsoft.com/playwright:v1.62.1-noble
 
 ARG NODE_VERSION=24.20.0
 ARG TARGETARCH
+ARG BUILD_IMAGE_CONTRACT
+
+LABEL dev.deepseek.desktop.release-image-contract="${BUILD_IMAGE_CONTRACT}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -11,6 +14,7 @@ RUN apt-get update \
         librsvg2-dev \
         libwebkit2gtk-4.1-dev \
         patchelf \
+        xdg-utils \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 

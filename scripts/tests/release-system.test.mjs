@@ -12,7 +12,7 @@ import { ReleaseControllerService } from "../release-system/controller-service.m
 import { requestJson, uploadArtifact } from "../release-system/http-client.mjs";
 import { startReleaseServer } from "../release-system/http-server.mjs";
 import { ReleaseStateStore } from "../release-system/state-store.mjs";
-import { loadLocalAllConfig, macPathToParallelsShared, runWithConcurrency, windowsNodeToolchain } from "../release-system/local-all.mjs";
+import { dockerImageContract, loadLocalAllConfig, macPathToParallelsShared, runWithConcurrency, windowsNodeToolchain } from "../release-system/local-all.mjs";
 import {
   contentCacheKey,
   createContentCacheManifest,
@@ -45,6 +45,36 @@ function git(directory, args) {
   if (result.status !== 0) throw new Error(result.stderr || result.stdout);
   return result.stdout.trim();
 }
+
+test("Linux release image contract changes with its build inputs", () => {
+  const baseline = dockerImageContract({
+    dockerfileSha256: "a".repeat(64),
+    nodeVersion: "24.20.0",
+    nodeModuleAbi: "137",
+    targetArch: "x64"
+  });
+  assert.equal(baseline, dockerImageContract({
+    dockerfileSha256: "a".repeat(64),
+    nodeVersion: "24.20.0",
+    nodeModuleAbi: "137",
+    targetArch: "x64"
+  }));
+  assert.notEqual(baseline, dockerImageContract({
+    dockerfileSha256: "b".repeat(64),
+    nodeVersion: "24.20.0",
+    nodeModuleAbi: "137",
+    targetArch: "x64"
+  }));
+});
+
+test("Tauri build performs frontend compilation without rewriting prepared app config", async () => {
+  const packageJson = JSON.parse(await readFile(resolve("package.json"), "utf8"));
+  const tauriConfig = JSON.parse(await readFile(resolve("src-tauri/tauri.conf.json"), "utf8"));
+  assert.match(packageJson.scripts.build, /app-sync\.mjs/u);
+  assert.match(packageJson.scripts.build, /frontend:build/u);
+  assert.equal(tauriConfig.build.beforeBuildCommand, "node scripts/with-pnpm.mjs frontend:build");
+  assert.doesNotMatch(packageJson.scripts["frontend:build"], /app:sync|app-sync/u);
+});
 
 function releaseInput({ channel = "local", targetId = "macos-arm64", trustedNodeId = "" } = {}) {
   return {

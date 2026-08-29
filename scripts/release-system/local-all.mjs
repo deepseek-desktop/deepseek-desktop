@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { chmod, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, hostname, totalmem } from "node:os";
@@ -311,28 +311,54 @@ export function windowsNodeToolchain(lock, workRoot, archive) {
   };
 }
 
+export function dockerImageContract({ dockerfileSha256, nodeVersion, nodeModuleAbi, targetArch }) {
+  return createHash("sha256").update(JSON.stringify({
+    schemaVersion: 1,
+    dockerfileSha256,
+    nodeVersion,
+    nodeModuleAbi,
+    targetArch
+  })).digest("hex");
+}
+
 async function ensureDockerImage(config, rebuild) {
   const docker = commandExists("docker");
   if (!docker) throw new Error("Docker is required for the Linux x64 local worker");
   runSync(docker, ["version", "--format", "{{.Server.Version}}"], { quiet: true });
   const lock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
   const expectedIdentity = `${lock.node.version}|${lock.node.moduleAbi}|x64`;
+  const dockerfileSha256 = await sha256File(join(root, "docker", "ci", "Dockerfile"));
+  const expectedContract = dockerImageContract({
+    dockerfileSha256,
+    nodeVersion: lock.node.version,
+    nodeModuleAbi: lock.node.moduleAbi,
+    targetArch: "x64"
+  });
   const exists = spawnSync(docker, ["image", "inspect", config.image], { stdio: "ignore" }).status === 0;
   let valid = false;
   if (exists && !rebuild && !config.rebuild) {
     try {
-      valid = runSync(docker, [
+      const inspection = JSON.parse(runSync(docker, ["image", "inspect", config.image], { quiet: true }));
+      const actualContract = inspection[0]?.Config?.Labels?.["dev.deepseek.desktop.release-image-contract"];
+      const actualIdentity = runSync(docker, [
         "run", "--rm", "--platform", "linux/amd64", config.image,
         "node", "-p", "[process.versions.node,process.versions.modules,process.arch].join('|')"
-      ], { quiet: true }) === expectedIdentity;
+      ], { quiet: true });
+      valid = actualContract === expectedContract && actualIdentity === expectedIdentity;
     } catch {}
   }
   if (!valid) {
     runSync(docker, [
       "build", "--platform", "linux/amd64", "--progress", "plain",
       "--build-arg", `NODE_VERSION=${lock.node.version}`,
+      "--build-arg", `BUILD_IMAGE_CONTRACT=${expectedContract}`,
       "--file", "docker/ci/Dockerfile", "--tag", config.image, "."
     ]);
+  }
+  const inspection = JSON.parse(runSync(docker, ["image", "inspect", config.image], { quiet: true }));
+  const actualContract = inspection[0]?.Config?.Labels?.["dev.deepseek.desktop.release-image-contract"];
+  if (actualContract !== expectedContract) {
+    throw new Error(`Linux release image contract mismatch: expected ${expectedContract}, got ${actualContract || "missing"}`);
   }
   const actualIdentity = runSync(docker, [
     "run", "--rm", "--platform", "linux/amd64", config.image,
