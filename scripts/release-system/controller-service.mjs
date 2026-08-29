@@ -49,6 +49,23 @@ function assertChannel(channel) {
   return channel;
 }
 
+function assertToolchain(toolchain) {
+  const values = {
+    nodeVersion: toolchain?.nodeVersion?.trim(),
+    nodeModuleAbi: toolchain?.nodeModuleAbi?.trim(),
+    rustVersion: toolchain?.rustVersion?.trim(),
+    pnpmVersion: toolchain?.pnpmVersion?.trim(),
+    tauriCliVersion: toolchain?.tauriCliVersion?.trim()
+  };
+  if (!/^\d+\.\d+\.\d+$/u.test(values.nodeVersion || "") || !/^\d+$/u.test(values.nodeModuleAbi || "")) {
+    throw new Error("release toolchain requires an exact Node version and module ABI");
+  }
+  for (const key of ["rustVersion", "pnpmVersion", "tauriCliVersion"]) {
+    if (!values[key]) throw new Error(`release toolchain is missing ${key}`);
+  }
+  return values;
+}
+
 function assertLease(task, token, clock) {
   if (!token || task.leaseDigest !== tokenDigest(token)) throw new Error("invalid task lease");
   if (!task.leaseExpiresAt || Date.parse(task.leaseExpiresAt) <= clock()) throw new Error("task lease has expired");
@@ -101,6 +118,7 @@ export class ReleaseControllerService {
     const runtimeCommit = assertCommit(input.runtime?.commit || "", "runtime commit");
     const runtimeRef = input.runtime?.ref?.trim();
     if (!runtimeRef) throw new Error("runtime ref is required for a distributed release");
+    const toolchain = assertToolchain(input.toolchain);
     const prepared = input.prepared ? assertPreparedDescriptor(input.prepared) : null;
     if (prepared && (prepared.desktopCommit !== desktopCommit || prepared.runtimeCommit !== runtimeCommit)) {
       throw new Error("prepared release descriptor does not match release source commits");
@@ -125,6 +143,11 @@ export class ReleaseControllerService {
       }
       return { target, trustedNodeId };
     });
+    const preparedTargetIds = prepared?.targetIds?.slice().sort();
+    const requestedTargetIds = normalizedTargets.map(({ target }) => target.id).sort();
+    if (prepared && JSON.stringify(preparedTargetIds) !== JSON.stringify(requestedTargetIds)) {
+      throw new Error("prepared release target set does not match requested release targets");
+    }
     const releaseId = createId(`release-${version.replace(/[^A-Za-z0-9.-]/gu, "-")}`);
     const createdAt = nowIso(this.clock);
     const tickets = {};
@@ -159,6 +182,7 @@ export class ReleaseControllerService {
       signed,
       source: { repository, commit: desktopCommit },
       runtime: { repository: runtimeRepository, ref: runtimeRef, commit: runtimeCommit },
+      toolchain,
       ...(prepared ? { prepared } : {}),
       status: "waiting",
       createdAt,
@@ -295,6 +319,13 @@ export class ReleaseControllerService {
       }
       if (buildInfo.harness?.repository !== release.runtime.repository || buildInfo.harness?.commit !== release.runtime.commit) {
         throw new Error("BUILD-INFO Runtime source does not match release plan");
+      }
+      if (buildInfo.toolchain?.nodeVersion !== release.toolchain.nodeVersion
+        || buildInfo.toolchain?.nodeModuleAbi !== release.toolchain.nodeModuleAbi
+        || buildInfo.toolchain?.rustVersion !== release.toolchain.rustVersion
+        || buildInfo.toolchain?.pnpmVersion !== release.toolchain.pnpmVersion
+        || buildInfo.toolchain?.tauriCliVersion !== release.toolchain.tauriCliVersion) {
+        throw new Error("BUILD-INFO toolchain does not match release plan");
       }
       if (buildInfo.target !== target.triple || buildInfo.channel !== release.channel || buildInfo.signed !== release.signed) {
         throw new Error("BUILD-INFO target or release channel does not match release plan");

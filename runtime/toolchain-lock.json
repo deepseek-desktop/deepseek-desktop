@@ -1,25 +1,26 @@
 {
   "schemaVersion": 1,
   "node": {
-    "version": "24.16.0",
-    "sourceUrl": "https://nodejs.org/dist/v24.16.0/",
+    "version": "24.20.0",
+    "moduleAbi": "137",
+    "sourceUrl": "https://nodejs.org/dist/v24.20.0/",
     "license": "MIT",
     "artifacts": {
       "aarch64-apple-darwin": {
-        "archive": "node-v24.16.0-darwin-arm64.tar.gz",
-        "sha256": "39189dab4eeb15706c424af0ac08a3044c9e48f7db12a7d77f6b7aafc7dd5df6"
+        "archive": "node-v24.20.0-darwin-arm64.tar.gz",
+        "sha256": "40e5607e5ecb3db9192723776da2d75d966260fc74a7a9e731c1bd67dda96bc8"
       },
       "x86_64-apple-darwin": {
-        "archive": "node-v24.16.0-darwin-x64.tar.gz",
-        "sha256": "298b4c7b3cb80765c8703e42b90324a4ece3b6634947b89e769c3c980ab55185"
+        "archive": "node-v24.20.0-darwin-x64.tar.gz",
+        "sha256": "9e5b2644cf107befb6aefca676b96d3296bc10138096f022ed378d6233ed81f4"
       },
       "x86_64-unknown-linux-gnu": {
-        "archive": "node-v24.16.0-linux-x64.tar.gz",
-        "sha256": "2faf6a387e9b62b888e21c54f01249fb27537ffecf1842f29f4c919d0a59a0ff"
+        "archive": "node-v24.20.0-linux-x64.tar.gz",
+        "sha256": "855d581f8a4eb1a8117e3426de25fe02770592febcfb31369aee1ffbfee9e8ec"
       },
       "x86_64-pc-windows-msvc": {
-        "archive": "node-v24.16.0-win-x64.zip",
-        "sha256": "edaca9bd58ec8e92037dac4e877d52f6b8f430b81c18b57e264b4e2fb111cd56"
+        "archive": "node-v24.20.0-win-x64.zip",
+        "sha256": "6cac9ffbca8f6a47091e4b5c772e0606049c3871cb67d900c0cedde630e545ba"
       }
     }
   },

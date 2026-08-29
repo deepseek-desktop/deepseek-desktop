@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, readlink, stat } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
@@ -291,6 +292,9 @@ if (requested) {
   if (manifest.node.archiveSha256 !== lock.node.artifacts[requested]?.sha256) {
     throw new Error(`Node source archive mismatch for ${requested}`);
   }
+  if (manifest.node.version !== toolchain.node.version || manifest.node.moduleAbi !== toolchain.node.moduleAbi) {
+    throw new Error(`Node version or ABI mismatch in Runtime manifest for ${requested}`);
+  }
   for (const [name, expected] of Object.entries(lock.bundledPackages)) {
     const installed = JSON.parse(await readFile(join(root, "node_modules", name, "package.json"), "utf8"));
     if (installed.version !== expected.version) {
@@ -341,6 +345,18 @@ if (requested) {
   const sidecar = join(desktopRoot, "src-tauri", "binaries", `node-${requested}${suffix}`);
   const sidecarSha256 = createHash("sha256").update(await readFile(sidecar)).digest("hex");
   if (sidecarSha256 !== manifest.node.sha256) throw new Error("Node sidecar checksum does not match the runtime manifest");
+  const sidecarIdentity = spawnSync(sidecar, ["-p", "JSON.stringify({version:process.versions.node,moduleAbi:process.versions.modules})"], {
+    encoding: "utf8",
+    windowsHide: true
+  });
+  if (sidecarIdentity.error) throw sidecarIdentity.error;
+  if (sidecarIdentity.status !== 0) {
+    throw new Error(`Node sidecar identity check failed: ${(sidecarIdentity.stderr || sidecarIdentity.stdout).trim()}`);
+  }
+  const actualNode = JSON.parse(sidecarIdentity.stdout.trim());
+  if (actualNode.version !== toolchain.node.version || actualNode.moduleAbi !== toolchain.node.moduleAbi) {
+    throw new Error(`Node sidecar is ${actualNode.version} ABI ${actualNode.moduleAbi}, expected ${toolchain.node.version} ABI ${toolchain.node.moduleAbi}`);
+  }
   await verifyPatches(join(root, "node_modules"));
   console.log(`runtime manifest verified: ${requested}, ${manifest.files.length} files`);
 }

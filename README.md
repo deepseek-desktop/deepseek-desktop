@@ -80,7 +80,7 @@ Rust Runtime 管理器
 
 ## 工具链
 
-- Node.js `24.16.0`
+- Node.js `24.20.0`
 - pnpm `11.7.0`
 - Rust `1.98.0`
 - Tauri CLI `2.11.4`
@@ -164,15 +164,19 @@ Apple Silicon Mac 也可以把同一台物理电脑上的原生 macOS、Rosetta�
 corepack pnpm@11.7.0 release:local-all -- --check
 ```
 
+编排器会为 macOS ARM64、macOS x64、Linux x64 和 Windows x64 自动下载或准备 `runtime/toolchain-lock.json` 精确固定的 Node `24.20.0`（module ABI `137`），每个 Worker 都输出并校验实际版本，不读取宿主机或虚拟机的全局 Node。Windows 虚拟机只需准备 Git、Parallels Tools 和 Visual Studio C++ x64 Build Tools。四环境预检并行执行且不会阻塞本地 TLS Controller。
+
 检查通过且版本 tag 已存在、指向当前干净 HEAD 并已推送到源码仓库后执行：
 
 ```bash
 corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --concurrency 2
 ```
 
-该入口先执行一次发行准备门禁，再启动四个 Worker。准备凭据以签名和 SHA-256 绑定 tag、Desktop/Runtime 完整 commit、生成配置、Runtime 补丁与 lock、工具链、channel、dirty 状态和源码树；Worker 只有严格验证凭据和当前任务一致后，才复用 `desktop:package` 的 prepared 模式执行目标平台 Runtime 组装、smoke、Tauri 打包与制品审计。无效、损坏、过期或来源漂移的凭据不会跳过门禁。
+该入口先执行一次发行准备门禁，再启动四个 Worker。准备凭据以签名和 SHA-256 绑定 tag、Desktop/Runtime 完整 commit、目标集合、生成配置、Runtime 补丁与 lock、精确 Node/ABI 与其他工具链、channel、dirty 状态、源码树和 24 小时有效期；Worker 只有严格验证凭据和当前任务一致后，才复用 `desktop:package` 的 prepared 模式执行目标平台 Runtime 组装、smoke、Tauri 打包与制品审计。无效、损坏、过期或来源漂移的凭据不会跳过门禁。
 
 Runtime 闭包和 Cargo 输出使用按 commit、配置、lock、Node ABI、目标 triple 与签名模式隔离的内容寻址缓存；pnpm store、Playwright、Docker 镜像/volume 和固定工具链也会复用。默认并发会根据内存自适应，16 GB Mac 建议保持 `--concurrency 2`，避免原生、Rosetta、Docker 和 Parallels 同时争抢内存。失败重跑只处理失败目标，已完成目标和已验证缓存不重建；上传失败可直接重试发布，无需重新编译。
+
+“最新 LTS”只用于维护者显式升级工具链锁：确认官方发行信息、更新 `runtime/toolchain-lock.json` 的版本、ABI、四平台归档与 SHA-256，并完成四环境验证。任何一次具体构建和发行都只读取精确 lock，不在构建时联网解析或自动漂移到未来 Node 版本。
 
 单机四环境会从当前干净、tag 锁定的 HEAD 生成经 Git 校验的本地 source bundle，Rosetta、Docker 和 Parallels Worker 不依赖宿主机 SSH agent 或代码托管平台在线状态。公共 Runtime 部署同时携带四目标所需的 Koffi、Sharp/libvips 等可选原生包，Worker 再按目标裁剪，准备主机架构不会决定其他平台闭包。
 

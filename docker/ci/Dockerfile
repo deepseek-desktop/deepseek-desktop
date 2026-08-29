@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/playwright:v1.62.1-noble
 
-ARG NODE_VERSION=24.16.0
+ARG NODE_VERSION=24.20.0
 ARG TARGETARCH
 
 RUN apt-get update \

@@ -40,7 +40,7 @@ test("uses built-in defaults without an env file", async () => {
     credentialProtocolVersion: 1
   });
   assert.deepEqual(config.release, { channel: "local", signed: false });
-  assert.equal(config.toolchain.nodeVersion, "24.16.0");
+  assert.equal(config.toolchain.nodeVersion, "24.20.0");
   assert.equal(config.toolchain.rustVersion, "1.98.0");
 });
 

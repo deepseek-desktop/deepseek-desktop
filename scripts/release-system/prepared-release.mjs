@@ -4,7 +4,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
 import process from "node:process";
 
-import { atomicWriteJson, sha256File } from "./common.mjs";
+import { atomicWriteJson, loadTargets, sha256File } from "./common.mjs";
 import { loadBuildConfig } from "../lib/build-config.mjs";
 import { parseReleaseTag } from "../lib/release-tag.mjs";
 
@@ -18,6 +18,7 @@ const payloadEntries = Object.freeze([
   "runtime-lock.json",
   "runtime/prepared"
 ]);
+const receiptLifetimeMs = 24 * 60 * 60_000;
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -98,6 +99,13 @@ function assertPreparedDescriptor(value) {
   if (!commitPattern.test(value.desktopCommit || "") || !commitPattern.test(value.runtimeCommit || "")) {
     throw new Error("prepared release commits must be full Git commits");
   }
+  if (!Array.isArray(value.targetIds) || value.targetIds.length === 0 || new Set(value.targetIds).size !== value.targetIds.length) {
+    throw new Error("prepared release must bind a unique target set");
+  }
+  if (!Number.isFinite(Date.parse(value.preparedAt || "")) || !Number.isFinite(Date.parse(value.expiresAt || ""))) {
+    throw new Error("prepared release timestamps are invalid");
+  }
+  if (Date.parse(value.expiresAt) <= Date.now()) throw new Error("prepared release descriptor has expired");
   return value;
 }
 
@@ -130,7 +138,7 @@ async function restorePayload(payloadRoot, generatedRoot) {
   }
 }
 
-function preparationInput({ tag, version, channel, signed, desktopCommit, runtime, trackedSourceSha256, configSha256, lock }) {
+function preparationInput({ tag, version, channel, signed, desktopCommit, runtime, trackedSourceSha256, configSha256, lock, targetIds }) {
   return {
     schemaVersion: 1,
     tag,
@@ -139,6 +147,7 @@ function preparationInput({ tag, version, channel, signed, desktopCommit, runtim
     signed,
     desktopCommit,
     runtime: { repository: runtime.repository, ref: runtime.ref, commit: runtime.commit },
+    targetIds,
     trackedSourceSha256,
     configSha256,
     node: { version: process.versions.node, abi: process.versions.modules },
@@ -168,6 +177,7 @@ export async function prepareRelease({
   channel = "community",
   signed = false,
   cacheRoot = join(root, "target", "local-release", "prepared"),
+  targetIds = [],
   runChecks = true
 }) {
   const workspace = resolve(root);
@@ -180,9 +190,18 @@ export async function prepareRelease({
     throw new Error(`release tag ${tag} must point at current HEAD before preparation`);
   }
   const lock = JSON.parse(await readFile(join(workspace, "runtime", "toolchain-lock.json"), "utf8"));
+  if (process.versions.node !== lock.node?.version || process.versions.modules !== lock.node?.moduleAbi) {
+    throw new Error(`release preparation requires Node ${lock.node?.version} ABI ${lock.node?.moduleAbi}; current Node is ${process.versions.node} ABI ${process.versions.modules}`);
+  }
   const runtime = lock.runtimeSource;
   if (!runtime?.repository || !runtime?.ref || !commitPattern.test(runtime?.commit || "")) {
     throw new Error("runtime/toolchain-lock.json has no immutable Runtime source");
+  }
+  const targetConfig = await loadTargets();
+  const selectedTargetIds = (targetIds.length > 0 ? targetIds : targetConfig.targets.map(target => target.id)).slice().sort();
+  if (new Set(selectedTargetIds).size !== selectedTargetIds.length
+    || selectedTargetIds.some(targetId => !targetConfig.byId.has(targetId))) {
+    throw new Error("release preparation contains an unknown or duplicate target");
   }
   const environment = {
     ...process.env,
@@ -206,7 +225,8 @@ export async function prepareRelease({
     runtime,
     trackedSourceSha256,
     configSha256,
-    lock
+    lock,
+    targetIds: selectedTargetIds
   });
   const cacheKey = sha256Bytes(canonicalBytes(cacheKeyInput));
   const destination = join(cacheRoot, cacheKey);
@@ -230,7 +250,10 @@ export async function prepareRelease({
       trackedSourceSha256,
       generatedPayloadSha256: existingPayload.generatedPayloadSha256,
       desktopCommit,
-      runtimeCommit: runtime.commit
+      runtimeCommit: runtime.commit,
+      targetIds: existingPayload.targetIds,
+      preparedAt: existingPayload.preparedAt,
+      expiresAt: existingPayload.expiresAt
     });
     await restorePayload(payloadRoot, generatedRoot);
     await atomicWriteJson(join(destination, "descriptor.json"), existingDescriptor);
@@ -277,12 +300,14 @@ export async function prepareRelease({
   }
   const files = await collectTree(payloadRoot);
   const generatedPayloadSha256 = sha256Bytes(canonicalBytes(files));
+  const preparedAt = new Date();
   const payload = {
     ...cacheKeyInput,
     cacheKey,
     generatedPayloadSha256,
     files,
-    preparedAt: new Date().toISOString()
+    preparedAt: preparedAt.toISOString(),
+    expiresAt: new Date(preparedAt.getTime() + receiptLifetimeMs).toISOString()
   };
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const receipt = {
@@ -304,7 +329,10 @@ export async function prepareRelease({
     trackedSourceSha256,
     generatedPayloadSha256,
     desktopCommit,
-    runtimeCommit: runtime.commit
+    runtimeCommit: runtime.commit,
+    targetIds: payload.targetIds,
+    preparedAt: payload.preparedAt,
+    expiresAt: payload.expiresAt
   });
   await atomicWriteJson(join(destination, "descriptor.json"), descriptor);
   return { descriptor, directory: destination, receiptPath: join(destination, "receipt.json"), timings, cacheHit: false };
@@ -328,6 +356,11 @@ export async function restorePreparedRelease({ root, preparedRoot, expectedDescr
   }
   if (payload.tag !== plan.tag || payload.version !== plan.version || payload.channel !== plan.channel || payload.signed !== plan.signed) {
     throw new Error("prepared release identity does not match controller plan");
+  }
+  const planTargetIds = plan.targets.map(target => target.id).slice().sort();
+  if (JSON.stringify(payload.targetIds) !== JSON.stringify(planTargetIds)
+    || JSON.stringify(descriptor.targetIds) !== JSON.stringify(planTargetIds)) {
+    throw new Error("prepared release target set does not match controller plan");
   }
   const workspace = resolve(root);
   if (git(workspace, ["rev-parse", "HEAD"]) !== plan.source.commit) throw new Error("prepared worker checkout commit changed");

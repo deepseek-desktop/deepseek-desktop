@@ -12,10 +12,14 @@ import { restorePreparedRelease } from "./release-system/prepared-release.mjs";
 const root = resolve(import.meta.dirname, "..");
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const pnpmVersion = packageJson.packageManager?.replace(/^pnpm@/u, "");
+const toolchainLock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
 const resolvedConfig = await loadBuildConfig(root);
 const channel = resolvedConfig.release.channel;
 if (!pnpmVersion) throw new Error("packageManager must declare a pinned pnpm version");
 if (!new Set(["local", "community", "stable"]).has(channel)) throw new Error(`unsupported release channel ${channel}`);
+if (process.versions.node !== toolchainLock.node.version || process.versions.modules !== toolchainLock.node.moduleAbi) {
+  throw new Error(`desktop packaging requires Node ${toolchainLock.node.version} ABI ${toolchainLock.node.moduleAbi}; current Node is ${process.versions.node} ABI ${process.versions.modules}`);
+}
 
 const targets = {
   "darwin-arm64": { triple: "aarch64-apple-darwin", bundles: "app", extensions: [".dmg"], expected: 1, dmgArch: "aarch64" },
@@ -113,10 +117,11 @@ if (preparedMode) {
 const config = JSON.parse(await readFile(join(root, "target/generated/app-config.json"), "utf8"));
 const runtime = JSON.parse(await readFile(join(root, "target/generated/runtime-lock.json"), "utf8"));
 const runtimeSource = JSON.parse(await readFile(join(root, "target/generated/runtime-source.json"), "utf8"));
-const toolchainLock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
 const cargoCacheRoot = resolve(process.env.DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT?.trim() || join(root, "src-tauri", "target"));
 const cargoCacheKey = createHash("sha256").update(JSON.stringify({
   target: target.triple,
+  nodeVersion: toolchainLock.node.version,
+  nodeModuleAbi: toolchainLock.node.moduleAbi,
   rust: toolchainLock.toolchain?.rust,
   channel,
   signed: resolvedConfig.release.signed,
@@ -201,6 +206,13 @@ await writeFile(buildInfoPath, `${JSON.stringify({
     repository: config.repository
   },
   desktop: { commit: git(["rev-parse", "HEAD"]), dirty },
+  toolchain: {
+    nodeVersion: toolchainLock.node.version,
+    nodeModuleAbi: toolchainLock.node.moduleAbi,
+    rustVersion: toolchainLock.toolchain?.rust,
+    pnpmVersion: toolchainLock.toolchain?.pnpm,
+    tauriCliVersion: toolchainLock.toolchain?.tauriCli
+  },
   harness: {
     repository: runtimeSource.repository,
     requestedRef: runtimeSource.requestedRef,

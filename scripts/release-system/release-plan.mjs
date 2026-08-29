@@ -48,6 +48,13 @@ export async function createReleasePlan({
     signed,
     source: { repository, tag, commit },
     runtime,
+    toolchain: {
+      nodeVersion: lock.node.version,
+      nodeModuleAbi: lock.node.moduleAbi,
+      rustVersion: lock.toolchain.rust,
+      pnpmVersion: lock.toolchain.pnpm,
+      tauriCliVersion: lock.toolchain.tauriCli
+    },
     ...(prepared ? { prepared } : {}),
     targets: targetIds.map(id => ({ id, trustedNodeId: trustedNodes.get(id) || "" }))
   };

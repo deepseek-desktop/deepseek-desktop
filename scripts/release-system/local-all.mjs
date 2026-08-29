@@ -3,9 +3,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmod, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, hostname, totalmem } from "node:os";
 import { isIP } from "node:net";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   assertNodeId,
@@ -233,24 +233,17 @@ function validateArguments(parsed) {
   if (unknown.length > 0) throw new Error(`unknown release:local-all options: ${unknown.join(", ")}`);
 }
 
-async function ensureRosettaNode(runRoot) {
-  if (process.platform !== "darwin" || process.arch !== "arm64") {
-    throw new Error("release:local-all currently requires an Apple Silicon macOS host");
-  }
-  runSync("/usr/bin/arch", ["-x86_64", "/usr/bin/true"], { quiet: true });
+async function ensureNodeArchive(target) {
   const lock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
-  const artifact = lock.node?.artifacts?.["x86_64-apple-darwin"];
+  const artifact = lock.node?.artifacts?.[target];
   const version = lock.node?.version;
-  if (!version || !artifact?.archive || !artifact?.sha256) throw new Error("toolchain lock has no macOS x64 Node artifact");
-  const toolchainRoot = join(root, "target", "local-release", "toolchains", `node-v${version}-darwin-x64`);
-  const node = join(toolchainRoot, "bin", "node");
+  if (!version || !artifact?.archive || !artifact?.sha256) throw new Error(`toolchain lock has no Node artifact for ${target}`);
+  const downloadRoot = join(root, "target", "local-release", "toolchains", "downloads");
+  await mkdir(downloadRoot, { recursive: true });
+  const archive = join(downloadRoot, artifact.archive);
   try {
-    const architecture = runSync("/usr/bin/arch", ["-x86_64", node, "-p", "process.arch"], { quiet: true });
-    if (architecture === "x64") return node;
-  } catch {
-    await rm(toolchainRoot, { recursive: true, force: true });
-  }
-  const archive = join(runRoot, artifact.archive);
+    if (await sha256File(archive) === artifact.sha256) return { lock, artifact, archive, version };
+  } catch {}
   const partial = `${archive}.partial`;
   await rm(partial, { force: true });
   runSync("curl", [
@@ -259,30 +252,94 @@ async function ensureRosettaNode(runRoot) {
   ]);
   if (await sha256File(partial) !== artifact.sha256) {
     await rm(partial, { force: true });
-    throw new Error("downloaded macOS x64 Node archive failed SHA-256 verification");
+    throw new Error(`downloaded ${target} Node archive failed SHA-256 verification`);
   }
   await rename(partial, archive);
+  return { lock, artifact, archive, version };
+}
+
+function inspectMacNode(node, architecture, lock) {
+  const expression = "JSON.stringify({arch:process.arch,version:process.versions.node,abi:process.versions.modules})";
+  const output = architecture === "x64"
+    ? runSync("/usr/bin/arch", ["-x86_64", node, "-p", expression], { quiet: true })
+    : runSync(node, ["-p", expression], { quiet: true });
+  const identity = JSON.parse(output);
+  if (identity.arch !== architecture) throw new Error(`downloaded macOS Node reports ${identity.arch}, expected ${architecture}`);
+  if (identity.version !== lock.node.version) throw new Error(`downloaded macOS Node reports ${identity.version}, expected ${lock.node.version}`);
+  if (identity.abi !== lock.node.moduleAbi) throw new Error(`downloaded macOS Node ABI reports ${identity.abi}, expected ${lock.node.moduleAbi}`);
+  return identity;
+}
+
+async function ensureMacNode(target, architecture) {
+  if (process.platform !== "darwin" || process.arch !== "arm64") {
+    throw new Error("release:local-all currently requires an Apple Silicon macOS host");
+  }
+  if (architecture === "x64") runSync("/usr/bin/arch", ["-x86_64", "/usr/bin/true"], { quiet: true });
+  const { lock, archive, version } = await ensureNodeArchive(target);
+  const toolchainRoot = join(root, "target", "local-release", "toolchains", `node-v${version}-darwin-${architecture}`);
+  const node = join(toolchainRoot, "bin", "node");
+  try {
+    inspectMacNode(node, architecture, lock);
+    return node;
+  } catch {
+    await rm(toolchainRoot, { recursive: true, force: true });
+  }
   const temporary = `${toolchainRoot}.${process.pid}.tmp`;
   await rm(temporary, { recursive: true, force: true });
   await mkdir(temporary, { recursive: true });
   runSync("tar", ["-xzf", archive, "--strip-components", "1", "-C", temporary]);
   await rm(toolchainRoot, { recursive: true, force: true });
   await rename(temporary, toolchainRoot);
-  const architecture = runSync("/usr/bin/arch", ["-x86_64", node, "-p", "process.arch"], { quiet: true });
-  if (architecture !== "x64") throw new Error("downloaded Rosetta Node does not report x64 architecture");
+  inspectMacNode(node, architecture, lock);
   return node;
+}
+
+export function windowsNodeToolchain(lock, workRoot, archive) {
+  const target = "x86_64-pc-windows-msvc";
+  const version = lock.node?.version;
+  const artifact = lock.node?.artifacts?.[target];
+  if (!version || !artifact?.archive || !artifact?.sha256) throw new Error(`toolchain lock has no Node artifact for ${target}`);
+  const installationRoot = win32.join(workRoot, "node", `node-v${version}-win-x64`);
+  return {
+    archive,
+    expectedSha256: artifact.sha256,
+    expectedModuleAbi: lock.node.moduleAbi,
+    installationRoot,
+    marker: win32.join(installationRoot, ".archive-sha256"),
+    node: win32.join(installationRoot, "node.exe"),
+    version
+  };
 }
 
 async function ensureDockerImage(config, rebuild) {
   const docker = commandExists("docker");
   if (!docker) throw new Error("Docker is required for the Linux x64 local worker");
   runSync(docker, ["version", "--format", "{{.Server.Version}}"], { quiet: true });
+  const lock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
+  const expectedIdentity = `${lock.node.version}|${lock.node.moduleAbi}|x64`;
   const exists = spawnSync(docker, ["image", "inspect", config.image], { stdio: "ignore" }).status === 0;
-  if (!exists || rebuild || config.rebuild) {
+  let valid = false;
+  if (exists && !rebuild && !config.rebuild) {
+    try {
+      valid = runSync(docker, [
+        "run", "--rm", "--platform", "linux/amd64", config.image,
+        "node", "-p", "[process.versions.node,process.versions.modules,process.arch].join('|')"
+      ], { quiet: true }) === expectedIdentity;
+    } catch {}
+  }
+  if (!valid) {
     runSync(docker, [
       "build", "--platform", "linux/amd64", "--progress", "plain",
+      "--build-arg", `NODE_VERSION=${lock.node.version}`,
       "--file", "docker/ci/Dockerfile", "--tag", config.image, "."
     ]);
+  }
+  const actualIdentity = runSync(docker, [
+    "run", "--rm", "--platform", "linux/amd64", config.image,
+    "node", "-p", "[process.versions.node,process.versions.modules,process.arch].join('|')"
+  ], { quiet: true });
+  if (actualIdentity !== expectedIdentity) {
+    throw new Error(`Linux release image Node identity mismatch: expected ${expectedIdentity}, got ${actualIdentity}`);
   }
   return docker;
 }
@@ -325,7 +382,10 @@ function powershellLiteral(value) {
 }
 
 async function writeWindowsScripts(runRoot, settings) {
+  const { lock, archive } = await ensureNodeArchive("x86_64-pc-windows-msvc");
   const ca = macPathToParallelsShared(settings.caFile, settings.share);
+  const windowsArchive = macPathToParallelsShared(archive, settings.share);
+  const nodeToolchain = windowsNodeToolchain(lock, settings.workRoot, windowsArchive);
   const worker = macPathToParallelsShared(join(root, "scripts", "release-system", "cli.mjs"), settings.share);
   const healthProbe = macPathToParallelsShared(join(root, "scripts", "release-system", "health-probe.mjs"), settings.share);
   const preflightPath = join(runRoot, "windows-preflight.ps1");
@@ -336,22 +396,39 @@ async function writeWindowsScripts(runRoot, settings) {
     "$ErrorActionPreference = 'Stop'",
     `$worker = ${powershellLiteral(worker)}`,
     `if (-not (Test-Path -LiteralPath $worker)) { throw 'Parallels shared worker script is unavailable' }`,
-    "$node = Get-Command node.exe -ErrorAction Stop",
+    `$nodeArchive = ${powershellLiteral(nodeToolchain.archive)}`,
+    `$nodeRoot = ${powershellLiteral(nodeToolchain.installationRoot)}`,
+    `$nodeMarker = ${powershellLiteral(nodeToolchain.marker)}`,
+    `$node = ${powershellLiteral(nodeToolchain.node)}`,
+    `$expectedNodeSha256 = ${powershellLiteral(nodeToolchain.expectedSha256)}`,
+    "if (-not (Test-Path -LiteralPath $nodeArchive)) { throw 'Locked Windows Node archive is unavailable' }",
+    "$actualNodeSha256 = (Get-FileHash -LiteralPath $nodeArchive -Algorithm SHA256).Hash.ToLowerInvariant()",
+    "if ($actualNodeSha256 -ne $expectedNodeSha256) { throw 'Locked Windows Node archive failed SHA-256 verification' }",
+    "$nodeReady = (Test-Path -LiteralPath $node) -and (Test-Path -LiteralPath $nodeMarker) -and ((Get-Content -LiteralPath $nodeMarker -Raw).Trim() -eq $expectedNodeSha256)",
+    "if (-not $nodeReady) {",
+    "  Remove-Item -LiteralPath $nodeRoot -Recurse -Force -ErrorAction SilentlyContinue",
+    "  New-Item -ItemType Directory -Path (Split-Path -Parent $nodeRoot) -Force | Out-Null",
+    "  Expand-Archive -LiteralPath $nodeArchive -DestinationPath (Split-Path -Parent $nodeRoot) -Force",
+    "  Set-Content -LiteralPath $nodeMarker -Value $expectedNodeSha256 -NoNewline",
+    "}",
+    `$env:Path = ${powershellLiteral(`${nodeToolchain.installationRoot};`)} + $env:Path`,
     "$git = Get-Command git.exe -ErrorAction Stop",
-    "$corepack = Get-Command corepack.cmd -ErrorAction Stop",
-    "if ((& $node.Source -p 'process.arch').Trim() -ne 'x64') { throw 'Windows worker Node must report x64' }",
+    "if ((& $node -p 'process.arch').Trim() -ne 'x64') { throw 'Windows worker Node must report x64' }",
+    `if ((& $node --version).Trim() -ne ${powershellLiteral(`v${nodeToolchain.version}`)}) { throw 'Windows worker Node version does not match the toolchain lock' }`,
+    `if ((& $node -p 'process.versions.modules').Trim() -ne ${powershellLiteral(nodeToolchain.expectedModuleAbi)}) { throw 'Windows worker Node ABI does not match the toolchain lock' }`,
     `$vswhere = ${powershellLiteral(vsWhere)}`,
     "if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Visual Studio Build Tools with vswhere are required' }",
     "$install = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()",
     "if (-not $install) { throw 'Visual Studio C++ x64 tools are required' }",
     "$vsDevCmd = Join-Path $install 'Common7\\Tools\\VsDevCmd.bat'",
     "if (-not (Test-Path -LiteralPath $vsDevCmd)) { throw 'VsDevCmd.bat is unavailable' }",
-    "Write-Output ('Windows x64 prerequisites are ready: ' + $node.Source)"
+    "Write-Output ('Windows x64 prerequisites are ready: ' + $node)"
   ].join("\r\n"));
   await writeFile(healthPath, [
     "$ErrorActionPreference = 'Stop'",
     `$env:NODE_EXTRA_CA_CERTS = ${powershellLiteral(ca)}`,
-    `& node.exe ${powershellLiteral(healthProbe)} ${powershellLiteral(settings.controller)}`,
+    `$env:Path = ${powershellLiteral(`${nodeToolchain.installationRoot};`)} + $env:Path`,
+    `& ${powershellLiteral(nodeToolchain.node)} ${powershellLiteral(healthProbe)} ${powershellLiteral(settings.controller)}`,
     "exit $LASTEXITCODE"
   ].join("\r\n"));
   const workerArguments = [
@@ -373,10 +450,11 @@ async function writeWindowsScripts(runRoot, settings) {
     `$env:PLAYWRIGHT_BROWSERS_PATH = ${powershellLiteral(`${settings.workRoot}\\playwright`)}`,
     `$env:DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT = ${powershellLiteral(`${settings.workRoot}\\cargo`)}`,
     `$env:DEEPSEEK_DESKTOP_RUNTIME_TARGET_CACHE_ROOT = ${powershellLiteral(`${settings.workRoot}\\runtime-target-cache`)}`,
+    `$env:Path = ${powershellLiteral(`${nodeToolchain.installationRoot};`)} + $env:Path`,
     `$vswhere = ${powershellLiteral(vsWhere)}`,
     "$install = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()",
     "$vsDevCmd = Join-Path $install 'Common7\\Tools\\VsDevCmd.bat'",
-    `$command = 'call \"' + $vsDevCmd + '\" -arch=x64 -host_arch=x64 && node.exe ${cmdArguments}'`,
+    `$command = 'call \"' + $vsDevCmd + '\" -arch=x64 -host_arch=x64 && \"${nodeToolchain.node}\" ${cmdArguments}'`,
     "& cmd.exe /d /s /c $command",
     "exit $LASTEXITCODE"
   ].join("\r\n"));
@@ -465,6 +543,18 @@ export async function main() {
     throw new Error("release:local-all currently coordinates four environments from an Apple Silicon macOS host");
   }
 
+  const arm64Node = await ensureMacNode("aarch64-apple-darwin", "arm64");
+  if (process.env.DEEPSEEK_DESKTOP_RELEASE_NODE !== arm64Node) {
+    runSync(arm64Node, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
+      env: {
+        ...process.env,
+        DEEPSEEK_DESKTOP_RELEASE_NODE: arm64Node,
+        PATH: `${dirname(arm64Node)}:${process.env.PATH || ""}`
+      }
+    });
+    return;
+  }
+
   const checkOnly = flag(parsed, "check");
   const requestedConcurrency = option(parsed, "concurrency");
   const concurrency = requestedConcurrency ? Number(requestedConcurrency) : (totalmem() <= 20 * 1024 ** 3 ? 2 : 3);
@@ -473,7 +563,9 @@ export async function main() {
   const runId = `${new Date().toISOString().replace(/[:.]/gu, "-")}-${randomUUID().slice(0, 8)}`;
   const runRoot = join(root, "target", "local-release", "runs", runId);
   await mkdir(runRoot, { recursive: true });
-  const x64Node = requestedTargets.includes("macos-x64") ? await ensureRosettaNode(runRoot) : "";
+  const x64Node = requestedTargets.includes("macos-x64")
+    ? await ensureMacNode("x86_64-apple-darwin", "x64")
+    : "";
   const docker = requestedTargets.includes("linux-x64")
     ? await ensureDockerImage(config.docker, flag(parsed, "rebuild-docker"))
     : "";
@@ -523,8 +615,8 @@ export async function main() {
   try {
     const probes = [];
     if (requestedTargets.includes("macos-arm64")) {
-      probes.push(run(process.execPath, [join(root, "scripts/release-system/health-probe.mjs"), controllers["macos-arm64"]], {
-        env: workerEnvironment(tls.caCert, "macos-arm64"), label: "macos-arm64 probe"
+      probes.push(run(arm64Node, [join(root, "scripts/release-system/health-probe.mjs"), controllers["macos-arm64"]], {
+        env: workerEnvironment(tls.caCert, "macos-arm64", arm64Node), label: "macos-arm64 probe"
       }));
     }
     if (requestedTargets.includes("macos-x64")) {
@@ -538,10 +630,14 @@ export async function main() {
       }));
     }
     if (windows) {
-      runSync(windows.prlctl, ["exec", windows.vmName, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", windowsScripts.preflight]);
-      probes.push(run(windows.prlctl, ["exec", windows.vmName, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", windowsScripts.health], {
-        label: "windows-x64 Parallels probe"
-      }));
+      probes.push((async () => {
+        await run(windows.prlctl, ["exec", windows.vmName, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", windowsScripts.preflight], {
+          label: "windows-x64 Parallels preflight"
+        });
+        return run(windows.prlctl, ["exec", windows.vmName, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", windowsScripts.health], {
+          label: "windows-x64 Parallels probe"
+        });
+      })());
     }
     await Promise.all(probes);
     if (checkOnly) {
@@ -554,7 +650,7 @@ export async function main() {
     const channel = option(parsed, "channel", "community");
     const signed = flag(parsed, "signed");
     const preparationStartedAt = Date.now();
-    const preparation = await prepareRelease({ root, tag, channel, signed });
+    const preparation = await prepareRelease({ root, tag, channel, signed, targetIds: requestedTargets });
     const preparationDurationMs = Date.now() - preparationStartedAt;
     const runners = new Map([
       ["macos-arm64", "native"],
@@ -598,8 +694,8 @@ export async function main() {
         ...(keepWork ? ["--keep-work"] : [])
       ];
       if (targetId === "macos-arm64") {
-        return run(process.execPath, commonArgs, {
-          env: workerEnvironment(tls.caCert, targetId), input: `${tickets[targetId]}\n`, label: targetId
+        return run(arm64Node, commonArgs, {
+          env: workerEnvironment(tls.caCert, targetId, arm64Node), input: `${tickets[targetId]}\n`, label: targetId
         });
       }
       if (targetId === "macos-x64") {
@@ -707,8 +803,10 @@ export async function main() {
         const buildInfo = JSON.parse(await readFile(join(controllerRoot, "incoming", release.id, target.targetId, `BUILD-INFO.${triple}.json`), "utf8"));
         target.performance = buildInfo.performance || null;
         target.prepared = buildInfo.prepared || null;
+        target.toolchain = buildInfo.toolchain || null;
       } catch {
         target.performance = null;
+        target.toolchain = null;
       }
     }
     await atomicWriteJson(join(runRoot, "summary.json"), summary);

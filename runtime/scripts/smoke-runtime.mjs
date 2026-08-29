@@ -9,6 +9,22 @@ const runtimeRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(runtimeRoot, "..");
 const lock = JSON.parse(await readFile(join(desktopRoot, "target", "generated", "runtime-lock.json"), "utf8"));
 
+function diagnosticTail(value) {
+  const safeLines = String(value)
+    .split("\n")
+    .filter(line => !/(?:authorization|credential|api[-_ ]?key|password|secret|token)/iu.test(line))
+    .map(line => line
+      .replace(/(?:sk|api)[-_][A-Za-z0-9._-]{12,}/giu, "[REDACTED]")
+      .replace(/Bearer\s+\S+/giu, "Bearer [REDACTED]"));
+  return safeLines.join("\n").slice(-8_192).trim();
+}
+
+function withRuntimeDiagnostic(error, output, cycle) {
+  const tail = diagnosticTail(output);
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(`runtime failed after readiness on cycle ${cycle}: ${message}${tail ? `\n${tail}` : ""}`);
+}
+
 function hostTarget() {
   const targets = {
     "darwin-arm64": "aarch64-apple-darwin",
@@ -248,7 +264,12 @@ async function runCycle(index) {
     const readyUrl = new URL(ready);
     if (readyUrl.hostname !== "127.0.0.1" || !readyUrl.port) throw new Error(`unexpected readiness origin ${ready}`);
     if (!readyUrl.searchParams.get("token")) throw new Error("runtime readiness URL is missing its browser session token");
-    const exchange = await waitForLoopback(ready, { child });
+    let exchange;
+    try {
+      exchange = await waitForLoopback(ready, { child });
+    } catch (error) {
+      throw withRuntimeDiagnostic(error, output, index);
+    }
     const setCookie = exchange.headers["set-cookie"];
     const cookieHeader = Array.isArray(setCookie) ? setCookie[0] : setCookie;
     const cookie = cookieHeader?.split(";", 1)[0];

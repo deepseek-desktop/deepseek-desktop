@@ -1692,7 +1692,7 @@ mod tests {
             desktop_commit: "b".repeat(40),
             credential_provider_version: "1.0.0".to_owned(),
             market_version: "1.0.0".to_owned(),
-            node_version: "24.16.0".to_owned(),
+            node_version: "24.20.0".to_owned(),
             node_module_abi: "137".to_owned(),
             allowed_origins: Vec::new(),
             artifacts: HashMap::from([(
@@ -1868,7 +1868,7 @@ mod tests {
             target: env!("DEEPSEEK_DESKTOP_TARGET").to_owned(),
             entry: "entry.js".to_owned(),
             node_file: "node".to_owned(),
-            node_version: "24.16.0".to_owned(),
+            node_version: "24.20.0".to_owned(),
             node_module_abi: "137".to_owned(),
             runtime_protocol_version: 1,
             credential_protocol_version: 1,
@@ -1876,9 +1876,9 @@ mod tests {
             market_version: "1.0.0".to_owned(),
             artifact_sha256: "a".repeat(64),
         };
-        assert!(validate_node_identity("v24.16.0\n", "137\n", &pointer).is_ok());
+        assert!(validate_node_identity("v24.20.0\n", "137\n", &pointer).is_ok());
         assert!(validate_node_identity("v24.16.1\n", "137\n", &pointer).is_err());
-        assert!(validate_node_identity("v24.16.0\n", "138\n", &pointer).is_err());
+        assert!(validate_node_identity("v24.20.0\n", "138\n", &pointer).is_err());
         assert!(validate_pointer(&pointer).is_ok());
         let mut unsafe_pointer = pointer.clone();
         unsafe_pointer.entry = "../entry.js".to_owned();
@@ -1936,7 +1936,7 @@ mod tests {
             target: env!("DEEPSEEK_DESKTOP_TARGET").to_owned(),
             entry: "entry.js".to_owned(),
             node_file: "node".to_owned(),
-            node_version: "24.16.0".to_owned(),
+            node_version: "24.20.0".to_owned(),
             node_module_abi: "137".to_owned(),
             runtime_protocol_version: 1,
             credential_protocol_version: 1,

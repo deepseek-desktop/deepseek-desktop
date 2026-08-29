@@ -12,7 +12,7 @@ import { ReleaseControllerService } from "../release-system/controller-service.m
 import { requestJson, uploadArtifact } from "../release-system/http-client.mjs";
 import { startReleaseServer } from "../release-system/http-server.mjs";
 import { ReleaseStateStore } from "../release-system/state-store.mjs";
-import { loadLocalAllConfig, macPathToParallelsShared, runWithConcurrency } from "../release-system/local-all.mjs";
+import { loadLocalAllConfig, macPathToParallelsShared, runWithConcurrency, windowsNodeToolchain } from "../release-system/local-all.mjs";
 import {
   contentCacheKey,
   createContentCacheManifest,
@@ -27,6 +27,13 @@ const desktopCommit = "a".repeat(40);
 const runtimeCommit = "b".repeat(40);
 const sourceRepository = "https://example.invalid/deepseek-desktop.git";
 const runtimeRepository = "https://example.invalid/deepseek-harness.git";
+const releaseToolchain = Object.freeze({
+  nodeVersion: "24.20.0",
+  nodeModuleAbi: "137",
+  rustVersion: "1.98.0",
+  pnpmVersion: "11.7.0",
+  tauriCliVersion: "2.11.4"
+});
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -48,6 +55,7 @@ function releaseInput({ channel = "local", targetId = "macos-arm64", trustedNode
     signed: false,
     source: { repository: sourceRepository, tag: "v1.0.0", commit: desktopCommit },
     runtime: { repository: runtimeRepository, ref: "v1.0.0", commit: runtimeCommit },
+    toolchain: releaseToolchain,
     targets: [{ id: targetId, trustedNodeId }]
   };
 }
@@ -263,6 +271,27 @@ test("single-host release config is strict and maps macOS paths into Parallels s
   );
 });
 
+test("Windows local worker uses the exact Node toolchain declared by the lock", () => {
+  const configuration = windowsNodeToolchain({
+    node: {
+      version: "24.20.0",
+      moduleAbi: "137",
+      artifacts: {
+        "x86_64-pc-windows-msvc": {
+          archive: "node-v24.20.0-win-x64.zip",
+          sha256: "c".repeat(64)
+        }
+      }
+    }
+  }, "C:\\DeepSeekDesktopRelease\\toolchain", "\\\\Mac\\Home\\node.zip");
+  assert.equal(configuration.version, "24.20.0");
+  assert.equal(configuration.expectedModuleAbi, "137");
+  assert.equal(configuration.expectedSha256, "c".repeat(64));
+  assert.equal(configuration.node, "C:\\DeepSeekDesktopRelease\\toolchain\\node\\node-v24.20.0-win-x64\\node.exe");
+  assert.equal(configuration.marker, "C:\\DeepSeekDesktopRelease\\toolchain\\node\\node-v24.20.0-win-x64\\.archive-sha256");
+  assert.throws(() => windowsNodeToolchain({ node: { version: "24.20.0", artifacts: {} } }, "C:\\work", "node.zip"), /has no Node artifact/u);
+});
+
 test("release preparation signs immutable inputs, reuses valid cache, and rejects drift", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deepseek-release-prepare-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -272,6 +301,7 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
   await writeFile(join(directory, ".gitignore"), "target/\n");
   await writeFile(join(directory, "source.txt"), "trusted source\n");
   await writeFile(join(directory, "runtime", "toolchain-lock.json"), `${JSON.stringify({
+    node: { version: process.versions.node, moduleAbi: process.versions.modules },
     runtimeSource: { repository: runtimeRepository, ref: "v1.0.0", commit: runtimeCommit },
     toolchain: { rust: "1.98.0", pnpm: "11.7.0" }
   })}\n`);
@@ -301,7 +331,8 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
     channel: "community",
     signed: false,
     source: { commit: git(directory, ["rev-parse", "HEAD"]) },
-    runtime: { commit: runtimeCommit }
+    runtime: { commit: runtimeCommit },
+    targets: ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"].map(id => ({ id }))
   };
   await restorePreparedRelease({ root: directory, preparedRoot: cacheRoot, expectedDescriptor: first.descriptor, plan });
   const receipt = await readFile(first.receiptPath, "utf8");
@@ -318,7 +349,7 @@ test("content-addressed release cache rejects corruption, target drift, and link
   t.after(() => rm(directory, { recursive: true, force: true }));
   await mkdir(join(directory, "runtime"), { recursive: true });
   await writeFile(join(directory, "runtime", "entry.js"), "runtime\n");
-  const identity = { target: "aarch64-apple-darwin", runtimeCommit, nodeAbi: "137" };
+  const identity = { target: "aarch64-apple-darwin", runtimeCommit, nodeVersion: "24.20.0", nodeAbi: "137" };
   const manifest = await createContentCacheManifest(directory, identity);
   await writeFile(join(directory, "cache-manifest.json"), `${JSON.stringify(manifest)}\n`);
   assert.match(contentCacheKey(identity), /^[0-9a-f]{64}$/u);
@@ -419,6 +450,7 @@ test("distributed release HTTP smoke streams, validates, and publishes artifacts
     application: { version: "1.0.0" },
     desktop: { commit: desktopCommit, dirty: false },
     harness: { repository: runtimeRepository, commit: runtimeCommit },
+    toolchain: releaseToolchain,
     target: "aarch64-apple-darwin",
     channel: "local",
     signed: false,
@@ -499,6 +531,7 @@ test("completion rejects source facts and local path leakage", async t => {
       application: { version: "1.0.0" },
       desktop: { commit: desktopCommit, dirty: false },
       harness: { repository: runtimeRepository, commit: runtimeCommit },
+      toolchain: releaseToolchain,
       target: "aarch64-apple-darwin",
       channel: "local",
       signed: false,
@@ -525,7 +558,10 @@ test("completion rejects a worker that did not use the bound prepared receipt", 
     trackedSourceSha256: "3".repeat(64),
     generatedPayloadSha256: "4".repeat(64),
     desktopCommit,
-    runtimeCommit
+    runtimeCommit,
+    targetIds: ["macos-arm64"],
+    preparedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString()
   };
   const created = await service.createRelease({ ...releaseInput(), prepared });
   const claimed = await service.claimTask({
@@ -542,6 +578,7 @@ test("completion rejects a worker that did not use the bound prepared receipt", 
     application: { version: "1.0.0" },
     desktop: { commit: desktopCommit, dirty: false },
     harness: { repository: runtimeRepository, commit: runtimeCommit },
+    toolchain: releaseToolchain,
     target: "aarch64-apple-darwin",
     channel: "local",
     signed: false,
@@ -558,4 +595,57 @@ test("completion rejects a worker that did not use the bound prepared receipt", 
     await service.recordArtifact(claimed.taskId, claimed.lease, { name, sha256: sha256(bytes), size: bytes.length });
   }
   await assert.rejects(() => service.completeTask(claimed.taskId, claimed.lease), /prepared receipt/u);
+});
+
+test("release preparation and artifacts remain bound to targets and the exact Node toolchain", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-release-toolchain-validation-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const { store, service } = await createService(directory);
+  const now = Date.now();
+  const prepared = {
+    schemaVersion: 1,
+    receiptSha256: "1".repeat(64),
+    cacheKey: "2".repeat(64),
+    trackedSourceSha256: "3".repeat(64),
+    generatedPayloadSha256: "4".repeat(64),
+    desktopCommit,
+    runtimeCommit,
+    targetIds: ["macos-arm64"],
+    preparedAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 60_000).toISOString()
+  };
+  await assert.rejects(() => service.createRelease({
+    ...releaseInput({ targetId: "linux-x64" }),
+    prepared
+  }), /target set/u);
+
+  const created = await service.createRelease({ ...releaseInput(), prepared });
+  const claimed = await service.claimTask({
+    ticket: created.tickets["macos-arm64"],
+    targetId: "macos-arm64",
+    nodeId: "local.mac.arm64"
+  });
+  const incoming = join(store.root, "incoming", created.release.id, "macos-arm64");
+  await mkdir(incoming, { recursive: true });
+  const installerName = "DeepSeek.Desktop_1.0.0_aarch64.dmg";
+  const buildInfoName = "BUILD-INFO.aarch64-apple-darwin.json";
+  const installer = Buffer.from("installer");
+  const buildInfo = Buffer.from(`${JSON.stringify({
+    application: { version: "1.0.0" },
+    desktop: { commit: desktopCommit, dirty: false },
+    harness: { repository: runtimeRepository, commit: runtimeCommit },
+    toolchain: { ...releaseToolchain, nodeVersion: "0.0.0" },
+    target: "aarch64-apple-darwin",
+    channel: "local",
+    signed: false,
+    prepared: { used: true, receiptSha256: prepared.receiptSha256 },
+    artifactAudit: { schemaVersion: 1, scannerVersion: 2, fileCount: 3, byteCount: 1024 }
+  })}\n`);
+  const files = new Map([[installerName, installer], [buildInfoName, buildInfo]]);
+  files.set("SHA256SUMS", Buffer.from(`${sha256(installer)}  ${installerName}\n${sha256(buildInfo)}  ${buildInfoName}\n`));
+  for (const [name, bytes] of files) {
+    await writeFile(join(incoming, name), bytes);
+    await service.recordArtifact(claimed.taskId, claimed.lease, { name, sha256: sha256(bytes), size: bytes.length });
+  }
+  await assert.rejects(() => service.completeTask(claimed.taskId, claimed.lease), /toolchain/u);
 });

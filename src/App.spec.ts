@@ -38,7 +38,7 @@ vi.mock("./desktop", () => ({
     desktopVersion: appConfig.version,
     runtimeVersion: "0.1.2-alpha.1",
     runtimeCommit: "cd5ef8148158c3a752a658978873241fdf8e2bbc",
-    nodeVersion: "24.16.0",
+    nodeVersion: "24.20.0",
     authors: appConfig.authors.join(", "),
     repository: appConfig.repository,
     channel: "community",

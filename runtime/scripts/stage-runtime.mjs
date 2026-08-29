@@ -207,6 +207,8 @@ async function stageOfficialNode(target, sidecar, licenseDestination) {
   await cp(license, licenseDestination);
   const version = runCapture(sidecar, ["--version"], desktopRoot).replace(/^v/u, "");
   if (version !== lock.node.version) throw new Error(`staged Node version mismatch: expected ${lock.node.version}, got ${version}`);
+  const moduleAbi = runCapture(sidecar, ["-p", "process.versions.modules"], desktopRoot);
+  if (moduleAbi !== lock.node.moduleAbi) throw new Error(`staged Node ABI mismatch: expected ${lock.node.moduleAbi}, got ${moduleAbi}`);
   return artifact.sha256;
 }
 
@@ -240,6 +242,9 @@ if (target !== hostTarget()) throw new Error(`runtime staging must run on its na
 if (process.versions.node !== lock.node.version) {
   throw new Error(`Node ${lock.node.version} is required, current runtime is ${process.versions.node}`);
 }
+if (process.versions.modules !== lock.node.moduleAbi) {
+  throw new Error(`Node module ABI ${lock.node.moduleAbi} is required, current ABI is ${process.versions.modules}`);
+}
 
 const output = join(runtimeRoot, "staging", target);
 const stagingRoot = dirname(output);
@@ -251,7 +256,7 @@ const cacheIdentity = {
   runtime: lock.runtime,
   patches: lock.patches,
   bundledPackages: lock.bundledPackages,
-  node: { version: lock.node.version, artifact: lock.node.artifacts[target] },
+  node: { version: lock.node.version, moduleAbi: lock.node.moduleAbi, artifact: lock.node.artifacts[target] },
   nativeAssets: lock.nativeAssets[target],
   toolchain: lock.toolchain
 };
@@ -305,6 +310,7 @@ const manifest = {
   generatedAt,
   node: {
     version: lock.node.version,
+    moduleAbi: lock.node.moduleAbi,
     binary: basename(sidecar),
     sha256: await hashFile(sidecar),
     archiveSha256: nodeArchiveSha256

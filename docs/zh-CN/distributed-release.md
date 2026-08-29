@@ -39,7 +39,7 @@ corepack pnpm@11.7.0 desktop:package
 corepack pnpm@11.7.0 release:prepare -- --tag v1.0.0
 ```
 
-准备阶段执行固定依赖安装、`app:sync`、`runtime:sync`、发行门禁、`verify` 和 E2E，并将经过核验的生成配置与公共 Runtime 闭包写入内容寻址缓存。输出的 descriptor 和签名 receipt 绑定 tag、Desktop/Runtime 完整 commit、源码树、Runtime 补丁与 lock、Node/Rust/pnpm 版本、channel、签名模式和 dirty 状态。Worker 仍调用 `desktop:package`，但只有 receipt 与任务完全一致时才省略已经完成的公共门禁；否则自动回到完整构建或拒绝正式发行。
+准备阶段执行固定依赖安装、`app:sync`、`runtime:sync`、发行门禁、`verify` 和 E2E，并将经过核验的生成配置与公共 Runtime 闭包写入内容寻址缓存。输出的 descriptor 和签名 receipt 绑定 tag、Desktop/Runtime 完整 commit、目标集合、源码树、Runtime 补丁与 lock、精确 Node/ABI、Rust/pnpm/Tauri 版本、channel、签名模式、dirty 状态和 24 小时有效期。Worker 仍调用 `desktop:package`，但只有 receipt 与任务完全一致时才省略已经完成的公共门禁；否则自动回到完整构建或拒绝正式发行。
 
 ## 一台 Apple Silicon Mac 构建四平台
 
@@ -47,16 +47,16 @@ corepack pnpm@11.7.0 release:prepare -- --tag v1.0.0
 
 | 目标 | 执行环境 | 产物 |
 | --- | --- | --- |
-| macOS ARM64 | 当前 macOS 原生 Node / Rust | ARM64 DMG |
+| macOS ARM64 | 锁定并校验的 ARM64 Node / Rust | ARM64 DMG |
 | macOS x64 | Rosetta 2 + 锁定并校验的 x64 Node / Rust | Intel DMG |
-| Linux x64 | Docker Desktop `linux/amd64` 容器 | AppImage、DEB |
-| Windows x64 | Parallels Windows 中的 x64 Node / MSVC | NSIS EXE |
+| Linux x64 | 固定 `linux/amd64` Docker + 锁定 Node / Rust | AppImage、DEB |
+| Windows x64 | Parallels Windows + 锁定 Node / MSVC | NSIS EXE |
 
 需要准备：
 
 1. Apple Silicon Mac 已安装 Rosetta 2。
 2. Docker Desktop 已启动。
-3. Parallels Desktop 已安装 Tools；Windows 虚拟机中已有 x64 Node.js、Git、Corepack 和包含 C++ x64 工具的 Visual Studio Build Tools。
+3. Parallels Desktop 已安装 Tools；Windows 虚拟机中已有 Git 和包含 C++ x64 工具的 Visual Studio Build Tools。四个平台的 Node.js 与 Corepack 都由编排器按 `runtime/toolchain-lock.json` 自动下载或准备、校验和复用，不读取宿主机或虚拟机全局 Node 版本。
 4. Windows 使用 Parallels Shared Network，并能访问宿主机地址；默认是 `10.211.55.2`。
 5. 发行 tag 已存在、指向当前干净 HEAD，并已推送到 Worker 可访问的标准 Git 仓库。
 
@@ -66,7 +66,7 @@ corepack pnpm@11.7.0 release:prepare -- --tag v1.0.0
 corepack pnpm@11.7.0 release:local-all -- --check
 ```
 
-该检查会自动下载 `runtime/toolchain-lock.json` 固定的 macOS x64 Node 归档并校验 SHA-256，准备或复用 Linux x64 Docker 镜像，检查 Windows x64 Node / Git / Corepack / MSVC，并让四个环境分别通过临时 TLS 请求同一个 Controller 健康接口。
+该检查会自动下载或准备 `runtime/toolchain-lock.json` 固定的四平台 Node 归档并校验 SHA-256、精确版本和 module ABI，准备或复用 Linux x64 Docker 镜像，检查 Windows Git / MSVC，并让四个环境分别通过临时 TLS 请求同一个 Controller 健康接口。每个 Worker 都必须输出实际 `node --version` 与 ABI；Parallels 预检异步运行，不能冻结同进程 Controller 的 TLS 响应。
 
 检查通过后，一键创建、并行构建、校验和汇总四平台社区版：
 
@@ -93,13 +93,14 @@ Controller 只在本次运行期间监听，非回环流量始终使用临时 CA
 - 公共 Runtime 部署显式保留四个发行目标的 Koffi、Sharp/libvips 等可选原生包；每个 Worker 只在目标 staging 中保留与自身 triple 匹配的制品，避免准备主机架构决定其他平台的闭包。
 - Cargo 使用按目标 triple、Rust flags 和签名模式隔离的持久 `CARGO_TARGET_DIR`；不同目标不会共享可执行输出。
 - pnpm store、Playwright 浏览器、Docker 镜像和 volume、Node/Rust 工具链长期复用。只有 Dockerfile、系统依赖或工具链契约变化时才使用 `--rebuild-docker`。
+- 当前精确 Node 锁为 `24.20.0`、module ABI `137`。缓存身份包含 Node 版本、ABI 和目标 triple；升级 lock 会自然使旧缓存失效。“最新 LTS”只能由维护者显式更新单一 lock，具体发行禁止动态解析未来版本。
 - 缓存不完整、哈希不符或含符号链接时自动废弃并重建；不要用手工清空全部缓存解决普通源码错误。
 - 同一 run 重试时只调度失败目标；已完成目标保留。filesystem/NAS 已汇总且校验通过后，远程 Provider 上传失败只重试 `release:publish`。
 - 当前方案评估过 `sccache`，但暂未引入额外跨平台二进制分发和签名信任面；稳定、隔离的 Cargo target 已覆盖主要 Rust 增量收益。后续只有经过四平台固定版本验证才接入。
 
 单机四环境编排会从当前干净 HEAD 生成只包含发行 tag 的本地 Git bundle，并让 Rosetta、Docker 和 Parallels Worker 从该 bundle 做 detached checkout。任务中仍保留并核验原始通用 Git URL 作为来源身份，但节点不再依赖宿主机 SSH agent、known_hosts 或代码托管平台在线状态。跨机器 Worker 仍可直接使用计划中的通用 Git URL。
 
-Git bundle 在所有平台都通过临时 bare Git 仓库执行 `git bundle verify`，因此校验不依赖 Worker 当前目录是否已经位于某个仓库。Runtime 平台 smoke 只访问 `http://127.0.0.1:<port>`，打印 readiness 后还会在进程存活边界内等待端口真正接受请求；该实现使用 Node 原生 HTTP 客户端，避免 Rosetta 下 Undici 的套接字服务类型兼容问题。两项检查都不能通过跳过 bundle 校验、改用外网地址或固定长时间休眠来规避。
+Git bundle 在所有平台都通过临时 bare Git 仓库执行 `git bundle verify`，因此校验不依赖 Worker 当前目录是否已经位于某个仓库。Runtime 平台 smoke 只访问 `http://127.0.0.1:<port>`，打印 readiness 后还会在进程存活边界内等待端口真正接受请求；该实现使用 Node 原生 HTTP 客户端，避免 Rosetta 下 Undici 的套接字服务类型兼容问题。启动后退出时仅输出经过凭据关键词过滤和长度限制的诊断尾部，既保留真实错误栈，也不泄漏浏览器 token 或 API 凭据。两项检查都不能通过跳过 bundle 校验、改用外网地址或固定长时间休眠来规避。
 
 这条命令证明的是一台物理机完成四种隔离环境打包，不等同于四种真实硬件验收。尤其 Apple Silicon 上的 Windows x64 与 Linux x64 使用系统模拟层，发行前仍应在目标系统完成安装、启动、Runtime、凭据和卸载验证。缺少任何环境时命令会明确失败，不会偷偷改用错误目标。
 

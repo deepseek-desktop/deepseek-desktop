@@ -320,6 +320,20 @@ async function workerCommand(parsed) {
     ) {
       throw new Error("worker source Runtime lock does not match release plan");
     }
+    const expectedToolchain = {
+      nodeVersion: lock.node?.version,
+      nodeModuleAbi: lock.node?.moduleAbi,
+      rustVersion: lock.toolchain?.rust,
+      pnpmVersion: lock.toolchain?.pnpm,
+      tauriCliVersion: lock.toolchain?.tauriCli
+    };
+    if (JSON.stringify(expectedToolchain) !== JSON.stringify(claim.plan.toolchain)) {
+      throw new Error("worker source toolchain lock does not match release plan");
+    }
+    if (process.versions.node !== expectedToolchain.nodeVersion || process.versions.modules !== expectedToolchain.nodeModuleAbi) {
+      throw new Error(`worker requires Node ${expectedToolchain.nodeVersion} ABI ${expectedToolchain.nodeModuleAbi}; current Node is ${process.versions.node} ABI ${process.versions.modules}`);
+    }
+    console.log(`Verified worker Node ${process.version} (ABI ${process.versions.modules}) for ${target.triple}.`);
     const containerImage = option(parsed, "container-image");
     if (containerImage) {
       if (!target.optionalContainer) throw new Error(`target ${target.id} does not support container packaging`);

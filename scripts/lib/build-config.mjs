@@ -256,6 +256,7 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
   }
   const toolchainLock = JSON.parse(await readFile(resolve(root, "runtime/toolchain-lock.json"), "utf8"));
   assertText("runtime/toolchain-lock.json node.version", toolchainLock.node?.version || "");
+  assertText("runtime/toolchain-lock.json node.moduleAbi", toolchainLock.node?.moduleAbi || "");
   assertText("runtime/toolchain-lock.json toolchain.rust", toolchainLock.toolchain?.rust || "");
   const year = new Date().getUTCFullYear();
   const displayVersion = formatDisplayVersion(values.DESKTOP_APP_VERSION);

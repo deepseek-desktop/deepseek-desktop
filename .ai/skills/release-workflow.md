@@ -13,6 +13,7 @@
 5. 默认和示例版本号使用 `1.0.0`；发行 tag 接受 `1.0.0`、`v1.0.0`、`v0.1.0-community.13` 等完整 SemVer。显示层已有 `v` 时保留，没有时补齐，Git tag 本身不得由显示规则改写。
 6. `RUNTIME_REF` 为空时开发构建可解析最新 SemVer；发行必须使用 `runtime/toolchain-lock.json` 中已审计的不可变 Runtime commit。
 7. 未经用户明确授权，Agent 不创建或推送 tag，不创建正式 Release，不推送受保护分支。
+8. 所有 pnpm 命令必须由锁定 Node 启动 `scripts/with-pnpm.mjs`；该包装器会把 `process.execPath` 所在目录置于 `PATH` 首位并设置 `npm_node_execpath`，防止嵌套脚本回落到全局 Node。
 
 ## 先选择正确路径
 
@@ -57,7 +58,7 @@ git status --short --branch
 corepack pnpm@11.7.0 release:local-all -- --check
 ```
 
-该预检不会创建发行任务，也不会生成安装包。它会检查 Rosetta x64 Node、Docker Linux x64、Parallels Windows x64 的 Node/Git/Corepack/MSVC，以及四个环境到临时 TLS Controller 的连接。任一环境失败时先修环境，不要创建 tag 后再反复等待完整构建失败。
+该预检不会创建发行任务，也不会生成安装包。它会为四目标校验并复用 `runtime/toolchain-lock.json` 精确固定的 Node 版本、ABI 和归档 SHA-256，检查 Docker Linux x64、Parallels Windows 的 Git/MSVC，以及四个环境到临时 TLS Controller 的连接。所有节点都不依赖全局 Node；预检必须异步执行，禁止用同步 `prlctl exec` 阻塞同进程 Controller。任一环境失败时先修环境，不要创建 tag 后再反复等待完整构建失败。
 
 候选 tag 已存在且指向当前干净 HEAD 后，准备阶段必须先独立通过：
 
@@ -65,7 +66,7 @@ corepack pnpm@11.7.0 release:local-all -- --check
 corepack pnpm@11.7.0 release:prepare -- --tag v1.0.0
 ```
 
-第二次对相同输入执行应命中准备缓存，并仍会验证签名 receipt、生成闭包清单与逐文件 SHA-256。任何源码、Runtime、配置、lock、工具链、channel 或签名模式变化都会形成新缓存键；损坏缓存必须自动废弃重建。
+第二次对相同输入执行应命中准备缓存，并仍会验证签名 receipt、目标集合、24 小时有效期、生成闭包清单与逐文件 SHA-256。任何源码、Runtime、目标、配置、lock、Node/ABI、其他工具链、channel 或签名模式变化都会形成新缓存键；损坏或过期缓存必须自动废弃重建。
 
 ## GitHub 托管社区版发布
 
@@ -209,7 +210,7 @@ NODE
 
 - 宿主是 Apple Silicon macOS，Rosetta 2 已安装。
 - Docker Desktop 正常，Linux 使用 `linux/amd64`。
-- Parallels Windows 已安装 Tools、x64 Node、Git、Corepack 和 Visual Studio C++ x64 Build Tools。
+- Parallels Windows 已安装 Tools、Git 和 Visual Studio C++ x64 Build Tools；锁定的 x64 Node/Corepack 由编排器自动安装到隔离工作目录。
 - tag 已存在、指向当前干净 HEAD，并已推送到 Worker 可访问的通用 Git URL。
 - `release:local-all -- --check` 已通过。
 
@@ -266,6 +267,7 @@ filesystem/NAS 发布优先，因为它最容易复核且与托管平台无关�
 6. **构建与上传解耦**：先 filesystem 汇总和校验，再上传远程 Provider；远程限速或 API 失败不应迫使重新编译。
 7. **用真实数据比较速度**：读取 `summary.json` 的准备、目标、缓存、打包、发布和总耗时，再与对应 GitHub Actions run 比较；没有完整构建数据时不得声称节省了具体分钟数。
 8. **稳定 Cargo target 优先**：按目标、Rust flags 和签名模式隔离持久目录。当前不引入 `sccache`；只有固定版本、四平台验证和供应链信任边界闭环后才重新评估。
+9. **Node 只从单一 lock 升级**：维护者核对官方最新稳定 LTS 后显式更新版本、module ABI、四平台归档和 SHA-256；一次发行绝不动态解析“最新”，每个 Worker 必须打印并验证实际版本。当前锁为 `24.20.0` / ABI `137`。
 
 ## 安全门禁
 
@@ -291,6 +293,9 @@ filesystem/NAS 发布优先，因为它最容易复核且与托管平台无关�
 | Windows 报 `need a repository to verify a bundle` | bundle 是否在临时 bare Git 仓库中执行 `git bundle verify` | 使用统一 `git-source.mjs` 校验，不在 Worker 当前目录直接运行 verify，也不降级为只列 refs |
 | 平台 smoke 在 readiness 后立即 `ECONNREFUSED` | Runtime 是否只打印了地址但端口尚未真正接受请求 | 保留进程存活检查，并使用有边界的回环 HTTP 重试；不得通过延长固定 sleep 掩盖退出错误 |
 | Rosetta smoke 报 `setTypeOfService EINVAL` | 是否使用 Node 全局 `fetch`/Undici 访问回环 Runtime | 使用仓库内受限 `node:http` 回环客户端；只允许 `http://127.0.0.1:<port>`，禁止放宽到外网 |
+| 多平台 probe 同时超时 | Controller 所在进程是否执行了同步 Parallels/虚拟机命令 | 将节点预检作为异步任务运行，保持 Controller 事件循环可响应；不要单纯延长超时 |
+| 任一平台报 Node 版本不匹配 | Worker 是否误用了宿主机或虚拟机全局 Node | 使用编排器校验并安装的 `runtime/toolchain-lock.json` 固定 Node；核对版本、ABI、目标 triple，不得放宽精确版本门禁 |
+| Runtime 打印 readiness 后退出 | smoke 是否保留了脱敏诊断尾部 | 查看首个真实错误栈；诊断必须过滤 token/凭据并限长，不用反复重试掩盖退出 |
 | 制品扫描发现维护者本机路径 | Rust path remap 规则与 Cargo 缓存身份版本 | 修正重映射后重建对应目标；不得放宽本机路径扫描 |
 | 上传中断或租约过期 | Controller 状态、任务租约 | 对失败目标签发替换票据，旧票据不得复用 |
 | 远程 Provider 失败 | filesystem 制品、Provider 凭据和 API | 保留已验证制品，只重试上传，不重新编译 |

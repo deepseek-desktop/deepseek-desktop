@@ -7,4 +7,4 @@ const body = await response.json();
 if (body.ok !== true || body.service !== "deepseek-desktop-release-controller") {
   throw new Error("release controller health response is invalid");
 }
-console.log(`Release controller is reachable from ${process.platform}-${process.arch}.`);
+console.log(`Release controller is reachable from ${process.platform}-${process.arch} with Node ${process.version} (ABI ${process.versions.modules}).`);

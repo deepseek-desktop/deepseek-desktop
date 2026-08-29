@@ -23,12 +23,13 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 正式发行先通过签名准备凭据只执行一次公共门禁；Worker 严格绑定 tag、Desktop/Runtime commit、源码、配置、lock 和工具链后复用同一 `desktop:package` 完成目标平台组装、smoke、打包与审计。无有效凭据时不得跳过完整门禁。
 - Runtime 闭包和 Cargo 输出采用目标隔离的内容寻址持久缓存，命中前复核清单与哈希；单机四环境默认按内存限制并发，只重试失败目标，上传失败不重新编译。
 - 单机四环境从当前干净、tag 锁定的 HEAD 生成经 Git 校验的本地 source bundle，避免 Rosetta、Docker 与 Parallels 依赖宿主机 SSH 会话；公共 Runtime 闭包保留四目标 Koffi、Sharp/libvips 等可选原生包，Worker 再按目标裁剪。
+- 单机编排为四平台自动校验或安装唯一工具链锁中的 Node `24.20.0` / ABI `137`；所有 Worker 拒绝宿主机全局版本漂移并把实际版本写入内部 BUILD-INFO 与运行摘要。Parallels 预检异步执行，避免阻塞同进程 TLS Controller；Runtime smoke 的失败输出经过凭据过滤与限长后保留真实诊断尾部。
 - Runtime 更新只写入应用数据目录，执行签名与兼容校验、受限解压、启动 smoke、原子切换和自动回滚；安装包内置 Runtime 始终作为最终恢复基线。
 
 ## 版本基线
 
 - 项目默认和文档示例版本：`1.0.0`；真实发行版本由 Git tag 或发布环境注入。
-- Node：`24.16.0`
+- Node：`24.20.0`（四平台精确锁定，module ABI `137`）
 - pnpm：`11.7.0`
 - Rust：`1.98.0`
 - Tauri CLI：`2.11.4`

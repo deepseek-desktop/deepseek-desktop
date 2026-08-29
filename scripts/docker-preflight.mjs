@@ -8,7 +8,7 @@ if (process.argv.length > 2) {
 }
 
 const platform = "linux/amd64";
-const image = "deepseek-desktop-ci-preflight:node24.16.0-playwright1.62.1-linux-amd64";
+const image = "deepseek-desktop-ci-preflight:node24.20.0-playwright1.62.1-linux-amd64";
 const cachePrefix = "deepseek-desktop-ci-preflight-linux-amd64";
 const emulatedAmd64 = process.arch === "arm64";
 

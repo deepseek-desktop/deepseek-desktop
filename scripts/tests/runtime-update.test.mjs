@@ -67,7 +67,7 @@ test("creates a signed manifest only from a complete clean native target set", a
         credentialProtocolVersion: 1,
         credentialProviderVersion: "1.0.0",
         marketVersion: "1.0.0",
-        nodeVersion: "24.16.0",
+        nodeVersion: "24.20.0",
         nodeModuleAbi: "137",
         artifact: {
           file: artifact,

@@ -88,7 +88,7 @@ corepack pnpm@11.7.0 runtime:update:manifest -- \
   "runtimeRepository": "https://example.com/runtime.git",
   "credentialProviderVersion": "1.0.0",
   "marketVersion": "1.0.0",
-  "nodeVersion": "24.16.0",
+  "nodeVersion": "24.20.0",
   "nodeModuleAbi": "137",
   "allowedOrigins": [],
   "artifacts": {
