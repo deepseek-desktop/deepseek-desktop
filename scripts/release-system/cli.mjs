@@ -307,6 +307,7 @@ async function workerCommand(parsed) {
     });
     await cloneLockedSource({
       repository: claim.plan.source.repository,
+      sourceBundle: option(parsed, "source-bundle"),
       tag: claim.plan.tag,
       commit: claim.plan.source.commit,
       destination: checkout

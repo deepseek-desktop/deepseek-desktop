@@ -6,6 +6,15 @@ linkWorkspacePackages: true
 nodeLinker: hoisted
 autoInstallPeers: true
 
+supportedArchitectures:
+  os:
+    - darwin
+    - linux
+    - win32
+  cpu:
+    - arm64
+    - x64
+
 allowBuilds:
   '@deepseek-ai/dsh-subprocess-local': true
   node-pty: true

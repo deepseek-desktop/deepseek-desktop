@@ -174,6 +174,8 @@ corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --concurrency 2
 
 Runtime 闭包和 Cargo 输出使用按 commit、配置、lock、Node ABI、目标 triple 与签名模式隔离的内容寻址缓存；pnpm store、Playwright、Docker 镜像/volume 和固定工具链也会复用。默认并发会根据内存自适应，16 GB Mac 建议保持 `--concurrency 2`，避免原生、Rosetta、Docker 和 Parallels 同时争抢内存。失败重跑只处理失败目标，已完成目标和已验证缓存不重建；上传失败可直接重试发布，无需重新编译。
 
+单机四环境会从当前干净、tag 锁定的 HEAD 生成经 Git 校验的本地 source bundle，Rosetta、Docker 和 Parallels Worker 不依赖宿主机 SSH agent 或代码托管平台在线状态。公共 Runtime 部署同时携带四目标所需的 Koffi、Sharp/libvips 等可选原生包，Worker 再按目标裁剪，准备主机架构不会决定其他平台闭包。
+
 默认产物汇总到 `release/local-all/<tag>/`，准备、各 Worker、缓存命中、打包和发布耗时写入 `target/local-release/runs/<run-id>/summary.json`。机器配置不同时可复制 `.deepseek-release.local.example.json` 为不提交 Git 的 `.deepseek-release.local.json`。这是一台物理机上的多环境编排，不会把 Windows 或 Linux 安装包伪装成 macOS 直接交叉编译的结果。
 
 需要单独生成或复核准备凭据时使用：

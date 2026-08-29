@@ -286,6 +286,9 @@ filesystem/NAS 发布优先，因为它最容易复核且与托管平台无关�
 | 单一 Worker 构建失败 | 该目标日志和 `summary.json` | 单机模式隔离目标；持久模式 `release:retry` |
 | 准备凭据被拒绝 | tag/commit、源码树、Runtime、配置、receipt SHA-256 | 不绕过验证；回到锁定源码重新执行 `release:prepare` |
 | Runtime/Cargo 缓存损坏 | cache manifest、目标 triple、工具链和文件 SHA-256 | 让编排器废弃该缓存项并重建，不清空其他目标缓存 |
+| 目标 Koffi/Sharp 原生包缺失 | 公共准备闭包是否同时包含四目标可选原生包 | 重新执行 `runtime:sync`；不要从准备主机架构推断其他平台依赖 |
+| Worker 报 `Host key verification failed` | 是否通过 `release:local-all` 生成并传入锁定 source bundle | 单机四环境使用本地 bundle；跨机器节点再配置其通用 Git URL 凭据与主机信任 |
+| 制品扫描发现维护者本机路径 | Rust path remap 规则与 Cargo 缓存身份版本 | 修正重映射后重建对应目标；不得放宽本机路径扫描 |
 | 上传中断或租约过期 | Controller 状态、任务租约 | 对失败目标签发替换票据，旧票据不得复用 |
 | 远程 Provider 失败 | filesystem 制品、Provider 凭据和 API | 保留已验证制品，只重试上传，不重新编译 |
 | 缺少某平台节点 | release 状态为 `waiting` | 增加正确目标节点，不跨平台伪造制品 |

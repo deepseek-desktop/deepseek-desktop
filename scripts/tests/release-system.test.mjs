@@ -20,6 +20,8 @@ import {
 } from "../release-system/content-cache.mjs";
 import { prepareRelease, restorePreparedRelease } from "../release-system/prepared-release.mjs";
 import { artifactForbiddenRoots, scanArtifactPaths } from "../lib/artifact-scan.mjs";
+import { portableRustFlags } from "../lib/rust-flags.mjs";
+import { cloneLockedSource, createLockedSourceBundle } from "../release-system/git-source.mjs";
 
 const desktopCommit = "a".repeat(40);
 const runtimeCommit = "b".repeat(40);
@@ -73,6 +75,45 @@ test("source repositories reject embedded HTTP credentials", () => {
   assert.equal(assertSourceRepository("ssh://git@git.example.com/team/desktop.git"), "ssh://git@git.example.com/team/desktop.git");
   assert.throws(() => assertSourceRepository("https://token@git.example.com/team/desktop.git"), /embedded HTTP credentials/u);
   assert.throws(() => assertSourceRepository("ssh://git:password@git.example.com/team/desktop.git"), /embedded password/u);
+});
+
+test("portable Rust flags remap the project, Cargo cache, and user home", () => {
+  const flags = portableRustFlags({
+    projectRoot: "/Users/developer/project",
+    cargoTargetDir: "/Users/developer/cache/cargo",
+    userHome: "/Users/developer",
+    existing: "-C debuginfo=1"
+  });
+  assert.match(flags, /--remap-path-prefix=\/Users\/developer=\/build\/home/u);
+  assert.match(flags, /--remap-path-prefix=\/Users\/developer\/project=\/build\/source/u);
+  assert.match(flags, /--remap-path-prefix=\/Users\/developer\/cache\/cargo=\/build\/cargo-target/u);
+});
+
+test("workers can clone a locked local bundle while preserving the canonical repository identity", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-source-bundle-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const source = join(directory, "source");
+  const checkout = join(directory, "checkout");
+  const bundle = join(directory, "source.bundle");
+  await mkdir(source);
+  git(source, ["init"]);
+  git(source, ["config", "user.name", "Release Test"]);
+  git(source, ["config", "user.email", "release-test@example.invalid"]);
+  await writeFile(join(source, "README.md"), "locked source\n");
+  git(source, ["add", "README.md"]);
+  git(source, ["commit", "-m", "test source"]);
+  git(source, ["tag", "-a", "v1.0.0", "-m", "v1.0.0"]);
+  const commit = git(source, ["rev-parse", "HEAD"]);
+  await createLockedSourceBundle({ repositoryRoot: source, tag: "v1.0.0", commit, destination: bundle });
+  await cloneLockedSource({
+    repository: "ssh://git@example.invalid/team/deepseek-desktop.git",
+    sourceBundle: bundle,
+    tag: "v1.0.0",
+    commit,
+    destination: checkout
+  });
+  assert.equal(git(checkout, ["rev-parse", "HEAD"]), commit);
+  assert.equal(git(checkout, ["status", "--porcelain"]), "");
 });
 
 test("release errors redact credentials and common user-home paths", () => {

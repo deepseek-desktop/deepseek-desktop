@@ -15,6 +15,7 @@
 - 已建立不依赖托管 Runner 的分布式本地发布协议：四平台原生节点、一次性票据、短期租约、通用 Git 来源、流式制品校验、filesystem 默认发布和可选 GitHub Provider。
 - Apple Silicon 单机可通过 `release:local-all` 协调原生 macOS ARM64、Rosetta macOS x64、Docker Linux x64 和 Parallels Windows x64 四个隔离 Worker，并汇总真实目标耗时。
 - 本地四平台发行已增加 `release:prepare` 公共门禁、签名准备凭据、Runtime 内容寻址缓存、目标隔离 Cargo 缓存、自适应并发、失败目标重试和分阶段耗时记录；Worker 仍复用唯一 `desktop:package` 打包事实来源。
+- 单机四环境源码交付改用 tag/commit 锁定并经 `git bundle verify` 校验的本地 bundle；统一 Runtime 部署显式携带四目标 Koffi、Sharp/libvips 等可选原生包，Rust 编译路径重映射规则进入 Cargo 缓存身份，避免节点 SSH 依赖、跨架构缺包和本机路径泄漏。
 - `.ai/skills/release-workflow.md` 已作为 Agent 统一发布运行手册，固化方案选择、最短反馈路径、提速、安全门禁、故障恢复、验收边界和报告格式。
 - Agent 发布手册同时固化 GitHub 托管社区版的成功路径：本地前置门禁、不可变 SemVer tag、重复分支 run 取消、四平台 job 诊断、新 tag 恢复、Release 资产与 SHA-256 验收。
 - 已建立 Runtime 独立更新协议：四平台原生生产闭包、Ed25519 签名清单、清单有效期与反回放、流式下载、兼容性与包版本验证、受限解压、真实服务启动 smoke、原子切换、上一版回滚、内置基线恢复和无引用旧版本清理。

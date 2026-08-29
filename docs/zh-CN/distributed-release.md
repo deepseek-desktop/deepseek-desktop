@@ -90,11 +90,14 @@ Controller 只在本次运行期间监听，非回环流量始终使用临时 CA
 ### 缓存与失败恢复
 
 - Runtime 闭包缓存键包含 Runtime commit、Desktop Runtime 补丁/本地包、lock、工具链、Node ABI、目标 triple 和影响闭包的配置；命中前逐文件复核清单、大小和 SHA-256。
+- 公共 Runtime 部署显式保留四个发行目标的 Koffi、Sharp/libvips 等可选原生包；每个 Worker 只在目标 staging 中保留与自身 triple 匹配的制品，避免准备主机架构决定其他平台的闭包。
 - Cargo 使用按目标 triple、Rust flags 和签名模式隔离的持久 `CARGO_TARGET_DIR`；不同目标不会共享可执行输出。
 - pnpm store、Playwright 浏览器、Docker 镜像和 volume、Node/Rust 工具链长期复用。只有 Dockerfile、系统依赖或工具链契约变化时才使用 `--rebuild-docker`。
 - 缓存不完整、哈希不符或含符号链接时自动废弃并重建；不要用手工清空全部缓存解决普通源码错误。
 - 同一 run 重试时只调度失败目标；已完成目标保留。filesystem/NAS 已汇总且校验通过后，远程 Provider 上传失败只重试 `release:publish`。
 - 当前方案评估过 `sccache`，但暂未引入额外跨平台二进制分发和签名信任面；稳定、隔离的 Cargo target 已覆盖主要 Rust 增量收益。后续只有经过四平台固定版本验证才接入。
+
+单机四环境编排会从当前干净 HEAD 生成只包含发行 tag 的本地 Git bundle，并让 Rosetta、Docker 和 Parallels Worker 从该 bundle 做 detached checkout。任务中仍保留并核验原始通用 Git URL 作为来源身份，但节点不再依赖宿主机 SSH agent、known_hosts 或代码托管平台在线状态。跨机器 Worker 仍可直接使用计划中的通用 Git URL。
 
 这条命令证明的是一台物理机完成四种隔离环境打包，不等同于四种真实硬件验收。尤其 Apple Silicon 上的 Windows x64 与 Linux x64 使用系统模拟层，发行前仍应在目标系统完成安装、启动、Runtime、凭据和卸载验证。缺少任何环境时命令会明确失败，不会偷偷改用错误目标。
 

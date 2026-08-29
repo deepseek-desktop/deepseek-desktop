@@ -24,6 +24,7 @@ import { ensureAdminToken, startReleaseServer } from "./http-server.mjs";
 import { createReleasePlan } from "./release-plan.mjs";
 import { prepareRelease } from "./prepared-release.mjs";
 import { ReleaseStateStore } from "./state-store.mjs";
+import { createLockedSourceBundle } from "./git-source.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const defaultConfigPath = join(root, ".deepseek-release.local.json");
@@ -361,6 +362,7 @@ async function writeWindowsScripts(runRoot, settings) {
     "--token-stdin",
     "--work-root", settings.workRoot,
     "--prepared-root", settings.preparedRoot,
+    ...(settings.sourceBundle ? ["--source-bundle", settings.sourceBundle] : []),
     ...(settings.keepWork ? ["--keep-work"] : [])
   ];
   const cmdArguments = workerArguments.map(value => `"${String(value).replaceAll("\"", "\"\"")}"`).join(" ");
@@ -506,15 +508,17 @@ export async function main() {
     "windows-x64": `https://${config.windows.controllerHost}:${port}`
   };
   const share = { hostHome: homedir(), guestHome: config.windows.sharedHome };
-  const windowsScripts = windows ? await writeWindowsScripts(runRoot, {
+  const windowsSettings = windows ? {
     caFile: tls.caCert,
     controller: controllers["windows-x64"],
     keepWork: flag(parsed, "keep-work"),
     nodeId: nodeId("windows-x64", "parallels"),
     share,
     workRoot: config.windows.workRoot,
-    preparedRoot: macPathToParallelsShared(join(root, "target", "local-release", "prepared"), share)
-  }) : null;
+    preparedRoot: macPathToParallelsShared(join(root, "target", "local-release", "prepared"), share),
+    sourceBundle: ""
+  } : null;
+  let windowsScripts = windows ? await writeWindowsScripts(runRoot, windowsSettings) : null;
 
   try {
     const probes = [];
@@ -569,6 +573,16 @@ export async function main() {
       trustedNodes,
       prepared: preparation.descriptor
     });
+    const sourceBundle = await createLockedSourceBundle({
+      repositoryRoot: root,
+      tag,
+      commit: plan.source.commit,
+      destination: join(runRoot, "source.bundle")
+    });
+    if (windowsSettings) {
+      windowsSettings.sourceBundle = macPathToParallelsShared(sourceBundle, share);
+      windowsScripts = await writeWindowsScripts(runRoot, windowsSettings);
+    }
     const created = await service.createRelease(plan);
     const tickets = { ...created.tickets };
     const keepWork = flag(parsed, "keep-work");
@@ -580,6 +594,7 @@ export async function main() {
         "--token-stdin",
         "--work-root", join(root, "target", "local-release", "work", targetId),
         "--prepared-root", join(root, "target", "local-release", "prepared"),
+        "--source-bundle", sourceBundle,
         ...(keepWork ? ["--keep-work"] : [])
       ];
       if (targetId === "macos-arm64") {
@@ -597,6 +612,7 @@ export async function main() {
           "node", "/orchestrator/scripts/release-system/cli.mjs", "worker",
           "--controller", controllers[targetId], "--node-id", trustedNodes.get(targetId), "--token-stdin", "--work-root", "/local-release/work",
           "--prepared-root", "/orchestrator/target/local-release/prepared",
+          "--source-bundle", `/orchestrator/${relative(root, sourceBundle).replaceAll("\\", "/")}`,
           ...(keepWork ? ["--keep-work"] : [])];
         return run(docker, args, { input: `${tickets[targetId]}\n`, label: targetId });
       }

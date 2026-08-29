@@ -22,6 +22,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 四平台发行可由平台无关的本地 Controller 和多个受信任原生 Worker 协作完成；filesystem/NAS 是默认发布渠道，GitHub 仅为可选 Provider。
 - 正式发行先通过签名准备凭据只执行一次公共门禁；Worker 严格绑定 tag、Desktop/Runtime commit、源码、配置、lock 和工具链后复用同一 `desktop:package` 完成目标平台组装、smoke、打包与审计。无有效凭据时不得跳过完整门禁。
 - Runtime 闭包和 Cargo 输出采用目标隔离的内容寻址持久缓存，命中前复核清单与哈希；单机四环境默认按内存限制并发，只重试失败目标，上传失败不重新编译。
+- 单机四环境从当前干净、tag 锁定的 HEAD 生成经 Git 校验的本地 source bundle，避免 Rosetta、Docker 与 Parallels 依赖宿主机 SSH 会话；公共 Runtime 闭包保留四目标 Koffi、Sharp/libvips 等可选原生包，Worker 再按目标裁剪。
 - Runtime 更新只写入应用数据目录，执行签名与兼容校验、受限解压、启动 smoke、原子切换和自动回滚；安装包内置 Runtime 始终作为最终恢复基线。
 
 ## 版本基线

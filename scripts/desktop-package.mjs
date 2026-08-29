@@ -6,6 +6,7 @@ import process from "node:process";
 import { createMacDmg } from "./macos-dmg.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
 import { artifactForbiddenRoots, scanArtifactPaths } from "./lib/artifact-scan.mjs";
+import { portableRustFlags, RUST_PATH_REMAP_VERSION } from "./lib/rust-flags.mjs";
 import { restorePreparedRelease } from "./release-system/prepared-release.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -120,6 +121,7 @@ const cargoCacheKey = createHash("sha256").update(JSON.stringify({
   channel,
   signed: resolvedConfig.release.signed,
   rustFlags: process.env.RUSTFLAGS || "",
+  rustPathRemapVersion: RUST_PATH_REMAP_VERSION,
   profile: "release"
 })).digest("hex").slice(0, 20);
 const cargoTargetDir = process.env.DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT?.trim()
@@ -128,11 +130,11 @@ const cargoTargetDir = process.env.DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT?.trim()
 process.env.CARGO_TARGET_DIR = cargoTargetDir;
 const bundleRoot = join(cargoTargetDir, "release", "bundle");
 await rm(bundleRoot, { recursive: true, force: true });
-const rustFlags = [
-  process.env.RUSTFLAGS,
-  `--remap-path-prefix=${root}=.`,
-  ...(cargoTargetDir !== join(root, "src-tauri", "target") ? [`--remap-path-prefix=${cargoTargetDir}=./target/cargo-cache`] : [])
-].filter(Boolean).join(" ");
+const rustFlags = portableRustFlags({
+  projectRoot: root,
+  cargoTargetDir,
+  existing: process.env.RUSTFLAGS
+});
 timings.tauriBuildMs = run(process.execPath, ["scripts/with-rust.mjs", "tauri", "build", "--config", "target/generated/tauri.conf.json", "--bundles", target.bundles], {
   env: { RUSTFLAGS: rustFlags }
 });
