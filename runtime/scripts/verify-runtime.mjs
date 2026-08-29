@@ -170,32 +170,63 @@ async function verifyFinalToolCallIdentity(nodeModules) {
   }
 }
 
-async function verifySearchCredentialGuidance(nodeModules) {
-  const packageRoots = await findInstalledPackages([nodeModules], "@deepseek-ai/dsh-web-search-deepseek");
+async function verifyFollowModelSearch(nodeModules) {
+  const packageRoots = await findInstalledPackages([nodeModules], "@deepseek-ai/dsh-web-search-follow-model");
   if (packageRoots.length !== 1) {
-    throw new Error(`expected one DeepSeek search package, found ${packageRoots.length}`);
+    throw new Error(`expected one follow-model search package, found ${packageRoots.length}`);
   }
-  const moduleUrl = pathToFileURL(join(packageRoots[0], "lib", "index.js")).href;
-  const { DeepSeekSearchProvider } = await import(moduleUrl);
-  const provider = new DeepSeekSearchProvider(() => ({
-    resolveApiKey: async () => undefined,
-    apiKeyEnv: "DEEPSEEK_API_KEY",
-    baseURL: "https://api.deepseek.com/anthropic/v1",
-    model: "deepseek-v4-flash",
-    apiVersion: "2023-06-01",
-    maxTokens: 1,
-    maxUses: 1
-  }));
+  const moduleUrl = pathToFileURL(join(packageRoots[0], "index.js")).href;
+  const { FollowModelSearchEngine } = await import(moduleUrl);
+  let fetches = 0;
+  const engine = new FollowModelSearchEngine({
+    fetch: async (url, options) => {
+      fetches += 1;
+      if (new URL(url).href !== "https://provider.invalid/v1/web-search") {
+        throw new Error(`follow-model search used an unexpected endpoint: ${url}`);
+      }
+      const request = JSON.parse(options.body);
+      if (request.model !== "verification-model" || request.query !== "verification query") {
+        throw new Error("follow-model search did not preserve the selected model route");
+      }
+      if (options.headers.authorization !== "Bearer verification-secret") {
+        throw new Error("follow-model search did not inherit the selected Provider credential");
+      }
+      return new Response(JSON.stringify({
+        content: "verification result",
+        sources: [{ url: "https://source.invalid/result" }]
+      }), { status: 200 });
+    },
+    resolveCredential: async ref => ref === "VERIFICATION_KEY" ? "verification-secret" : undefined
+  });
+  engine.registerRouteResolver(({ provider, model }) => provider === "verification-provider" ? {
+    provider,
+    model,
+    endpoint: "https://provider.invalid/v1",
+    credentialRef: "VERIFICATION_KEY",
+    webSearch: { protocol: "dsh-web-search-v1", credential: "inherit" }
+  } : undefined);
+  const agent = {
+    session: {
+      requestHeader: () => ({ config: { provider: "verification-provider", model: "verification-model" } })
+    }
+  };
+  const result = await engine.search(agent, { query: "verification query", maxResults: 1 });
+  if (fetches !== 1 || result.sources?.[0]?.url !== "https://source.invalid/result") {
+    throw new Error("follow-model search did not normalize the Provider response");
+  }
+
+  const unknown = new FollowModelSearchEngine({
+    fetch: async () => { throw new Error("an unknown Provider must not be probed"); },
+    resolveCredential: async () => undefined
+  });
   try {
-    await provider.search({ query: "credential verification", maxResults: 1 });
+    await unknown.search(agent, { query: "verification query" });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("official DeepSeek API key")
-      && message.includes("Settings > Models")
-      && message.includes("third-party providers cannot be reused")) return;
-    throw new Error(`DeepSeek search credential guidance is not actionable: ${message}`);
+    if (message.includes("does not declare web search capability") && !message.includes("DEEPSEEK_API_KEY")) return;
+    throw new Error(`follow-model search guidance is not Provider-neutral: ${message}`);
   }
-  throw new Error("DeepSeek search unexpectedly accepted a missing credential");
+  throw new Error("follow-model search unexpectedly probed an undeclared Provider");
 }
 
 for (const field of ["sourceDateEpoch", "desktopVersion", "release", "runtime", "node", "toolchain", "bundledPackages", "nativeAssets", "targets"]) {
@@ -233,7 +264,7 @@ if (await hashTree(prepared) !== lock.runtime.sha256) {
 }
 await verifyPatches(join(prepared, "node_modules"));
 await verifyFinalToolCallIdentity(join(prepared, "node_modules"));
-await verifySearchCredentialGuidance(join(prepared, "node_modules"));
+await verifyFollowModelSearch(join(prepared, "node_modules"));
 
 const requested = process.argv[2] || hostTarget();
 if (requested) {

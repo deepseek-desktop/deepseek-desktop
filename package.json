@@ -36,6 +36,7 @@
     "runtime:update:package": "node scripts/app-sync.mjs && node scripts/runtime-sync.mjs && node runtime/scripts/stage-runtime.mjs && node scripts/runtime-update/package-runtime.mjs",
     "runtime:update:manifest": "node scripts/runtime-update/manifest.mjs",
     "runtime:test-credentials": "node runtime/scripts/test-credentials-vault.mjs",
+    "runtime:test-follow-model": "node --test runtime/scripts/test-web-search-follow-model.mjs",
     "runtime:test-locale": "node runtime/scripts/test-locale-sync.mjs",
     "vault:smoke": "node scripts/smoke-credential-vault-helper.mjs",
     "release:check": "node scripts/check-release-gates.mjs",
@@ -58,7 +59,7 @@
     "tauri": "tauri",
     "tauri:dev": "node scripts/app-sync.mjs && node scripts/runtime-sync.mjs && node runtime/scripts/stage-runtime.mjs && node scripts/with-rust.mjs tauri dev --config target/generated/tauri.conf.json",
     "tauri:build": "node scripts/app-sync.mjs && node scripts/runtime-sync.mjs && node runtime/scripts/stage-runtime.mjs && node scripts/with-rust.mjs tauri build --config target/generated/tauri.conf.json",
-    "verify": "node scripts/with-pnpm.mjs app:sync --check && node scripts/with-pnpm.mjs test:config && node scripts/with-pnpm.mjs check:i18n && node scripts/with-pnpm.mjs test && node scripts/with-pnpm.mjs typecheck && node scripts/with-pnpm.mjs runtime:test-locale && node scripts/with-pnpm.mjs runtime:test-credentials && node scripts/with-pnpm.mjs runtime:stage && node scripts/with-pnpm.mjs runtime:verify && node scripts/with-pnpm.mjs rust:test && node scripts/with-pnpm.mjs rust:clippy"
+    "verify": "node scripts/with-pnpm.mjs app:sync --check && node scripts/with-pnpm.mjs test:config && node scripts/with-pnpm.mjs check:i18n && node scripts/with-pnpm.mjs test && node scripts/with-pnpm.mjs typecheck && node scripts/with-pnpm.mjs runtime:test-locale && node scripts/with-pnpm.mjs runtime:test-credentials && node scripts/with-pnpm.mjs runtime:stage && node scripts/with-pnpm.mjs runtime:test-follow-model && node scripts/with-pnpm.mjs runtime:verify && node scripts/with-pnpm.mjs rust:test && node scripts/with-pnpm.mjs rust:clippy"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",

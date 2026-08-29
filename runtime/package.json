@@ -9,6 +9,7 @@
     "node": "24.16.0"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-web-search-follow-model": "workspace:*",
     "deepseek-desktop-bundle": "workspace:*",
     "deepseek-desktop-credentials-vault": "workspace:*",
     "dshmarket": "1.28.1",

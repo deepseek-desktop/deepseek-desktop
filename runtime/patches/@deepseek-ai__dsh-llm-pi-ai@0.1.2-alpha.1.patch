@@ -1,0 +1,47 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -935,6 +935,12 @@
+ });
+ /** A {@link modelProfile} whose id lives in the `modelOverrides` dict key. */
+ const modelOverride = z.object(modelFields);
++const webSearchCapability = z.union([z.const(false), z.object({
++	protocol: z.string().required(),
++	credential: z.union(["inherit"]).default("inherit"),
++	endpointPath: z.string(),
++	requestFields: z.dict(z.union([z.string(), z.number(), z.boolean()]))
++})]);
+ const profile = z.object({
+ 	apiKeyEnv: z.string().role("credential-ref"),
+ 	displayName: z.string(),
+@@ -944,6 +950,7 @@
+ 	baseURL: z.string(),
+ 	models: z.array(modelProfile),
+ 	modelOverrides: z.dict(modelOverride),
++	webSearch: webSearchCapability,
+ 	compat: compatProfile,
+ 	defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
+ 	defaultMaxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
+@@ -2466,6 +2473,22 @@
+ 		return next;
+ 	};
+ 	profiles();
++	ctx.inject(["webSearchProtocols"], (injected) => {
++		injected.effect(() => injected.webSearchProtocols.registerRouteResolver(({ provider, model }) => {
++			const route = profiles().get(provider);
++			if (!route?.webSearch) return void 0;
++			const selected = route.piProvider.getModels().find((entry) => entry.id === model);
++			if (selected === void 0) return void 0;
++			return {
++				provider,
++				model,
++				endpoint: selected.baseUrl ?? route.piProvider.baseUrl,
++				apiProtocol: selected.api,
++				credentialRef: route.apiKeyEnv,
++				webSearch: route.webSearch
++			};
++		}), "llm-pi-ai: follow-model web search route");
++	});
+ 	const resolveApiKey = async (provider, profile) => {
+ 		const ref = profile.apiKeyEnv;
+ 		if (ref === void 0) return void 0;

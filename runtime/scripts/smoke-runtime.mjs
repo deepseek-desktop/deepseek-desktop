@@ -1,6 +1,6 @@
 import { chmod, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import process from "node:process";
 
 const runtimeRoot = resolve(import.meta.dirname, "..");
@@ -107,7 +107,12 @@ await writeFile(join(profile, "package.json"), `${JSON.stringify({
 }, null, 2)}\n`);
 await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
 await writeFile(join(profile, "pnpm-workspace.yaml"), "packages:\n  - .\n\nnodeLinker: hoisted\n");
-for (const name of ["deepseek-desktop-bundle", "deepseek-desktop-credentials-vault"]) {
+for (const name of [
+  "deepseek-desktop-bundle",
+  "deepseek-desktop-credentials-vault",
+  "@deepseek-ai/dsh-web-search-follow-model"
+]) {
+  await mkdir(dirname(join(desktopModules, name)), { recursive: true });
   await cp(join(staging, "node_modules", name), join(desktopModules, name), { recursive: true });
 }
 const packageManager = process.platform === "win32" ? join(runtimeBin, "pnpm.cmd") : join(runtimeBin, "pnpm");
@@ -180,6 +185,13 @@ if (!dump.stdout.includes("deepseek-desktop-credentials-vault")) {
 }
 if (!dump.stdout.includes("dshmarket")) {
   throw new Error("DSH Market is absent from the composed profile");
+}
+if (!dump.stdout.includes("@deepseek-ai/dsh-web-search-follow-model")
+  || !dump.stdout.includes("searchProvider: follow-model")) {
+  throw new Error("follow-model web search is not the composed profile default");
+}
+if (!/id:\s+web-search-deepseek[\s\S]*?disabled:\s+true/u.test(dump.stdout)) {
+  throw new Error("the legacy fixed web search Provider is not disabled");
 }
 if (!/locale:\s+preference: zh/u.test(await readFile(join(dshHome, "settings.yaml"), "utf8"))) {
   throw new Error("desktop locale bridge did not persist the mapped Runtime locale");

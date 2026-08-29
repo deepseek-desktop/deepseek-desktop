@@ -1,6 +1,19 @@
 - id: credentials
   disabled: true
 
+- id: web
+  config:
+    searchProvider: follow-model
+    fetchProvider: http
+
+- id: web-search-deepseek
+  disabled: true
+
 - insert:
     - id: desktop-credentials-vault
       name: 'deepseek-desktop-credentials-vault'
+    - id: web-search-follow-model
+      name: '@deepseek-ai/dsh-web-search-follow-model'
+      config:
+        mode: follow-model
+        fallback: none

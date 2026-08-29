@@ -1,0 +1,534 @@
+import { Service } from "@deepseek-ai/cordis";
+import { credentialRef } from "@deepseek-ai/dsh-credentials";
+import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
+import z from "@deepseek-ai/schemastery";
+import { WebError } from "@deepseek-ai/dsh-web";
+
+const PROVIDER_ID = "follow-model";
+const SETTINGS_NS = settingsNamespace("web-search-follow-model");
+const DEFAULT_TIMEOUT_MS = 30_000;
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_REQUEST_FIELDS = 16;
+const PROTOCOL_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
+const REQUEST_FIELD = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+const messages = {
+  "en-US": {
+    routeMissing: "The current model route is unavailable, so web search cannot follow it.",
+    capabilityMissing: "The current model Provider does not declare web search capability.",
+    protocolUnavailable: "The current model Provider declares a web search protocol that is unavailable in this Runtime.",
+    credentialMissing: "The current model Provider credential is not configured. Save that Provider's API key in Models settings.",
+    requestFailed: "The current model Provider web search request failed.",
+    responseInvalid: "The current model Provider returned an invalid web search response.",
+    disabled: "Web search is disabled in Runtime settings.",
+    independentMissing: "Independent web search mode requires a configured search Provider.",
+  },
+  "zh-CN": {
+    routeMissing: "当前会话没有可用的模型路由，无法跟随当前模型联网搜索。",
+    capabilityMissing: "当前模型提供方未声明联网搜索能力。请在提供方高级设置中选择其支持的标准搜索协议。",
+    protocolUnavailable: "当前模型提供方声明的联网搜索协议在此 Runtime 中不可用。",
+    credentialMissing: "当前模型提供方的凭据尚未配置，请在模型设置中保存该提供方的 API 密钥。",
+    requestFailed: "当前模型提供方的联网搜索请求失败。",
+    responseInvalid: "当前模型提供方返回了无法解析的联网搜索结果。",
+    disabled: "联网搜索已在 Runtime 设置中禁用。",
+    independentMissing: "独立搜索服务模式需要指定搜索提供方。",
+  },
+  "zh-TW": {
+    routeMissing: "目前工作階段沒有可用的模型路由，無法跟隨目前模型進行聯網搜尋。",
+    capabilityMissing: "目前模型提供方未宣告聯網搜尋能力。請在提供方進階設定中選擇其支援的標準搜尋協定。",
+    protocolUnavailable: "目前模型提供方宣告的聯網搜尋協定在此 Runtime 中無法使用。",
+    credentialMissing: "目前模型提供方的憑據尚未設定，請在模型設定中儲存該提供方的 API 金鑰。",
+    requestFailed: "目前模型提供方的聯網搜尋請求失敗。",
+    responseInvalid: "目前模型提供方傳回了無法解析的聯網搜尋結果。",
+    disabled: "聯網搜尋已在 Runtime 設定中停用。",
+    independentMissing: "獨立搜尋服務模式需要指定搜尋提供方。",
+  },
+};
+
+const requestFieldValue = z.union([z.string(), z.number(), z.boolean()]);
+const capabilitySchema = z.object({
+  protocol: z.string().required(),
+  credential: z.union(["inherit"]).default("inherit"),
+  endpointPath: z.string(),
+  requestFields: z.dict(requestFieldValue),
+});
+
+export const Config = z.object({
+  mode: z.union(["follow-model", "disabled", "independent"]).default("follow-model"),
+  independentProvider: z.string(),
+  fallback: z.union(["none"]).default("none"),
+});
+
+export const WEB_SEARCH_CAPABILITY_SCHEMA = capabilitySchema;
+
+function fail(message, code, cause) {
+  throw new WebError(message, code, cause === undefined ? undefined : { cause });
+}
+
+function locale() {
+  const value = process.env.DEEPSEEK_DESKTOP_LOCALE;
+  if (value?.toLowerCase().startsWith("zh-tw") || value?.toLowerCase().startsWith("zh-hk")) return "zh-TW";
+  if (value?.toLowerCase().startsWith("zh")) return "zh-CN";
+  return "en-US";
+}
+
+function copy(key) {
+  return messages[locale()][key];
+}
+
+function normalizedConfig(config = {}) {
+  return {
+    mode: config.mode ?? "follow-model",
+    independentProvider: config.independentProvider,
+    fallback: config.fallback ?? "none",
+  };
+}
+
+function activeRoute(agent) {
+  const current = agent?.session?.requestHeader?.()?.config;
+  const provider = current?.provider ?? agent?.options?.provider;
+  const model = current?.model ?? agent?.options?.model;
+  if (typeof provider !== "string" || provider.length === 0 || typeof model !== "string" || model.length === 0) {
+    fail(copy("routeMissing"), "WEB_FOLLOW_MODEL_ROUTE_MISSING");
+  }
+  return { provider, model };
+}
+
+function endpointUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch (error) {
+    fail("The current Provider declares an invalid web search endpoint.", "WEB_FOLLOW_MODEL_ENDPOINT_INVALID", error);
+  }
+  if (url.username || url.password || url.hash) {
+    fail("The current Provider web search endpoint contains disallowed URL components.", "WEB_FOLLOW_MODEL_ENDPOINT_INVALID");
+  }
+  const loopbackHttp = url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname);
+  if (url.protocol !== "https:" && !loopbackHttp) {
+    fail("The current Provider web search endpoint must use HTTPS, except for loopback development endpoints.", "WEB_FOLLOW_MODEL_ENDPOINT_UNTRUSTED");
+  }
+  return url;
+}
+
+function requestUrl(base, suffix) {
+  const url = endpointUrl(base);
+  const path = url.pathname.replace(/\/+$/u, "");
+  url.pathname = path.endsWith(suffix) ? path : `${path}${suffix}`;
+  return url;
+}
+
+function capabilityEndpoint(base, endpointPath) {
+  const endpoint = endpointUrl(base);
+  if (endpointPath === undefined) return endpoint.href.replace(/\/+$/u, "");
+  if (typeof endpointPath !== "string" || !endpointPath.startsWith("/") || endpointPath.includes("\\")) {
+    fail("The web search capability declares an invalid endpoint path.", "WEB_FOLLOW_MODEL_CAPABILITY_INVALID");
+  }
+  endpoint.pathname = endpointPath;
+  endpoint.search = "";
+  endpoint.hash = "";
+  return endpoint.href.replace(/\/+$/u, "");
+}
+
+function safeSource(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const raw = value;
+  if (typeof raw.url !== "string") return undefined;
+  let url;
+  try {
+    url = new URL(raw.url);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+  return {
+    url: url.href,
+    ...typeof raw.title === "string" && raw.title.length > 0 ? { title: raw.title } : {},
+    ...typeof raw.snippet === "string" && raw.snippet.length > 0 ? { snippet: raw.snippet } : {},
+    ...typeof raw.publishedAt === "string" && raw.publishedAt.length > 0 ? { publishedAt: raw.publishedAt } : {},
+  };
+}
+
+function uniqueSources(values) {
+  const seen = new Set();
+  const sources = [];
+  for (const value of values) {
+    const source = safeSource(value);
+    if (source === undefined || seen.has(source.url)) continue;
+    seen.add(source.url);
+    sources.push(source);
+  }
+  return sources;
+}
+
+function constrainedFields(fields, reserved) {
+  if (fields === undefined) return {};
+  const entries = Object.entries(fields);
+  if (entries.length > MAX_REQUEST_FIELDS) {
+    fail(`The web search capability declares more than ${MAX_REQUEST_FIELDS} request extension fields.`, "WEB_FOLLOW_MODEL_CAPABILITY_INVALID");
+  }
+  const result = {};
+  for (const [key, value] of entries) {
+    if (!REQUEST_FIELD.test(key) || reserved.has(key)) {
+      fail(`The web search capability declares disallowed request field "${key}".`, "WEB_FOLLOW_MODEL_CAPABILITY_INVALID");
+    }
+    if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+      fail(`The web search capability request field "${key}" is not a scalar.`, "WEB_FOLLOW_MODEL_CAPABILITY_INVALID");
+    }
+    if (typeof value === "string" && value.length > 1024) {
+      fail(`The web search capability request field "${key}" is too long.`, "WEB_FOLLOW_MODEL_CAPABILITY_INVALID");
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function responseText(response) {
+  const length = Number(response.headers.get("content-length"));
+  if (Number.isFinite(length) && length > MAX_RESPONSE_BYTES) {
+    fail("The web search response exceeded the safe size limit.", "WEB_FOLLOW_MODEL_RESPONSE_TOO_LARGE");
+  }
+  return response.text().then((text) => {
+    if (Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES) {
+      fail("The web search response exceeded the safe size limit.", "WEB_FOLLOW_MODEL_RESPONSE_TOO_LARGE");
+    }
+    return text;
+  });
+}
+
+async function postJsonResponse(url, body, headers, signal, fetchImpl = fetch, allowEmpty = false) {
+  const timeout = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+  const combined = signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: "POST",
+      redirect: "error",
+      signal: combined,
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    if (combined.aborted) fail("The web search request was canceled or timed out.", "WEB_FOLLOW_MODEL_ABORTED", error);
+    fail(copy("requestFailed"), "WEB_FOLLOW_MODEL_REQUEST_FAILED", error);
+  }
+  const text = await responseText(response);
+  if (!response.ok) {
+    fail(`The current Provider web search request failed with HTTP ${response.status}.`, "WEB_FOLLOW_MODEL_REQUEST_FAILED");
+  }
+  if (allowEmpty && text.length === 0) return { response, payload: undefined };
+  try {
+    return { response, payload: JSON.parse(text) };
+  } catch (error) {
+    fail(copy("responseInvalid"), "WEB_FOLLOW_MODEL_RESPONSE_INVALID", error);
+  }
+}
+
+async function postJson(url, body, headers, signal, fetchImpl = fetch) {
+  return (await postJsonResponse(url, body, headers, signal, fetchImpl)).payload;
+}
+
+function textContent(value) {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => {
+      if (typeof item === "string") return [item];
+      if (typeof item === "object" && item !== null && typeof item.text === "string") return [item.text];
+      return [];
+    }).join("\n");
+  }
+  return undefined;
+}
+
+function responseAnnotations(output) {
+  const sources = [];
+  for (const item of Array.isArray(output) ? output : []) {
+    for (const block of Array.isArray(item?.content) ? item.content : []) {
+      for (const annotation of Array.isArray(block?.annotations) ? block.annotations : []) {
+        const citation = annotation?.url_citation ?? annotation;
+        if (typeof citation?.url === "string") {
+          sources.push({ url: citation.url, title: citation.title });
+        }
+      }
+    }
+  }
+  return sources;
+}
+
+function genericSources(payload) {
+  const candidates = [payload?.sources, payload?.citations, payload?.search_results, payload?.searchResults];
+  const sources = [];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    for (const item of candidate) {
+      if (typeof item === "string") sources.push({ url: item });
+      else if (typeof item === "object" && item !== null) {
+        sources.push({
+          url: item.url ?? item.link,
+          title: item.title ?? item.name,
+          snippet: item.snippet ?? item.description ?? item.text,
+          publishedAt: item.publishedAt ?? item.published_at ?? item.date,
+        });
+      }
+    }
+  }
+  return sources;
+}
+
+function normalizedResult(content, sources, maxResults) {
+  const normalized = uniqueSources(sources);
+  const limited = maxResults === undefined ? normalized : normalized.slice(0, maxResults);
+  return {
+    ...typeof content === "string" && content.length > 0 ? { content } : {},
+    sources: limited,
+    truncated: limited.length < normalized.length,
+  };
+}
+
+function bearerHeaders(apiKey) {
+  return { authorization: `Bearer ${apiKey}` };
+}
+
+function mcpHeaders(credential, sessionId) {
+  return {
+    ...bearerHeaders(credential),
+    accept: "application/json, text/event-stream",
+    ...sessionId === undefined ? {} : { "mcp-session-id": sessionId },
+  };
+}
+
+function mcpResult(payload, maxResults) {
+  if (payload?.error !== undefined) fail(copy("requestFailed"), "WEB_FOLLOW_MODEL_REQUEST_FAILED");
+  const result = payload?.result;
+  const structured = result?.structuredContent;
+  const text = textContent(result?.content);
+  let decoded;
+  if (structured === undefined && typeof text === "string") {
+    try { decoded = JSON.parse(text); } catch {}
+  }
+  const body = structured ?? decoded ?? result ?? {};
+  return normalizedResult(body.content ?? (decoded === undefined ? text : undefined), genericSources(body), maxResults);
+}
+
+function builtInProtocols(fetchImpl) {
+  return new Map([
+    ["openai-responses-web-search", async ({ route, capability, credential, request, signal }) => {
+      const payload = await postJson(requestUrl(route.endpoint, "/responses"), {
+        ...constrainedFields(capability.requestFields, new Set(["model", "input", "tools"])),
+        model: route.model,
+        input: request.query,
+        tools: [{ type: "web_search_preview" }],
+      }, bearerHeaders(credential), signal, fetchImpl);
+      const content = typeof payload.output_text === "string"
+        ? payload.output_text
+        : textContent(payload.output?.flatMap?.((item) => item?.content ?? []));
+      return normalizedResult(content, [...responseAnnotations(payload.output), ...genericSources(payload)], request.maxResults);
+    }],
+    ["openai-chat-completions-search", async ({ route, capability, credential, request, signal }) => {
+      const payload = await postJson(requestUrl(route.endpoint, "/chat/completions"), {
+        ...constrainedFields(capability.requestFields, new Set(["model", "messages", "stream", "enable_search"])),
+        model: route.model,
+        messages: [{ role: "user", content: request.query }],
+        stream: false,
+        enable_search: true,
+      }, bearerHeaders(credential), signal, fetchImpl);
+      const message = payload?.choices?.[0]?.message;
+      return normalizedResult(textContent(message?.content), [
+        ...genericSources(message),
+        ...genericSources(payload),
+      ], request.maxResults);
+    }],
+    ["anthropic-messages-web-search", async ({ route, capability, credential, request, signal }) => {
+      const payload = await postJson(requestUrl(route.endpoint, "/messages"), {
+        ...constrainedFields(capability.requestFields, new Set(["model", "messages", "tools", "max_tokens"])),
+        model: route.model,
+        max_tokens: 4096,
+        messages: [{ role: "user", content: request.query }],
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
+      }, { "x-api-key": credential, "anthropic-version": "2023-06-01" }, signal, fetchImpl);
+      const blocks = Array.isArray(payload?.content) ? payload.content : [];
+      const sources = [];
+      for (const block of blocks) {
+        if (block?.type === "web_search_tool_result" && Array.isArray(block.content)) sources.push(...block.content);
+        if (Array.isArray(block?.citations)) sources.push(...block.citations);
+      }
+      return normalizedResult(textContent(blocks), [...sources, ...genericSources(payload)], request.maxResults);
+    }],
+    ["dsh-web-search-v1", async ({ route, capability, credential, request, signal }) => {
+      const payload = await postJson(requestUrl(route.endpoint, "/web-search"), {
+        ...constrainedFields(capability.requestFields, new Set(["query", "maxResults", "model"])),
+        query: request.query,
+        ...request.maxResults === undefined ? {} : { maxResults: request.maxResults },
+        model: route.model,
+      }, bearerHeaders(credential), signal, fetchImpl);
+      return normalizedResult(payload?.content, payload?.sources ?? [], request.maxResults);
+    }],
+    ["mcp-web-search", async ({ route, capability, credential, request, signal }) => {
+      const endpoint = endpointUrl(route.endpoint);
+      const initialize = await postJsonResponse(endpoint, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-03-26",
+          capabilities: {},
+          clientInfo: { name: "dsh-web-search-follow-model", version: "1.0.0" },
+        },
+      }, mcpHeaders(credential), signal, fetchImpl);
+      const sessionId = initialize.response.headers.get("mcp-session-id") ?? undefined;
+      await postJsonResponse(endpoint, {
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+      }, mcpHeaders(credential, sessionId), signal, fetchImpl, true);
+      const listed = await postJson(endpoint, {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/list",
+        params: {},
+      }, mcpHeaders(credential, sessionId), signal, fetchImpl);
+      const configuredName = capability.requestFields?.toolName;
+      const toolName = typeof configuredName === "string" && configuredName.length > 0 ? configuredName : "web_search";
+      if (!listed?.result?.tools?.some?.((tool) => tool?.name === toolName)) {
+        fail(`The MCP endpoint does not advertise the declared web search tool "${toolName}".`, "WEB_FOLLOW_MODEL_CAPABILITY_MISSING");
+      }
+      const { toolName: _toolName, ...declaredFields } = capability.requestFields ?? {};
+      const extension = constrainedFields(declaredFields, new Set(["query", "maxResults"]));
+      const called = await postJson(endpoint, {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: {
+            ...extension,
+            query: request.query,
+            ...request.maxResults === undefined ? {} : { maxResults: request.maxResults },
+          },
+        },
+      }, mcpHeaders(credential, sessionId), signal, fetchImpl);
+      return mcpResult(called, request.maxResults);
+    }],
+  ]);
+}
+
+export class FollowModelSearchEngine {
+  constructor(options = {}) {
+    this.fetch = options.fetch ?? fetch;
+    this.resolveCredential = options.resolveCredential;
+    this.protocols = builtInProtocols(this.fetch);
+    this.routeResolvers = new Set();
+  }
+
+  registerProtocol(id, adapter) {
+    if (!PROTOCOL_ID.test(id)) fail(`Invalid web search protocol id "${id}".`, "WEB_FOLLOW_MODEL_PROTOCOL_INVALID");
+    if (this.protocols.has(id)) fail(`Web search protocol "${id}" is already registered.`, "WEB_FOLLOW_MODEL_PROTOCOL_DUPLICATE");
+    if (typeof adapter !== "function") fail(`Web search protocol "${id}" has no adapter.`, "WEB_FOLLOW_MODEL_PROTOCOL_INVALID");
+    this.protocols.set(id, adapter);
+    return () => this.protocols.delete(id);
+  }
+
+  registerRouteResolver(resolver) {
+    if (typeof resolver !== "function") fail("A web search route resolver must be a function.", "WEB_FOLLOW_MODEL_ROUTE_RESOLVER_INVALID");
+    this.routeResolvers.add(resolver);
+    return () => this.routeResolvers.delete(resolver);
+  }
+
+  async resolveRoute(agent) {
+    const selection = activeRoute(agent);
+    const matches = [];
+    for (const resolver of this.routeResolvers) {
+      const match = await resolver(selection);
+      if (match !== undefined && match !== null) matches.push(match);
+    }
+    if (matches.length === 0) {
+      fail(copy("capabilityMissing"), "WEB_FOLLOW_MODEL_CAPABILITY_MISSING");
+    }
+    if (matches.length > 1) {
+      fail(`Multiple model adapters claimed Provider route "${selection.provider}".`, "WEB_FOLLOW_MODEL_ROUTE_AMBIGUOUS");
+    }
+    const route = matches[0];
+    if (route.provider !== selection.provider || route.model !== selection.model) {
+      fail("The model adapter returned a web search route for a different Provider or model.", "WEB_FOLLOW_MODEL_ROUTE_MISMATCH");
+    }
+    const capability = route.webSearch;
+    if (typeof route.endpoint !== "string" || route.endpoint.length === 0 || typeof capability?.protocol !== "string") {
+      fail(`The current Provider "${selection.provider}" has an invalid web search capability declaration.`, "WEB_FOLLOW_MODEL_CAPABILITY_INVALID");
+    }
+    if ((capability.credential ?? "inherit") !== "inherit") {
+      fail("The current Provider web search capability uses an unsupported credential policy.", "WEB_FOLLOW_MODEL_CAPABILITY_INVALID");
+    }
+    return {
+      route: { ...route, endpoint: capabilityEndpoint(route.endpoint, capability.endpointPath) },
+      capability,
+    };
+  }
+
+  async search(agent, request, signal) {
+    const { route, capability } = await this.resolveRoute(agent);
+    const adapter = this.protocols.get(capability.protocol);
+    if (adapter === undefined) {
+      fail(copy("protocolUnavailable"), "WEB_FOLLOW_MODEL_PROTOCOL_UNAVAILABLE");
+    }
+    if (typeof route.credentialRef !== "string" || route.credentialRef.length === 0) {
+      fail(copy("credentialMissing"), "WEB_FOLLOW_MODEL_CREDENTIAL_MISSING");
+    }
+    let credential;
+    try {
+      credential = await this.resolveCredential(credentialRef(route.credentialRef));
+    } catch (error) {
+      fail(copy("credentialMissing"), "WEB_FOLLOW_MODEL_CREDENTIAL_MISSING", error);
+    }
+    if (typeof credential !== "string" || credential.length === 0) {
+      fail(copy("credentialMissing"), "WEB_FOLLOW_MODEL_CREDENTIAL_MISSING");
+    }
+    return adapter({ route, capability, credential, request, signal });
+  }
+}
+
+export default class FollowModelWebSearch extends Service {
+  static Config = Config;
+  static inject = ["web"];
+
+  constructor(ctx, config = {}) {
+    super(ctx, "webSearchProtocols");
+    let current = () => normalizedConfig(config);
+    installSettingsSection(ctx, SETTINGS_NS, Config, config, {
+      setSource: (source) => { current = () => normalizedConfig(source()); },
+      onChange: () => {},
+    });
+    this.engine = new FollowModelSearchEngine({
+      resolveCredential: async (ref) => (await ctx.get("credentials")?.resolve(ref))?.value,
+    });
+    ctx.web.registerSearchProvider({
+      id: PROVIDER_ID,
+      available: () => true,
+      search: async (request, signal, agent) => {
+        const settings = current();
+        if (settings.mode === "disabled") {
+          fail(copy("disabled"), "WEB_FOLLOW_MODEL_DISABLED");
+        }
+        if (settings.mode === "independent") {
+          if (typeof settings.independentProvider !== "string" || settings.independentProvider.length === 0) {
+            fail(copy("independentMissing"), "WEB_FOLLOW_MODEL_INDEPENDENT_MISSING");
+          }
+          if (settings.independentProvider === PROVIDER_ID) {
+            fail(copy("independentMissing"), "WEB_FOLLOW_MODEL_INDEPENDENT_MISSING");
+          }
+          return ctx.web.searchWithProvider(settings.independentProvider, request, signal, agent);
+        }
+        return this.engine.search(agent, request, signal);
+      },
+    });
+  }
+
+  registerProtocol(id, adapter) {
+    return this.engine.registerProtocol(id, adapter);
+  }
+
+  registerRouteResolver(resolver) {
+    return this.engine.registerRouteResolver(resolver);
+  }
+}
+
+export { PROVIDER_ID, SETTINGS_NS };

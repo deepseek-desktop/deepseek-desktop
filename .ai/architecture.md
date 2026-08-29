@@ -58,6 +58,7 @@ Apple Silicon 单机编排由 `scripts/release-system/local-all.mjs` 在同一�
 - `src-tauri/src/native_menu.rs`：跨平台原生菜单及页面切换入口。
 - `src-tauri/src/updater.rs`：桌面安装包更新边界；与 Runtime 独立更新分离，社区版保持关闭。
 - `runtime/packages/credentials-vault/`：Harness Credential Provider 代理，通过 stdin/stdout JSON 调用桌面 helper。
+- `runtime/packages/web-search-follow-model/`：Provider 无关的联网搜索路由、标准协议执行器和受控第三方协议注册服务。
 - `runtime/patches/`：针对锁定 Runtime 的最小桌面集成补丁，必须有 marker 和验证。
 - `scripts/`：配置同步、Runtime 构建、发行门禁、平台打包和工具链引导。
 - `scripts/release-system/`：平台无关的本地发布 Controller、Worker、目标协议和 filesystem/GitHub Provider。
@@ -73,6 +74,20 @@ Apple Silicon 单机编排由 `scripts/release-system/local-all.mjs` 在同一�
 5. Runtime 异常退出时按有限次数恢复；用户主动停止或应用退出时清理进程树。
 6. 已配置可信更新服务时，候选 Runtime 下载到应用数据目录并在下次启动 smoke 后切换；失败回滚上一版或内置基线。
 
+联网搜索链路独立于 Desktop 壳：
+
+```text
+web_search 工具
+  -> 当前执行 Agent 的内部会话上下文
+  -> 当前模型 Provider / model
+  -> Provider capabilities.webSearch
+  -> 继承 endpoint / CredentialRef
+  -> 标准协议执行器或受信任插件注册的执行器
+  -> 统一 WebSearchResult
+```
+
+路由上下文由 Runtime 内部传递，不进入模型可控的工具参数。Provider 未声明能力时快速失败，不发送探测请求；切换模型后下一次调用重新解析当前会话路由，多会话不会共享可变 Provider 状态。
+
 Desktop 与 Runtime 的关系是“原生壳 + 本地 Web 应用”：Desktop 不调用 Runtime 私有工作区 API，不保存用户项目目录，也不把自身运行目录解释为用户工作区。会话、项目目录和文件边界由 Runtime 工作台自己的稳定公共能力负责。
 
 ## 安全边界
@@ -81,4 +96,5 @@ Desktop 与 Runtime 的关系是“原生壳 + 本地 Web 应用”：Desktop �
 - 凭据、`.env`、用户工作区和本机路径不得进入安装包、发布附件或诊断包。
 - 发布来源使用不可变 commit 和哈希作为事实，不以可移动 tag 单独作为信任依据。
 - Runtime 清单签名覆盖有效期、来源、兼容协议和制品哈希；更新客户端按频道拒绝重放与降级，不跟随重定向，不解压链接、特殊文件或逃逸路径。
+- 联网搜索凭据只以 `CredentialRef` 从当前 Provider 解析并发送到其经过校验的 HTTPS endpoint；禁止搜索失败后跨 Provider 降级、自动重定向、厂商或域名猜测和密钥日志输出。
 - 打包 Worker 流式扫描实际交付闭包并在 `BUILD-INFO` 留下审计摘要；Controller 拒绝缺失摘要、来源不一致、超时、超限或敏感信息命中的制品。GitHub Actions 的第一方 Action 固定到不可变 commit SHA。

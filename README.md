@@ -28,7 +28,7 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 模型密钥会加密保存在本机，不进入日志、诊断包或浏览器存储。完整安装、配置和故障排查说明见[中文使用文档](docs/zh-CN/getting-started.md)。
 
-联网搜索使用 DeepSeek 官方的搜索接口，需要在“设置 → 模型 → DeepSeek”中另外保存官方 DeepSeek API 密钥。阿里云 MaaS 等第三方 Provider 的密钥只会发送到各自配置的 API 地址，出于安全和协议兼容考虑，不会自动转发到 DeepSeek 官方搜索接口；配置一次官方密钥后，对话和联网搜索会共同复用本机加密凭据 `DEEPSEEK_API_KEY`。
+联网搜索默认“跟随当前模型”：Runtime 根据当前会话 Provider 声明的标准搜索协议，复用该 Provider 已保存的 API 地址、模型和凭据引用，不要求再次输入搜索密钥。切换模型后，下一次搜索会立即跟随新的 Provider；未声明搜索能力的自定义接口会明确提示，不会盲目试探协议或把密钥发送到其他服务。协议声明与扩展方式见[跟随当前模型的联网搜索](docs/zh-CN/runtime-web-search.md)。
 
 ### macOS 提示“Apple 无法验证”怎么办
 
