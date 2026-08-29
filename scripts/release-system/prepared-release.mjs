@@ -162,6 +162,31 @@ function receiptMatchesInput(payload, input, cacheKey) {
   return canonicalBytes(actual).equals(canonicalBytes(input));
 }
 
+export function preparedPlanIdentity(plan) {
+  const rawTargetIds = Array.isArray(plan.targetIds)
+    ? plan.targetIds
+    : Array.isArray(plan.targets)
+      ? plan.targets.map(target => target.id)
+      : Array.isArray(plan.tasks)
+        ? plan.tasks.map(task => task.targetId)
+        : [];
+  const targetIds = rawTargetIds.slice().sort();
+  if (targetIds.length === 0
+    || targetIds.some(targetId => typeof targetId !== "string" || !targetId)
+    || new Set(targetIds).size !== targetIds.length) {
+    throw new Error("prepared release plan must contain a unique target set");
+  }
+  return {
+    tag: plan.tag,
+    version: plan.version,
+    channel: plan.channel,
+    signed: plan.signed,
+    source: { commit: plan.source?.commit },
+    runtime: { commit: plan.runtime?.commit },
+    targetIds
+  };
+}
+
 async function readPreparedRuntime(payloadRoot, expectedCommit) {
   const generatedLock = JSON.parse(await readFile(join(payloadRoot, "runtime-lock.json"), "utf8"));
   const generatedSource = JSON.parse(await readFile(join(payloadRoot, "runtime-source.json"), "utf8"));
@@ -339,6 +364,7 @@ export async function prepareRelease({
 }
 
 export async function restorePreparedRelease({ root, preparedRoot, expectedDescriptor, plan }) {
+  const planIdentity = preparedPlanIdentity(plan);
   const descriptor = assertPreparedDescriptor(expectedDescriptor);
   const directory = join(resolve(preparedRoot), descriptor.cacheKey);
   const receiptPath = join(directory, "receipt.json");
@@ -348,22 +374,23 @@ export async function restorePreparedRelease({ root, preparedRoot, expectedDescr
   for (const key of ["cacheKey", "trackedSourceSha256", "generatedPayloadSha256"]) {
     if (payload[key] !== descriptor[key]) throw new Error(`prepared release ${key} does not match controller plan`);
   }
-  if (payload.desktopCommit !== plan.source.commit || payload.desktopCommit !== descriptor.desktopCommit) {
+  if (payload.desktopCommit !== planIdentity.source.commit || payload.desktopCommit !== descriptor.desktopCommit) {
     throw new Error("prepared release Desktop commit does not match controller plan");
   }
-  if (payload.runtime.commit !== plan.runtime.commit || payload.runtime.commit !== descriptor.runtimeCommit) {
+  if (payload.runtime.commit !== planIdentity.runtime.commit || payload.runtime.commit !== descriptor.runtimeCommit) {
     throw new Error("prepared release Runtime commit does not match controller plan");
   }
-  if (payload.tag !== plan.tag || payload.version !== plan.version || payload.channel !== plan.channel || payload.signed !== plan.signed) {
+  if (payload.tag !== planIdentity.tag || payload.version !== planIdentity.version
+    || payload.channel !== planIdentity.channel || payload.signed !== planIdentity.signed) {
     throw new Error("prepared release identity does not match controller plan");
   }
-  const planTargetIds = plan.targets.map(target => target.id).slice().sort();
+  const planTargetIds = planIdentity.targetIds;
   if (JSON.stringify(payload.targetIds) !== JSON.stringify(planTargetIds)
     || JSON.stringify(descriptor.targetIds) !== JSON.stringify(planTargetIds)) {
     throw new Error("prepared release target set does not match controller plan");
   }
   const workspace = resolve(root);
-  if (git(workspace, ["rev-parse", "HEAD"]) !== plan.source.commit) throw new Error("prepared worker checkout commit changed");
+  if (git(workspace, ["rev-parse", "HEAD"]) !== planIdentity.source.commit) throw new Error("prepared worker checkout commit changed");
   if (git(workspace, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("prepared worker checkout must remain clean");
   if (await trackedSourceHash(workspace) !== descriptor.trackedSourceSha256) throw new Error("prepared worker source inputs changed");
   const payloadRoot = join(directory, "payload");

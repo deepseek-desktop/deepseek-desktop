@@ -21,6 +21,7 @@ import { requestJson, uploadArtifact } from "./http-client.mjs";
 import { ensureAdminToken, startReleaseServer } from "./http-server.mjs";
 import { ReleaseStateStore } from "./state-store.mjs";
 import { createReleasePlan } from "./release-plan.mjs";
+import { preparedPlanIdentity } from "./prepared-release.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const defaultControllerRoot = join(root, "target", "release-controller");
@@ -211,14 +212,7 @@ function preparedEnvironment(plan, preparedRoot) {
   return {
     DEEPSEEK_DESKTOP_PREPARED_ROOT: preparedRoot,
     DEEPSEEK_DESKTOP_PREPARED_DESCRIPTOR: JSON.stringify(plan.prepared),
-    DEEPSEEK_DESKTOP_RELEASE_PLAN: JSON.stringify({
-      tag: plan.tag,
-      version: plan.version,
-      channel: plan.channel,
-      signed: plan.signed,
-      source: plan.source,
-      runtime: plan.runtime
-    })
+    DEEPSEEK_DESKTOP_RELEASE_PLAN: JSON.stringify(preparedPlanIdentity(plan))
   };
 }
 

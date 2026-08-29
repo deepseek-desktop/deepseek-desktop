@@ -18,7 +18,7 @@ import {
   createContentCacheManifest,
   verifyContentCache
 } from "../release-system/content-cache.mjs";
-import { prepareRelease, restorePreparedRelease } from "../release-system/prepared-release.mjs";
+import { prepareRelease, preparedPlanIdentity, restorePreparedRelease } from "../release-system/prepared-release.mjs";
 import { artifactForbiddenRoots, scanArtifactPaths } from "../lib/artifact-scan.mjs";
 import { portableRustFlags } from "../lib/rust-flags.mjs";
 import { cloneLockedSource, createLockedSourceBundle, resolveBundledTag } from "../release-system/git-source.mjs";
@@ -334,8 +334,9 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
     signed: false,
     source: { commit: git(directory, ["rev-parse", "HEAD"]) },
     runtime: { commit: runtimeCommit },
-    targets: ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"].map(id => ({ id }))
+    tasks: ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"].map(targetId => ({ targetId }))
   };
+  assert.deepEqual(preparedPlanIdentity(plan).targetIds, ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"]);
   await restorePreparedRelease({ root: directory, preparedRoot: cacheRoot, expectedDescriptor: first.descriptor, plan });
   const receipt = await readFile(first.receiptPath, "utf8");
   assert.equal(receipt.includes(directory), false, "prepared receipt must not contain a local path");
