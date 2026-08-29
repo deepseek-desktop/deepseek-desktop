@@ -222,7 +222,7 @@ NODE
 corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --concurrency 2
 ```
 
-`release:local-all` 先完成 `release:prepare`，成功后才启动 Worker。默认并发按内存自适应；16 GB Mac 使用 `2`，32 GB 可先使用 `3`，只有资源充足且实测稳定时才使用 `4`。不要让原生、Rosetta、Docker 和 Parallels 为抢内存而同时变慢。
+`release:local-all` 先完成 `release:prepare`，再生成只含当前 annotated tag 的锁定源码 bundle；单机控制器校验该 bundle 的 tag/commit，因此本地构建不以远端 tag 为前置条件。成功后才启动 Worker。默认并发按内存自适应；16 GB Mac 使用 `2`，32 GB 可先使用 `3`，只有资源充足且实测稳定时才使用 `4`。不要让原生、Rosetta、Docker 和 Parallels 为抢内存而同时变慢。
 
 需要隔离故障时先只跑一个目标：
 

@@ -21,7 +21,7 @@ import {
 import { prepareRelease, restorePreparedRelease } from "../release-system/prepared-release.mjs";
 import { artifactForbiddenRoots, scanArtifactPaths } from "../lib/artifact-scan.mjs";
 import { portableRustFlags } from "../lib/rust-flags.mjs";
-import { cloneLockedSource, createLockedSourceBundle } from "../release-system/git-source.mjs";
+import { cloneLockedSource, createLockedSourceBundle, resolveBundledTag } from "../release-system/git-source.mjs";
 
 const desktopCommit = "a".repeat(40);
 const runtimeCommit = "b".repeat(40);
@@ -113,6 +113,8 @@ test("workers can clone a locked local bundle while preserving the canonical rep
   git(source, ["tag", "-a", "v1.0.0", "-m", "v1.0.0"]);
   const commit = git(source, ["rev-parse", "HEAD"]);
   await createLockedSourceBundle({ repositoryRoot: source, tag: "v1.0.0", commit, destination: bundle });
+  assert.equal(await resolveBundledTag(bundle, "v1.0.0"), commit);
+  await assert.rejects(() => resolveBundledTag(bundle, "v1.0.1"), /does not contain release tag/u);
   await cloneLockedSource({
     repository: "ssh://git@example.invalid/team/deepseek-desktop.git",
     sourceBundle: bundle,

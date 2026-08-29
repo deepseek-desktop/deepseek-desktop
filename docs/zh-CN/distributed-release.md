@@ -74,7 +74,7 @@ corepack pnpm@11.7.0 release:local-all -- --check
 corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --concurrency 2
 ```
 
-命令会先调用 `release:prepare`，成功后才创建任务和启动 Worker。默认并发根据宿主机内存自适应；16 GB Mac 建议使用 `--concurrency 2`，32 GB 可从 `3` 开始观察，任何机器都不建议盲目同时跑满四环境。
+命令会先调用 `release:prepare`，成功后生成并验证只包含当前 annotated tag 的锁定源码 bundle，再创建任务和启动 Worker；本地构建成功前不要求把 tag 推送到代码托管平台。默认并发根据宿主机内存自适应；16 GB Mac 建议使用 `--concurrency 2`，32 GB 可从 `3` 开始观察，任何机器都不建议盲目同时跑满四环境。
 
 默认结果位于 `release/local-all/v1.0.0/`，准备阶段、每个 Worker、Runtime/Cargo 缓存状态、打包和发布的真实耗时与最终状态位于 `target/local-release/runs/<run-id>/summary.json`。也可以只验证或构建一个目标：
 

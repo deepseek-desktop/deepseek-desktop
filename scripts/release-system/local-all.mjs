@@ -24,7 +24,7 @@ import { ensureAdminToken, startReleaseServer } from "./http-server.mjs";
 import { createReleasePlan } from "./release-plan.mjs";
 import { prepareRelease } from "./prepared-release.mjs";
 import { ReleaseStateStore } from "./state-store.mjs";
-import { createLockedSourceBundle } from "./git-source.mjs";
+import { createLockedSourceBundle, resolveBundledTag } from "./git-source.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const defaultConfigPath = join(root, ".deepseek-release.local.json");
@@ -582,7 +582,16 @@ export async function main() {
   const store = new ReleaseStateStore(controllerRoot);
   await store.initialize();
   const admin = await ensureAdminToken(controllerRoot);
-  const service = new ReleaseControllerService({ store, ticketTtlMs: 12 * 60 * 60_000, leaseTtlMs: 12 * 60 * 60_000 });
+  let sourceBundle = "";
+  const service = new ReleaseControllerService({
+    store,
+    ticketTtlMs: 12 * 60 * 60_000,
+    leaseTtlMs: 12 * 60 * 60_000,
+    verifyRemoteTag: async (_repository, tag) => {
+      if (!sourceBundle) throw new Error("local release source bundle is not ready");
+      return resolveBundledTag(sourceBundle, tag);
+    }
+  });
   const server = await startReleaseServer({
     service,
     host: "0.0.0.0",
@@ -669,7 +678,7 @@ export async function main() {
       trustedNodes,
       prepared: preparation.descriptor
     });
-    const sourceBundle = await createLockedSourceBundle({
+    sourceBundle = await createLockedSourceBundle({
       repositoryRoot: root,
       tag,
       commit: plan.source.commit,

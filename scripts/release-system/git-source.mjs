@@ -26,8 +26,7 @@ function runGit(args, options = {}) {
   });
 }
 
-export async function resolveRemoteTag(repository, tag) {
-  const source = assertSourceRepository(repository);
+async function resolveTag(source, tag) {
   const output = await runGit(["ls-remote", "--tags", source, `refs/tags/${tag}`, `refs/tags/${tag}^{}`]);
   const references = new Map(output.split("\n").filter(Boolean).map(line => {
     const [commit, reference] = line.trim().split(/\s+/u);
@@ -38,6 +37,10 @@ export async function resolveRemoteTag(repository, tag) {
   const commit = peeled || direct;
   if (!commit) throw new Error(`source repository does not contain release tag ${tag}`);
   return commit;
+}
+
+export async function resolveRemoteTag(repository, tag) {
+  return resolveTag(assertSourceRepository(repository), tag);
 }
 
 async function assertBundle(path) {
@@ -52,6 +55,25 @@ async function assertBundle(path) {
     await rm(verificationRepository, { recursive: true, force: true });
   }
   return bundle;
+}
+
+export async function resolveBundledTag(path, tag) {
+  const bundle = await assertBundle(path);
+  const verificationRepository = await mkdtemp(join(tmpdir(), "deepseek-bundle-tag-"));
+  try {
+    await runGit(["init", "--bare", verificationRepository]);
+    try {
+      await runGit(["fetch", "--no-tags", bundle, `refs/tags/${tag}:refs/tags/${tag}`], { cwd: verificationRepository });
+    } catch {
+      throw new Error(`source repository does not contain release tag ${tag}`);
+    }
+    return assertCommit(
+      await runGit(["rev-parse", `${tag}^{commit}`], { cwd: verificationRepository }),
+      "bundled tag commit"
+    );
+  } finally {
+    await rm(verificationRepository, { recursive: true, force: true });
+  }
 }
 
 export async function createLockedSourceBundle({ repositoryRoot, tag, commit, destination }) {
