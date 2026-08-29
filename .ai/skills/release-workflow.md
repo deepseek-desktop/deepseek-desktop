@@ -300,6 +300,7 @@ filesystem/NAS 发布优先，因为它最容易复核且与托管平台无关�
 | Linux AppImage 报缺少 `xdg-open` | 本地发行镜像是否命中当前 Dockerfile 契约 | 保持 `xdg-utils` 在固定镜像依赖中，让编排器按 Dockerfile 哈希自动重建；不要在 Worker 内临时安装 |
 | Linux AppImage 在 `linuxdeploy` 阶段失败 | 本地 Docker Worker 是否传入 `NO_STRIP=1` | `release:local-all` 只为 Linux Worker 固定该变量；不得向 macOS 或 Windows 传播 |
 | Windows 在品牌图标生成时报拒绝访问 | Tauri 内层是否又调用完整 `build` 并重复执行 `app:sync` | 保持 Tauri `beforeBuildCommand` 只调用 `frontend:build`；配置同步由外层构建入口完成或核验，不放宽 receipt |
+| Windows 重试时在 Runtime 资源上报拒绝访问 | 内容缓存恢复出的工作副本是否仍带只读属性 | 缓存本体保持完整性校验；`runtime:stage` 恢复后只将工作副本递归设为可写，保证 Tauri 可覆盖持久 Cargo 目录中的旧资源 |
 | 制品扫描发现维护者本机路径 | Rust path remap 规则与 Cargo 缓存身份版本 | 修正重映射后重建对应目标；不得放宽本机路径扫描 |
 | 上传中断或租约过期 | Controller 状态、任务租约 | 对失败目标签发替换票据，旧票据不得复用 |
 | 远程 Provider 失败 | filesystem 制品、Provider 凭据和 API | 保留已验证制品，只重试上传，不重新编译 |

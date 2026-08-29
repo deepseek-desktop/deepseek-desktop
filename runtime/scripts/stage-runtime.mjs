@@ -9,6 +9,7 @@ import { atomicWriteJson } from "../../scripts/release-system/common.mjs";
 import {
   contentCacheKey,
   createContentCacheManifest,
+  makeContentTreeWritable,
   verifyContentCache
 } from "../../scripts/release-system/content-cache.mjs";
 
@@ -268,6 +269,7 @@ try {
   await rm(output, { recursive: true, force: true });
   await mkdir(stagingRoot, { recursive: true });
   await cp(join(cacheDirectory, "runtime"), output, { recursive: true, force: true });
+  await makeContentTreeWritable(output);
   await mkdir(dirname(sidecar), { recursive: true });
   await cp(join(cacheDirectory, "sidecar", basename(sidecar)), sidecar, { force: true });
   await atomicWriteJson(cacheStatusPath, { schemaVersion: 1, target, key: cacheKey, hit: true });
@@ -281,6 +283,7 @@ await rm(output, { recursive: true, force: true });
 await mkdir(stagingRoot, { recursive: true });
 await stat(join(preparedRuntime, lock.runtime.entry));
 await cp(preparedRuntime, output, { recursive: true, force: true });
+await makeContentTreeWritable(output);
 
 // pnpm writes the wall-clock pruning time into this install-only metadata file.
 // Node does not consume it at runtime, so omit it from the distributable closure.

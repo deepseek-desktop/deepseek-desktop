@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -16,6 +16,7 @@ import { dockerBaseArgs, dockerImageContract, loadLocalAllConfig, macPathToParal
 import {
   contentCacheKey,
   createContentCacheManifest,
+  makeContentTreeWritable,
   verifyContentCache
 } from "../release-system/content-cache.mjs";
 import { prepareRelease, preparedPlanIdentity, restorePreparedRelease } from "../release-system/prepared-release.mjs";
@@ -122,15 +123,18 @@ test("source repositories reject embedded HTTP credentials", () => {
 });
 
 test("portable Rust flags remap the project, Cargo cache, and user home", () => {
+  const projectRoot = resolve("/Users/developer/project");
+  const cargoTargetDir = resolve("/Users/developer/cache/cargo");
+  const userHome = resolve("/Users/developer");
   const flags = portableRustFlags({
-    projectRoot: "/Users/developer/project",
-    cargoTargetDir: "/Users/developer/cache/cargo",
-    userHome: "/Users/developer",
+    projectRoot,
+    cargoTargetDir,
+    userHome,
     existing: "-C debuginfo=1"
   });
-  assert.match(flags, /--remap-path-prefix=\/Users\/developer=\/build\/home/u);
-  assert.match(flags, /--remap-path-prefix=\/Users\/developer\/project=\/build\/source/u);
-  assert.match(flags, /--remap-path-prefix=\/Users\/developer\/cache\/cargo=\/build\/cargo-target/u);
+  assert.ok(flags.includes(`--remap-path-prefix=${userHome}=/build/home`));
+  assert.ok(flags.includes(`--remap-path-prefix=${projectRoot}=/build/source`));
+  assert.ok(flags.includes(`--remap-path-prefix=${cargoTargetDir}=/build/cargo-target`));
 });
 
 test("workers can clone a locked local bundle while preserving the canonical repository identity", async t => {
@@ -399,6 +403,20 @@ test("content-addressed release cache rejects corruption, target drift, and link
   await rm(join(directory, "runtime", "entry.js"));
   await symlink("../cache-manifest.json", join(directory, "runtime", "linked"));
   await assert.rejects(() => createContentCacheManifest(directory, identity), /symbolic links/u);
+});
+
+test("restored cache working trees make read-only Runtime files writable", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-content-cache-writable-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const runtime = join(directory, "runtime");
+  const file = join(runtime, "hatch_build.py");
+  await mkdir(runtime, { recursive: true });
+  await writeFile(file, "original\n");
+  await chmod(file, 0o444);
+  await makeContentTreeWritable(runtime);
+  assert.notEqual((await stat(file)).mode & 0o200, 0);
+  await writeFile(file, "restaged\n");
+  assert.equal(await readFile(file, "utf8"), "restaged\n");
 });
 
 test("local release scheduler respects concurrency and preserves failed results", async () => {

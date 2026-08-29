@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile, readdir, stat } from "node:fs/promises";
+import { chmod, lstat, readFile, readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 
 import { sha256File } from "./common.mjs";
@@ -12,6 +12,16 @@ function canonical(value) {
 
 export function contentCacheKey(input) {
   return createHash("sha256").update(JSON.stringify(canonical(input))).digest("hex");
+}
+
+export async function makeContentTreeWritable(root, current = root) {
+  const info = await lstat(current);
+  if (info.isSymbolicLink()) throw new Error(`release working tree cannot contain symbolic links: ${relative(root, current).replaceAll("\\", "/")}`);
+  await chmod(current, info.mode | 0o200);
+  if (!info.isDirectory()) return;
+  for (const entry of await readdir(current)) {
+    await makeContentTreeWritable(root, join(current, entry));
+  }
 }
 
 export async function collectContentFiles(root, current = root, output = [], ignored = new Set(["cache-manifest.json"])) {
