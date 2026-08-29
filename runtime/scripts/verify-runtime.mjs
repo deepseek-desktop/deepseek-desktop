@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, readlink, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 import { findInstalledPackages, listInstalledPackages } from "../../scripts/lib/installed-packages.mjs";
 import { assertPinnedRuntimeSource } from "../../scripts/lib/runtime-source-pin.mjs";
@@ -78,7 +79,9 @@ async function verifyPatch(moduleRoots, patch) {
     const source = await readFile(join(packageRoot, ...patch.moduleFile.split("/")), "utf8");
     for (const marker of patch.markers) {
       if (!source.includes(marker)) {
-        throw new Error(`desktop patch ${lockEntry} is absent from ${patch.moduleFile}`);
+        throw new Error(
+          `desktop patch ${lockEntry} is absent from ${join(packageRoot, ...patch.moduleFile.split("/"))}: missing ${JSON.stringify(marker)}`
+        );
       }
     }
   }
@@ -87,6 +90,112 @@ async function verifyPatch(moduleRoots, patch) {
 async function verifyPatches(nodeModules) {
   const cliModules = join(packagePath(nodeModules, lock.runtime.packageName), "node_modules");
   for (const patch of toolchain.desktopPatches) await verifyPatch([cliModules, nodeModules], patch);
+}
+
+async function verifyFinalToolCallIdentity(nodeModules) {
+  const packageRoots = await findInstalledPackages([nodeModules], "@earendil-works/pi-ai");
+  if (packageRoots.length !== 1) {
+    throw new Error(`expected one pi-ai package, found ${packageRoots.length}`);
+  }
+  const moduleUrl = pathToFileURL(join(packageRoots[0], "dist", "api", "openai-responses-shared.js")).href;
+  const { processResponsesStream } = await import(moduleUrl);
+  const providerEvents = [
+    {
+      type: "response.output_item.added",
+      output_index: 0,
+      item: {
+        type: "function_call",
+        id: "fc_stale",
+        call_id: "call_stale",
+        name: "read",
+        arguments: JSON.stringify({ file_path: "/stale/path" }),
+        namespace: "stale"
+      }
+    },
+    {
+      type: "response.output_item.done",
+      output_index: 0,
+      item: {
+        type: "function_call",
+        id: "fc_final",
+        call_id: "call_final",
+        name: "glob",
+        arguments: JSON.stringify({ pattern: "**/*.yml", path: "/workspace" })
+      }
+    },
+    {
+      type: "response.completed",
+      response: { id: "resp_final", status: "completed", output: [] }
+    }
+  ];
+  async function* streamProviderEvents() {
+    yield* providerEvents;
+  }
+  const emitted = [];
+  const output = {
+    role: "assistant",
+    content: [],
+    api: "openai-responses",
+    provider: "compatibility-test",
+    model: "compatibility-test",
+    stopReason: "stop",
+    timestamp: 0,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      reasoning: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+    }
+  };
+  const model = {
+    id: "compatibility-test",
+    name: "Compatibility Test",
+    api: "openai-responses",
+    provider: "compatibility-test",
+    input: ["text"],
+    contextWindow: 1,
+    maxTokens: 1,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+  };
+  await processResponsesStream(streamProviderEvents(), output, { push: event => emitted.push(event) }, model);
+  const completed = emitted.find(event => event.type === "toolcall_end")?.toolCall;
+  if (completed?.id !== "call_final|fc_final"
+    || completed?.name !== "glob"
+    || completed?.arguments?.pattern !== "**/*.yml"
+    || "namespace" in completed) {
+    throw new Error("pi-ai did not use the authoritative final tool-call identity");
+  }
+}
+
+async function verifySearchCredentialGuidance(nodeModules) {
+  const packageRoots = await findInstalledPackages([nodeModules], "@deepseek-ai/dsh-web-search-deepseek");
+  if (packageRoots.length !== 1) {
+    throw new Error(`expected one DeepSeek search package, found ${packageRoots.length}`);
+  }
+  const moduleUrl = pathToFileURL(join(packageRoots[0], "lib", "index.js")).href;
+  const { DeepSeekSearchProvider } = await import(moduleUrl);
+  const provider = new DeepSeekSearchProvider(() => ({
+    resolveApiKey: async () => undefined,
+    apiKeyEnv: "DEEPSEEK_API_KEY",
+    baseURL: "https://api.deepseek.com/anthropic/v1",
+    model: "deepseek-v4-flash",
+    apiVersion: "2023-06-01",
+    maxTokens: 1,
+    maxUses: 1
+  }));
+  try {
+    await provider.search({ query: "credential verification", maxResults: 1 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("official DeepSeek API key")
+      && message.includes("Settings > Models")
+      && message.includes("third-party providers cannot be reused")) return;
+    throw new Error(`DeepSeek search credential guidance is not actionable: ${message}`);
+  }
+  throw new Error("DeepSeek search unexpectedly accepted a missing credential");
 }
 
 for (const field of ["sourceDateEpoch", "desktopVersion", "release", "runtime", "node", "toolchain", "bundledPackages", "nativeAssets", "targets"]) {
@@ -123,6 +232,8 @@ if (await hashTree(prepared) !== lock.runtime.sha256) {
   throw new Error("generated Runtime checksum does not match runtime-lock.json");
 }
 await verifyPatches(join(prepared, "node_modules"));
+await verifyFinalToolCallIdentity(join(prepared, "node_modules"));
+await verifySearchCredentialGuidance(join(prepared, "node_modules"));
 
 const requested = process.argv[2] || hostTarget();
 if (requested) {

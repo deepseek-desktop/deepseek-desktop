@@ -1,0 +1,12 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -182,7 +182,7 @@
+ 			throw new WebError(`DeepSeek search credential resolution failed: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
+ 		}
+ 		if (resolved !== void 0 && resolved.length > 0) return resolved;
+-		throw new WebError(`DeepSeek search has no API key for "${options.apiKeyEnv ?? "DEEPSEEK_API_KEY"}"; store it through the credentials service (the web Models page writes it), export it in the launching environment, or set a literal "apiKey" in the web-search-deepseek config`, "WEB_PROVIDER_CREDENTIAL_MISSING");
++		throw new WebError(`DeepSeek web search requires an official DeepSeek API key in credential "${options.apiKeyEnv ?? "DEEPSEEK_API_KEY"}". Open Settings > Models, edit the official DeepSeek provider, and save its API key. Keys for Aliyun or other third-party providers cannot be reused with the DeepSeek search endpoint.`, "WEB_PROVIDER_CREDENTIAL_MISSING");
+ 	}
+ };
+ /**

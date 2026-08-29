@@ -122,6 +122,27 @@
       "moduleFile": "lib/index.js",
       "markers": ["Operations permitted by the current sandbox run directly.", "without an interactive client, they fail closed."],
       "id": "desktop-policy-context"
+    },
+    {
+      "packageName": "@deepseek-ai/dsh-web-search-deepseek",
+      "file": "@deepseek-ai__dsh-web-search-deepseek@0.1.2-alpha.1.patch",
+      "moduleFile": "lib/index.js",
+      "markers": [
+        "DeepSeek web search requires an official DeepSeek API key",
+        "Keys for Aliyun or other third-party providers cannot be reused"
+      ],
+      "id": "actionable-official-search-credential"
+    },
+    {
+      "packageName": "@earendil-works/pi-ai",
+      "file": "@earendil-works__pi-ai@0.84.x.patch",
+      "moduleFile": "dist/api/openai-responses-shared.js",
+      "markers": [
+        "slot.block.id = `${item.call_id}|${item.id}`;",
+        "slot.block.name = item.name;",
+        "delete slot.block.namespace;"
+      ],
+      "id": "openai-responses-final-tool-identity"
     }
   ]
 }

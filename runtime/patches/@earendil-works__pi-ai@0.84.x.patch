@@ -1,0 +1,30 @@
+diff --git a/dist/api/openai-responses-shared.js b/dist/api/openai-responses-shared.js
+--- a/dist/api/openai-responses-shared.js
++++ b/dist/api/openai-responses-shared.js
+@@ -602,9 +602,13 @@
+             else if (item.type === "function_call" &&
+                 slot?.type === "toolCall" &&
+                 slot.block.partialJson !== undefined) {
++                slot.block.id = `${item.call_id}|${item.id}`;
++                slot.block.name = item.name;
+                 slot.block.arguments = parseStreamingJson(item.arguments || slot.block.partialJson || "{}");
+                 if (item.namespace !== undefined)
+                     slot.block.namespace = item.namespace;
++                else
++                    delete slot.block.namespace;
+                 // Finalize in-place and strip the scratch buffer so replay only
+                 // carries parsed arguments.
+                 delete slot.block.partialJson;
+@@ -618,8 +622,12 @@
+             }
+             else if (item.type === "custom_tool_call" && slot?.type === "toolCall" && slot.block.customInput) {
+                 pushToolCallDelta(slot, appendCustomToolCallInput(slot.block, item.input ?? getCustomToolCallInput(slot.block), true));
++                slot.block.id = `${item.call_id}|${item.id}`;
++                slot.block.name = item.name;
+                 if (item.namespace !== undefined)
+                     slot.block.namespace = item.namespace;
++                else
++                    delete slot.block.namespace;
+                 delete slot.block.customInput;
+                 stream.push({
+                     type: "toolcall_end",

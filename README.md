@@ -28,6 +28,8 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 模型密钥会加密保存在本机，不进入日志、诊断包或浏览器存储。完整安装、配置和故障排查说明见[中文使用文档](docs/zh-CN/getting-started.md)。
 
+联网搜索使用 DeepSeek 官方的搜索接口，需要在“设置 → 模型 → DeepSeek”中另外保存官方 DeepSeek API 密钥。阿里云 MaaS 等第三方 Provider 的密钥只会发送到各自配置的 API 地址，出于安全和协议兼容考虑，不会自动转发到 DeepSeek 官方搜索接口；配置一次官方密钥后，对话和联网搜索会共同复用本机加密凭据 `DEEPSEEK_API_KEY`。
+
 ### macOS 提示“Apple 无法验证”怎么办
 
 当前社区版尚未使用 Apple Developer ID 签名和公证，因此首次打开时，macOS 可能提示“Apple 无法验证 DeepSeek Desktop 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件”。该提示本身不代表应用已被检测出恶意代码。请只从本项目的 [GitHub Releases](https://github.com/deepseek-desktop/deepseek-desktop/releases) 下载，并核对同版本 `SHA256SUMS`。
