@@ -177,9 +177,9 @@ diff --git a/lib/client.js b/lib/client.js
  			customApi: "API protocol",
  			customApiUnset: "Not selected",
 +			webSearchProtocol: "Web search protocol",
-+			webSearchProtocolHint: "Select only a protocol this Provider explicitly supports. The saved endpoint, model, and credential are reused.",
++			webSearchProtocolHint: "Choose a protocol supported by this Provider.",
 +			webSearchProtocolUnset: "Not declared",
-+			webSearchProtocolInherit: "Use Provider default or leave undeclared",
++			webSearchProtocolInherit: "Default",
 +			webSearchProtocolDisabled: "Disabled",
  			customNeedsBaseUrl: "A custom provider needs a base URL.",
  			customNeedsModels: "A custom provider needs at least one model.",
@@ -189,9 +189,9 @@ diff --git a/lib/client.js b/lib/client.js
  			customApi: "API 协议",
  			customApiUnset: "未选择",
 +			webSearchProtocol: "联网搜索协议",
-+			webSearchProtocolHint: "仅选择该提供方明确支持的协议；继续复用已保存的地址、模型和凭据。",
++			webSearchProtocolHint: "请选择该提供方支持的协议。",
 +			webSearchProtocolUnset: "未声明",
-+			webSearchProtocolInherit: "使用提供方默认值或保持未声明",
++			webSearchProtocolInherit: "默认",
 +			webSearchProtocolDisabled: "禁用",
  			customNeedsBaseUrl: "自定义提供方需要填写 API 地址。",
  			customNeedsModels: "自定义提供方至少需要一个模型。",
@@ -203,9 +203,9 @@ diff --git a/lib/client.js b/lib/client.js
 +		const zhTW = {
 +			...zh,
 +			webSearchProtocol: "聯網搜尋協定",
-+			webSearchProtocolHint: "僅選擇該提供方明確支援的協定；繼續重用已儲存的位址、模型和憑據。",
++			webSearchProtocolHint: "請選擇該提供方支援的協定。",
 +			webSearchProtocolUnset: "未宣告",
-+			webSearchProtocolInherit: "使用提供方預設值或保持未宣告",
++			webSearchProtocolInherit: "預設",
 +			webSearchProtocolDisabled: "停用"
 +		};
  		//#endregion

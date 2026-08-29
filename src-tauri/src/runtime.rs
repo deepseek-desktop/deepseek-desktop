@@ -64,6 +64,17 @@ const DISABLE_TEXT_ASSISTANCE_SCRIPT: &str = r#"
 })();
 "#;
 
+fn is_managed_runtime_origin(managed_origin: &Url, candidate: &Url) -> bool {
+    candidate.scheme() == managed_origin.scheme()
+        && candidate.host_str() == managed_origin.host_str()
+        && candidate.port_or_known_default() == managed_origin.port_or_known_default()
+}
+
+fn is_external_web_url(managed_origin: &Url, candidate: &Url) -> bool {
+    !is_managed_runtime_origin(managed_origin, candidate)
+        && matches!(candidate.scheme(), "http" | "https")
+}
+
 pub struct RuntimeSupervisor {
     app: AppHandle,
     paths: AppPaths,
@@ -185,8 +196,10 @@ impl RuntimeSupervisor {
             self.emit_surface("workbench");
             return Ok(());
         }
-        let managed_origin = url.clone();
-        let app = self.app.clone();
+        let navigation_origin = url.clone();
+        let navigation_app = self.app.clone();
+        let new_window_origin = url.clone();
+        let new_window_app = self.app.clone();
         let main_window = self
             .app
             .get_window("main")
@@ -196,14 +209,25 @@ impl RuntimeSupervisor {
             tauri::webview::WebviewBuilder::new("workbench", tauri::WebviewUrl::External(url))
                 .initialization_script(DISABLE_TEXT_ASSISTANCE_SCRIPT)
                 .on_navigation(move |candidate| {
-                    let managed = candidate.scheme() == managed_origin.scheme()
-                        && candidate.host_str() == managed_origin.host_str()
-                        && candidate.port_or_known_default()
-                            == managed_origin.port_or_known_default();
-                    if !managed && matches!(candidate.scheme(), "http" | "https") {
-                        let _ = app.opener().open_url(candidate.as_str(), None::<&str>);
+                    let managed = is_managed_runtime_origin(&navigation_origin, candidate);
+                    if is_external_web_url(&navigation_origin, candidate) {
+                        return navigation_app
+                            .opener()
+                            .open_url(candidate.as_str(), None::<&str>)
+                            .is_err();
                     }
-                    managed
+                    managed || !matches!(candidate.scheme(), "http" | "https")
+                })
+                .on_new_window(move |candidate, _features| {
+                    if is_external_web_url(&new_window_origin, &candidate)
+                        && new_window_app
+                            .opener()
+                            .open_url(candidate.as_str(), None::<&str>)
+                            .is_ok()
+                    {
+                        return tauri::webview::NewWindowResponse::Deny;
+                    }
+                    tauri::webview::NewWindowResponse::Allow
                 });
         let webview = match main_window.add_child(builder, position, size) {
             Ok(webview) => webview,
@@ -1804,5 +1828,31 @@ mod tests {
         assert!(!DISABLE_TEXT_ASSISTANCE_SCRIPT.contains("element.value"));
         assert!(DISABLE_TEXT_ASSISTANCE_SCRIPT.contains("MutationObserver"));
         assert!(DISABLE_TEXT_ASSISTANCE_SCRIPT.contains("focusin"));
+    }
+
+    #[test]
+    fn identifies_external_http_links_without_intercepting_runtime_navigation() {
+        let managed = Url::parse("http://127.0.0.1:43127/").unwrap();
+        for candidate in [
+            "https://example.com/docs",
+            "http://example.com/docs",
+            "http://127.0.0.1:43128/other-runtime",
+        ] {
+            assert!(
+                is_external_web_url(&managed, &Url::parse(candidate).unwrap()),
+                "{candidate}"
+            );
+        }
+        for candidate in [
+            "http://127.0.0.1:43127/conversation",
+            "file:///tmp/local.html",
+            "javascript:alert('blocked')",
+            "mailto:developer@example.com",
+        ] {
+            assert!(
+                !is_external_web_url(&managed, &Url::parse(candidate).unwrap()),
+                "{candidate}"
+            );
+        }
     }
 }

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
 const desktopRoot = resolve(import.meta.dirname, "..", "..");
+const preparedRoot = resolve(desktopRoot, "target/generated/runtime/prepared");
 const moduleUrl = pathToFileURL(resolve(
-  desktopRoot,
-  "target/generated/runtime/prepared/node_modules/@deepseek-ai/dsh-web-search-follow-model/index.js"
+  preparedRoot,
+  "node_modules/@deepseek-ai/dsh-web-search-follow-model/index.js"
 )).href;
 const { FollowModelSearchEngine } = await import(moduleUrl);
 const secretA = "secret-a-for-test";
@@ -23,18 +25,33 @@ function jsonResponse(value, status = 200, headers = {}) {
   });
 }
 
-function createEngine({ routes, fetchImpl, credentials = { PROVIDER_A_KEY: secretA, PROVIDER_B_KEY: secretB } }) {
+function createEngine({ routes, fetchImpl, credentials = { PROVIDER_A_KEY: secretA, PROVIDER_B_KEY: secretB }, timeoutMs }) {
   const resolvedRefs = [];
   const engine = new FollowModelSearchEngine({
     fetch: fetchImpl,
     resolveCredential: async ref => {
       resolvedRefs.push(ref);
       return credentials[ref];
-    }
+    },
+    timeoutMs
   });
   engine.registerRouteResolver(({ provider, model }) => routes[`${provider}/${model}`]);
   return { engine, resolvedRefs };
 }
+
+test("prepared Runtime carries the extended outer budget and concise locale labels", async () => {
+  const [bundle, settingsUi] = await Promise.all([
+    readFile(resolve(preparedRoot, "node_modules/deepseek-desktop-bundle/cordis.patch.yml"), "utf8"),
+    readFile(resolve(preparedRoot, "node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js"), "utf8")
+  ]);
+  assert.match(bundle, /searchTimeoutMs:\s*100000/u);
+  assert.match(settingsUi, /webSearchProtocolInherit:\s*"Default"/u);
+  assert.match(settingsUi, /webSearchProtocolInherit:\s*"默认"/u);
+  assert.match(settingsUi, /webSearchProtocolInherit:\s*"預設"/u);
+  assert.match(settingsUi, /webSearchProtocolHint:\s*"Choose a protocol supported by this Provider\."/u);
+  assert.match(settingsUi, /webSearchProtocolHint:\s*"请选择该提供方支持的协议。"/u);
+  assert.match(settingsUi, /webSearchProtocolHint:\s*"請選擇該提供方支援的協定。"/u);
+});
 
 test("standard protocols inherit the active model route and normalize sources", async t => {
   const cases = [
@@ -231,7 +248,7 @@ test("credential, endpoint, redirect, cancellation and invalid responses are fai
       return true;
     });
   });
-  await t.test("cancellation and malformed JSON are explicit", async () => {
+  await t.test("cancellation, timeout and malformed JSON are explicit", async () => {
     const controller = new AbortController();
     controller.abort();
     const canceled = createEngine({
@@ -241,7 +258,15 @@ test("credential, endpoint, redirect, cancellation and invalid responses are fai
         return jsonResponse({});
       }
     }).engine;
-    await assert.rejects(canceled.search(agent(), { query: "cancel" }, controller.signal), /canceled or timed out/u);
+    await assert.rejects(canceled.search(agent(), { query: "cancel" }, controller.signal), /was canceled/u);
+    const timedOut = createEngine({
+      routes: { "provider-a/model-a": route },
+      timeoutMs: 10,
+      fetchImpl: async (_url, options) => new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+      })
+    }).engine;
+    await assert.rejects(timedOut.search(agent(), { query: "timeout" }), /timed out/u);
     const malformed = createEngine({
       routes: { "provider-a/model-a": route },
       fetchImpl: async () => new Response("not-json", { status: 200 })

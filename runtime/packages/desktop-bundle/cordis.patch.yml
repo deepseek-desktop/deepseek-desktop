@@ -6,6 +6,10 @@
     searchProvider: follow-model
     fetchProvider: http
 
+- id: tool-web
+  config:
+    searchTimeoutMs: 100000
+
 - id: web-search-deepseek
   disabled: true
 

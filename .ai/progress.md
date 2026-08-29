@@ -8,7 +8,8 @@
 - 建立统一应用配置、Runtime 来源同步、不可变发布 pin、工具链校验和一键平台打包链路。
 - Runtime 已同步到官方 `0.1.2-alpha.1`（`cd5ef8148158`），新版部署根包名、桌面补丁及 HTTP Web Fetch 运行时闭包均已适配。
 - OpenAI Responses 兼容流在最终事件中会覆盖暂态工具 ID、名称、参数和 namespace，避免第三方兼容接口把 `glob` 等调用错误派发为 `read` 并产生缺少 `file_path` 的假错误。
-- Runtime 内置并默认启用 `@deepseek-ai/dsh-web-search-follow-model`：联网搜索绑定当前会话实际模型路由，通过 Provider 能力声明选择标准协议，安全复用 endpoint、model 和 `CredentialRef`；模型切换与多会话不会串路由，未知 Provider 不盲探测，搜索失败不改变正常对话能力。
+- Runtime 内置并默认启用 `@deepseek-ai/dsh-web-search-follow-model`：联网搜索绑定当前会话实际模型路由，通过 Provider 能力声明选择标准协议，安全复用 endpoint、model 和 `CredentialRef`；Provider 与外层工具分别使用 90 秒和 100 秒预算，取消和超时提示互相独立，模型切换与多会话不会串路由，未知 Provider 不盲探测，搜索失败不改变正常对话能力。
+- 工作台外部网页链接与新窗口请求优先由 Desktop 壳转交系统默认浏览器，失败时回退 WebView；受管 Runtime 页面和其他原生导航行为保持可用，桌面壳只隔离 Tauri 权限而不削减网页能力。
 - 原生窗口标题读取构建注入的真实桌面版本，并统一使用单个 `v` 前缀，方便问题反馈定位。
 - 窗口恢复会先验证保存坐标是否仍落在已连接显示器；外接屏仍在线时保留原位置，断开后自动回到主显示器，避免应用运行但窗口位于屏幕外。
 - 已建立不依赖托管 Runner 的分布式本地发布协议：四平台原生节点、一次性票据、短期租约、通用 Git 来源、流式制品校验、filesystem 默认发布和可选 GitHub Provider。

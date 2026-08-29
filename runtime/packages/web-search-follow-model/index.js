@@ -6,7 +6,7 @@ import { WebError } from "@deepseek-ai/dsh-web";
 
 const PROVIDER_ID = "follow-model";
 const SETTINGS_NS = settingsNamespace("web-search-follow-model");
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 90_000;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_REQUEST_FIELDS = 16;
 const PROTOCOL_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
@@ -19,6 +19,8 @@ const messages = {
     capabilityMissing: "The current model Provider does not declare web search capability.",
     protocolUnavailable: "The current model Provider declares a web search protocol that is unavailable in this Runtime.",
     credentialMissing: "The current model Provider credential is not configured. Save that Provider's API key in Models settings.",
+    requestCanceled: "The current model Provider web search request was canceled. Normal chat remains available.",
+    requestTimedOut: "The current model Provider web search request timed out. Do not retry it automatically in this turn; normal chat remains available.",
     requestFailed: "The current model Provider web search request failed.",
     responseInvalid: "The current model Provider returned an invalid web search response.",
     disabled: "Web search is disabled in Runtime settings.",
@@ -29,6 +31,8 @@ const messages = {
     capabilityMissing: "当前模型提供方未声明联网搜索能力。请在提供方高级设置中选择其支持的标准搜索协议。",
     protocolUnavailable: "当前模型提供方声明的联网搜索协议在此 Runtime 中不可用。",
     credentialMissing: "当前模型提供方的凭据尚未配置，请在模型设置中保存该提供方的 API 密钥。",
+    requestCanceled: "当前模型提供方的联网搜索请求已取消，正常对话仍可继续。",
+    requestTimedOut: "当前模型提供方的联网搜索请求超时。本轮不要自动重试，正常对话仍可继续。",
     requestFailed: "当前模型提供方的联网搜索请求失败。",
     responseInvalid: "当前模型提供方返回了无法解析的联网搜索结果。",
     disabled: "联网搜索已在 Runtime 设置中禁用。",
@@ -39,6 +43,8 @@ const messages = {
     capabilityMissing: "目前模型提供方未宣告聯網搜尋能力。請在提供方進階設定中選擇其支援的標準搜尋協定。",
     protocolUnavailable: "目前模型提供方宣告的聯網搜尋協定在此 Runtime 中無法使用。",
     credentialMissing: "目前模型提供方的憑據尚未設定，請在模型設定中儲存該提供方的 API 金鑰。",
+    requestCanceled: "目前模型提供方的聯網搜尋請求已取消，正常對話仍可繼續。",
+    requestTimedOut: "目前模型提供方的聯網搜尋請求逾時。本輪請勿自動重試，正常對話仍可繼續。",
     requestFailed: "目前模型提供方的聯網搜尋請求失敗。",
     responseInvalid: "目前模型提供方傳回了無法解析的聯網搜尋結果。",
     disabled: "聯網搜尋已在 Runtime 設定中停用。",
@@ -197,8 +203,8 @@ function responseText(response) {
   });
 }
 
-async function postJsonResponse(url, body, headers, signal, fetchImpl = fetch, allowEmpty = false) {
-  const timeout = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+async function postJsonResponse(url, body, headers, signal, fetchImpl = fetch, allowEmpty = false, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const timeout = AbortSignal.timeout(timeoutMs);
   const combined = signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
   let response;
   try {
@@ -210,7 +216,8 @@ async function postJsonResponse(url, body, headers, signal, fetchImpl = fetch, a
       body: JSON.stringify(body),
     });
   } catch (error) {
-    if (combined.aborted) fail("The web search request was canceled or timed out.", "WEB_FOLLOW_MODEL_ABORTED", error);
+    if (timeout.aborted) fail(copy("requestTimedOut"), "WEB_FOLLOW_MODEL_TIMED_OUT", error);
+    if (signal?.aborted || combined.aborted) fail(copy("requestCanceled"), "WEB_FOLLOW_MODEL_CANCELED", error);
     fail(copy("requestFailed"), "WEB_FOLLOW_MODEL_REQUEST_FAILED", error);
   }
   const text = await responseText(response);
@@ -225,8 +232,8 @@ async function postJsonResponse(url, body, headers, signal, fetchImpl = fetch, a
   }
 }
 
-async function postJson(url, body, headers, signal, fetchImpl = fetch) {
-  return (await postJsonResponse(url, body, headers, signal, fetchImpl)).payload;
+async function postJson(url, body, headers, signal, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  return (await postJsonResponse(url, body, headers, signal, fetchImpl, false, timeoutMs)).payload;
 }
 
 function textContent(value) {
@@ -311,28 +318,31 @@ function mcpResult(payload, maxResults) {
   return normalizedResult(body.content ?? (decoded === undefined ? text : undefined), genericSources(body), maxResults);
 }
 
-function builtInProtocols(fetchImpl) {
+function builtInProtocols(fetchImpl, timeoutMs) {
+  const requestJson = (url, body, headers, signal) => postJson(url, body, headers, signal, fetchImpl, timeoutMs);
+  const requestJsonResponse = (url, body, headers, signal, allowEmpty = false) =>
+    postJsonResponse(url, body, headers, signal, fetchImpl, allowEmpty, timeoutMs);
   return new Map([
     ["openai-responses-web-search", async ({ route, capability, credential, request, signal }) => {
-      const payload = await postJson(requestUrl(route.endpoint, "/responses"), {
+      const payload = await requestJson(requestUrl(route.endpoint, "/responses"), {
         ...constrainedFields(capability.requestFields, new Set(["model", "input", "tools"])),
         model: route.model,
         input: request.query,
         tools: [{ type: "web_search_preview" }],
-      }, bearerHeaders(credential), signal, fetchImpl);
+      }, bearerHeaders(credential), signal);
       const content = typeof payload.output_text === "string"
         ? payload.output_text
         : textContent(payload.output?.flatMap?.((item) => item?.content ?? []));
       return normalizedResult(content, [...responseAnnotations(payload.output), ...genericSources(payload)], request.maxResults);
     }],
     ["openai-chat-completions-search", async ({ route, capability, credential, request, signal }) => {
-      const payload = await postJson(requestUrl(route.endpoint, "/chat/completions"), {
+      const payload = await requestJson(requestUrl(route.endpoint, "/chat/completions"), {
         ...constrainedFields(capability.requestFields, new Set(["model", "messages", "stream", "enable_search"])),
         model: route.model,
         messages: [{ role: "user", content: request.query }],
         stream: false,
         enable_search: true,
-      }, bearerHeaders(credential), signal, fetchImpl);
+      }, bearerHeaders(credential), signal);
       const message = payload?.choices?.[0]?.message;
       return normalizedResult(textContent(message?.content), [
         ...genericSources(message),
@@ -340,13 +350,13 @@ function builtInProtocols(fetchImpl) {
       ], request.maxResults);
     }],
     ["anthropic-messages-web-search", async ({ route, capability, credential, request, signal }) => {
-      const payload = await postJson(requestUrl(route.endpoint, "/messages"), {
+      const payload = await requestJson(requestUrl(route.endpoint, "/messages"), {
         ...constrainedFields(capability.requestFields, new Set(["model", "messages", "tools", "max_tokens"])),
         model: route.model,
         max_tokens: 4096,
         messages: [{ role: "user", content: request.query }],
         tools: [{ type: "web_search_20250305", name: "web_search" }],
-      }, { "x-api-key": credential, "anthropic-version": "2023-06-01" }, signal, fetchImpl);
+      }, { "x-api-key": credential, "anthropic-version": "2023-06-01" }, signal);
       const blocks = Array.isArray(payload?.content) ? payload.content : [];
       const sources = [];
       for (const block of blocks) {
@@ -356,17 +366,17 @@ function builtInProtocols(fetchImpl) {
       return normalizedResult(textContent(blocks), [...sources, ...genericSources(payload)], request.maxResults);
     }],
     ["dsh-web-search-v1", async ({ route, capability, credential, request, signal }) => {
-      const payload = await postJson(requestUrl(route.endpoint, "/web-search"), {
+      const payload = await requestJson(requestUrl(route.endpoint, "/web-search"), {
         ...constrainedFields(capability.requestFields, new Set(["query", "maxResults", "model"])),
         query: request.query,
         ...request.maxResults === undefined ? {} : { maxResults: request.maxResults },
         model: route.model,
-      }, bearerHeaders(credential), signal, fetchImpl);
+      }, bearerHeaders(credential), signal);
       return normalizedResult(payload?.content, payload?.sources ?? [], request.maxResults);
     }],
     ["mcp-web-search", async ({ route, capability, credential, request, signal }) => {
       const endpoint = endpointUrl(route.endpoint);
-      const initialize = await postJsonResponse(endpoint, {
+      const initialize = await requestJsonResponse(endpoint, {
         jsonrpc: "2.0",
         id: 1,
         method: "initialize",
@@ -375,18 +385,18 @@ function builtInProtocols(fetchImpl) {
           capabilities: {},
           clientInfo: { name: "dsh-web-search-follow-model", version: "1.0.0" },
         },
-      }, mcpHeaders(credential), signal, fetchImpl);
+      }, mcpHeaders(credential), signal);
       const sessionId = initialize.response.headers.get("mcp-session-id") ?? undefined;
-      await postJsonResponse(endpoint, {
+      await requestJsonResponse(endpoint, {
         jsonrpc: "2.0",
         method: "notifications/initialized",
-      }, mcpHeaders(credential, sessionId), signal, fetchImpl, true);
-      const listed = await postJson(endpoint, {
+      }, mcpHeaders(credential, sessionId), signal, true);
+      const listed = await requestJson(endpoint, {
         jsonrpc: "2.0",
         id: 2,
         method: "tools/list",
         params: {},
-      }, mcpHeaders(credential, sessionId), signal, fetchImpl);
+      }, mcpHeaders(credential, sessionId), signal);
       const configuredName = capability.requestFields?.toolName;
       const toolName = typeof configuredName === "string" && configuredName.length > 0 ? configuredName : "web_search";
       if (!listed?.result?.tools?.some?.((tool) => tool?.name === toolName)) {
@@ -394,7 +404,7 @@ function builtInProtocols(fetchImpl) {
       }
       const { toolName: _toolName, ...declaredFields } = capability.requestFields ?? {};
       const extension = constrainedFields(declaredFields, new Set(["query", "maxResults"]));
-      const called = await postJson(endpoint, {
+      const called = await requestJson(endpoint, {
         jsonrpc: "2.0",
         id: 3,
         method: "tools/call",
@@ -406,7 +416,7 @@ function builtInProtocols(fetchImpl) {
             ...request.maxResults === undefined ? {} : { maxResults: request.maxResults },
           },
         },
-      }, mcpHeaders(credential, sessionId), signal, fetchImpl);
+      }, mcpHeaders(credential, sessionId), signal);
       return mcpResult(called, request.maxResults);
     }],
   ]);
@@ -415,8 +425,9 @@ function builtInProtocols(fetchImpl) {
 export class FollowModelSearchEngine {
   constructor(options = {}) {
     this.fetch = options.fetch ?? fetch;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.resolveCredential = options.resolveCredential;
-    this.protocols = builtInProtocols(this.fetch);
+    this.protocols = builtInProtocols(this.fetch, this.timeoutMs);
     this.routeResolvers = new Set();
   }
 
