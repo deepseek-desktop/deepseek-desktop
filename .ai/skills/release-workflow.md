@@ -295,6 +295,7 @@ filesystem/NAS 发布优先，因为它最容易复核且与托管平台无关�
 | Rosetta smoke 报 `setTypeOfService EINVAL` | 是否使用 Node 全局 `fetch`/Undici 访问回环 Runtime | 使用仓库内受限 `node:http` 回环客户端；只允许 `http://127.0.0.1:<port>`，禁止放宽到外网 |
 | 多平台 probe 同时超时 | Controller 所在进程是否执行了同步 Parallels/虚拟机命令 | 将节点预检作为异步任务运行，保持 Controller 事件循环可响应；不要单纯延长超时 |
 | 任一平台报 Node 版本不匹配 | Worker 是否误用了宿主机或虚拟机全局 Node | 使用编排器校验并安装的 `runtime/toolchain-lock.json` 固定 Node；核对版本、ABI、目标 triple，不得放宽精确版本门禁 |
+| Runtime smoke 报 HMR 需要 `--expose-internals` | 新目标是否首次组装闭包、旧缓存是否掩盖了 Node 启动契约差异 | 正式 Supervisor、候选更新 smoke 和打包 smoke 都必须在加载 Runtime 前传入 `--expose-internals`；保留实时配置 profile，不通过关闭重载绕过问题 |
 | Runtime 打印 readiness 后退出 | smoke 是否保留了脱敏诊断尾部 | 查看首个真实错误栈；诊断必须过滤 token/凭据并限长，不用反复重试掩盖退出 |
 | 制品扫描发现维护者本机路径 | Rust path remap 规则与 Cargo 缓存身份版本 | 修正重映射后重建对应目标；不得放宽本机路径扫描 |
 | 上传中断或租约过期 | Controller 状态、任务租约 | 对失败目标签发替换票据，旧票据不得复用 |

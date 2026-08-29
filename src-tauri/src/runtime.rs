@@ -27,6 +27,7 @@ use crate::settings::{AppPaths, SettingsStore};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
 const RUNTIME_WORK_DIR_NAME: &str = concat!("runtime", "-workdir");
+const NODE_EXPOSE_INTERNALS_ARGUMENT: &str = "--expose-internals";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_RESTARTS: u8 = 2;
@@ -425,6 +426,7 @@ impl RuntimeSupervisor {
         };
         let mut command = Command::new(&node);
         command
+            .arg(NODE_EXPOSE_INTERNALS_ARGUMENT)
             .arg("--require")
             .arg(parent_watch)
             .arg("--require")
@@ -863,6 +865,7 @@ pub(crate) fn smoke_runtime_service(location: &RuntimeLocation) -> DesktopResult
     let credential_session = RuntimeSession::create(&paths.data_dir)?;
     let mut command = Command::new(&location.node);
     command
+        .arg(NODE_EXPOSE_INTERNALS_ARGUMENT)
         .arg("--require")
         .arg(
             location
@@ -1696,6 +1699,11 @@ mod tests {
                 "custom-plugin"
             ])
         );
+    }
+
+    #[test]
+    fn exposes_node_internals_for_the_runtime_live_profile() {
+        assert_eq!(NODE_EXPOSE_INTERNALS_ARGUMENT, "--expose-internals");
     }
 
     #[test]

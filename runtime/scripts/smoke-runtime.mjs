@@ -159,6 +159,16 @@ const environment = {
   no_proxy: "127.0.0.1,localhost"
 };
 
+function runtimeArguments(...arguments_) {
+  return [
+    "--expose-internals",
+    "--require", parentWatch,
+    "--require", localeSync,
+    dsh,
+    ...arguments_
+  ];
+}
+
 const preloadBoundary = spawnSync(node, [
   "--require",
   parentWatch,
@@ -191,7 +201,7 @@ if (pnpmVersion.status !== 0 || pnpmStdout !== lock.toolchain.pnpm) {
   throw new Error(`packaged pnpm is unavailable: ${pnpmVersion.error?.message || pnpmVersion.stderr || pnpmVersion.stdout}`);
 }
 
-const dump = spawnSync(node, ["--require", parentWatch, "--require", localeSync, dsh, "--profile", "desktop-web", "--dump-config"], {
+const dump = spawnSync(node, runtimeArguments("--profile", "desktop-web", "--dump-config"), {
   cwd: smokeRoot,
   env: environment,
   input: "smoke-credential-session\n",
@@ -221,15 +231,12 @@ if (!Number.isInteger(cycles) || cycles < 1 || cycles > 1_000) {
 }
 
 async function runCycle(index) {
-  const child = spawn(node, [
-    "--require", parentWatch,
-    "--require", localeSync,
-    dsh,
+  const child = spawn(node, runtimeArguments(
     "--profile", "desktop-web",
     "--host", "127.0.0.1",
     "--port", "0",
     "--no-open"
-  ], {
+  ), {
     cwd: smokeRoot,
     env: environment,
     detached: process.platform !== "win32",
@@ -297,7 +304,7 @@ async function verifyParentDeathCleanup() {
   await writeFile(launcher, `
 import { spawn } from "node:child_process";
 const [node, parentWatch, localeSync, dsh, cwd, dshHome, dataDir, credentialHelperScript] = process.argv.slice(2);
-const child = spawn(node, ["--require", parentWatch, "--require", localeSync, dsh, "--profile", "desktop-web", "--host", "127.0.0.1", "--port", "0", "--no-open"], {
+const child = spawn(node, ["--expose-internals", "--require", parentWatch, "--require", localeSync, dsh, "--profile", "desktop-web", "--host", "127.0.0.1", "--port", "0", "--no-open"], {
   cwd,
   detached: true,
   env: {
