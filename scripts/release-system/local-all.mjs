@@ -532,9 +532,10 @@ function workerEnvironment(caCert, targetId, nodeBin = "") {
   };
 }
 
-function dockerBaseArgs(config, caCert) {
+export function dockerBaseArgs(config, caCert) {
   return [
     "run", "--rm", "--platform", "linux/amd64", "--interactive",
+    "--env", "NO_STRIP=1",
     "--env", "NODE_EXTRA_CA_CERTS=/local-release/ca.crt",
     "--env", "DEEPSEEK_DESKTOP_TOOLCHAIN_DIR=/local-release/toolchain",
     "--env", "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",

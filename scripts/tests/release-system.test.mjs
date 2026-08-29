@@ -12,7 +12,7 @@ import { ReleaseControllerService } from "../release-system/controller-service.m
 import { requestJson, uploadArtifact } from "../release-system/http-client.mjs";
 import { startReleaseServer } from "../release-system/http-server.mjs";
 import { ReleaseStateStore } from "../release-system/state-store.mjs";
-import { dockerImageContract, loadLocalAllConfig, macPathToParallelsShared, runWithConcurrency, windowsNodeToolchain } from "../release-system/local-all.mjs";
+import { dockerBaseArgs, dockerImageContract, loadLocalAllConfig, macPathToParallelsShared, runWithConcurrency, windowsNodeToolchain } from "../release-system/local-all.mjs";
 import {
   contentCacheKey,
   createContentCacheManifest,
@@ -65,6 +65,12 @@ test("Linux release image contract changes with its build inputs", () => {
     nodeModuleAbi: "137",
     targetArch: "x64"
   }));
+});
+
+test("local Linux worker disables stripping without affecting other platforms", () => {
+  const args = dockerBaseArgs({ image: "local/deepseek-builder:1.0.0" }, "/tmp/ca.crt");
+  const assignments = args.filter((value, index) => args[index - 1] === "--env" && value === "NO_STRIP=1");
+  assert.deepEqual(assignments, ["NO_STRIP=1"]);
 });
 
 test("Tauri build performs frontend compilation without rewriting prepared app config", async () => {
