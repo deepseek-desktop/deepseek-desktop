@@ -3,6 +3,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { delimiter, dirname, join, resolve } from "node:path";
 import process from "node:process";
 
+import { requestLoopback, waitForLoopback } from "./loopback-http.mjs";
+
 const runtimeRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(runtimeRoot, "..");
 const lock = JSON.parse(await readFile(join(desktopRoot, "target", "generated", "runtime-lock.json"), "utf8"));
@@ -246,16 +248,19 @@ async function runCycle(index) {
     const readyUrl = new URL(ready);
     if (readyUrl.hostname !== "127.0.0.1" || !readyUrl.port) throw new Error(`unexpected readiness origin ${ready}`);
     if (!readyUrl.searchParams.get("token")) throw new Error("runtime readiness URL is missing its browser session token");
-    const exchange = await fetch(ready, { redirect: "manual" });
-    const cookie = exchange.headers.get("set-cookie")?.split(";", 1)[0];
-    if (exchange.status !== 303 || exchange.headers.get("location") !== "/" || !cookie) {
+    const exchange = await waitForLoopback(ready, { child });
+    const setCookie = exchange.headers["set-cookie"];
+    const cookieHeader = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    const cookie = cookieHeader?.split(";", 1)[0];
+    if (exchange.status !== 303 || exchange.headers.location !== "/" || !cookie) {
       throw new Error(`runtime browser token exchange failed with ${exchange.status}`);
     }
     const cleanUrl = new URL("/", readyUrl);
-    const response = await fetch(cleanUrl, { headers: { cookie } });
-    if (!response.ok) throw new Error(`runtime health check returned ${response.status}`);
-    const body = await response.text();
-    if (!body.toLowerCase().includes("html")) throw new Error("runtime did not return an HTML shell");
+    const response = await requestLoopback(cleanUrl, { headers: { cookie } });
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`runtime health check returned ${response.status}`);
+    }
+    if (!response.body.toLowerCase().includes("html")) throw new Error("runtime did not return an HTML shell");
     await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
     if (output.includes("dsh web: opening the default browser")) {
       throw new Error("desktop Runtime attempted to open the system browser");

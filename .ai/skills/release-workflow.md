@@ -288,6 +288,9 @@ filesystem/NAS 发布优先，因为它最容易复核且与托管平台无关�
 | Runtime/Cargo 缓存损坏 | cache manifest、目标 triple、工具链和文件 SHA-256 | 让编排器废弃该缓存项并重建，不清空其他目标缓存 |
 | 目标 Koffi/Sharp 原生包缺失 | 公共准备闭包是否同时包含四目标可选原生包 | 重新执行 `runtime:sync`；不要从准备主机架构推断其他平台依赖 |
 | Worker 报 `Host key verification failed` | 是否通过 `release:local-all` 生成并传入锁定 source bundle | 单机四环境使用本地 bundle；跨机器节点再配置其通用 Git URL 凭据与主机信任 |
+| Windows 报 `need a repository to verify a bundle` | bundle 是否在临时 bare Git 仓库中执行 `git bundle verify` | 使用统一 `git-source.mjs` 校验，不在 Worker 当前目录直接运行 verify，也不降级为只列 refs |
+| 平台 smoke 在 readiness 后立即 `ECONNREFUSED` | Runtime 是否只打印了地址但端口尚未真正接受请求 | 保留进程存活检查，并使用有边界的回环 HTTP 重试；不得通过延长固定 sleep 掩盖退出错误 |
+| Rosetta smoke 报 `setTypeOfService EINVAL` | 是否使用 Node 全局 `fetch`/Undici 访问回环 Runtime | 使用仓库内受限 `node:http` 回环客户端；只允许 `http://127.0.0.1:<port>`，禁止放宽到外网 |
 | 制品扫描发现维护者本机路径 | Rust path remap 规则与 Cargo 缓存身份版本 | 修正重映射后重建对应目标；不得放宽本机路径扫描 |
 | 上传中断或租约过期 | Controller 状态、任务租约 | 对失败目标签发替换票据，旧票据不得复用 |
 | 远程 Provider 失败 | filesystem 制品、Provider 凭据和 API | 保留已验证制品，只重试上传，不重新编译 |

@@ -99,6 +99,8 @@ Controller 只在本次运行期间监听，非回环流量始终使用临时 CA
 
 单机四环境编排会从当前干净 HEAD 生成只包含发行 tag 的本地 Git bundle，并让 Rosetta、Docker 和 Parallels Worker 从该 bundle 做 detached checkout。任务中仍保留并核验原始通用 Git URL 作为来源身份，但节点不再依赖宿主机 SSH agent、known_hosts 或代码托管平台在线状态。跨机器 Worker 仍可直接使用计划中的通用 Git URL。
 
+Git bundle 在所有平台都通过临时 bare Git 仓库执行 `git bundle verify`，因此校验不依赖 Worker 当前目录是否已经位于某个仓库。Runtime 平台 smoke 只访问 `http://127.0.0.1:<port>`，打印 readiness 后还会在进程存活边界内等待端口真正接受请求；该实现使用 Node 原生 HTTP 客户端，避免 Rosetta 下 Undici 的套接字服务类型兼容问题。两项检查都不能通过跳过 bundle 校验、改用外网地址或固定长时间休眠来规避。
+
 这条命令证明的是一台物理机完成四种隔离环境打包，不等同于四种真实硬件验收。尤其 Apple Silicon 上的 Windows x64 与 Linux x64 使用系统模拟层，发行前仍应在目标系统完成安装、启动、Runtime、凭据和卸载验证。缺少任何环境时命令会明确失败，不会偷偷改用错误目标。
 
 ## 发布维护者

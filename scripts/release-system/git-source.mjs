@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { mkdir, rm, stat } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
 import { assertCommit, assertSourceRepository } from "./common.mjs";
 
@@ -43,7 +44,13 @@ async function assertBundle(path) {
   const bundle = resolve(path);
   const info = await stat(bundle);
   if (!info.isFile()) throw new Error("local source bundle must be a regular file");
-  await runGit(["bundle", "verify", bundle]);
+  const verificationRepository = await mkdtemp(join(tmpdir(), "deepseek-bundle-verify-"));
+  try {
+    await runGit(["init", "--bare", verificationRepository]);
+    await runGit(["bundle", "verify", bundle], { cwd: verificationRepository });
+  } finally {
+    await rm(verificationRepository, { recursive: true, force: true });
+  }
   return bundle;
 }
 
