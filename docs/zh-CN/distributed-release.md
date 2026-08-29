@@ -6,7 +6,8 @@ DeepSeek Desktop 的分布式发布系统用开发者自己的原生计算机完
 
 ```text
 标准 Git 仓库
-  -> Release Controller 锁定 tag / Desktop commit / Runtime commit / targets
+  -> release:prepare 一次性完成公共门禁并生成签名准备凭据
+  -> Release Controller 锁定 tag / Desktop commit / Runtime commit / targets / 准备凭据
   -> 一次性任务票据
   -> macOS ARM64 / macOS x64 / Windows x64 / Linux x64 原生 Worker
   -> 现有 app:sync / runtime:sync / verify / desktop:package
@@ -18,6 +19,7 @@ DeepSeek Desktop 的分布式发布系统用开发者自己的原生计算机完
 - **Worker**：自动识别本机平台，只领取与本机原生目标一致的任务，从锁定 Git commit 做干净 detached checkout，再调用现有打包命令。
 - **Provider**：只负责发布已经验证的制品。构建过程不知道最终上传到 filesystem、NAS 还是 GitHub。
 - **targets 配置**：`scripts/release-system/targets.json` 是目标 ID、宿主平台、Rust triple 和安装包类型的唯一映射。
+- **发行准备凭据**：绑定不可变源码、Runtime、配置、补丁、lock、工具链与 channel；只能由仓库内 `release:prepare` 生成并由 Worker 复核，不能用环境变量伪造跳过测试。
 
 Controller 状态、一次性票据、Worker 临时检出和待发布制品均位于 `target/` 或系统临时目录，不提交 Git。Provider 只发布安装包与汇总后的 `SHA256SUMS`，不会把节点票据、租约、`BUILD-INFO`、本机路径或 `.env` 作为公开附件。
 
@@ -30,6 +32,14 @@ corepack pnpm@11.7.0 desktop:package
 ```
 
 该命令继续负责配置同步、Runtime 同步、验证、E2E、Runtime smoke 和当前原生平台安装包构建。分布式 Worker 复用的也是这条链路，没有第二套 Tauri 打包实现。
+
+正式发行先在干净、已打 tag 的源码上执行一次公共准备：
+
+```bash
+corepack pnpm@11.7.0 release:prepare -- --tag v1.0.0
+```
+
+准备阶段执行固定依赖安装、`app:sync`、`runtime:sync`、发行门禁、`verify` 和 E2E，并将经过核验的生成配置与公共 Runtime 闭包写入内容寻址缓存。输出的 descriptor 和签名 receipt 绑定 tag、Desktop/Runtime 完整 commit、源码树、Runtime 补丁与 lock、Node/Rust/pnpm 版本、channel、签名模式和 dirty 状态。Worker 仍调用 `desktop:package`，但只有 receipt 与任务完全一致时才省略已经完成的公共门禁；否则自动回到完整构建或拒绝正式发行。
 
 ## 一台 Apple Silicon Mac 构建四平台
 
@@ -61,10 +71,12 @@ corepack pnpm@11.7.0 release:local-all -- --check
 检查通过后，一键创建、并行构建、校验和汇总四平台社区版：
 
 ```bash
-corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0
+corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --concurrency 2
 ```
 
-默认结果位于 `release/local-all/v1.0.0/`，每个 Worker 的真实耗时和最终状态位于 `target/local-release/runs/<run-id>/summary.json`。也可以只验证或构建一个目标：
+命令会先调用 `release:prepare`，成功后才创建任务和启动 Worker。默认并发根据宿主机内存自适应；16 GB Mac 建议使用 `--concurrency 2`，32 GB 可从 `3` 开始观察，任何机器都不建议盲目同时跑满四环境。
+
+默认结果位于 `release/local-all/v1.0.0/`，准备阶段、每个 Worker、Runtime/Cargo 缓存状态、打包和发布的真实耗时与最终状态位于 `target/local-release/runs/<run-id>/summary.json`。也可以只验证或构建一个目标：
 
 ```bash
 corepack pnpm@11.7.0 release:local-all -- --check --target windows-x64
@@ -74,6 +86,15 @@ corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --target linux-x64
 机器设置与默认值不同时，将 `.deepseek-release.local.example.json` 复制为 `.deepseek-release.local.json`，修改 Docker 镜像、Windows 虚拟机名称、宿主机地址、Windows 工作目录或汇总目录。该本地文件已被 Git 忽略，不得放入密码、令牌或其他凭据。命令行的 `--windows-vm`、`--windows-host`、`--docker-image` 和 `--destination` 可以临时覆盖配置；`--rebuild-docker` 强制重建 Linux Worker 镜像。
 
 Controller 只在本次运行期间监听，非回环流量始终使用临时 CA 签发的 TLS。Worker 票据绑定目标和节点，只通过进程标准输入传递，不写入 Docker 参数、Parallels 命令或日志。Controller 状态保存在对应 run 目录，构建失败时不会发布残缺目标。
+
+### 缓存与失败恢复
+
+- Runtime 闭包缓存键包含 Runtime commit、Desktop Runtime 补丁/本地包、lock、工具链、Node ABI、目标 triple 和影响闭包的配置；命中前逐文件复核清单、大小和 SHA-256。
+- Cargo 使用按目标 triple、Rust flags 和签名模式隔离的持久 `CARGO_TARGET_DIR`；不同目标不会共享可执行输出。
+- pnpm store、Playwright 浏览器、Docker 镜像和 volume、Node/Rust 工具链长期复用。只有 Dockerfile、系统依赖或工具链契约变化时才使用 `--rebuild-docker`。
+- 缓存不完整、哈希不符或含符号链接时自动废弃并重建；不要用手工清空全部缓存解决普通源码错误。
+- 同一 run 重试时只调度失败目标；已完成目标保留。filesystem/NAS 已汇总且校验通过后，远程 Provider 上传失败只重试 `release:publish`。
+- 当前方案评估过 `sccache`，但暂未引入额外跨平台二进制分发和签名信任面；稳定、隔离的 Cargo target 已覆盖主要 Rust 增量收益。后续只有经过四平台固定版本验证才接入。
 
 这条命令证明的是一台物理机完成四种隔离环境打包，不等同于四种真实硬件验收。尤其 Apple Silicon 上的 Windows x64 与 Linux x64 使用系统模拟层，发行前仍应在目标系统完成安装、启动、Runtime、凭据和卸载验证。缺少任何环境时命令会明确失败，不会偷偷改用错误目标。
 
@@ -128,6 +149,8 @@ corepack pnpm@11.7.0 release:create -- \
   --trusted-node linux-x64=linux-node.linux-x64
 ```
 
+多节点也复用准备结果。先执行 `release:prepare`，再将其输出的 descriptor 文件传给 `release:create --prepared-descriptor <文件>`；Worker 同时通过私有共享存储或受控同步目录获得 `--prepared-root <目录>`。Controller 会把 descriptor 固定进任务，任何 commit、Runtime、配置或 receipt 哈希不一致都会拒绝领取或上传。未提供有效准备凭据时 Worker 走完整 `desktop:package` 门禁，不存在可随意设置的“跳过测试”开关。
+
 默认源码来自当前仓库 `origin`。迁移到 GitLab、Gitee、Gitea 或其他 Git 服务时，只需指定普通 Git URL：
 
 ```bash
@@ -161,7 +184,7 @@ Worker 会：
 2. 使用目标绑定的一次性票据领取任务；成功领取后本地票据文件会删除，服务端票据立即失效。
 3. 从通用 Git URL 克隆源码，detached checkout 到锁定 Desktop commit，并验证 tag 与干净状态。
 4. 核对锁定 Runtime 仓库、ref 和 commit。
-5. 调用现有 `package:community` 或 `desktop:package` 完成全部门禁与原生打包。
+5. 调用现有 `package:community` 或 `desktop:package`；有效准备凭据只复用已通过的公共门禁，当前目标仍必须完成 Runtime 原生闭包、平台 smoke、Tauri 打包和安装包审计。
 6. 流式上传安装包、`BUILD-INFO` 和平台 `SHA256SUMS`；上传过程同时校验声明大小和 SHA-256。
 7. Worker 对前端、平台 Runtime、生成配置、原生 bundle 和主程序执行流式敏感信息扫描；Controller 验证扫描摘要、Desktop commit、Runtime commit、目标 triple、channel、signed、dirty 状态、安装包及敏感路径后才把任务标记为完成。
 

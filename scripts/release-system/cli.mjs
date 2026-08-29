@@ -28,12 +28,13 @@ const defaultControllerUrl = "http://127.0.0.1:47821";
 
 function run(command, args, { cwd, env = process.env, shell = false } = {}) {
   return new Promise((resolvePromise, reject) => {
-    console.log(`\n> ${command} ${args.join(" ")}`);
+    const label = command.split(/[\\/]/u).at(-1) || "release command";
+    console.log(`\n> ${label}`);
     const child = spawn(command, args, { cwd, env, shell, stdio: "inherit" });
     child.on("error", reject);
     child.on("close", code => {
       if (code === 0) resolvePromise();
-      else reject(new Error(`${command} ${args.join(" ")} exited with code ${String(code)}`));
+      else reject(new Error(`${label} exited with code ${String(code)}`));
     });
   });
 }
@@ -97,7 +98,7 @@ async function controllerCommand(parsed) {
   const address = server.address();
   const actualPort = typeof address === "object" && address ? address.port : port;
   console.log(`Release controller listening at ${cert ? "https" : "http"}://${host}:${actualPort}`);
-  console.log(`Administrator token file: ${credentials.tokenPath}`);
+  console.log("Administrator token file created in the controller data directory.");
   console.log("Authorization values are never printed; distribute worker ticket files only to trusted nodes.");
   const close = signal => {
     console.log(`\nReceived ${signal}; stopping release controller.`);
@@ -118,6 +119,10 @@ async function createCommand(parsed) {
   const channel = option(parsed, "channel", "community");
   const signed = flag(parsed, "signed");
   const trustedNodes = parseTrustedNodes(options(parsed, "trusted-node"));
+  const preparedDescriptorPath = option(parsed, "prepared-descriptor");
+  const prepared = preparedDescriptorPath
+    ? JSON.parse(await readFile(resolve(preparedDescriptorPath), "utf8"))
+    : null;
   const input = await createReleasePlan({
     root,
     tag,
@@ -126,7 +131,8 @@ async function createCommand(parsed) {
     sourceRepository: option(parsed, "source"),
     productName: option(parsed, "product-name", "DeepSeek Desktop"),
     requestedTargetIds: options(parsed, "target"),
-    trustedNodes
+    trustedNodes,
+    prepared
   });
   const result = await requestJson(controller, "/v1/releases", {
     method: "POST",
@@ -137,8 +143,8 @@ async function createCommand(parsed) {
   console.log(`Created distributed release ${result.release.id} for ${tag}.`);
   console.log(`Controller status: ${controller}/v1/releases/${result.release.id}`);
   for (const targetId of input.targets.map(target => target.id)) {
-    const path = await writeTicket(ticketDirectory, targetId, result.tickets[targetId]);
-    console.log(`${targetId} worker ticket: ${path}`);
+    await writeTicket(ticketDirectory, targetId, result.tickets[targetId]);
+    console.log(`${targetId} worker ticket created.`);
   }
   console.log("Transfer each ticket file to its configured trusted node through a private channel.");
 }
@@ -168,8 +174,8 @@ async function retryCommand(parsed) {
     body: {}
   });
   const ticketDirectory = resolve(option(parsed, "ticket-dir", join(root, "target", "release-tickets", releaseId)));
-  const path = await writeTicket(ticketDirectory, targetId, result.ticket);
-  console.log(`Reset ${targetId}; replacement one-time ticket: ${path}`);
+  await writeTicket(ticketDirectory, targetId, result.ticket);
+  console.log(`Reset ${targetId}; replacement one-time ticket created.`);
 }
 
 async function publishCommand(parsed) {
@@ -191,8 +197,8 @@ async function publishCommand(parsed) {
     token: adminToken,
     body
   });
-  console.log(`Published through ${result.provider}: ${result.location}`);
-  console.log(`Assets: ${result.assets.join(", ")}`);
+  console.log(`Published through ${result.provider}.`);
+  console.log(`Assets: ${(result.assets || []).join(", ")}`);
 }
 
 function defaultNodeId(targetId) {
@@ -200,7 +206,23 @@ function defaultNodeId(targetId) {
   return assertNodeId(`${normalizedHost || "worker"}.${targetId}`);
 }
 
-async function runNativePackage(checkout, plan) {
+function preparedEnvironment(plan, preparedRoot) {
+  if (!plan.prepared || !preparedRoot) return {};
+  return {
+    DEEPSEEK_DESKTOP_PREPARED_ROOT: preparedRoot,
+    DEEPSEEK_DESKTOP_PREPARED_DESCRIPTOR: JSON.stringify(plan.prepared),
+    DEEPSEEK_DESKTOP_RELEASE_PLAN: JSON.stringify({
+      tag: plan.tag,
+      version: plan.version,
+      channel: plan.channel,
+      signed: plan.signed,
+      source: plan.source,
+      runtime: plan.runtime
+    })
+  };
+}
+
+async function runNativePackage(checkout, plan, preparedRoot = "") {
   const script = plan.channel === "community" ? "package:community" : "desktop:package";
   const command = process.platform === "win32" ? "corepack.cmd" : "corepack";
   const env = {
@@ -209,7 +231,8 @@ async function runNativePackage(checkout, plan) {
     RUNTIME_REPOSITORY: plan.runtime.repository,
     RUNTIME_REF: plan.runtime.commit,
     RELEASE_CHANNEL: plan.channel,
-    RELEASE_SIGNED: String(plan.signed)
+    RELEASE_SIGNED: String(plan.signed),
+    ...preparedEnvironment(plan, preparedRoot)
   };
   delete env.DISTRIBUTED_RELEASE_ADMIN_TOKEN;
   delete env.DISTRIBUTED_RELEASE_WORKER_TOKEN;
@@ -217,7 +240,7 @@ async function runNativePackage(checkout, plan) {
   await run(command, [`pnpm@11.7.0`, script], { cwd: checkout, env, shell: process.platform === "win32" });
 }
 
-async function runContainerPackage(checkout, plan, image) {
+async function runContainerPackage(checkout, plan, image, preparedRoot = "") {
   if (process.platform !== "linux") throw new Error("--container-image is supported only by Linux workers");
   const script = plan.channel === "community" ? "package:community" : "desktop:package";
   const environment = [
@@ -225,7 +248,8 @@ async function runContainerPackage(checkout, plan, image) {
     `RUNTIME_REPOSITORY=${plan.runtime.repository}`,
     `RUNTIME_REF=${plan.runtime.commit}`,
     `RELEASE_CHANNEL=${plan.channel}`,
-    `RELEASE_SIGNED=${String(plan.signed)}`
+    `RELEASE_SIGNED=${String(plan.signed)}`,
+    ...Object.entries(preparedEnvironment(plan, preparedRoot)).map(([key, value]) => `${key}=${value}`)
   ];
   const args = ["run", "--rm", "--volume", `${checkout}:/workspace`, "--workdir", "/workspace"];
   for (const value of environment) args.push("--env", value);
@@ -270,6 +294,7 @@ async function workerCommand(parsed) {
     throw new Error("claimed task does not match detected worker target");
   }
   const workRoot = resolve(option(parsed, "work-root", join(tmpdir(), "deepseek-desktop-release-worker")));
+  const preparedRoot = option(parsed, "prepared-root") ? resolve(option(parsed, "prepared-root")) : "";
   const checkout = join(workRoot, claim.taskId, "source");
   const keepWork = flag(parsed, "keep-work");
   try {
@@ -297,9 +322,9 @@ async function workerCommand(parsed) {
     const containerImage = option(parsed, "container-image");
     if (containerImage) {
       if (!target.optionalContainer) throw new Error(`target ${target.id} does not support container packaging`);
-      await runContainerPackage(checkout, claim.plan, containerImage);
+      await runContainerPackage(checkout, claim.plan, containerImage, preparedRoot);
     } else {
-      await runNativePackage(checkout, claim.plan);
+      await runNativePackage(checkout, claim.plan, preparedRoot);
     }
     const outputDirectory = join(checkout, "release", claim.plan.version, target.triple);
     const entries = (await readdir(outputDirectory, { withFileTypes: true })).filter(entry => entry.isFile()).sort((a, b) => a.name.localeCompare(b.name));

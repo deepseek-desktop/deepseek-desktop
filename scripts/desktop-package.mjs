@@ -6,6 +6,7 @@ import process from "node:process";
 import { createMacDmg } from "./macos-dmg.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
 import { artifactForbiddenRoots, scanArtifactPaths } from "./lib/artifact-scan.mjs";
+import { restorePreparedRelease } from "./release-system/prepared-release.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -28,6 +29,7 @@ process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH?.tri
   || join(root, "target", "playwright-browsers");
 
 function run(command, args, options = {}) {
+  const startedAt = Date.now();
   console.log(`\n> ${command} ${args.join(" ")}`);
   const result = spawnSync(command, args, {
     cwd: root,
@@ -37,16 +39,16 @@ function run(command, args, options = {}) {
   });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} exited with code ${String(result.status)}`);
+  return Date.now() - startedAt;
 }
 
 function runPnpm(args) {
   const pnpmCli = process.env.npm_execpath;
   if (pnpmCli) {
-    run(process.execPath, [pnpmCli, ...args]);
-    return;
+    return run(process.execPath, [pnpmCli, ...args]);
   }
   const corepack = join(dirname(process.execPath), process.platform === "win32" ? "corepack.cmd" : "corepack");
-  run(corepack, [`pnpm@${pnpmVersion}`, ...args], { shell: process.platform === "win32" });
+  return run(corepack, [`pnpm@${pnpmVersion}`, ...args], { shell: process.platform === "win32" });
 }
 
 function git(args) {
@@ -70,22 +72,68 @@ async function sha256(path) {
   return createHash("sha256").update(await readFile(path)).digest("hex");
 }
 
-runPnpm(["install", "--frozen-lockfile"]);
-runPnpm(["playwright:install"]);
-runPnpm(["app:sync"]);
-runPnpm(["runtime:sync"]);
-runPnpm(["release:check", channel]);
-runPnpm(["verify"]);
-runPnpm(["test:e2e"]);
-runPnpm(["runtime:smoke"]);
+const packageStartedAt = Date.now();
+const timings = {};
+const preparedRoot = process.env.DEEPSEEK_DESKTOP_PREPARED_ROOT?.trim() || "";
+const preparedDescriptorText = process.env.DEEPSEEK_DESKTOP_PREPARED_DESCRIPTOR?.trim() || "";
+const releasePlanText = process.env.DEEPSEEK_DESKTOP_RELEASE_PLAN?.trim() || "";
+const preparedValueCount = [preparedRoot, preparedDescriptorText, releasePlanText].filter(Boolean).length;
+if (preparedValueCount !== 0 && preparedValueCount !== 3) {
+  throw new Error("prepared packaging requires a cache root, descriptor, and controller release plan together");
+}
+const preparedMode = Boolean(preparedRoot);
+let preparedReceiptSha256 = "";
+if (preparedMode) {
+  const restoredAt = Date.now();
+  const restored = await restorePreparedRelease({
+    root,
+    preparedRoot,
+    expectedDescriptor: JSON.parse(preparedDescriptorText),
+    plan: JSON.parse(releasePlanText)
+  });
+  preparedReceiptSha256 = restored.descriptor.receiptSha256;
+  timings.preparedRestoreMs = Date.now() - restoredAt;
+  timings.installMs = runPnpm(["install", "--frozen-lockfile"]);
+  timings.appSyncCheckMs = runPnpm(["app:sync", "--check"]);
+  timings.releaseGateMs = runPnpm(["release:check", channel]);
+  timings.runtimeStageMs = runPnpm(["runtime:stage"]);
+  timings.runtimeSmokeMs = runPnpm(["runtime:smoke"]);
+} else {
+  timings.installMs = runPnpm(["install", "--frozen-lockfile"]);
+  timings.playwrightInstallMs = runPnpm(["playwright:install"]);
+  timings.appSyncMs = runPnpm(["app:sync"]);
+  timings.runtimeSyncMs = runPnpm(["runtime:sync"]);
+  timings.releaseGateMs = runPnpm(["release:check", channel]);
+  timings.verifyMs = runPnpm(["verify"]);
+  timings.e2eMs = runPnpm(["test:e2e"]);
+  timings.runtimeSmokeMs = runPnpm(["runtime:smoke"]);
+}
 
 const config = JSON.parse(await readFile(join(root, "target/generated/app-config.json"), "utf8"));
 const runtime = JSON.parse(await readFile(join(root, "target/generated/runtime-lock.json"), "utf8"));
 const runtimeSource = JSON.parse(await readFile(join(root, "target/generated/runtime-source.json"), "utf8"));
-const bundleRoot = join(root, "src-tauri", "target", "release", "bundle");
+const toolchainLock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
+const cargoCacheRoot = resolve(process.env.DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT?.trim() || join(root, "src-tauri", "target"));
+const cargoCacheKey = createHash("sha256").update(JSON.stringify({
+  target: target.triple,
+  rust: toolchainLock.toolchain?.rust,
+  channel,
+  signed: resolvedConfig.release.signed,
+  rustFlags: process.env.RUSTFLAGS || "",
+  profile: "release"
+})).digest("hex").slice(0, 20);
+const cargoTargetDir = process.env.DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT?.trim()
+  ? join(cargoCacheRoot, target.triple, cargoCacheKey)
+  : cargoCacheRoot;
+process.env.CARGO_TARGET_DIR = cargoTargetDir;
+const bundleRoot = join(cargoTargetDir, "release", "bundle");
 await rm(bundleRoot, { recursive: true, force: true });
-const rustFlags = [process.env.RUSTFLAGS, `--remap-path-prefix=${root}=.`].filter(Boolean).join(" ");
-run(process.execPath, ["scripts/with-rust.mjs", "tauri", "build", "--config", "target/generated/tauri.conf.json", "--bundles", target.bundles], {
+const rustFlags = [
+  process.env.RUSTFLAGS,
+  `--remap-path-prefix=${root}=.`,
+  ...(cargoTargetDir !== join(root, "src-tauri", "target") ? [`--remap-path-prefix=${cargoTargetDir}=./target/cargo-cache`] : [])
+].filter(Boolean).join(" ");
+timings.tauriBuildMs = run(process.execPath, ["scripts/with-rust.mjs", "tauri", "build", "--config", "target/generated/tauri.conf.json", "--bundles", target.bundles], {
   env: { RUSTFLAGS: rustFlags }
 });
 if (target.dmgArch) {
@@ -113,9 +161,7 @@ for (const artifact of artifacts) {
 }
 
 const primaryBinary = join(
-  root,
-  "src-tauri",
-  "target",
+  cargoTargetDir,
   "release",
   `${packageJson.name}${process.platform === "win32" ? ".exe" : ""}`
 );
@@ -135,6 +181,11 @@ const artifactAudit = await scanArtifactPaths(scanRoots, {
 });
 
 const dirty = git(["status", "--porcelain", "--untracked-files=all"]).length > 0;
+let runtimeCache = { hit: false, key: "unknown" };
+try {
+  runtimeCache = JSON.parse(await readFile(join(root, "target", "local-release", `runtime-cache-${target.triple}.json`), "utf8"));
+} catch {}
+timings.totalMs = Date.now() - packageStartedAt;
 const buildInfoPath = join(outputRoot, `BUILD-INFO.${target.triple}.json`);
 await writeFile(buildInfoPath, `${JSON.stringify({
   schemaVersion: 1,
@@ -160,6 +211,16 @@ await writeFile(buildInfoPath, `${JSON.stringify({
   target: target.triple,
   channel,
   signed: config.release.signed,
+  prepared: {
+    used: preparedMode,
+    receiptSha256: preparedReceiptSha256 || null
+  },
+  performance: {
+    schemaVersion: 1,
+    timings,
+    runtimeCache,
+    cargoCache: { key: cargoCacheKey, persistent: Boolean(process.env.DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT?.trim()) }
+  },
   runtimeUpdate: {
     enabled: Boolean(config.runtimeUpdate.manifestUrl && config.runtimeUpdate.publicKey),
     channel: config.runtimeUpdate.channel,
@@ -179,7 +240,7 @@ const checksumLines = [];
 for (const path of checksumFiles) checksumLines.push(`${await sha256(path)}  ${basename(path)}`);
 await writeFile(join(outputRoot, "SHA256SUMS"), `${checksumLines.join("\n")}\n`);
 
-console.log(`\nDesktop package completed: ${outputRoot}`);
+console.log(`\nDesktop package completed: ${outputRoot.slice(root.length + 1)}`);
 for (const path of copiedArtifacts) console.log(`- ${basename(path)}`);
 console.log(`- ${basename(buildInfoPath)}`);
 console.log("- SHA256SUMS");

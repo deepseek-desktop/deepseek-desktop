@@ -2,16 +2,23 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { assertSourceRepository, detectHostTarget, loadTargets, parseArguments, sha256File } from "../release-system/common.mjs";
+import { assertSourceRepository, detectHostTarget, loadTargets, parseArguments, redactError, sha256File } from "../release-system/common.mjs";
 import { ReleaseControllerService } from "../release-system/controller-service.mjs";
 import { requestJson, uploadArtifact } from "../release-system/http-client.mjs";
 import { startReleaseServer } from "../release-system/http-server.mjs";
 import { ReleaseStateStore } from "../release-system/state-store.mjs";
-import { loadLocalAllConfig, macPathToParallelsShared } from "../release-system/local-all.mjs";
+import { loadLocalAllConfig, macPathToParallelsShared, runWithConcurrency } from "../release-system/local-all.mjs";
+import {
+  contentCacheKey,
+  createContentCacheManifest,
+  verifyContentCache
+} from "../release-system/content-cache.mjs";
+import { prepareRelease, restorePreparedRelease } from "../release-system/prepared-release.mjs";
 import { artifactForbiddenRoots, scanArtifactPaths } from "../lib/artifact-scan.mjs";
 
 const desktopCommit = "a".repeat(40);
@@ -21,6 +28,13 @@ const runtimeRepository = "https://example.invalid/deepseek-harness.git";
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function git(directory, args) {
+  const result = spawnSync("git", args, { cwd: directory, encoding: "utf8" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+  return result.stdout.trim();
 }
 
 function releaseInput({ channel = "local", targetId = "macos-arm64", trustedNodeId = "" } = {}) {
@@ -59,6 +73,13 @@ test("source repositories reject embedded HTTP credentials", () => {
   assert.equal(assertSourceRepository("ssh://git@git.example.com/team/desktop.git"), "ssh://git@git.example.com/team/desktop.git");
   assert.throws(() => assertSourceRepository("https://token@git.example.com/team/desktop.git"), /embedded HTTP credentials/u);
   assert.throws(() => assertSourceRepository("ssh://git:password@git.example.com/team/desktop.git"), /embedded password/u);
+});
+
+test("release errors redact credentials and common user-home paths", () => {
+  const message = redactError(new Error("sk-1234567890abcdefghijkl /Users/developer/private/file C:\\Users\\developer\\private\\file /home/developer/private/file"));
+  assert.doesNotMatch(message, /sk-123|developer|private\/file/u);
+  assert.match(message, /\[REDACTED\]/u);
+  assert.equal(message.match(/\[LOCAL_PATH\]/gu)?.length, 3);
 });
 
 test("artifact scanner uses precise CI roots and the real local home", () => {
@@ -199,6 +220,91 @@ test("single-host release config is strict and maps macOS paths into Parallels s
     () => macPathToParallelsShared("/private/tmp/worker.mjs", { hostHome: "/Users/developer", guestHome: "\\\\Mac\\Home" }),
     /must be under/u
   );
+});
+
+test("release preparation signs immutable inputs, reuses valid cache, and rejects drift", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-release-prepare-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(join(directory, "runtime"), { recursive: true });
+  await mkdir(join(directory, "target", "generated", "branding"), { recursive: true });
+  await mkdir(join(directory, "target", "generated", "runtime", "prepared"), { recursive: true });
+  await writeFile(join(directory, ".gitignore"), "target/\n");
+  await writeFile(join(directory, "source.txt"), "trusted source\n");
+  await writeFile(join(directory, "runtime", "toolchain-lock.json"), `${JSON.stringify({
+    runtimeSource: { repository: runtimeRepository, ref: "v1.0.0", commit: runtimeCommit },
+    toolchain: { rust: "1.98.0", pnpm: "11.7.0" }
+  })}\n`);
+  await writeFile(join(directory, "target", "generated", "app-config.json"), "{}\n");
+  await writeFile(join(directory, "target", "generated", "tauri.conf.json"), "{}\n");
+  await writeFile(join(directory, "target", "generated", "branding", "icon.txt"), "icon\n");
+  await writeFile(join(directory, "target", "generated", "runtime-source.json"), `${JSON.stringify({ resolvedCommit: runtimeCommit })}\n`);
+  await writeFile(join(directory, "target", "generated", "runtime-lock.json"), `${JSON.stringify({ runtime: { commit: runtimeCommit, sha256: sha256("runtime") } })}\n`);
+  await writeFile(join(directory, "target", "generated", "runtime", "prepared", "entry.js"), "export {};\n");
+  git(directory, ["init"]);
+  git(directory, ["config", "user.email", "tests@example.invalid"]);
+  git(directory, ["config", "user.name", "Release Tests"]);
+  git(directory, ["add", ".gitignore", "source.txt", "runtime/toolchain-lock.json"]);
+  git(directory, ["commit", "-m", "fixture"]);
+  git(directory, ["tag", "v1.0.0"]);
+  const cacheRoot = join(directory, "target", "prepared-cache");
+  const first = await prepareRelease({ root: directory, tag: "v1.0.0", cacheRoot, runChecks: false });
+  assert.equal(first.cacheHit, false);
+  await rm(join(directory, "target", "generated"), { recursive: true, force: true });
+  const second = await prepareRelease({ root: directory, tag: "v1.0.0", cacheRoot, runChecks: false });
+  assert.equal(second.cacheHit, true);
+  assert.deepEqual(second.descriptor, first.descriptor);
+  assert.equal(await readFile(join(directory, "target", "generated", "app-config.json"), "utf8"), "{}\n");
+  const plan = {
+    tag: "v1.0.0",
+    version: "1.0.0",
+    channel: "community",
+    signed: false,
+    source: { commit: git(directory, ["rev-parse", "HEAD"]) },
+    runtime: { commit: runtimeCommit }
+  };
+  await restorePreparedRelease({ root: directory, preparedRoot: cacheRoot, expectedDescriptor: first.descriptor, plan });
+  const receipt = await readFile(first.receiptPath, "utf8");
+  assert.equal(receipt.includes(directory), false, "prepared receipt must not contain a local path");
+  await writeFile(join(first.directory, "payload", "app-config.json"), "corrupted\n");
+  const rebuilt = await prepareRelease({ root: directory, tag: "v1.0.0", cacheRoot, runChecks: false });
+  assert.equal(rebuilt.cacheHit, false);
+  await writeFile(join(directory, "source.txt"), "drifted source\n");
+  await assert.rejects(() => prepareRelease({ root: directory, tag: "v1.0.0", cacheRoot, runChecks: false }), /clean Desktop worktree/u);
+});
+
+test("content-addressed release cache rejects corruption, target drift, and links", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-content-cache-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(join(directory, "runtime"), { recursive: true });
+  await writeFile(join(directory, "runtime", "entry.js"), "runtime\n");
+  const identity = { target: "aarch64-apple-darwin", runtimeCommit, nodeAbi: "137" };
+  const manifest = await createContentCacheManifest(directory, identity);
+  await writeFile(join(directory, "cache-manifest.json"), `${JSON.stringify(manifest)}\n`);
+  assert.match(contentCacheKey(identity), /^[0-9a-f]{64}$/u);
+  await verifyContentCache(directory, identity);
+  await assert.rejects(() => verifyContentCache(directory, { ...identity, target: "x86_64-apple-darwin" }), /identity/u);
+  await writeFile(join(directory, "runtime", "entry.js"), "corrupted\n");
+  await assert.rejects(() => verifyContentCache(directory, identity), /file manifest/u);
+  await rm(join(directory, "runtime", "entry.js"));
+  await symlink("../cache-manifest.json", join(directory, "runtime", "linked"));
+  await assert.rejects(() => createContentCacheManifest(directory, identity), /symbolic links/u);
+});
+
+test("local release scheduler respects concurrency and preserves failed results", async () => {
+  let active = 0;
+  let maximum = 0;
+  const tasks = Array.from({ length: 5 }, (_, index) => async () => {
+    active += 1;
+    maximum = Math.max(maximum, active);
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 10));
+    active -= 1;
+    if (index === 3) throw new Error("expected worker failure");
+    return index;
+  });
+  const results = await runWithConcurrency(tasks, 2);
+  assert.equal(maximum, 2);
+  assert.deepEqual(results.map(result => result.status), ["fulfilled", "fulfilled", "fulfilled", "rejected", "fulfilled"]);
+  assert.deepEqual(results.filter(result => result.status === "fulfilled").map(result => result.value), [0, 1, 2, 4]);
 });
 
 test("official tasks require a trusted node and reject ticket misuse", async t => {
@@ -365,4 +471,50 @@ test("completion rejects source facts and local path leakage", async t => {
     await service.recordArtifact(claimed.taskId, claimed.lease, { name, sha256: sha256(bytes), size: bytes.length });
   }
   await assert.rejects(() => service.completeTask(claimed.taskId, claimed.lease), /macOS home path/u);
+});
+
+test("completion rejects a worker that did not use the bound prepared receipt", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-release-prepared-validation-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const { store, service } = await createService(directory);
+  const prepared = {
+    schemaVersion: 1,
+    receiptSha256: "1".repeat(64),
+    cacheKey: "2".repeat(64),
+    trackedSourceSha256: "3".repeat(64),
+    generatedPayloadSha256: "4".repeat(64),
+    desktopCommit,
+    runtimeCommit
+  };
+  const created = await service.createRelease({ ...releaseInput(), prepared });
+  const claimed = await service.claimTask({
+    ticket: created.tickets["macos-arm64"],
+    targetId: "macos-arm64",
+    nodeId: "local.mac.arm64"
+  });
+  const incoming = join(store.root, "incoming", created.release.id, "macos-arm64");
+  await mkdir(incoming, { recursive: true });
+  const installerName = "DeepSeek.Desktop_1.0.0_aarch64.dmg";
+  const buildInfoName = "BUILD-INFO.aarch64-apple-darwin.json";
+  const installer = Buffer.from("installer");
+  const buildInfo = Buffer.from(`${JSON.stringify({
+    application: { version: "1.0.0" },
+    desktop: { commit: desktopCommit, dirty: false },
+    harness: { repository: runtimeRepository, commit: runtimeCommit },
+    target: "aarch64-apple-darwin",
+    channel: "local",
+    signed: false,
+    prepared: { used: false, receiptSha256: null },
+    artifactAudit: { schemaVersion: 1, scannerVersion: 2, fileCount: 3, byteCount: 1024 }
+  })}\n`);
+  const files = new Map([
+    [installerName, installer],
+    [buildInfoName, buildInfo]
+  ]);
+  files.set("SHA256SUMS", Buffer.from(`${sha256(installer)}  ${installerName}\n${sha256(buildInfo)}  ${buildInfoName}\n`));
+  for (const [name, bytes] of files) {
+    await writeFile(join(incoming, name), bytes);
+    await service.recordArtifact(claimed.taskId, claimed.lease, { name, sha256: sha256(bytes), size: bytes.length });
+  }
+  await assert.rejects(() => service.completeTask(claimed.taskId, claimed.lease), /prepared receipt/u);
 });

@@ -17,6 +17,7 @@ import {
 import { resolveRemoteTag } from "./git-source.mjs";
 import { publishWithProvider } from "./providers/index.mjs";
 import { scanArtifactPaths } from "../lib/artifact-scan.mjs";
+import { assertPreparedDescriptor } from "./prepared-release.mjs";
 
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const shaPattern = /^[0-9a-f]{64}$/u;
@@ -100,6 +101,10 @@ export class ReleaseControllerService {
     const runtimeCommit = assertCommit(input.runtime?.commit || "", "runtime commit");
     const runtimeRef = input.runtime?.ref?.trim();
     if (!runtimeRef) throw new Error("runtime ref is required for a distributed release");
+    const prepared = input.prepared ? assertPreparedDescriptor(input.prepared) : null;
+    if (prepared && (prepared.desktopCommit !== desktopCommit || prepared.runtimeCommit !== runtimeCommit)) {
+      throw new Error("prepared release descriptor does not match release source commits");
+    }
     const version = assertVersion(input.version || "");
     if (tag !== version && tag !== `v${version}`) throw new Error(`release tag ${tag} does not match version ${version}`);
     const channel = assertChannel(input.channel || "community");
@@ -154,6 +159,7 @@ export class ReleaseControllerService {
       signed,
       source: { repository, commit: desktopCommit },
       runtime: { repository: runtimeRepository, ref: runtimeRef, commit: runtimeCommit },
+      ...(prepared ? { prepared } : {}),
       status: "waiting",
       createdAt,
       updatedAt: createdAt,
@@ -292,6 +298,12 @@ export class ReleaseControllerService {
       }
       if (buildInfo.target !== target.triple || buildInfo.channel !== release.channel || buildInfo.signed !== release.signed) {
         throw new Error("BUILD-INFO target or release channel does not match release plan");
+      }
+      if (release.prepared && (
+        buildInfo.prepared?.used !== true
+        || buildInfo.prepared?.receiptSha256 !== release.prepared.receiptSha256
+      )) {
+        throw new Error("BUILD-INFO prepared receipt does not match release plan");
       }
       if (buildInfo.artifactAudit?.schemaVersion !== 1
         || buildInfo.artifactAudit?.scannerVersion !== 2

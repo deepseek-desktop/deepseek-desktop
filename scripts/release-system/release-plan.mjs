@@ -22,7 +22,8 @@ export async function createReleasePlan({
   sourceRepository = "",
   productName = "DeepSeek Desktop",
   requestedTargetIds = [],
-  trustedNodes = new Map()
+  trustedNodes = new Map(),
+  prepared = null
 }) {
   const workspace = resolve(root);
   const { version } = parseReleaseTag(tag);
@@ -47,6 +48,7 @@ export async function createReleasePlan({
     signed,
     source: { repository, tag, commit },
     runtime,
+    ...(prepared ? { prepared } : {}),
     targets: targetIds.map(id => ({ id, trustedNodeId: trustedNodes.get(id) || "" }))
   };
 }

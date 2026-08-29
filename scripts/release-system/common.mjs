@@ -159,5 +159,8 @@ export function redactError(error) {
   const message = error instanceof Error ? error.message : String(error);
   return message
     .replace(/(?:sk|api)[-_][A-Za-z0-9._-]{12,}/giu, "[REDACTED]")
-    .replace(/Bearer\s+\S+/giu, "Bearer [REDACTED]");
+    .replace(/Bearer\s+\S+/giu, "Bearer [REDACTED]")
+    .replace(/\/Users\/[^/\s]+(?:\/[^\s:;,)]*)?/gu, "[LOCAL_PATH]")
+    .replace(/\/home\/[^/\s]+(?:\/[^\s:;,)]*)?/gu, "[LOCAL_PATH]")
+    .replace(/[A-Za-z]:\\Users\\[^\\\s]+(?:\\[^\s:;,)]*)?/gu, "[LOCAL_PATH]");
 }

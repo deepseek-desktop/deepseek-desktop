@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { homedir, hostname } from "node:os";
+import { chmod, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { homedir, hostname, totalmem } from "node:os";
 import { isIP } from "node:net";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import process from "node:process";
@@ -22,6 +22,7 @@ import {
 import { ReleaseControllerService } from "./controller-service.mjs";
 import { ensureAdminToken, startReleaseServer } from "./http-server.mjs";
 import { createReleasePlan } from "./release-plan.mjs";
+import { prepareRelease } from "./prepared-release.mjs";
 import { ReleaseStateStore } from "./state-store.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -31,6 +32,7 @@ const allTargetIds = ["macos-arm64", "macos-x64", "windows-x64", "linux-x64"];
 const allowedOptions = new Set([
   "channel",
   "check",
+  "concurrency",
   "config",
   "destination",
   "docker-image",
@@ -69,14 +71,19 @@ function run(command, args, { cwd = root, env = process.env, input = "", label =
     const startedAt = Date.now();
     console.log(`\n[${label}] starting`);
     const child = spawn(command, args, { cwd, env, stdio: ["pipe", "inherit", "inherit"] });
-    child.once("error", reject);
+    child.once("error", error => {
+      error.durationMs = Date.now() - startedAt;
+      reject(error);
+    });
     child.once("close", code => {
       const durationMs = Date.now() - startedAt;
       if (code === 0) {
         console.log(`[${label}] completed in ${formatDuration(durationMs)}`);
         resolvePromise({ durationMs });
       } else {
-        reject(new Error(`${label} exited with code ${String(code)} after ${formatDuration(durationMs)}`));
+        const error = new Error(`${label} exited with code ${String(code)} after ${formatDuration(durationMs)}`);
+        error.durationMs = durationMs;
+        reject(error);
       }
     });
     if (input) child.stdin.end(input);
@@ -84,9 +91,49 @@ function run(command, args, { cwd = root, env = process.env, input = "", label =
   });
 }
 
+function runStateLabel(runId) {
+  return `target/local-release/runs/${runId}`;
+}
+
+function publicationLabel(destination) {
+  const suffix = relative(root, destination);
+  if (suffix && !suffix.startsWith("..") && !isAbsolute(suffix)) return suffix.replaceAll("\\", "/");
+  return "external-filesystem";
+}
+
+async function publicationAssets(directory) {
+  const entries = (await readdir(directory, { withFileTypes: true }))
+    .filter(entry => entry.isFile())
+    .sort((left, right) => left.name.localeCompare(right.name));
+  return Promise.all(entries.map(async entry => {
+    const path = join(directory, entry.name);
+    const info = await stat(path);
+    return { name: entry.name, size: info.size, sha256: await sha256File(path) };
+  }));
+}
+
 function formatDuration(milliseconds) {
   const seconds = Math.round(milliseconds / 100) / 10;
   return seconds >= 60 ? `${Math.floor(seconds / 60)}m ${(seconds % 60).toFixed(1)}s` : `${seconds.toFixed(1)}s`;
+}
+
+export async function runWithConcurrency(taskFactories, limit) {
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("release worker concurrency must be a positive integer");
+  const results = new Array(taskFactories.length);
+  let nextIndex = 0;
+  async function consume() {
+    while (nextIndex < taskFactories.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      try {
+        results[index] = { status: "fulfilled", value: await taskFactories[index]() };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, taskFactories.length) }, () => consume()));
+  return results;
 }
 
 function assertObject(value, label) {
@@ -313,6 +360,7 @@ async function writeWindowsScripts(runRoot, settings) {
     "--node-id", settings.nodeId,
     "--token-stdin",
     "--work-root", settings.workRoot,
+    "--prepared-root", settings.preparedRoot,
     ...(settings.keepWork ? ["--keep-work"] : [])
   ];
   const cmdArguments = workerArguments.map(value => `"${String(value).replaceAll("\"", "\"\"")}"`).join(" ");
@@ -321,6 +369,8 @@ async function writeWindowsScripts(runRoot, settings) {
     `$env:NODE_EXTRA_CA_CERTS = ${powershellLiteral(ca)}`,
     `$env:DEEPSEEK_DESKTOP_TOOLCHAIN_DIR = ${powershellLiteral(`${settings.workRoot}\\toolchain`)}`,
     `$env:PLAYWRIGHT_BROWSERS_PATH = ${powershellLiteral(`${settings.workRoot}\\playwright`)}`,
+    `$env:DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT = ${powershellLiteral(`${settings.workRoot}\\cargo`)}`,
+    `$env:DEEPSEEK_DESKTOP_RUNTIME_TARGET_CACHE_ROOT = ${powershellLiteral(`${settings.workRoot}\\runtime-target-cache`)}`,
     `$vswhere = ${powershellLiteral(vsWhere)}`,
     "$install = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()",
     "$vsDevCmd = Join-Path $install 'Common7\\Tools\\VsDevCmd.bat'",
@@ -370,6 +420,8 @@ function workerEnvironment(caCert, targetId, nodeBin = "") {
     NODE_EXTRA_CA_CERTS: caCert,
     DEEPSEEK_DESKTOP_TOOLCHAIN_DIR: join(root, "target", "local-release", "toolchains", `rust-${targetId}`),
     PLAYWRIGHT_BROWSERS_PATH: join(root, "target", "local-release", "playwright"),
+    DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT: join(root, "target", "local-release", "cargo"),
+    DEEPSEEK_DESKTOP_RUNTIME_TARGET_CACHE_ROOT: join(root, "target", "local-release", "runtime-target-cache"),
     ...(nodeBin ? { PATH: `${dirname(nodeBin)}:${process.env.PATH || ""}` } : {})
   };
 }
@@ -380,10 +432,14 @@ function dockerBaseArgs(config, caCert) {
     "--env", "NODE_EXTRA_CA_CERTS=/local-release/ca.crt",
     "--env", "DEEPSEEK_DESKTOP_TOOLCHAIN_DIR=/local-release/toolchain",
     "--env", "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
+    "--env", "DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT=/local-release/cargo",
+    "--env", "DEEPSEEK_DESKTOP_RUNTIME_TARGET_CACHE_ROOT=/local-release/runtime-target-cache",
     "--volume", `${root}:/orchestrator:ro`,
     "--volume", `${caCert}:/local-release/ca.crt:ro`,
     "--volume", "deepseek-desktop-local-release-toolchain:/local-release/toolchain",
     "--volume", "deepseek-desktop-local-release-pnpm:/root/.local/share/pnpm",
+    "--volume", "deepseek-desktop-local-release-cargo:/local-release/cargo",
+    "--volume", "deepseek-desktop-local-release-runtime-target-cache:/local-release/runtime-target-cache",
     config.image
   ];
 }
@@ -408,6 +464,10 @@ export async function main() {
   }
 
   const checkOnly = flag(parsed, "check");
+  const requestedConcurrency = option(parsed, "concurrency");
+  const concurrency = requestedConcurrency ? Number(requestedConcurrency) : (totalmem() <= 20 * 1024 ** 3 ? 2 : 3);
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("--concurrency must be an integer between 1 and 4");
+  const releaseStartedAt = Date.now();
   const runId = `${new Date().toISOString().replace(/[:.]/gu, "-")}-${randomUUID().slice(0, 8)}`;
   const runRoot = join(root, "target", "local-release", "runs", runId);
   await mkdir(runRoot, { recursive: true });
@@ -428,7 +488,7 @@ export async function main() {
   const store = new ReleaseStateStore(controllerRoot);
   await store.initialize();
   const admin = await ensureAdminToken(controllerRoot);
-  const service = new ReleaseControllerService({ store });
+  const service = new ReleaseControllerService({ store, ticketTtlMs: 12 * 60 * 60_000, leaseTtlMs: 12 * 60 * 60_000 });
   const server = await startReleaseServer({
     service,
     host: "0.0.0.0",
@@ -452,7 +512,8 @@ export async function main() {
     keepWork: flag(parsed, "keep-work"),
     nodeId: nodeId("windows-x64", "parallels"),
     share,
-    workRoot: config.windows.workRoot
+    workRoot: config.windows.workRoot,
+    preparedRoot: macPathToParallelsShared(join(root, "target", "local-release", "prepared"), share)
   }) : null;
 
   try {
@@ -481,13 +542,16 @@ export async function main() {
     await Promise.all(probes);
     if (checkOnly) {
       console.log(`\nLocal four-environment preflight passed for: ${requestedTargets.join(", ")}`);
-      console.log(`Run state: ${runRoot}`);
+      console.log(`Run state: ${runStateLabel(runId)}`);
       return;
     }
 
     const tag = requireOption(parsed, "tag");
     const channel = option(parsed, "channel", "community");
     const signed = flag(parsed, "signed");
+    const preparationStartedAt = Date.now();
+    const preparation = await prepareRelease({ root, tag, channel, signed });
+    const preparationDurationMs = Date.now() - preparationStartedAt;
     const runners = new Map([
       ["macos-arm64", "native"],
       ["macos-x64", "rosetta"],
@@ -502,67 +566,139 @@ export async function main() {
       signed,
       sourceRepository: option(parsed, "source"),
       requestedTargetIds: requestedTargets,
-      trustedNodes
+      trustedNodes,
+      prepared: preparation.descriptor
     });
     const created = await service.createRelease(plan);
+    const tickets = { ...created.tickets };
     const keepWork = flag(parsed, "keep-work");
-    const workerRuns = requestedTargets.map(targetId => {
+    const workerRun = targetId => async () => {
       const commonArgs = [
         join(root, "scripts/release-system/cli.mjs"), "worker",
         "--controller", controllers[targetId],
         "--node-id", trustedNodes.get(targetId),
         "--token-stdin",
         "--work-root", join(root, "target", "local-release", "work", targetId),
+        "--prepared-root", join(root, "target", "local-release", "prepared"),
         ...(keepWork ? ["--keep-work"] : [])
       ];
       if (targetId === "macos-arm64") {
         return run(process.execPath, commonArgs, {
-          env: workerEnvironment(tls.caCert, targetId), input: `${created.tickets[targetId]}\n`, label: targetId
+          env: workerEnvironment(tls.caCert, targetId), input: `${tickets[targetId]}\n`, label: targetId
         });
       }
       if (targetId === "macos-x64") {
         return run("/usr/bin/arch", ["-x86_64", x64Node, ...commonArgs], {
-          env: workerEnvironment(tls.caCert, targetId, x64Node), input: `${created.tickets[targetId]}\n`, label: targetId
+          env: workerEnvironment(tls.caCert, targetId, x64Node), input: `${tickets[targetId]}\n`, label: targetId
         });
       }
       if (targetId === "linux-x64") {
         const args = [...dockerBaseArgs(config.docker, tls.caCert),
           "node", "/orchestrator/scripts/release-system/cli.mjs", "worker",
           "--controller", controllers[targetId], "--node-id", trustedNodes.get(targetId), "--token-stdin", "--work-root", "/local-release/work",
+          "--prepared-root", "/orchestrator/target/local-release/prepared",
           ...(keepWork ? ["--keep-work"] : [])];
-        return run(docker, args, { input: `${created.tickets[targetId]}\n`, label: targetId });
+        return run(docker, args, { input: `${tickets[targetId]}\n`, label: targetId });
       }
       return run(windows.prlctl, ["exec", windows.vmName, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", windowsScripts.worker], {
-        input: `${created.tickets[targetId]}\n`, label: targetId
+        input: `${tickets[targetId]}\n`, label: targetId
       });
-    });
-    const startedAt = Date.now();
-    const results = await Promise.allSettled(workerRuns);
-    const release = await service.getRelease(created.release.id);
+    };
+    const workersStartedAt = Date.now();
+    const results = new Array(requestedTargets.length);
+    const targetDurations = new Array(requestedTargets.length).fill(0);
+    const runTargets = async targetIdsToRun => {
+      const passResults = await runWithConcurrency(targetIdsToRun.map(workerRun), concurrency);
+      for (let index = 0; index < targetIdsToRun.length; index += 1) {
+        const targetIndex = requestedTargets.indexOf(targetIdsToRun[index]);
+        results[targetIndex] = passResults[index];
+        targetDurations[targetIndex] += passResults[index].status === "fulfilled"
+          ? passResults[index].value.durationMs
+          : Number(passResults[index].reason?.durationMs || 0);
+      }
+    };
+    await runTargets(requestedTargets);
+    let release = await service.getRelease(created.release.id);
+    const retryTargets = release.tasks
+      .filter(task => new Set(["failed", "waiting"]).has(task.status))
+      .map(task => task.targetId);
+    if (retryTargets.length > 0) {
+      console.log(`\nRetrying failed targets only: ${retryTargets.join(", ")}`);
+      for (const targetId of retryTargets) {
+        const retried = await service.retryTask(release.id, targetId);
+        tickets[targetId] = retried.ticket;
+      }
+      await runTargets(retryTargets);
+      release = await service.getRelease(created.release.id);
+    }
     const summary = {
       schemaVersion: 1,
       releaseId: release.id,
       tag,
       status: release.status,
-      durationMs: Date.now() - startedAt,
+      startedAt: new Date(releaseStartedAt).toISOString(),
+      concurrency,
+      preparation: {
+        durationMs: preparationDurationMs,
+        cacheHit: preparation.cacheHit,
+        receiptSha256: preparation.descriptor.receiptSha256,
+        timings: preparation.timings
+      },
+      workersDurationMs: Date.now() - workersStartedAt,
       targets: requestedTargets.map((targetId, index) => ({
         targetId,
         runner: runners.get(targetId),
         status: release.tasks.find(task => task.targetId === targetId)?.status || "unknown",
-        durationMs: results[index].status === "fulfilled" ? results[index].value.durationMs : null,
+        attempts: release.tasks.find(task => task.targetId === targetId)?.attempts || 0,
+        durationMs: targetDurations[index] || null,
         error: results[index].status === "rejected" ? redactError(results[index].reason) : null
       }))
     };
-    await atomicWriteJson(join(runRoot, "summary.json"), summary);
     const failures = summary.targets.filter(target => target.status !== "completed");
     if (failures.length > 0) {
+      summary.status = "failed";
+      summary.durationMs = Date.now() - releaseStartedAt;
+      summary.completedAt = new Date().toISOString();
+      await atomicWriteJson(join(runRoot, "summary.json"), summary);
       throw new Error(`local release did not complete: ${failures.map(target => `${target.targetId}:${target.status}`).join(", ")}`);
     }
     const destination = resolve(root, config.destination);
-    const publication = await service.publishRelease(release.id, { provider: "filesystem", destination });
+    const publishStartedAt = Date.now();
+    let publication;
+    try {
+      publication = await service.publishRelease(release.id, { provider: "filesystem", destination });
+    } catch (error) {
+      summary.status = "ready";
+      summary.publishDurationMs = Date.now() - publishStartedAt;
+      summary.durationMs = Date.now() - releaseStartedAt;
+      summary.completedAt = new Date().toISOString();
+      summary.publicationError = redactError(error);
+      await atomicWriteJson(join(runRoot, "summary.json"), summary);
+      throw new Error(`all installers are ready but filesystem publication failed; reuse the current run controller state without rebuilding: ${redactError(error)}`);
+    }
+    summary.status = "published";
+    summary.publishDurationMs = Date.now() - publishStartedAt;
+    summary.durationMs = Date.now() - releaseStartedAt;
+    summary.completedAt = new Date().toISOString();
+    summary.publication = {
+      provider: "filesystem",
+      destination: publicationLabel(publication.location),
+      assets: await publicationAssets(publication.location)
+    };
+    for (const target of summary.targets) {
+      const triple = byId.get(target.targetId).triple;
+      try {
+        const buildInfo = JSON.parse(await readFile(join(controllerRoot, "incoming", release.id, target.targetId, `BUILD-INFO.${triple}.json`), "utf8"));
+        target.performance = buildInfo.performance || null;
+        target.prepared = buildInfo.prepared || null;
+      } catch {
+        target.performance = null;
+      }
+    }
+    await atomicWriteJson(join(runRoot, "summary.json"), summary);
     console.log(`\nFour-environment release completed in ${formatDuration(summary.durationMs)}.`);
-    console.log(`Published to ${publication.location}`);
-    console.log(`Timing summary: ${join(runRoot, "summary.json")}`);
+    console.log(`Published to ${summary.publication.destination}`);
+    console.log(`Timing summary: ${runStateLabel(runId)}/summary.json`);
   } finally {
     await new Promise(resolvePromise => server.close(resolvePromise));
   }

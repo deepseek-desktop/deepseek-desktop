@@ -5,6 +5,12 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import process from "node:process";
 
 import { findInstalledPackages, listInstalledPackages } from "../../scripts/lib/installed-packages.mjs";
+import { atomicWriteJson } from "../../scripts/release-system/common.mjs";
+import {
+  contentCacheKey,
+  createContentCacheManifest,
+  verifyContentCache
+} from "../../scripts/release-system/content-cache.mjs";
 
 const runtimeRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(runtimeRoot, "..");
@@ -12,6 +18,8 @@ const generatedRoot = join(desktopRoot, "target", "generated");
 const preparedRuntime = join(generatedRoot, "runtime", "prepared");
 const generatedLock = join(generatedRoot, "runtime-lock.json");
 const lock = JSON.parse(await readFile(generatedLock, "utf8"));
+const runtimeCacheRoot = resolve(process.env.DEEPSEEK_DESKTOP_RUNTIME_TARGET_CACHE_ROOT?.trim()
+  || join(desktopRoot, "target", "local-release", "runtime-target-cache"));
 
 function hostTarget() {
   const key = `${process.platform}-${process.arch}`;
@@ -235,7 +243,36 @@ if (process.versions.node !== lock.node.version) {
 
 const output = join(runtimeRoot, "staging", target);
 const stagingRoot = dirname(output);
-await rm(stagingRoot, { recursive: true, force: true });
+const binarySuffix = process.platform === "win32" ? ".exe" : "";
+const sidecar = join(desktopRoot, "src-tauri", "binaries", `node-${target}${binarySuffix}`);
+const cacheIdentity = {
+  schemaVersion: 1,
+  target,
+  runtime: lock.runtime,
+  patches: lock.patches,
+  bundledPackages: lock.bundledPackages,
+  node: { version: lock.node.version, artifact: lock.node.artifacts[target] },
+  nativeAssets: lock.nativeAssets[target],
+  toolchain: lock.toolchain
+};
+const cacheKey = contentCacheKey(cacheIdentity);
+const cacheDirectory = join(runtimeCacheRoot, target, cacheKey);
+const cacheStatusPath = join(desktopRoot, "target", "local-release", `runtime-cache-${target}.json`);
+try {
+  await verifyContentCache(cacheDirectory, cacheIdentity);
+  await rm(output, { recursive: true, force: true });
+  await mkdir(stagingRoot, { recursive: true });
+  await cp(join(cacheDirectory, "runtime"), output, { recursive: true, force: true });
+  await mkdir(dirname(sidecar), { recursive: true });
+  await cp(join(cacheDirectory, "sidecar", basename(sidecar)), sidecar, { force: true });
+  await atomicWriteJson(cacheStatusPath, { schemaVersion: 1, target, key: cacheKey, hit: true });
+  console.log(`staged ${target} from verified Runtime cache ${cacheKey.slice(0, 12)}`);
+  process.exit(0);
+} catch {
+  await rm(cacheDirectory, { recursive: true, force: true });
+}
+
+await rm(output, { recursive: true, force: true });
 await mkdir(stagingRoot, { recursive: true });
 await stat(join(preparedRuntime, lock.runtime.entry));
 await cp(preparedRuntime, output, { recursive: true, force: true });
@@ -250,8 +287,6 @@ await pruneNativeArtifacts(join(output, "node_modules"), target);
 const dshEntry = join(output, lock.runtime.entry);
 await stat(dshEntry);
 
-const binarySuffix = process.platform === "win32" ? ".exe" : "";
-const sidecar = join(desktopRoot, "src-tauri", "binaries", `node-${target}${binarySuffix}`);
 const nodeArchiveSha256 = await stageOfficialNode(target, sidecar, join(output, "licenses", "node-LICENSE.txt"));
 
 const inventory = await packageInventory(join(output, "node_modules"));
@@ -279,4 +314,16 @@ const manifest = {
   files
 };
 await writeFile(join(output, "runtime-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+const temporaryCache = join(runtimeCacheRoot, target, `.cache-${process.pid}-${Date.now()}`);
+await rm(temporaryCache, { recursive: true, force: true });
+await mkdir(join(temporaryCache, "runtime"), { recursive: true });
+await cp(output, join(temporaryCache, "runtime"), { recursive: true, force: true });
+await mkdir(join(temporaryCache, "sidecar"), { recursive: true });
+await cp(sidecar, join(temporaryCache, "sidecar", basename(sidecar)), { force: true });
+const cacheManifest = await createContentCacheManifest(temporaryCache, cacheIdentity);
+await atomicWriteJson(join(temporaryCache, "cache-manifest.json"), cacheManifest);
+await mkdir(dirname(cacheDirectory), { recursive: true });
+await rm(cacheDirectory, { recursive: true, force: true });
+await rename(temporaryCache, cacheDirectory);
+await atomicWriteJson(cacheStatusPath, { schemaVersion: 1, target, key: cacheKey, hit: false });
 console.log(`staged ${target}: ${files.length} files, ${inventory.length} packages`);

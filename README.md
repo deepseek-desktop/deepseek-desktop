@@ -167,10 +167,20 @@ corepack pnpm@11.7.0 release:local-all -- --check
 检查通过且版本 tag 已存在、指向当前干净 HEAD 并已推送到源码仓库后执行：
 
 ```bash
-corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0
+corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --concurrency 2
 ```
 
-该入口会自动准备经过 SHA-256 校验的 macOS x64 Node，复用 Docker 构建 Linux x64，并自动识别单个 Parallels Windows 虚拟机；四个 Worker 仍调用现有 `package:community`，一次性票据只通过标准输入传递，跨环境连接使用本次运行临时生成的 TLS。默认产物汇总到 `release/local-all/<tag>/`，各目标耗时写入 `target/local-release/runs/<run-id>/summary.json`。机器配置不同时可复制 `.deepseek-release.local.example.json` 为不提交 Git 的 `.deepseek-release.local.json`。这是一台物理机上的多环境编排，不会把 Windows 或 Linux 安装包伪装成 macOS 直接交叉编译的结果。
+该入口先执行一次发行准备门禁，再启动四个 Worker。准备凭据以签名和 SHA-256 绑定 tag、Desktop/Runtime 完整 commit、生成配置、Runtime 补丁与 lock、工具链、channel、dirty 状态和源码树；Worker 只有严格验证凭据和当前任务一致后，才复用 `desktop:package` 的 prepared 模式执行目标平台 Runtime 组装、smoke、Tauri 打包与制品审计。无效、损坏、过期或来源漂移的凭据不会跳过门禁。
+
+Runtime 闭包和 Cargo 输出使用按 commit、配置、lock、Node ABI、目标 triple 与签名模式隔离的内容寻址缓存；pnpm store、Playwright、Docker 镜像/volume 和固定工具链也会复用。默认并发会根据内存自适应，16 GB Mac 建议保持 `--concurrency 2`，避免原生、Rosetta、Docker 和 Parallels 同时争抢内存。失败重跑只处理失败目标，已完成目标和已验证缓存不重建；上传失败可直接重试发布，无需重新编译。
+
+默认产物汇总到 `release/local-all/<tag>/`，准备、各 Worker、缓存命中、打包和发布耗时写入 `target/local-release/runs/<run-id>/summary.json`。机器配置不同时可复制 `.deepseek-release.local.example.json` 为不提交 Git 的 `.deepseek-release.local.json`。这是一台物理机上的多环境编排，不会把 Windows 或 Linux 安装包伪装成 macOS 直接交叉编译的结果。
+
+需要单独生成或复核准备凭据时使用：
+
+```bash
+corepack pnpm@11.7.0 release:prepare -- --tag v1.0.0
+```
 
 常用命令如下：
 

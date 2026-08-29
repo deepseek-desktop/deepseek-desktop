@@ -47,6 +47,7 @@
     "release:retry": "node scripts/release-system/cli.mjs retry",
     "release:publish": "node scripts/release-system/cli.mjs publish",
     "release:local-all": "node scripts/release-system/local-all.mjs",
+    "release:prepare": "node scripts/release-prepare.mjs",
     "release:smoke": "node --test --test-name-pattern=\"distributed release HTTP smoke\" scripts/tests/release-system.test.mjs",
     "ci:shell-quality": "node scripts/ci-shell-quality.mjs",
     "preflight:docker": "node scripts/docker-preflight.mjs",

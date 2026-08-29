@@ -6,7 +6,7 @@
 
 ## 不可改变的事实
 
-1. 只有一套打包事实来源：`app:sync -> runtime:sync -> verify -> test:e2e -> runtime:smoke -> desktop:package`。Worker 和单机四环境编排必须复用它，不能另写简化打包脚本。
+1. 只有一套打包事实来源。普通构建由 `desktop:package` 完整执行 `app:sync -> runtime:sync -> verify -> test:e2e -> runtime:smoke -> Tauri`；正式发行由 `release:prepare` 只执行一次公共门禁，Worker 验证签名凭据后仍调用同一个 `desktop:package` 完成目标 Runtime、平台 smoke、Tauri 和制品审计。不能另写简化打包脚本。
 2. 四个发行目标只由 `scripts/release-system/targets.json` 定义：`macos-arm64`、`macos-x64`、`windows-x64`、`linux-x64`。
 3. Controller 负责锁定 tag、Desktop commit、Runtime commit、目标和节点；Worker 只构建本机能够可靠报告的目标；Provider 只上传已经校验的制品。
 4. GitHub、GitLab、Gitee、Gitea 或本地 Git 只是可替换源码来源。filesystem/NAS 是默认发布 Provider，GitHub 是可选适配器，构建不能依赖托管 Runner。
@@ -58,6 +58,14 @@ corepack pnpm@11.7.0 release:local-all -- --check
 ```
 
 该预检不会创建发行任务，也不会生成安装包。它会检查 Rosetta x64 Node、Docker Linux x64、Parallels Windows x64 的 Node/Git/Corepack/MSVC，以及四个环境到临时 TLS Controller 的连接。任一环境失败时先修环境，不要创建 tag 后再反复等待完整构建失败。
+
+候选 tag 已存在且指向当前干净 HEAD 后，准备阶段必须先独立通过：
+
+```bash
+corepack pnpm@11.7.0 release:prepare -- --tag v1.0.0
+```
+
+第二次对相同输入执行应命中准备缓存，并仍会验证签名 receipt、生成闭包清单与逐文件 SHA-256。任何源码、Runtime、配置、lock、工具链、channel 或签名模式变化都会形成新缓存键；损坏缓存必须自动废弃重建。
 
 ## GitHub 托管社区版发布
 
@@ -210,8 +218,10 @@ NODE
 用户已明确授权 tag 和发行后执行：
 
 ```bash
-corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0
+corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --concurrency 2
 ```
+
+`release:local-all` 先完成 `release:prepare`，成功后才启动 Worker。默认并发按内存自适应；16 GB Mac 使用 `2`，32 GB 可先使用 `3`，只有资源充足且实测稳定时才使用 `4`。不要让原生、Rosetta、Docker 和 Parallels 为抢内存而同时变慢。
 
 需要隔离故障时先只跑一个目标：
 
@@ -224,7 +234,7 @@ corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --target linux-x64
 
 成功后检查：
 
-1. `target/local-release/runs/<run-id>/summary.json` 中每个目标都是 `completed`，并记录真实耗时。
+1. `target/local-release/runs/<run-id>/summary.json` 中准备阶段和每个目标都是成功状态，并记录准备、Worker、缓存、打包与发布真实耗时。
 2. `release/local-all/<tag>/` 只含目标安装包和统一 `SHA256SUMS`，没有公开 `BUILD-INFO`、`.env`、票据、令牌或本机绝对路径。
 3. 文件名、目标 triple、`BUILD-INFO`、Desktop commit、Runtime commit、大小和 SHA-256 已由 Controller 校验。
 4. 至少在目标操作系统完成安装、启动、Runtime、凭据、插件、对话、文件读写和卸载观察后，才能声明该平台已验收。
@@ -249,12 +259,13 @@ filesystem/NAS 发布优先，因为它最容易复核且与托管平台无关�
 ## 提速原则
 
 1. **先便宜后昂贵**：脚本测试、协议 smoke、四环境预检通过后才执行完整安装包构建。
-2. **保留固定缓存**：复用锁定 Node/Rust 工具链、Docker 镜像、pnpm store 和 Playwright 浏览器；不要用清缓存解决普通源码错误。
-3. **只重试失败目标**：需要恢复能力时使用持久 Controller 的 `release:retry`；单机一键模式更适合一次性并行构建。
-4. **Runtime 不变就不重复解析最新版本**：发行按 lock 构建；只有显式同步 Runtime 后才更新 lock 和重跑闭包审计。
-5. **构建与上传解耦**：先 filesystem 汇总和校验，再上传远程 Provider；远程限速或 API 失败不应迫使重新编译。
-6. **用真实数据比较速度**：读取 `summary.json` 的总耗时和各目标耗时，再与对应 GitHub Actions run 比较；没有完整构建数据时不得声称节省了具体分钟数。
-7. **避免无价值重复门禁**：开发阶段完整门禁只在功能簇收口运行一次；正式 Worker 内部仍必须执行打包链路自带门禁，不能为了省时绕过。
+2. **公共门禁只做一次**：正式发行先生成签名准备凭据；Worker 不接受单独环境变量作为跳过测试授权。
+3. **保留并核验缓存**：复用内容寻址 Runtime、目标隔离 Cargo、锁定 Node/Rust 工具链、Docker 镜像/volume、pnpm store 和 Playwright 浏览器；命中前验证 manifest 和文件哈希，不用清缓存解决普通源码错误。
+4. **只重试失败目标**：单机编排和持久 Controller 都保留已完成目标；失败目标修复后重试，不重建已完成目标或已验证缓存。
+5. **Runtime 不变就不重复解析最新版本**：发行按 lock 构建；只有显式同步 Runtime 后才更新 lock 和重跑闭包审计。
+6. **构建与上传解耦**：先 filesystem 汇总和校验，再上传远程 Provider；远程限速或 API 失败不应迫使重新编译。
+7. **用真实数据比较速度**：读取 `summary.json` 的准备、目标、缓存、打包、发布和总耗时，再与对应 GitHub Actions run 比较；没有完整构建数据时不得声称节省了具体分钟数。
+8. **稳定 Cargo target 优先**：按目标、Rust flags 和签名模式隔离持久目录。当前不引入 `sccache`；只有固定版本、四平台验证和供应链信任边界闭环后才重新评估。
 
 ## 安全门禁
 
@@ -273,6 +284,8 @@ filesystem/NAS 发布优先，因为它最容易复核且与托管平台无关�
 | tag/commit 被拒绝 | 工作区、tag 指向、远程 tag | 保持源码不变，修正 tag/远程事实后重建任务 |
 | Runtime lock 不一致 | `runtime/toolchain-lock.json` 与来源 commit | 先完成 Runtime 同步与审计，不手改生成 lock |
 | 单一 Worker 构建失败 | 该目标日志和 `summary.json` | 单机模式隔离目标；持久模式 `release:retry` |
+| 准备凭据被拒绝 | tag/commit、源码树、Runtime、配置、receipt SHA-256 | 不绕过验证；回到锁定源码重新执行 `release:prepare` |
+| Runtime/Cargo 缓存损坏 | cache manifest、目标 triple、工具链和文件 SHA-256 | 让编排器废弃该缓存项并重建，不清空其他目标缓存 |
 | 上传中断或租约过期 | Controller 状态、任务租约 | 对失败目标签发替换票据，旧票据不得复用 |
 | 远程 Provider 失败 | filesystem 制品、Provider 凭据和 API | 保留已验证制品，只重试上传，不重新编译 |
 | 缺少某平台节点 | release 状态为 `waiting` | 增加正确目标节点，不跨平台伪造制品 |
