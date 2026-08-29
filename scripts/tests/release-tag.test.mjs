@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseReleaseTag, releaseTagsForVersion } from "../lib/release-tag.mjs";
+import { isPrereleaseVersion, parseReleaseTag, releaseTagsForVersion } from "../lib/release-tag.mjs";
 
 test("accepts release tags with or without a v prefix", () => {
   assert.deepEqual(parseReleaseTag("1.0.0"), { tag: "1.0.0", version: "1.0.0" });
@@ -28,4 +28,11 @@ test("returns both accepted tag forms for a version", () => {
     "0.1.0-community.13",
     "v0.1.0-community.13"
   ]);
+});
+
+test("detects prerelease versions without treating build metadata as prerelease", () => {
+  assert.equal(isPrereleaseVersion("1.0.0"), false);
+  assert.equal(isPrereleaseVersion("1.0.0+build.7"), false);
+  assert.equal(isPrereleaseVersion("1.0.0-rc.1"), true);
+  assert.equal(isPrereleaseVersion("1.0.0-rc.1+build.7"), true);
 });

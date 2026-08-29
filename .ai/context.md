@@ -19,11 +19,10 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - Desktop 仅承载并隔离 Runtime 工作台，不改写页面交互：受管 loopback 页面在内嵌 WebView 中正常导航，外部 HTTP/HTTPS 链接优先交给系统默认浏览器，打开失败或其他原生导航行为由 WebView 继续处理。
 - 加密凭据库主要防止意外明文泄漏；它不承诺抵御已经取得同一操作系统用户权限的恶意进程。
 - 社区版默认关闭桌面安装包自动更新；Runtime 独立更新默认采用“发现后提醒”，且只有在构建时配置可信 Ed25519 清单、公钥和发布者后才启用，二者不共用信任边界。
-- 四平台发行可由平台无关的本地 Controller 和多个受信任原生 Worker 协作完成；filesystem/NAS 是默认发布渠道，GitHub 仅为可选 Provider。
-- 正式发行先通过签名准备凭据只执行一次公共门禁；Worker 严格绑定 tag、Desktop/Runtime commit、源码、配置、lock 和工具链后复用同一 `desktop:package` 完成目标平台组装、smoke、打包与审计。无有效凭据时不得跳过完整门禁。
-- Runtime 闭包和 Cargo 输出采用目标隔离的内容寻址持久缓存，命中前复核清单与哈希；单机四环境默认按内存限制并发，只重试失败目标，上传失败不重新编译。
-- 单机四环境从当前干净、tag 锁定的 HEAD 生成经 Git 校验的本地 source bundle，避免 Rosetta、Docker 与 Parallels 依赖宿主机 SSH 会话；公共 Runtime 闭包保留四目标 Koffi、Sharp/libvips 等可选原生包，Worker 再按目标裁剪。
-- 单机编排为四平台自动校验或安装唯一工具链锁中的 Node `24.20.0` / ABI `137`；所有 Worker 拒绝宿主机全局版本漂移并把实际版本写入内部 BUILD-INFO 与运行摘要。Parallels 预检异步执行，避免阻塞同进程 TLS Controller；Runtime smoke 的失败输出经过凭据过滤与限长后保留真实诊断尾部。
+- 正式四平台发行统一由 GitHub Actions 官方托管 Runner 原生构建：Pull Request 与 `master` 只做质量检查，完整 SemVer Tag 才进入 macOS ARM64/x64、Windows x64、Linux x64 矩阵。
+- 四个平台复用唯一 `package:community` / `desktop:package` 构建事实；全部成功后才创建 Release，公开资产只包含 5 个安装包和 `SHA256SUMS`。
+- 本机只执行源码验证、E2E、Runtime smoke 和当前 macOS 架构打包/启动测试；不以 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 作为正式发布前提。
+- 四平台统一使用工具链 lock 中的 Node `24.20.0` / ABI `137`，Runner 不得依赖全局版本漂移；内部 BUILD-INFO 用于矩阵汇总核验但不公开发布。
 - Runtime 更新只写入应用数据目录，执行签名与兼容校验、受限解压、启动 smoke、原子切换和自动回滚；安装包内置 Runtime 始终作为最终恢复基线。
 
 ## 版本基线

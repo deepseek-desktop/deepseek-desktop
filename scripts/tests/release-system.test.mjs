@@ -68,10 +68,10 @@ test("Linux release image contract changes with its build inputs", () => {
   }));
 });
 
-test("local Linux worker disables stripping without affecting other platforms", () => {
+test("local Linux worker does not inject hosted-runner packaging flags", () => {
   const args = dockerBaseArgs({ image: "local/deepseek-builder:1.0.0" }, "/tmp/ca.crt");
   const assignments = args.filter((value, index) => args[index - 1] === "--env" && value === "NO_STRIP=1");
-  assert.deepEqual(assignments, ["NO_STRIP=1"]);
+  assert.deepEqual(assignments, []);
 });
 
 test("Tauri build performs frontend compilation without rewriting prepared app config", async () => {
@@ -271,8 +271,13 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   }
   const noStripAssignments = [...workflow.matchAll(/NO_STRIP:\s+"1"/gu)];
   const linuxPackageSteps = [...workflow.matchAll(/if: runner\.os == 'Linux'[^\n]*\n\s+run:[^\n]*\n\s+env:\n\s+NO_STRIP:\s+"1"/gu)];
-  assert.equal(noStripAssignments.length, 2, "NO_STRIP must only be assigned by Linux package steps");
-  assert.equal(linuxPackageSteps.length, 2, "both Linux package paths must disable stripping");
+  assert.equal(noStripAssignments.length, 1, "NO_STRIP must only be assigned by the Linux tag build");
+  assert.equal(linuxPackageSteps.length, 1, "the Linux tag build must disable stripping");
+  assert.doesNotMatch(workflow, /workflow_dispatch|desktop:package/u);
+  assert.match(workflow, /test "\$\{#assets\[@\]\}" -eq 6/u);
+  assert.match(workflow, /node scripts\/prepare-ci-release-assets\.mjs/u);
+  assert.match(workflow, /release\/\*\*\/SHA256SUMS/u);
+  assert.match(workflow, /DESKTOP_RELEASE_PRERELEASE/u);
 });
 
 test("release argument parser ignores the package-manager separator", () => {
@@ -417,6 +422,22 @@ test("restored cache working trees make read-only Runtime files writable", async
   assert.notEqual((await stat(file)).mode & 0o200, 0);
   await writeFile(file, "restaged\n");
   assert.equal(await readFile(file, "utf8"), "restaged\n");
+});
+
+test("writable content trees reject symbolic links before changing permissions", async t => {
+  if (process.platform === "win32") {
+    t.skip("creating symbolic links requires elevated Windows privileges");
+    return;
+  }
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-content-writable-link-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const target = join(directory, "target.txt");
+  await writeFile(target, "target\n");
+  await chmod(target, 0o444);
+  const originalMode = (await stat(target)).mode & 0o777;
+  await symlink("target.txt", join(directory, "link.txt"));
+  await assert.rejects(makeContentTreeWritable(directory), /cannot contain symbolic links/u);
+  assert.equal((await stat(target)).mode & 0o777, originalMode);
 });
 
 test("local release scheduler respects concurrency and preserves failed results", async () => {

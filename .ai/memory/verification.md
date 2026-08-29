@@ -2,26 +2,26 @@
 
 ## 最近可信验证
 
-日期：2026-08-29
+日期：2026-08-30
 
-引入跟随当前模型的通用联网搜索能力后：
+正式发布收敛为 GitHub Actions 官方托管 Runner 原生矩阵后：
 
 - `corepack pnpm@11.7.0 app:sync --check`：通过，生成配置与源码一致。
 - `corepack pnpm@11.7.0 runtime:sync --check`：通过，Runtime `0.1.2-alpha.1` 固定到 `cd5ef8148158c3a752a658978873241fdf8e2bbc`，来源、CLI 入口、部署闭包和制品哈希与生成锁一致。
-- `corepack pnpm@11.7.0 verify`：通过；配置、分布式发布和 Runtime 更新协议测试 56 项、Vue 测试 7 项、Rust 测试 49 项、Clippy `-D warnings`、3 个 locale / 135 个 key、凭据代理回归和 Runtime manifest 校验全部通过。发行协议测试包含签名准备凭据、内容寻址缓存损坏与目标漂移拒绝、并发上限、失败结果保留、来源漂移、敏感信息脱敏、跨平台 Git bundle 校验、Dockerfile 镜像契约和回环 HTTP readiness；另有 15 项跟随模型搜索测试覆盖五类标准协议、模型切换、多会话隔离、`CredentialRef` 继承、未知能力零探测、不安全端点、重定向、取消、超时、无效响应和受控第三方协议注册。闭包断言确认 Provider 与外层工具分别使用 90 秒和 100 秒预算，并包含三语简洁设置文案。
-- `corepack pnpm@11.7.0 test:e2e`：通过 1 项 Playwright Shell 测试，覆盖无需选择目录的两步首次引导、启动和重试。
-- `corepack pnpm@11.7.0 runtime:smoke`：通过 Runtime 浏览器令牌认证、受限回环 HTTP readiness、启停和父进程退出清理；Runtime `0.1.2-alpha.1` 分别在 macOS ARM64 原生与 Rosetta x64 Node 完成 1 次完整启停循环，不调用 Runtime 私有工作区 API。
-- 原生工作台链接回归：Rust 单测确认受管 Runtime 页面保持内嵌导航，外部 HTTP/HTTPS 页面由系统浏览器接管；系统打开失败、新窗口和其他原生导航行为会回退 WebView，不由 Desktop 壳额外禁用。
-- `corepack pnpm@11.7.0 release:smoke`：通过本地 Controller HTTP、一次性节点票据、短期租约、制品上传、完整性校验和 filesystem 发布闭环。
-- `corepack pnpm@11.7.0 release:local-all -- --check`：通过 macOS ARM64、Rosetta macOS x64、Docker Linux x64 和 Parallels Windows x64 四环境工具链与临时 TLS Controller 连通性预检。
-- `corepack pnpm@11.7.0 release:local-all -- --check --target linux-x64`：通过；旧 Linux 镜像因 Dockerfile 契约变化自动失效并重建，镜像内 Node `24.20.0` / ABI `137` / x64 与 `/usr/bin/xdg-open` 均已核验。
+- `node --test scripts/tests/release-tag.test.mjs scripts/tests/ci-release-assets.test.mjs scripts/tests/release-system.test.mjs`：32 项通过，覆盖严格 SemVer、预发布判定、四目标来源一致性、目标与制品类型匹配、哈希校验、公开资产收敛、损坏缓存和符号链接拒绝。
+- `corepack pnpm@11.7.0 verify`：通过；配置与发行协议测试 62 项、Vue 测试 7 项、Rust 测试 49 项、Clippy `-D warnings`、3 个 locale / 135 个 key、凭据代理回归和 Runtime manifest 校验全部通过；另有 15 项跟随模型搜索测试覆盖协议路由、模型切换、多会话隔离、`CredentialRef` 继承、取消、超时、重定向和响应校验。
+- `corepack pnpm@11.7.0 test:e2e`：通过 1 项 Playwright Shell 测试，覆盖首次引导、语言切换和状态视图。
+- `corepack pnpm@11.7.0 runtime:smoke`：通过父进程退出清理与 Runtime `0.1.2-alpha.1` 一次完整启停循环。
+- `corepack pnpm@11.7.0 desktop:package`：在当前 macOS ARM64 主机完成同步、完整门禁、Tauri 应用和 DMG 构建；产物为 `release/1.0.0/aarch64-apple-darwin/DeepSeek Desktop_1.0.0_aarch64.dmg`，SHA-256 为 `b1cab0b21b8d4064f1d3875aa14f0ae85493d0c8dc84bc9d1f02b7d831fa8b0f`。
+- 成品应用真实启动：直接启动构建出的 `DeepSeek Desktop.app`，窗口恢复到外接屏幕；点击启动后拉起安装包内置 Node `24.20.0` 和 Runtime，并在同一个原生窗口进入 Harness 工作台；退出 Desktop 后 Runtime 子进程同步结束。
+- GitHub 工作流协议：Pull Request 与 `master` 只执行质量检查；完整 SemVer Tag 才启动 macOS ARM64、macOS x64、Windows x64、Linux x64 原生矩阵。结构化汇总器只接受四份来源一致的内部构建信息，公开 Release 只输出五个安装包与统一 `SHA256SUMS`。
 
 ## 能力边界
 
-- 上述结果证明当前源码、生成配置、锁定 Runtime、前端、本机 Runtime 启停链路和四环境构建前提可运行；本轮尚未生成或安装新的 macOS 安装包，也没有用预检替代四目标真实安装包构建和目标系统业务验收。
+- 上述结果证明当前源码、生成配置、锁定 Runtime、前端、本机 Runtime 启停链路与 macOS ARM64 成品应用可运行。本轮没有写入 `/Applications`，而是直接启动构建目录内的 `.app`；用户已取消固定的 DMG 挂载和五秒签名结构验证门禁。
 - 本轮未写入或使用任何真实 Provider API 密钥，也未向外部搜索端点发起真实请求；联网搜索使用匿名本地模拟 Provider 验证协议路由、结果归一化和凭据隔离。真实第三方兼容性仍需由使用者选择对应标准协议并在实际 Provider 上验收，阿里百炼等服务不属于默认产品路由。
-- 它不等于 Apple 公证、Windows 发布者签名，或 macOS x64、Windows x64、Linux x64 安装版的本轮真实业务验收。对应安装包仍应由原生节点构建并由目标系统用户验收。
-- 用户已取消“每次发布前必须挂载 DMG、校验签名结构并启动 5 秒”的固定门禁，不恢复为长期强制流程。
+- 本机结果不等于 Apple 公证、Windows 发布者签名，或 macOS x64、Windows x64、Linux x64 安装版验收；这些目标必须在未来收到明确发布命令后由对应 GitHub 官方 Runner 原生构建，四平台全部成功才允许创建 Release。
+- 本轮没有创建或移动 Tag，没有推送 `master`，也没有创建 GitHub Release。
 
 ## 更新规则
 

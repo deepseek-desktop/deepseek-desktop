@@ -14,14 +14,38 @@ export function contentCacheKey(input) {
   return createHash("sha256").update(JSON.stringify(canonical(input))).digest("hex");
 }
 
-export async function makeContentTreeWritable(root, current = root) {
-  const info = await lstat(current);
-  if (info.isSymbolicLink()) throw new Error(`release working tree cannot contain symbolic links: ${relative(root, current).replaceAll("\\", "/")}`);
-  await chmod(current, info.mode | 0o200);
-  if (!info.isDirectory()) return;
-  for (const entry of await readdir(current)) {
-    await makeContentTreeWritable(root, join(current, entry));
+async function runBounded(items, concurrency, operation) {
+  let nextIndex = 0;
+  async function consume() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      await operation(items[index]);
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => consume()));
+}
+
+async function writableEntries(root) {
+  const output = [];
+  let pending = [root];
+  while (pending.length > 0) {
+    const next = [];
+    await runBounded(pending, 32, async current => {
+      const info = await lstat(current);
+      if (info.isSymbolicLink()) throw new Error(`release working tree cannot contain symbolic links: ${relative(root, current).replaceAll("\\", "/")}`);
+      output.push({ path: current, mode: info.mode });
+      if (!info.isDirectory()) return;
+      for (const entry of await readdir(current)) next.push(join(current, entry));
+    });
+    pending = next;
+  }
+  return output;
+}
+
+export async function makeContentTreeWritable(root) {
+  const entries = await writableEntries(root);
+  await runBounded(entries, 32, entry => chmod(entry.path, entry.mode | 0o200));
 }
 
 export async function collectContentFiles(root, current = root, output = [], ignored = new Set(["cache-manifest.json"])) {

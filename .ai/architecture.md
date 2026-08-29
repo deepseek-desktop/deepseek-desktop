@@ -30,22 +30,21 @@ RUNTIME_REPOSITORY / RUNTIME_REF
 
 `target/` 是生成与缓存目录，不是源码事实。稳定工具链、Runtime 发布来源和第三方制品校验和由 `runtime/toolchain-lock.json` 维护。
 
-## 分布式发布链路
+## 正式发布链路
 
 ```text
-通用 Git URL + tag
-  -> scripts/release-system/ Controller
-  -> 锁定 Desktop commit / Runtime commit / 原生 targets
-  -> 一次性票据 + 短期任务租约
-  -> 受信任原生 Worker
-  -> 复用 desktop:package
-  -> 交付闭包扫描 + 流式上传 + BUILD-INFO / SHA-256 / 目标校验
-  -> filesystem（默认）或可选 GitHub Provider
+完整 SemVer Tag
+  -> GitHub Actions 校验 Tag / Desktop commit / Runtime lock
+  -> macOS ARM64 / macOS x64 / Windows x64 / Linux x64 官方 Runner
+  -> 各目标复用 package:community -> desktop:package
+  -> 平台 smoke / 安装包扫描 / 内部 BUILD-INFO / SHA-256
+  -> 汇总任务验证 2 DMG + EXE + AppImage + DEB
+  -> GitHub Release：5 个安装包 + SHA256SUMS
 ```
 
-四平台映射只由 `scripts/release-system/targets.json` 定义。Controller 状态和制品位于 `target/release-controller/`，Worker 默认使用系统临时目录；二者都不是源码事实。构建与发布 Provider 解耦，代码托管平台不参与节点授权。
+Pull Request 和 `master` push 只运行质量检查，不创建安装包或 Release。正式发布以 `.github/workflows/community-build.yml` 为唯一入口；矩阵全部成功后才允许汇总发布，不完整版本不得公开。
 
-Apple Silicon 单机编排由 `scripts/release-system/local-all.mjs` 在同一协议上协调 macOS ARM64、Rosetta macOS x64、Docker Linux x64 和 Parallels Windows x64。它自动建立短期 TLS、通过标准输入传递一次性票据并复用 Worker；不是第五套 Controller，也不绕过目标识别或安装包校验。
+`scripts/release-system/` 保留通用 Controller、Worker 和 filesystem Provider 作为实验与协议测试实现，不是正式发布前提；本机不再通过 Rosetta、Docker 或虚拟机模拟四平台发行。
 
 ## 代码职责
 
@@ -61,9 +60,9 @@ Apple Silicon 单机编排由 `scripts/release-system/local-all.mjs` 在同一�
 - `runtime/packages/web-search-follow-model/`：Provider 无关的联网搜索路由、标准协议执行器和受控第三方协议注册服务。
 - `runtime/patches/`：针对锁定 Runtime 的最小桌面集成补丁，必须有 marker 和验证。
 - `scripts/`：配置同步、Runtime 构建、发行门禁、平台打包和工具链引导。
-- `scripts/release-system/`：平台无关的本地发布 Controller、Worker、目标协议和 filesystem/GitHub Provider。
+- `scripts/release-system/`：实验性的本地发布协议、目标校验和 filesystem Provider，不作为正式发布主路径。
 - `scripts/runtime-update/`：原生 Runtime 更新制品、四平台描述汇总和 Ed25519 清单签名。
-- `.github/workflows/community-build.yml`：社区版原生平台构建矩阵。
+- `.github/workflows/community-build.yml`：正式四平台原生构建与统一 Release 入口。
 
 ## 运行链路
 
@@ -97,4 +96,4 @@ Desktop 与 Runtime 的关系是“原生壳 + 本地 Web 应用”：Desktop �
 - 发布来源使用不可变 commit 和哈希作为事实，不以可移动 tag 单独作为信任依据。
 - Runtime 清单签名覆盖有效期、来源、兼容协议和制品哈希；更新客户端按频道拒绝重放与降级，不跟随重定向，不解压链接、特殊文件或逃逸路径。
 - 联网搜索凭据只以 `CredentialRef` 从当前 Provider 解析并发送到其经过校验的 HTTPS endpoint；禁止搜索失败后跨 Provider 降级、自动重定向、厂商或域名猜测和密钥日志输出。
-- 打包 Worker 流式扫描实际交付闭包并在 `BUILD-INFO` 留下审计摘要；Controller 拒绝缺失摘要、来源不一致、超时、超限或敏感信息命中的制品。GitHub Actions 的第一方 Action 固定到不可变 commit SHA。
+- 每个平台扫描实际交付闭包并以内部 `BUILD-INFO` 完成来源和目标核验；汇总任务拒绝资产数量、平台、来源或哈希不一致。GitHub Actions 的第一方 Action 固定到不可变 commit SHA。

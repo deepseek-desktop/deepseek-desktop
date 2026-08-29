@@ -10,7 +10,7 @@
 - 原生窗口和浏览器标题显示真实桌面版本；显示值有 `v` 时保持不变，没有时自动补齐，构建元数据中的 SemVer 本身不增加前缀。
 - 发行标签接受带或不带 `v` 前缀的完整 SemVer，例如 `1.0.0`、`v1.0.0` 和 `v0.1.0-community.13`；工作流入口必须执行严格 SemVer 校验。
 - GitHub Actions 的应用仓库地址必须来自工作流仓库上下文，不能使用 Windows 短路径副本或其他本地 clone 的文件型 `origin`。
-- 分布式发布源码必须使用不含嵌入凭据的通用 Git URL；构建、Controller 状态和发布 Provider 不得假定 GitHub 存在。
+- 正式发布源码由 GitHub Actions 从不可变 Tag 对应 commit 检出；工作流不得接受可移动分支或含嵌入凭据的 Git URL 作为发行来源。
 - Runtime 独立更新清单和制品可由 filesystem 或普通 HTTP 服务承载，但必须使用配置公钥验证 Ed25519 签名；`RUNTIME_REF` 显式固定时默认关闭自动下载。
 
 ## 实现
@@ -21,8 +21,9 @@
 - 设置、索引和生成配置采用原子写入；损坏数据应隔离，不静默覆盖。
 - 不引入明文凭据 fallback，不通过命令参数、长期环境变量或日志传递 API Key。
 - 不为临时验证修改产品源码；Runtime 补丁必须与锁定版本、marker 和验证脚本一起维护。
-- community/stable 分布式任务必须绑定受信任节点 ID；一次性票据和短期租约只保存摘要，公开 PR 不得自动触发本地 Worker。
-- `release:local-all` 只能把同一 Apple Silicon Mac 内彼此隔离且能报告正确平台的原生、Rosetta、Docker 和 Parallels 环境作为 Worker；票据只能经标准输入传递，非回环 Controller 流量必须使用临时 TLS。
+- Pull Request 和 `master` push 只运行质量检查；仅带或不带 `v` 前缀的完整 SemVer Tag 触发正式四平台构建。
+- macOS ARM64、macOS x64、Windows x64 和 Linux x64 必须分别由对应 GitHub 官方托管 Runner 原生打包，并统一复用 `package:community`。
+- 公开 Release 必须等待四个平台全部成功，只上传两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`；内部 BUILD-INFO 不作为公开资产。
 - Runtime 更新不得写应用安装目录，不得在用户机器拉源码或编译；Windows 的 smoke、替换和重启进程必须保持无控制台窗口。
 
 ## 验证

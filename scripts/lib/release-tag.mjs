@@ -13,3 +13,8 @@ export function releaseTagsForVersion(version) {
   if (!semverPattern.test(version)) throw new Error(`unsupported release version: ${version || "<empty>"}`);
   return [version, `v${version}`];
 }
+
+export function isPrereleaseVersion(version) {
+  if (!semverPattern.test(version)) throw new Error(`unsupported release version: ${version || "<empty>"}`);
+  return version.split("+", 1)[0].includes("-");
+}

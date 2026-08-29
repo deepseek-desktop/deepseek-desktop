@@ -7,7 +7,6 @@ on:
     tags:
       - "*.*.*"
       - "v*.*.*"
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -33,7 +32,7 @@ jobs:
       - run: corepack pnpm@11.7.0 ci:shell-quality
 
   native-build:
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/')
     needs: shell-quality
     strategy:
       fail-fast: false
@@ -62,22 +61,13 @@ jobs:
       - run: node scripts/ci-release-version.mjs
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/')
+      - if: runner.os == 'Linux'
         run: corepack pnpm@11.7.0 package:community
         env:
           NO_STRIP: "1"
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
-      - if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
+      - if: runner.os == 'macOS'
         run: corepack pnpm@11.7.0 package:community
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
-      - if: runner.os == 'Linux' && !startsWith(github.ref, 'refs/tags/')
-        run: corepack pnpm@11.7.0 desktop:package
-        env:
-          NO_STRIP: "1"
-          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
-      - if: runner.os == 'macOS' && !startsWith(github.ref, 'refs/tags/')
-        run: corepack pnpm@11.7.0 desktop:package
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
       - if: runner.os == 'Windows'
@@ -97,11 +87,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
-          if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true") {
-            corepack pnpm@11.7.0 package:community
-          } else {
-            corepack pnpm@11.7.0 desktop:package
-          }
+          corepack pnpm@11.7.0 package:community
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
@@ -115,6 +101,7 @@ jobs:
             release/**/*.AppImage
             release/**/*.deb
             release/**/BUILD-INFO.*.json
+            release/**/SHA256SUMS
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -140,36 +127,7 @@ jobs:
           path: release-assets
           merge-multiple: true
       - name: Prepare release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          publish_dir="release-assets/publish"
-          mkdir -p "$publish_dir"
-          mapfile -d '' assets < <(
-            find release-assets -type f \
-              ! -path "$publish_dir/*" \
-              ! -name 'BUILD-INFO.*.json' \
-              ! -name SHA256SUMS \
-              -print0 | sort -z
-          )
-          test "${#assets[@]}" -gt 0
-
-          declare -A asset_names=()
-          for asset in "${assets[@]}"; do
-            asset_name="$(basename "$asset")"
-            asset_name="${asset_name// /.}"
-            if [[ -n "${asset_names[$asset_name]:-}" ]]; then
-              echo "Duplicate release asset name: $asset_name" >&2
-              exit 1
-            fi
-            asset_names[$asset_name]=1
-            cp "$asset" "$publish_dir/$asset_name"
-          done
-          (
-            cd "$publish_dir"
-            sha256sum -- * | sort -k2 > SHA256SUMS
-          )
-          test -s "$publish_dir/SHA256SUMS"
+        run: node scripts/prepare-ci-release-assets.mjs
       - name: Publish community release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -178,10 +136,14 @@ jobs:
           set -euo pipefail
           product_name="$(node -p "require('./target/generated/app-config.json').productName")"
           mapfile -d '' assets < <(find release-assets/publish -maxdepth 1 -type f -print0 | sort -z)
-          test "${#assets[@]}" -gt 1
+          test "${#assets[@]}" -eq 6
+          release_flags=()
+          if [[ "${DESKTOP_RELEASE_PRERELEASE:-false}" == "true" ]]; then
+            release_flags+=(--prerelease)
+          fi
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$product_name ${GITHUB_REF_NAME#v}" \
             --notes-file .github/release-notes-community.md \
-            --prerelease \
+            "${release_flags[@]}" \
             --verify-tag

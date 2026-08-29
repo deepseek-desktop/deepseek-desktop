@@ -112,29 +112,13 @@ staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存�
 
 ## 一键打包
 
-推送版本标签前，先在 macOS 本机和 Windows 虚拟机分别执行：
-
-```bash
-corepack pnpm@11.7.0 release:preflight
-```
-
-该命令先使用与 GitHub Actions 相同的 Playwright Ubuntu 镜像、Node.js 和 pnpm 版本，在 `linux/amd64` Docker 容器中运行质量门禁；随后构建当前操作系统的原生安装包。Docker 负责提前发现通用脚本、依赖、Runtime、Rust、前端和端到端测试问题，macOS 与 Windows 原生步骤负责验证 Docker 无法模拟的 Tauri、WebView、DMG / NSIS 和进程窗口行为。两台环境都通过后再推送版本标签。
-
-Docker 预检固定使用与 GitHub Ubuntu runner 一致的 `linux/amd64` 架构。Apple Silicon 会通过 Docker Desktop 模拟 x64，但直接复用锁定 Playwright 镜像中的浏览器，不重复下载和解压。跨架构模拟下仅将 Runtime 进程 smoke 顺延到紧接着执行的 macOS 原生打包门禁；Runtime 组装、校验、Rust、前端和端到端测试仍会在容器中执行，GitHub 原生 Linux x64 任务不会跳过 Runtime smoke。
-
-只运行容器质量门禁时使用：
-
-```bash
-corepack pnpm@11.7.0 preflight:docker
-```
-
 在仓库根目录执行：
 
 ```bash
 corepack pnpm@11.7.0 package:community
 ```
 
-该命令会安装固定依赖及锁定版本所需的 Chromium Headless Shell，执行应用配置与 Runtime 同步、社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，并构建当前操作系统与架构的安装包。最终文件写入 `release/<version>/<target>/`，同时生成目标平台对应的 `BUILD-INFO.<target>.json` 和 `SHA256SUMS`。打包结束前还会流式扫描前端、平台 Runtime、生成配置、原生 bundle 和主程序，阻断 `.env`、本机绝对路径、真实凭据、私钥及符号链接，并把扫描摘要写入 `BUILD-INFO`。本地浏览器缓存默认位于 `target/playwright-browsers/`；Docker 复用版本锁定的 Playwright 镜像浏览器，GitHub 纯净构建机复用平台级浏览器缓存，三者均由同一打包编排负责依赖准备。macOS 安装包由 Tauri 生成 `.app` 后直接通过 `hdiutil` 创建，不依赖 Finder 或 AppleScript，适合本地终端和 GitHub 无界面构建环境。
+该命令会安装固定依赖及锁定版本所需的 Chromium Headless Shell，执行应用配置与 Runtime 同步、社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，并构建当前操作系统与架构的安装包。最终文件写入 `release/<version>/<target>/`，同时生成目标平台对应的内部 `BUILD-INFO.<target>.json` 和 `SHA256SUMS`。打包结束前还会扫描实际交付闭包，阻断 `.env`、本机绝对路径、真实凭据、私钥及逃逸符号链接。macOS 安装包由 Tauri 生成 `.app` 后直接通过 `hdiutil` 创建，不依赖 Finder 或 AppleScript。
 
 制作不要求干净 Git 工作区的本地定制包时使用：
 
@@ -154,78 +138,23 @@ DeepSeek Desktop 将桌面外壳与 Harness Runtime 分开更新。安装包内�
 
 单台主机只构建其原生目标。默认和示例版本始终使用 `1.0.0`。符合 SemVer 的标签都会触发 GitHub Actions，可带或不带 `v` 前缀，例如 `1.0.0`、`v1.0.0`、`v0.1.0-community.13`；完整 SemVer 校验会在构建开始时执行，非法标签不会进入发行。全部平台通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。发布构建从标签注入真实版本，不需要修改源码中的默认或示例版本。
 
-## 分布式本地发布
+## 多平台发布
 
-仓库内置平台无关的本地发布系统，不要求 GitHub Actions、自托管 Runner、虚拟机，也不要求任何一位开发者同时拥有四种系统。macOS ARM64、macOS Intel、Windows x64 和 Linux x64 节点只领取本机能够原生完成的任务；Controller 锁定 tag、Desktop commit、Runtime commit 和目标平台，校验各节点上传的 `BUILD-INFO`、目标类型、大小与 SHA-256，全部目标齐备后再汇总发布。
+正式发布统一由 GitHub Actions 官方托管 Runner 原生构建，不要求维护者在一台电脑上准备虚拟机、Rosetta 或 Docker：
 
-Apple Silicon Mac 也可以把同一台物理电脑上的原生 macOS、Rosetta、Docker 和 Parallels Windows 作为四个隔离 Worker，一条命令并行生成四平台安装包。首次使用先确认环境：
+- Pull Request 和 `master` push 只运行质量检查，不创建安装包或 Release。
+- 带或不带 `v` 前缀的完整 SemVer Tag 触发四平台矩阵，例如 `1.0.0`、`v1.0.0`、`v1.0.0-rc.1`。
+- macOS ARM64、macOS x64、Windows x64、Linux x64 分别在对应官方 Runner 上调用同一个 `package:community`。
+- 四个平台全部成功后才创建 GitHub Release；任何目标失败都不会发布不完整版本。
+- Release 只公开两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和统一 `SHA256SUMS`，内部 `BUILD-INFO` 不作为下载附件。
 
-```bash
-corepack pnpm@11.7.0 release:local-all -- --check
-```
-
-编排器会为 macOS ARM64、macOS x64、Linux x64 和 Windows x64 自动下载或准备 `runtime/toolchain-lock.json` 精确固定的 Node `24.20.0`（module ABI `137`），每个 Worker 都输出并校验实际版本，不读取宿主机或虚拟机的全局 Node。Windows 虚拟机只需准备 Git、Parallels Tools 和 Visual Studio C++ x64 Build Tools。四环境预检并行执行且不会阻塞本地 TLS Controller。
-
-检查通过且版本 tag 已存在、指向当前干净 HEAD 并已推送到源码仓库后执行：
-
-```bash
-corepack pnpm@11.7.0 release:local-all -- --tag v1.0.0 --concurrency 2
-```
-
-该入口先执行一次发行准备门禁，再启动四个 Worker。准备凭据以签名和 SHA-256 绑定 tag、Desktop/Runtime 完整 commit、目标集合、生成配置、Runtime 补丁与 lock、精确 Node/ABI 与其他工具链、channel、dirty 状态、源码树和 24 小时有效期；Worker 只有严格验证凭据和当前任务一致后，才复用 `desktop:package` 的 prepared 模式执行目标平台 Runtime 组装、smoke、Tauri 打包与制品审计。无效、损坏、过期或来源漂移的凭据不会跳过门禁。
-
-Runtime 闭包和 Cargo 输出使用按 commit、配置、lock、Node ABI、目标 triple 与签名模式隔离的内容寻址缓存；pnpm store、Playwright、Docker 镜像/volume 和固定工具链也会复用。默认并发会根据内存自适应，16 GB Mac 建议保持 `--concurrency 2`，避免原生、Rosetta、Docker 和 Parallels 同时争抢内存。失败重跑只处理失败目标，已完成目标和已验证缓存不重建；上传失败可直接重试发布，无需重新编译。
-
-“最新 LTS”只用于维护者显式升级工具链锁：确认官方发行信息、更新 `runtime/toolchain-lock.json` 的版本、ABI、四平台归档与 SHA-256，并完成四环境验证。任何一次具体构建和发行都只读取精确 lock，不在构建时联网解析或自动漂移到未来 Node 版本。
-
-单机四环境会从当前干净、tag 锁定的 HEAD 生成经 Git 校验的本地 source bundle，Rosetta、Docker 和 Parallels Worker 不依赖宿主机 SSH agent 或代码托管平台在线状态。公共 Runtime 部署同时携带四目标所需的 Koffi、Sharp/libvips 等可选原生包，Worker 再按目标裁剪，准备主机架构不会决定其他平台闭包。
-
-默认产物汇总到 `release/local-all/<tag>/`，准备、各 Worker、缓存命中、打包和发布耗时写入 `target/local-release/runs/<run-id>/summary.json`。机器配置不同时可复制 `.deepseek-release.local.example.json` 为不提交 Git 的 `.deepseek-release.local.json`。这是一台物理机上的多环境编排，不会把 Windows 或 Linux 安装包伪装成 macOS 直接交叉编译的结果。
-
-需要单独生成或复核准备凭据时使用：
-
-```bash
-corepack pnpm@11.7.0 release:prepare -- --tag v1.0.0
-```
-
-常用命令如下：
-
-```bash
-# 发布维护者：启动本地 Controller；默认仅监听本机回环地址
-corepack pnpm@11.7.0 release:controller
-
-# 各构建节点：查看本机自动识别出的节点 ID 和原生目标
-corepack pnpm@11.7.0 release:worker -- --identify
-
-# 发布维护者：从已存在且指向当前干净 HEAD 的 tag 创建四平台任务
-corepack pnpm@11.7.0 release:create -- --tag v1.0.0 \
-  --trusted-node macos-arm64=mac-arm-node.macos-arm64 \
-  --trusted-node macos-x64=mac-intel-node.macos-x64 \
-  --trusted-node windows-x64=windows-node.windows-x64 \
-  --trusted-node linux-x64=linux-node.linux-x64
-
-# 构建节点：使用私下收到的一次性票据领取并完成本机任务
-corepack pnpm@11.7.0 release:worker -- \
-  --controller https://release-controller.example \
-  --node-id mac-arm-node.macos-arm64 \
-  --token-file /private/path/macos-arm64.token
-
-# 发布维护者：全部任务完成后默认发布到本地文件系统或 NAS
-corepack pnpm@11.7.0 release:publish -- \
-  --release <release-id> \
-  --provider filesystem \
-  --destination /Volumes/releases/deepseek-desktop
-```
-
-源码可通过 `release:create --source <通用 Git URL>` 指向 GitHub、GitLab、Gitee、Gitea 或其他标准 Git 服务。构建与发布上传完全解耦；filesystem 是默认 Provider，GitHub 只是可选 Provider。跨机器运行 Controller 时必须配置 TLS，任务票据只能私下交给预先登记的受信任节点。公开 Pull Request 不会触发或授权本地 Worker 执行代码。
-
-完整的单机四环境准备、多节点部署、TLS、任务重试、Linux 可选旧基线容器、filesystem/GitHub Provider 和故障恢复说明见[分布式本地发布指南](docs/zh-CN/distributed-release.md)。
+发布前在当前 macOS 开发机执行 `verify`、`test:e2e`、`runtime:smoke` 和当前平台 `desktop:package`；正式 Tag 矩阵再使用 `package:community`。其他平台的构建与验收结论以对应 GitHub 原生 Runner 为准，不用本机模拟结果代替。完整维护流程见[多平台发布指南](docs/zh-CN/distributed-release.md)。
 
 ## 发布边界
 
 当前社区版没有安装包可信发布者身份，因此桌面应用安装包自动更新保持关闭。Runtime 独立更新是另一条边界：只有构建时明确配置可信 Ed25519 清单与发布者的发行版才会启用，未配置时不联网检查。macOS 产物只有 ad-hoc Bundle 签名，没有 Apple Developer ID 签名和公证。未来 Stable 桌面版本必须通过 `pnpm release:check stable`，提供 Updater、Apple 和 Windows 签名材料，并完成对应平台的干净系统安装验收。
 
-本地分布式节点或可选 CI 会构建 macOS arm64/x64、Windows x64 和 Linux x64 产物。macOS arm64 与 Windows x64 还必须完成真实安装、启动、正常退出、孤儿进程、卸载和重装验收；某个平台构建成功不代表其他平台已经完成安装验收。
+GitHub Actions 原生矩阵构建 macOS arm64/x64、Windows x64 和 Linux x64 产物。macOS arm64 与 Windows x64 还必须完成真实安装、启动、正常退出、孤儿进程、卸载和重装验收；某个平台构建成功不代表其他平台已经完成安装验收。
 
 应用鱼形标识沿用固定上游 Runtime 提交中的侧边栏几何与主墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 
