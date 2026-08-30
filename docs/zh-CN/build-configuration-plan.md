@@ -80,8 +80,8 @@ target/generated/runtime-lock.json
 可用命令：
 
 ```bash
-corepack pnpm@11.7.0 app:sync
-corepack pnpm@11.7.0 app:sync --check
+corepack pnpm@11.24.0 app:sync
+corepack pnpm@11.24.0 app:sync --check
 ```
 
 `app:sync` 执行以下工作：
@@ -113,9 +113,9 @@ corepack pnpm@11.7.0 app:sync --check
 可用命令：
 
 ```bash
-corepack pnpm@11.7.0 runtime:sync
-corepack pnpm@11.7.0 runtime:sync --check
-corepack pnpm@11.7.0 runtime:sync --local /absolute/path/to/deepseek-harness
+corepack pnpm@11.24.0 runtime:sync
+corepack pnpm@11.24.0 runtime:sync --check
+corepack pnpm@11.24.0 runtime:sync --local /absolute/path/to/deepseek-harness
 ```
 
 `runtime:sync` 让 `RUNTIME_REPOSITORY` 真正决定打包内容，而不只是修改来源说明：
@@ -139,7 +139,7 @@ Runtime 内部依赖安装始终使用非交互模式，本机终端、Windows �
 当前平台的一键打包入口不绑定发行通道名称：
 
 ```bash
-corepack pnpm@11.7.0 desktop:package
+corepack pnpm@11.24.0 desktop:package
 ```
 
 该命令是普通开发者制作定制安装包的首选入口。它读取可选 `.env`，在当前操作系统和架构上完成配置解析、Runtime 同步、全部发布门禁和原生安装包构建。单台主机只构建当前原生目标，不能把 macOS 本机打包成功表述为 Windows 或 Linux 已完成构建。
@@ -147,7 +147,7 @@ corepack pnpm@11.7.0 desktop:package
 社区发行维护者仍可执行：
 
 ```bash
-corepack pnpm@11.7.0 package:community
+corepack pnpm@11.24.0 package:community
 ```
 
 `package:community` 复用 `desktop:package` 的同一实现，只额外固定 `community` 发布通道和对应发布门禁，不维护第二套安装、测试或打包逻辑。
@@ -166,12 +166,12 @@ Windows 构建会按当前 Node 架构显式选择 `x86_64-pc-windows-msvc` 工�
 打包脚本不得要求开发者预先手动同步配置。单独保留分步骤命令，方便开发阶段快速检查和定位错误：
 
 ```bash
-corepack pnpm@11.7.0 app:sync
-corepack pnpm@11.7.0 runtime:sync
-corepack pnpm@11.7.0 verify
-corepack pnpm@11.7.0 test:e2e
-corepack pnpm@11.7.0 runtime:smoke
-corepack pnpm@11.7.0 tauri:build
+corepack pnpm@11.24.0 app:sync
+corepack pnpm@11.24.0 runtime:sync
+corepack pnpm@11.24.0 verify
+corepack pnpm@11.24.0 test:e2e
+corepack pnpm@11.24.0 runtime:smoke
+corepack pnpm@11.24.0 tauri:build
 ```
 
 命令职责保持单向组合：底层分步骤命令不调用一键命令，`desktop:package` 负责编排底层命令，`package:community` 只向同一编排入口传递发行通道参数。

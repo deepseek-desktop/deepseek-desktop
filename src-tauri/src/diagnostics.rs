@@ -146,12 +146,55 @@ fn redact_roots(value: &str, data_dir: &str, homes: &[String]) -> String {
         roots.push((home.as_str(), "<home-redacted>"));
     }
     roots.sort_by_key(|root| std::cmp::Reverse(root.0.len()));
-    roots
-        .into_iter()
-        .filter(|(path, _)| !path.is_empty())
-        .fold(value.to_owned(), |text, (path, placeholder)| {
-            text.replace(path, placeholder)
-        })
+    roots.into_iter().filter(|(path, _)| !path.is_empty()).fold(
+        value.to_owned(),
+        |text, (path, placeholder)| {
+            if is_windows_path(path) {
+                replace_windows_path(&text, path, placeholder)
+            } else {
+                text.replace(path, placeholder)
+            }
+        },
+    )
+}
+
+fn is_windows_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    path.starts_with("\\\\")
+        || (bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && matches!(bytes[2], b'\\' | b'/'))
+}
+
+fn replace_windows_path(value: &str, path: &str, placeholder: &str) -> String {
+    let needle = path.as_bytes();
+    let haystack = value.as_bytes();
+    let mut output = String::with_capacity(value.len());
+    let mut cursor = 0;
+    for (start, _) in value.char_indices() {
+        if start < cursor || start + needle.len() > haystack.len() {
+            continue;
+        }
+        let end = start + needle.len();
+        if !value.is_char_boundary(end) {
+            continue;
+        }
+        let matches = haystack[start..end]
+            .iter()
+            .zip(needle)
+            .all(|(left, right)| {
+                (matches!(left, b'\\' | b'/') && matches!(right, b'\\' | b'/'))
+                    || left.eq_ignore_ascii_case(right)
+            });
+        if matches {
+            output.push_str(&value[cursor..start]);
+            output.push_str(placeholder);
+            cursor = end;
+        }
+    }
+    output.push_str(&value[cursor..]);
+    output
 }
 
 /// Windows GUI processes carry the home directory in `USERPROFILE` (or the
@@ -377,6 +420,22 @@ mod tests {
         assert!(!redacted.contains("zhang"), "{redacted}");
         assert!(redacted.contains("<data-dir-redacted>\\logs"), "{redacted}");
         assert!(redacted.contains("<home-redacted>\\work"), "{redacted}");
+    }
+
+    #[test]
+    fn redacts_windows_paths_case_insensitively_with_either_separator() {
+        let homes = ["C:\\Users\\Zhang".to_owned()];
+        let redacted = redact_roots(
+            "runtime=c:/users/zhang/appdata/roaming/deepseek.desktop/logs; project=C:/USERS/ZHANG/work",
+            "C:\\Users\\Zhang\\AppData\\Roaming\\deepseek.desktop",
+            &homes,
+        );
+        assert!(
+            !redacted.to_ascii_lowercase().contains("zhang"),
+            "{redacted}"
+        );
+        assert!(redacted.contains("<data-dir-redacted>/logs"), "{redacted}");
+        assert!(redacted.contains("<home-redacted>/work"), "{redacted}");
     }
 
     #[test]

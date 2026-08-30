@@ -119,6 +119,31 @@ async function pruneIncompatiblePackages(nodeModules, target) {
   }
 }
 
+const DEVELOPMENT_DIRECTORIES = new Set(["test", "tests", "__tests__"]);
+const DEVELOPMENT_TEST_FILE = /\.(?:spec|test)\.[cm]?[jt]sx?$/u;
+
+async function prunePackageDevelopmentFiles(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules") continue;
+      if (DEVELOPMENT_DIRECTORIES.has(entry.name)) {
+        await rm(path, { recursive: true, force: true });
+      } else {
+        await prunePackageDevelopmentFiles(path);
+      }
+    } else if (entry.isFile() && DEVELOPMENT_TEST_FILE.test(entry.name)) {
+      await rm(path, { force: true });
+    }
+  }
+}
+
+async function pruneDevelopmentFiles(nodeModules) {
+  for (const item of await listInstalledPackages([nodeModules])) {
+    await prunePackageDevelopmentFiles(item.directory);
+  }
+}
+
 async function pruneNativeArtifacts(nodeModules, target) {
   const profile = lock.nativeAssets[target];
   if (!profile) throw new Error(`native artifact profile is not locked for ${target}`);
@@ -252,7 +277,8 @@ const stagingRoot = dirname(output);
 const binarySuffix = process.platform === "win32" ? ".exe" : "";
 const sidecar = join(desktopRoot, "src-tauri", "binaries", `node-${target}${binarySuffix}`);
 const cacheIdentity = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  closurePolicy: "production-without-development-tests-v1",
   target,
   runtime: lock.runtime,
   patches: lock.patches,
@@ -290,6 +316,7 @@ await makeContentTreeWritable(output);
 await rm(join(output, "node_modules", ".modules.yaml"), { force: true });
 await rm(join(output, "node_modules", ...lock.runtime.packageName.split("/"), "node_modules", ".modules.yaml"), { force: true });
 await pruneIncompatiblePackages(join(output, "node_modules"), target);
+await pruneDevelopmentFiles(join(output, "node_modules"));
 await pruneNativeArtifacts(join(output, "node_modules"), target);
 
 const dshEntry = join(output, lock.runtime.entry);

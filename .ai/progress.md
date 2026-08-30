@@ -8,8 +8,8 @@
 - 建立统一应用配置、Runtime 来源同步、不可变发布 pin、工具链校验和一键平台打包链路。
 - Runtime 已同步到官方 `0.1.2-alpha.1`（`cd5ef8148158`），新版部署根包名、桌面补丁及 HTTP Web Fetch 运行时闭包均已适配。
 - OpenAI Responses 兼容流在最终事件中会覆盖暂态工具 ID、名称、参数和 namespace，避免第三方兼容接口把 `glob` 等调用错误派发为 `read` 并产生缺少 `file_path` 的假错误。
-- Runtime 内置并默认启用 `@deepseek-ai/dsh-web-search-follow-model`：联网搜索绑定当前会话实际模型路由，通过 Provider 能力声明选择标准协议，安全复用 endpoint、model 和 `CredentialRef`；Provider 与外层工具分别使用 90 秒和 100 秒预算，取消和超时提示互相独立，模型切换与多会话不会串路由，未知 Provider 不盲探测，搜索失败不改变正常对话能力。
-- 工作台外部网页链接与新窗口请求优先由 Desktop 壳转交系统默认浏览器，失败时回退 WebView；受管 Runtime 页面和其他原生导航行为保持可用，桌面壳只隔离 Tauri 权限而不削减网页能力。判定读取当前受管 Origin，Runtime 重启换端口后自动跟随，未就绪期间拒绝 HTTP/HTTPS 导航而不外发带令牌地址。
+- Runtime 内置并默认启用 `@deepseek-ai/dsh-web-search-follow-model`：联网搜索绑定当前会话实际模型路由，显式 Provider 能力可作高级覆盖，默认按模型 `apiProtocol` 自动选择标准搜索协议并安全复用 endpoint、model 和 `CredentialRef`；模型 Provider 表单不再显示重复协议控件。Provider 与外层工具分别使用 90 秒和 100 秒预算，模型切换与多会话不会串路由，未知协议不盲探测，搜索失败不改变正常对话能力。
+- 工作台不再注入会因 Tauri IPC 隔离而失败的 opener 点击脚本；普通链接和右键新窗口请求由 Rust 导航门禁转交系统默认浏览器。受管 Runtime 页面、同源 Blob、`mailto` 和 `tel` 保持可用，`file`、`javascript`、`data`、自定义 scheme 和跨源 Blob 均拒绝。macOS 成品已实测普通点击与右键新窗口分别打开 IBM 和 Microsoft Azure 来源页，Desktop 与 Runtime 不退出。
 - 原生窗口标题读取构建注入的真实桌面版本，并统一使用单个 `v` 前缀，方便问题反馈定位。
 - 窗口恢复会先验证保存坐标是否仍落在已连接显示器；外接屏仍在线时保留原位置，断开后自动回到主显示器，避免应用运行但窗口位于屏幕外。
 - 正式发行统一由 GitHub Actions 官方托管 Runner 原生构建：完整 SemVer Tag 触发 macOS ARM64、macOS x64、Windows x64 和 Linux x64 矩阵，四目标全部成功后才创建 Release。
@@ -22,6 +22,7 @@
 - `.ai/skills/release-workflow.md` 是 Agent 唯一发布运行手册，固化本地前置门禁、不可变 SemVer Tag、四平台 job 诊断、新 Tag 恢复以及 Release 资产与 SHA-256 验收。
 - 已建立 Runtime 独立更新协议：四平台原生生产闭包、Ed25519 签名清单、清单有效期与反回放、流式下载、兼容性与包版本验证、受限解压、真实服务启动 smoke、原子切换、上一版回滚、内置基线恢复和无引用旧版本清理。反回放接受记录在暂存成功后写入、随内置基线恢复清除；启动激活在后台线程执行并对外发布 `applying`；启动失败回滚等待更新操作锁，不会因自动检查占锁而跳过。
 - 本地打包和 CI 原生矩阵均扫描实际交付闭包，拒绝 `.env`、密钥、本机绝对路径及符号链接泄漏；CI 第三方 Action 使用不可变 commit。
+- Runtime staging 在生成 manifest 前移除依赖包中的 `test`、`tests`、`__tests__` 及 `*.spec.*` / `*.test.*` 开发源码，闭包策略进入内容寻址缓存键；校验器会拒绝测试文件回流，避免上游测试凭据样本进入安装包。
 - CI 的 `NO_STRIP` 仅允许出现在 Linux AppImage 打包步骤；macOS 与 Windows 不继承该变量。制品扫描协议 v2 允许 AppImage 根目录内的可移植相对链接，同时拒绝绝对链接、根外逃逸和循环；CI 使用项目工作区与 Runner 临时目录等精确根路径。PEM 私钥检查覆盖 UTF-8/UTF-16 文本，不误判 `libgnutls` 等系统库内置的公开自检向量；二进制仍扫描令牌和本机路径。
 - `v1.0.16` 已由 GitHub 官方 Runner 完成 macOS ARM64、macOS x64、Windows x64、Linux x64 原生矩阵并发布，Release 恰好包含五个安装制品和一份 `SHA256SUMS`，托管制品摘要抽检与清单一致，tag 指向 `e252bce`。此前 `v1.0.15` 四平台构建全部成功但汇总失败；远端 tag `v1.0.6`—`v1.0.8` 的运行被取消、未产出 Release；本地 `v1.0.3`、`v1.0.9`—`v1.0.14` 从未推送，不代表已发布事实。
 - 汇总门禁的跨平台身份比对排除 `harness.sha256`：Runtime 生产闭包内的 native prebuild 由各构建主机编译，四平台必然得到不同摘要；四份实测 BUILD-INFO 确认这是唯一跨平台变化字段，其余字段仍精确比对。

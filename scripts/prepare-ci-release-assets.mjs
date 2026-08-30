@@ -63,6 +63,38 @@ function stableValue(value) {
   return value;
 }
 
+const COMMIT = /^[0-9a-f]{40}$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
+
+function isText(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function validateBuildIdentity(buildInfo, target, toolchainLock) {
+  const application = buildInfo.application;
+  const harness = buildInfo.harness;
+  if (buildInfo.schemaVersion !== 1) throw new Error(`release BUILD-INFO schema is invalid for ${target}`);
+  if (!application || !isText(application.productName) || !isText(application.version)
+    || !isText(application.identifier) || !isText(application.slug)
+    || !isText(application.description) || !isText(application.repository)
+    || !Array.isArray(application.authors) || application.authors.length === 0
+    || application.authors.some(author => !isText(author))) {
+    throw new Error(`release application identity is invalid for ${target}`);
+  }
+  if (!harness || !isText(harness.repository) || !isText(harness.resolvedRef)
+    || !COMMIT.test(harness.commit || "") || !isText(harness.packageName)
+    || !isText(harness.version) || !SHA256.test(harness.sha256 || "")
+    || !(harness.requestedRef === null || isText(harness.requestedRef))) {
+    throw new Error(`release Runtime identity is invalid for ${target}`);
+  }
+  if (harness.repository !== toolchainLock.runtimeSource?.repository
+    || harness.resolvedRef !== toolchainLock.runtimeSource?.ref
+    || harness.commit !== toolchainLock.runtimeSource?.commit) {
+    throw new Error(`release Runtime source does not match the toolchain lock for ${target}`);
+  }
+  if (typeof buildInfo.signed !== "boolean") throw new Error(`release signature identity is invalid for ${target}`);
+}
+
 function releaseIdentityOf(buildInfo) {
   const identity = {};
   for (const [field, hostSpecific] of IDENTITY_FIELDS) {
@@ -111,6 +143,7 @@ export async function prepareCiReleaseAssets({ inputRoot, outputRoot, version, c
     const extensions = targetContracts.get(buildInfo.target);
     if (!extensions || seenTargets.has(buildInfo.target)) throw new Error(`unexpected or duplicate release target: ${String(buildInfo.target)}`);
     seenTargets.add(buildInfo.target);
+    validateBuildIdentity(buildInfo, buildInfo.target, toolchainLock);
     if (buildInfo.application?.version !== version) throw new Error(`release version mismatch for ${buildInfo.target}`);
     if (buildInfo.desktop?.commit !== commit || buildInfo.desktop?.dirty !== false) throw new Error(`release source mismatch for ${buildInfo.target}`);
     if (buildInfo.channel !== "community") throw new Error(`release channel mismatch for ${buildInfo.target}`);

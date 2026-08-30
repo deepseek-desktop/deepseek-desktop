@@ -41,9 +41,9 @@
 开发时运行与改动范围匹配的最小检查。涉及发行的改动必须执行：
 
 ```bash
-corepack pnpm@11.7.0 verify
-corepack pnpm@11.7.0 test:e2e
-corepack pnpm@11.7.0 runtime:smoke
+corepack pnpm@11.24.0 verify
+corepack pnpm@11.24.0 test:e2e
+corepack pnpm@11.24.0 runtime:smoke
 ```
 
 `verify` 会先暂存并校验目标 Runtime，再执行 Rust 检查，确保干净检出不依赖历史生成的 sidecar。

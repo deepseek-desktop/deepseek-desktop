@@ -15,7 +15,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 窗口状态按显示器恢复；保存位置仍能落在已连接显示器时保持不变，目标显示器断开时回到当前主显示器可见区域。
 - 工作台 WebView 不获得通用 Tauri Shell、文件系统或任意 IPC 权限。
 - 模型凭据保存在跨平台本地加密凭据库中，不使用系统钥匙串，也不降级为 `.env` 或明文文件。
-- 联网搜索默认跟随当前会话模型 Provider，通过显式 `capabilities.webSearch` 协议声明复用该 Provider 的 endpoint、model 和 `CredentialRef`；Provider 请求使用 90 秒预算，外层工具使用 100 秒预算并区分取消与超时；核心路由不识别厂商、域名或 Provider ID，未知接口不盲试协议，也不跨 Provider 传递凭据。
+- 联网搜索默认跟随当前会话模型 Provider：显式 `capabilities.webSearch` 可作高级覆盖，否则根据当前模型 `apiProtocol` 自动映射标准搜索协议，并复用该 Provider 的 endpoint、model 和 `CredentialRef`；模型 Provider 表单不显示重复的搜索协议控件。Provider 请求使用 90 秒预算，外层工具使用 100 秒预算并区分取消与超时；核心路由不识别厂商、域名或 Provider ID，未知接口不盲试协议，也不跨 Provider 传递凭据。
 - Desktop 仅承载并隔离 Runtime 工作台，不改写页面交互：受管 loopback 页面在内嵌 WebView 中正常导航，外部 HTTP/HTTPS 链接优先交给系统默认浏览器，打开失败或其他原生导航行为由 WebView 继续处理。
 - 导航判定按当前受管 Origin 实时进行，不使用 WebView 创建时的快照；Runtime 未就绪期间没有可信 Origin，HTTP/HTTPS 导航一律拒绝而不转交系统浏览器，避免把带令牌的 loopback 地址交给外部程序。
 - Runtime 进程以 `--expose-internals` 启动：这是 Harness 插件加载器与 HMR 的硬性契约，同时意味着 Runtime 内所有代码（含第三方市场插件）都能访问 Node 内部模块，属于已知且被接受的边界放宽。
@@ -35,7 +35,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 - 项目默认和文档示例版本：`1.0.0`；真实发行版本由 Git tag 或发布环境注入。
 - Node：`24.20.0`（四平台精确锁定，module ABI `137`）
-- pnpm：`11.7.0`
+- pnpm：`11.24.0`
 - Rust：`1.98.0`
 - Tauri CLI：`2.11.4`
 - Runtime 固定来源、commit 和制品校验和以 `runtime/toolchain-lock.json` 为准，不在本文件重复维护。

@@ -152,7 +152,7 @@ function preparationInput({ tag, version, channel, signed, desktopCommit, runtim
     configSha256,
     node: { version: process.versions.node, abi: process.versions.modules },
     toolchain: lock.toolchain,
-    packageManager: "pnpm@11.7.0"
+    packageManager: "pnpm@11.24.0"
   };
 }
 
@@ -293,13 +293,13 @@ export async function prepareRelease({
     await rm(destination, { recursive: true, force: true });
   }
   if (runChecks) {
-    timings.installMs = await run(corepack, ["pnpm@11.7.0", "install", "--frozen-lockfile"], { cwd: workspace, env: environment });
-    timings.playwrightInstallMs = await run(corepack, ["pnpm@11.7.0", "playwright:install"], { cwd: workspace, env: environment });
-    timings.appSyncMs = await run(corepack, ["pnpm@11.7.0", "app:sync"], { cwd: workspace, env: environment });
-    timings.runtimeSyncMs = await run(corepack, ["pnpm@11.7.0", "runtime:sync"], { cwd: workspace, env: environment });
-    timings.releaseGateMs = await run(corepack, ["pnpm@11.7.0", "release:check", channel], { cwd: workspace, env: environment });
-    timings.verifyMs = await run(corepack, ["pnpm@11.7.0", "verify"], { cwd: workspace, env: environment });
-    timings.e2eMs = await run(corepack, ["pnpm@11.7.0", "test:e2e"], { cwd: workspace, env: environment });
+    timings.installMs = await run(corepack, ["pnpm@11.24.0", "install", "--frozen-lockfile"], { cwd: workspace, env: environment });
+    timings.playwrightInstallMs = await run(corepack, ["pnpm@11.24.0", "playwright:install"], { cwd: workspace, env: environment });
+    timings.appSyncMs = await run(corepack, ["pnpm@11.24.0", "app:sync"], { cwd: workspace, env: environment });
+    timings.runtimeSyncMs = await run(corepack, ["pnpm@11.24.0", "runtime:sync"], { cwd: workspace, env: environment });
+    timings.releaseGateMs = await run(corepack, ["pnpm@11.24.0", "release:check", channel], { cwd: workspace, env: environment });
+    timings.verifyMs = await run(corepack, ["pnpm@11.24.0", "verify"], { cwd: workspace, env: environment });
+    timings.e2eMs = await run(corepack, ["pnpm@11.24.0", "test:e2e"], { cwd: workspace, env: environment });
   }
   if (git(workspace, ["status", "--porcelain", "--untracked-files=all"])) {
     throw new Error("release preparation checks changed the Desktop worktree");

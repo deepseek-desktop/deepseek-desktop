@@ -1,25 +1,10 @@
 diff --git a/lib/client.js b/lib/client.js
 --- a/lib/client.js
 +++ b/lib/client.js
-@@ -1124,6 +1124,13 @@ window.__ModuleLoader__.load({
- 		* credential seam with a raw regular expression the user cannot act on.
- 		*/
- 		const ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-+		const WEB_SEARCH_PROTOCOLS = [
-+			"openai-responses-web-search",
-+			"openai-chat-completions-search",
-+			"anthropic-messages-web-search",
-+			"mcp-web-search",
-+			"dsh-web-search-v1"
-+		];
- 		/**
- 		* Render the custom-provider creation card.
- 		* @param props - existing routes, protocol choices, wire faces, and copy.
-@@ -1136,15 +1143,12 @@ window.__ModuleLoader__.load({
+@@ -1136,15 +1136,11 @@ window.__ModuleLoader__.load({
  			const [displayName, setDisplayName] = (0, react.useState)("");
  			const [baseURL, setBaseURL] = (0, react.useState)("");
  			const [protocol, setProtocol] = (0, react.useState)(protocols[0] ?? "");
-+			const [webSearchProtocol, setWebSearchProtocol] = (0, react.useState)("");
  			const [keyDraft, setKeyDraft] = (0, react.useState)("");
  			const [models, setModels] = (0, react.useState)([]);
  			const [busy, setBusy] = (0, react.useState)(false);
@@ -33,7 +18,7 @@ diff --git a/lib/client.js b/lib/client.js
  			const [committed, setCommitted] = (0, react.useState)(false);
  			const disabled = props.readOnly || busy;
  			/** Everything but the key stops being editable once the provider exists. */
-@@ -1160,12 +1164,14 @@ window.__ModuleLoader__.load({
+@@ -1160,12 +1156,13 @@ window.__ModuleLoader__.load({
  			const createOnce = async () => {
  				const keyRef = deriveKeyRef(route);
  				const storesKey = keyValue.length > 0;
@@ -44,11 +29,10 @@ diff --git a/lib/client.js b/lib/client.js
  						...storesKey ? { apiKeyEnv: keyRef } : {},
  						api: protocol,
  						baseURL,
-+						...webSearchProtocol.length === 0 ? {} : { webSearch: { protocol: webSearchProtocol, credential: "inherit" } },
  						models: models.map((model) => ({ ...model }))
  					};
  					const response = await api.settings.mutate(NS$1, [{
-@@ -1174,11 +1180,30 @@ window.__ModuleLoader__.load({
+@@ -1174,11 +1171,30 @@ window.__ModuleLoader__.load({
  						value: profile
  					}], openedAt);
  					if (!response.ok) return response.error.message;
@@ -82,140 +66,3 @@ diff --git a/lib/client.js b/lib/client.js
  				}
  			};
  			const create = async () => {
-@@ -1284,6 +1309,31 @@ window.__ModuleLoader__.load({
- 							}, choice))
- 						})]
- 					}),
-+					(0, react_jsx_runtime.jsxs)("div", {
-+						className: ModelsSection_module_css_default["field"],
-+						children: [(0, react_jsx_runtime.jsx)("span", {
-+							className: ModelsSection_module_css_default["fieldLabel"],
-+							children: t("webSearchProtocol")
-+						}), (0, react_jsx_runtime.jsxs)("select", {
-+							className: `${ModelsSection_module_css_default["input"]} ${ModelsSection_module_css_default["selectInput"]}`,
-+							value: webSearchProtocol,
-+							"aria-label": t("webSearchProtocol"),
-+							disabled: profileDisabled,
-+							onChange: (event) => {
-+								setWebSearchProtocol(event.target.value);
-+							},
-+							children: [(0, react_jsx_runtime.jsx)("option", {
-+								value: "",
-+								children: t("webSearchProtocolUnset")
-+							}), ...WEB_SEARCH_PROTOCOLS.map((choice) => (0, react_jsx_runtime.jsx)("option", {
-+								value: choice,
-+								children: choice
-+							}, choice))]
-+						}), (0, react_jsx_runtime.jsx)("p", {
-+							className: ModelsSection_module_css_default["advancedHint"],
-+							children: t("webSearchProtocolHint")
-+						})]
-+					}),
- 					(0, react_jsx_runtime.jsxs)("div", {
- 						className: ModelsSection_module_css_default["field"],
- 						children: [
-@@ -1466,6 +1516,22 @@ window.__ModuleLoader__.load({
- 				const value = next === void 0 || next.trim().length === 0 ? void 0 : next;
- 				setDraft((current) => value === void 0 ? schema.deletePath(current, [key]) : schema.setPath(current, [key], value));
- 			};
-+			const webSearchProtocolAt = (source) => {
-+				const value = schema.getPath(source, ["webSearch"]);
-+				if (value === false) return "disabled";
-+				if (typeof value !== "object" || value === null || Array.isArray(value)) return void 0;
-+				return typeof value.protocol === "string" ? value.protocol : void 0;
-+			};
-+			const webSearchProtocol = webSearchProtocolAt(draft) ?? webSearchProtocolAt(fallback) ?? "";
-+			const setWebSearchProtocol = (next) => {
-+				setDraft((current) => {
-+					if (next.length === 0) return schema.deletePath(current, ["webSearch"]);
-+					if (next === "disabled") return schema.setPath(current, ["webSearch"], false);
-+					const existing = schema.getPath(current, ["webSearch"]);
-+					const capability = typeof existing === "object" && existing !== null && !Array.isArray(existing) ? existing : {};
-+					return schema.setPath(current, ["webSearch"], { ...capability, protocol: next, credential: "inherit" });
-+				});
-+			};
- 			const modelFailure = validateDeepSeekModels(schema.getPath(draft, ["models"]));
- 			const keyFailure = apiKeyFailure(keyDraft);
- 			const keyValue = keyDraft.trim();
-@@ -1669,6 +1735,34 @@ window.__ModuleLoader__.load({
- 									}, choice))]
- 								})]
- 							}) : null,
-+							(0, react_jsx_runtime.jsxs)("div", {
-+								className: ModelsSection_module_css_default["field"],
-+								children: [(0, react_jsx_runtime.jsx)("span", {
-+									className: ModelsSection_module_css_default["fieldLabel"],
-+									children: t("webSearchProtocol")
-+								}), (0, react_jsx_runtime.jsxs)("select", {
-+									className: `${ModelsSection_module_css_default["input"]} ${ModelsSection_module_css_default["selectInput"]}`,
-+									value: webSearchProtocol,
-+									"aria-label": t("webSearchProtocol"),
-+									disabled,
-+									onChange: (event) => {
-+										setWebSearchProtocol(event.target.value);
-+									},
-+									children: [(0, react_jsx_runtime.jsx)("option", {
-+										value: "",
-+										children: t("webSearchProtocolInherit")
-+									}), (0, react_jsx_runtime.jsx)("option", {
-+										value: "disabled",
-+										children: t("webSearchProtocolDisabled")
-+									}), ...WEB_SEARCH_PROTOCOLS.map((choice) => (0, react_jsx_runtime.jsx)("option", {
-+										value: choice,
-+										children: choice
-+									}, choice))]
-+								}), (0, react_jsx_runtime.jsx)("p", {
-+									className: ModelsSection_module_css_default["advancedHint"],
-+									children: t("webSearchProtocolHint")
-+								})]
-+							}),
- 							family === "deepseek" ? (0, react_jsx_runtime.jsx)(DeepSeekModelsEditor, {
- 								...catalogProps,
- 								defaultContextWindow: typeof defaultContextWindow === "number" ? defaultContextWindow : void 0,
-@@ -2636,6 +2730,11 @@ window.__ModuleLoader__.load({
- 			customDisplayName: "Display name",
- 			customApi: "API protocol",
- 			customApiUnset: "Not selected",
-+			webSearchProtocol: "Web search protocol",
-+			webSearchProtocolHint: "Choose a protocol supported by this Provider.",
-+			webSearchProtocolUnset: "Not declared",
-+			webSearchProtocolInherit: "Default",
-+			webSearchProtocolDisabled: "Disabled",
- 			customNeedsBaseUrl: "A custom provider needs a base URL.",
- 			customNeedsModels: "A custom provider needs at least one model.",
- 			customBaseUrlPlaceholder: "https://gateway.example/v1",
-@@ -2736,6 +2835,11 @@ window.__ModuleLoader__.load({
- 			customDisplayName: "显示名称",
- 			customApi: "API 协议",
- 			customApiUnset: "未选择",
-+			webSearchProtocol: "联网搜索协议",
-+			webSearchProtocolHint: "请选择该提供方支持的协议。",
-+			webSearchProtocolUnset: "未声明",
-+			webSearchProtocolInherit: "默认",
-+			webSearchProtocolDisabled: "禁用",
- 			customNeedsBaseUrl: "自定义提供方需要填写 API 地址。",
- 			customNeedsModels: "自定义提供方至少需要一个模型。",
- 			customBaseUrlPlaceholder: "https://gateway.example/v1",
-@@ -2753,6 +2857,14 @@ window.__ModuleLoader__.load({
- 			onboardingSaving: "保存中…",
- 			keyRequired: "请输入 API 密钥后继续。"
- 		};
-+		const zhTW = {
-+			...zh,
-+			webSearchProtocol: "聯網搜尋協定",
-+			webSearchProtocolHint: "請選擇該提供方支援的協定。",
-+			webSearchProtocolUnset: "未宣告",
-+			webSearchProtocolInherit: "預設",
-+			webSearchProtocolDisabled: "停用"
-+		};
- 		//#endregion
- 		//#region lib/types/client/index.js
- 		/** Dictionary namespace owned by this plugin. */
-@@ -2790,6 +2902,7 @@ window.__ModuleLoader__.load({
- 		function apply(ctx) {
- 			ctx.effect(() => ctx.locale.register(NS, {
- 				zh,
-+				"zh-TW": zhTW,
- 				en
- 			}), "ui-settings-models: copy dictionaries");
- 			const schema = createSettingsSchemaOperations(ctx.settingsSchema);

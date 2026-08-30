@@ -35,6 +35,6 @@
 
 # DeepSeek Desktop Community Edition
 
-This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.7.0. This release updates the Runtime to upstream 0.1.2-alpha.1, includes its HTTP web-fetch implementation, decouples Desktop startup from Runtime project selection, keeps Runtime in an internal work directory, restores windows safely across changing monitor layouts, and shows the exact Desktop version in the native window title.
+This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.24.0. This release updates the Runtime to upstream 0.1.2-alpha.1, includes its HTTP web-fetch implementation, decouples Desktop startup from Runtime project selection, keeps Runtime in an internal work directory, restores windows safely across changing monitor layouts, and shows the exact Desktop version in the native window title.
 
 The macOS application has an ad-hoc integrity signature but is not signed or notarized with an Apple Developer ID. Windows and Linux community artifacts do not carry a trusted publisher signature. Automatic updates remain disabled.

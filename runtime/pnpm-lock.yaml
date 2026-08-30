@@ -21,8 +21,8 @@ importers:
         specifier: 1.28.1
         version: 1.28.1(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-settings@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/schemastery@3.18.1))(@deepseek-ai/schemastery@3.18.1)
       pnpm:
-        specifier: 11.7.0
-        version: 11.7.0
+        specifier: 11.24.0
+        version: 11.24.0
       react:
         specifier: 18.3.1
         version: 18.3.1
@@ -341,8 +341,8 @@ packages:
     resolution: {integrity: sha512-isaquiStlp7qdFpaffy+2ssJPUR/kLPRE5gqfeWbb0Ahph9H7O3BOFwThqkVaTrxfpnjrQauxlOEgvzD+snhUg==}
     engines: {node: '>=20'}
 
-  pnpm@11.7.0:
-    resolution: {integrity: sha512-GcyFLBIMcSV2DyRD7mvgyltA+fUFmN4aCaHxd1A+AQ5Xwjx3ZG4B52HeWb+HT7IqM5jDOrlpH8E+uUa28PTWIA==}
+  pnpm@11.24.0:
+    resolution: {integrity: sha512-vSfjRel23LC+C3oSKCF7BJqBfiGx81XJDb59xGZxiVqLwebQbCRVRQXqk+oLRfSJon7Bv7yN5qlln8oPFvoAAA==}
     engines: {node: '>=22.13'}
     hasBin: true
 
@@ -566,7 +566,7 @@ snapshots:
       node-addon-require-builtin-win32-x64-msvc: 0.1.5
     optional: true
 
-  pnpm@11.7.0: {}
+  pnpm@11.24.0: {}
 
   react-dom@18.3.1(react@18.3.1):
     dependencies:

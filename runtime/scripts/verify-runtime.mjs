@@ -224,7 +224,7 @@ async function verifyFollowModelSearch(nodeModules) {
     await unknown.search(agent, { query: "verification query" });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("does not declare web search capability") && !message.includes("DEEPSEEK_API_KEY")) return;
+    if (message.includes("does not support automatic web search") && !message.includes("DEEPSEEK_API_KEY")) return;
     throw new Error(`follow-model search guidance is not Provider-neutral: ${message}`);
   }
   throw new Error("follow-model search unexpectedly probed an undeclared Provider");
@@ -294,6 +294,12 @@ if (requested) {
   }
   if (manifest.node.version !== toolchain.node.version || manifest.node.moduleAbi !== toolchain.node.moduleAbi) {
     throw new Error(`Node version or ABI mismatch in Runtime manifest for ${requested}`);
+  }
+  const developmentFile = manifest.files.find(entry =>
+    /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)/u.test(entry.path)
+      || /\.(?:spec|test)\.[cm]?[jt]sx?$/u.test(entry.path));
+  if (developmentFile) {
+    throw new Error(`runtime production closure contains development test file: ${developmentFile.path}`);
   }
   for (const [name, expected] of Object.entries(lock.bundledPackages)) {
     const installed = JSON.parse(await readFile(join(root, "node_modules", name, "package.json"), "utf8"));

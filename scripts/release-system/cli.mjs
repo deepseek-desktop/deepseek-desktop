@@ -231,7 +231,7 @@ async function runNativePackage(checkout, plan, preparedRoot = "") {
   delete env.DISTRIBUTED_RELEASE_ADMIN_TOKEN;
   delete env.DISTRIBUTED_RELEASE_WORKER_TOKEN;
   delete env.DISTRIBUTED_RELEASE_GITHUB_TOKEN;
-  await run(command, [`pnpm@11.7.0`, script], { cwd: checkout, env, shell: process.platform === "win32" });
+  await run(command, [`pnpm@11.24.0`, script], { cwd: checkout, env, shell: process.platform === "win32" });
 }
 
 async function runContainerPackage(checkout, plan, image, preparedRoot = "") {
@@ -247,7 +247,7 @@ async function runContainerPackage(checkout, plan, image, preparedRoot = "") {
   ];
   const args = ["run", "--rm", "--volume", `${checkout}:/workspace`, "--workdir", "/workspace"];
   for (const value of environment) args.push("--env", value);
-  args.push(image, "bash", "-lc", `corepack pnpm@11.7.0 ${script}`);
+  args.push(image, "bash", "-lc", `corepack pnpm@11.24.0 ${script}`);
   await run("docker", args, { cwd: checkout });
 }
 

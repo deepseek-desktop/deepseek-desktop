@@ -74,6 +74,7 @@ async function preparePinnedPnpm() {
   return {
     ...process.env,
     CI: "true",
+    PNPM_CONFIG_PM_ON_FAIL: "ignore",
     PATH: `${binRoot}${process.platform === "win32" ? ";" : ":"}${process.env.PATH || ""}`
   };
 }
@@ -82,6 +83,14 @@ function runPnpm(commandArgs, cwd) {
   const pnpmCli = process.env.npm_execpath;
   if (!pnpmCli || !pinnedToolEnvironment) throw new Error("pinned pnpm environment has not been initialized");
   run(process.execPath, [pnpmCli, ...commandArgs], cwd, { env: pinnedToolEnvironment });
+}
+
+function runHarnessPnpm(commandArgs, cwd) {
+  // The immutable Harness checkout can declare an older package-manager
+  // preference. Desktop builds still use the audited version in our toolchain
+  // lock; this only disables pnpm's project-version refusal in the temporary
+  // checkout and does not modify upstream source or its dependency lock.
+  runPnpm(["--pm-on-fail=ignore", ...commandArgs], cwd);
 }
 
 async function writeJson(path, value) {
@@ -269,10 +278,10 @@ async function deployHarnessClosure(sourceRoot, workspacePackages, cli, destinat
     }
     manifest.dependencies = { ...manifest.dependencies, [cli.manifest.name]: "workspace:^" };
     await writeJson(manifestPath, manifest);
-    runPnpm(["install", "--lockfile-only", "--ignore-scripts", "--config.auto-install-peers=false"], sourceRoot);
-    runPnpm(["install", "--frozen-lockfile", "--ignore-scripts", "--config.auto-install-peers=false"], sourceRoot);
+    runHarnessPnpm(["install", "--lockfile-only", "--ignore-scripts", "--config.auto-install-peers=false"], sourceRoot);
+    runHarnessPnpm(["install", "--frozen-lockfile", "--ignore-scripts", "--config.auto-install-peers=false"], sourceRoot);
     await rm(destination, { recursive: true, force: true });
-    runPnpm([
+    runHarnessPnpm([
       "--filter", manifest.name, "deploy", "--legacy", "--prod",
       "--config.node-linker=hoisted", "--config.auto-install-peers=false",
       "--config.link-workspace-packages=true", destination
@@ -472,10 +481,10 @@ const workRoot = check
 try {
   await rm(workRoot, { recursive: true, force: true });
   await mkdir(workRoot, { recursive: true });
-  runPnpm(["install", "--frozen-lockfile"], source.sourceRoot);
+  runHarnessPnpm(["install", "--frozen-lockfile"], source.sourceRoot);
   const sourcePackage = JSON.parse(await readFile(join(source.sourceRoot, "package.json"), "utf8"));
   if (!sourcePackage.scripts?.["build:official"]) throw new Error("Harness repository does not provide build:official");
-  runPnpm(["build:official"], source.sourceRoot);
+  runHarnessPnpm(["build:official"], source.sourceRoot);
   const workspacePackages = await findWorkspacePackages(source.sourceRoot);
   const cli = findCliPackage(workspacePackages);
   await stat(join(cli.directory, cli.entry));

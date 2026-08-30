@@ -79,13 +79,13 @@ Pull Request 和 `master` push 只运行质量检查，不创建安装包或 Rel
 web_search 工具
   -> 当前执行 Agent 的内部会话上下文
   -> 当前模型 Provider / model
-  -> Provider capabilities.webSearch
+  -> Provider 显式能力覆盖或当前模型 apiProtocol 的标准映射
   -> 继承 endpoint / CredentialRef
   -> 标准协议执行器或受信任插件注册的执行器
   -> 统一 WebSearchResult
 ```
 
-路由上下文由 Runtime 内部传递，不进入模型可控的工具参数。Provider 未声明能力时快速失败，不发送探测请求；切换模型后下一次调用重新解析当前会话路由，多会话不会共享可变 Provider 状态。
+路由上下文由 Runtime 内部传递，不进入模型可控的工具参数。已知模型 API 协议自动映射到标准搜索协议，显式 Provider 能力仅作为高级覆盖；未知协议快速失败且不发送探测请求。切换模型后下一次调用重新解析当前会话路由，多会话不会共享可变 Provider 状态。
 
 Desktop 与 Runtime 的关系是“原生壳 + 本地 Web 应用”：Desktop 不调用 Runtime 私有工作区 API，不保存用户项目目录，也不把自身运行目录解释为用户工作区。会话、项目目录和文件边界由 Runtime 工作台自己的稳定公共能力负责。
 

@@ -33,10 +33,10 @@ RUN case "${TARGETARCH}" in \
 
 ENV PATH="/opt/node/bin:${PATH}"
 
-RUN corepack enable && corepack prepare pnpm@11.7.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.24.0 --activate
 
 WORKDIR /workspace
 COPY . .
 RUN git config --global --add safe.directory /workspace
 
-CMD ["corepack", "pnpm@11.7.0", "ci:shell-quality"]
+CMD ["corepack", "pnpm@11.24.0", "ci:shell-quality"]

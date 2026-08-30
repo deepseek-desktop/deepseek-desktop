@@ -23,15 +23,15 @@ DeepSeek Desktop 的正式发布统一使用 GitHub Actions 官方托管 Runner 
 普通开发只运行与当前系统匹配的检查：
 
 ```bash
-corepack pnpm@11.7.0 verify
-corepack pnpm@11.7.0 test:e2e
-corepack pnpm@11.7.0 runtime:smoke
+corepack pnpm@11.24.0 verify
+corepack pnpm@11.24.0 test:e2e
+corepack pnpm@11.24.0 runtime:smoke
 ```
 
 需要检查当前 macOS 安装包时执行：
 
 ```bash
-corepack pnpm@11.7.0 desktop:package
+corepack pnpm@11.24.0 desktop:package
 ```
 
 `desktop:package` 允许在尚未创建发行 Tag 的开发工作区构建本地验收包，并把源码 dirty 状态写入内部构建信息；正式 Tag 矩阵仍只使用门禁更严格的 `package:community`。本机验证只能证明当前 macOS 架构，Windows、Linux 和 macOS x64 的构建结果以对应官方 Runner 为准，不能用宿主机模拟结果冒充原生平台验收。
@@ -52,7 +52,7 @@ v1.0.0+build.1
 1. `master` 指向待发行 commit，工作区干净。
 2. 本机规定的质量检查和当前 macOS 打包通过。
 3. 版本尚未被远程 Tag 或 Release 使用。
-4. Runtime 来源、Node `24.20.0`、pnpm `11.7.0`、Rust `1.98.0` 和 Tauri CLI `2.11.4` 与仓库 lock 一致。
+4. Runtime 来源、Node `24.20.0`、pnpm `11.24.0`、Rust `1.98.0` 和 Tauri CLI `2.11.4` 与仓库 lock 一致。
 5. 发布说明只描述本次实际交付内容。
 
 创建新的 annotated Tag 后推送：

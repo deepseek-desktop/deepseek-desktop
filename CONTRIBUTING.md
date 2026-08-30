@@ -12,11 +12,11 @@
 ## 开发环境
 
 ```bash
-corepack pnpm@11.7.0 install --frozen-lockfile
-corepack pnpm@11.7.0 app:sync
-corepack pnpm@11.7.0 runtime:sync
-corepack pnpm@11.7.0 verify
-corepack pnpm@11.7.0 test:e2e
+corepack pnpm@11.24.0 install --frozen-lockfile
+corepack pnpm@11.24.0 app:sync
+corepack pnpm@11.24.0 runtime:sync
+corepack pnpm@11.24.0 verify
+corepack pnpm@11.24.0 test:e2e
 ```
 
 `runtime:sync` 会锁定 Harness 来源、构建生产 Runtime 并生成完整性记录；`verify` 会在 Rust 检查前暂存并校验目标 Runtime。仓库脚本将 Rust 安装到 `target/deepseek-desktop-toolchain/`，不会修改全局 Rust 环境。
@@ -24,7 +24,7 @@ corepack pnpm@11.7.0 test:e2e
 发布标签前，先使用 Docker 复现 GitHub 通用质量任务，再打包当前原生平台：
 
 ```bash
-corepack pnpm@11.7.0 release:preflight
+corepack pnpm@11.24.0 release:preflight
 ```
 
 macOS 本机与 Windows 虚拟机都应执行该命令。Docker 不能替代对应平台的 Tauri、WebView、DMG / NSIS 和进程窗口验证。Apple Silicon 上的 Linux amd64 容器只跳过容易受架构模拟影响的 Runtime 启动 smoke；该项由随后执行的 macOS 原生打包补齐，GitHub 原生 Linux x64 仍执行完整 smoke。
@@ -32,7 +32,7 @@ macOS 本机与 Windows 虚拟机都应执行该命令。Docker 不能替代对�
 已完成预检后，仅执行社区发行门禁和当前原生平台打包：
 
 ```bash
-corepack pnpm@11.7.0 package:community
+corepack pnpm@11.24.0 package:community
 ```
 
 ## Pull Request

@@ -8,7 +8,7 @@ const command = pnpmCli
   : join(dirname(process.execPath), process.platform === "win32" ? "corepack.cmd" : "corepack");
 const args = pnpmCli
   ? [pnpmCli, ...process.argv.slice(2)]
-  : ["pnpm@11.7.0", ...process.argv.slice(2)];
+  : ["pnpm@11.24.0", ...process.argv.slice(2)];
 const nodeDirectory = dirname(process.execPath);
 const environment = {
   ...process.env,

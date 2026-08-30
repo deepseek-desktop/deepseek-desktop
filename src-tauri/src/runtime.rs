@@ -89,13 +89,30 @@ enum Navigation {
 /// denied outright — handing it to the system browser could publish a tokenized
 /// loopback URL that is about to become stale.
 fn classify_navigation(managed_origin: Option<&Url>, candidate: &Url) -> Navigation {
-    if !matches!(candidate.scheme(), "http" | "https") {
-        return Navigation::Allow;
-    }
-    match managed_origin {
-        Some(managed) if is_managed_runtime_origin(managed, candidate) => Navigation::Allow,
-        Some(_) => Navigation::External,
-        None => Navigation::Deny,
+    match candidate.scheme() {
+        "http" | "https" => match managed_origin {
+            Some(managed) if is_managed_runtime_origin(managed, candidate) => Navigation::Allow,
+            Some(_) => Navigation::External,
+            None => Navigation::Deny,
+        },
+        "mailto" | "tel" => Navigation::External,
+        "blob" => managed_origin
+            .and_then(|managed| {
+                candidate
+                    .as_str()
+                    .strip_prefix("blob:")
+                    .map(|inner| (managed, inner))
+            })
+            .and_then(|(managed, inner)| Url::parse(inner).ok().map(|inner| (managed, inner)))
+            .map(|(managed, inner)| {
+                if is_managed_runtime_origin(managed, &inner) {
+                    Navigation::Allow
+                } else {
+                    Navigation::Deny
+                }
+            })
+            .unwrap_or(Navigation::Deny),
+        _ => Navigation::Deny,
     }
 }
 
@@ -1907,13 +1924,31 @@ mod tests {
         for candidate in [
             "http://127.0.0.1:43127/conversation",
             "http://127.0.0.1:43127/?token=launch_token",
-            "file:///tmp/local.html",
-            "javascript:alert('blocked')",
-            "mailto:developer@example.com",
+            "blob:http://127.0.0.1:43127/7de901da-2e4f-4ba0-b3ce-fb83998dbbfd",
         ] {
             assert_eq!(
                 classify_navigation(Some(&managed), &Url::parse(candidate).unwrap()),
                 Navigation::Allow,
+                "{candidate}"
+            );
+        }
+        for candidate in ["mailto:developer@example.com", "tel:+10000000000"] {
+            assert_eq!(
+                classify_navigation(Some(&managed), &Url::parse(candidate).unwrap()),
+                Navigation::External,
+                "{candidate}"
+            );
+        }
+        for candidate in [
+            "file:///tmp/local.html",
+            "javascript:alert('blocked')",
+            "data:text/html,blocked",
+            "blob:https://example.com/untrusted",
+            "custom-scheme:payload",
+        ] {
+            assert_eq!(
+                classify_navigation(Some(&managed), &Url::parse(candidate).unwrap()),
+                Navigation::Deny,
                 "{candidate}"
             );
         }
@@ -1949,7 +1984,7 @@ mod tests {
         }
         assert_eq!(
             classify_navigation(None, &Url::parse("mailto:developer@example.com").unwrap()),
-            Navigation::Allow
+            Navigation::External
         );
     }
 

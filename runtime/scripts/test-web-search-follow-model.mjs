@@ -39,18 +39,74 @@ function createEngine({ routes, fetchImpl, credentials = { PROVIDER_A_KEY: secre
   return { engine, resolvedRefs };
 }
 
-test("prepared Runtime carries the extended outer budget and concise locale labels", async () => {
-  const [bundle, settingsUi] = await Promise.all([
+test("prepared Runtime carries the extended outer budget without a duplicate Provider search control", async () => {
+  const [bundle, modelsSettingsUi, pluginsSettingsUi] = await Promise.all([
     readFile(resolve(preparedRoot, "node_modules/deepseek-desktop-bundle/cordis.patch.yml"), "utf8"),
-    readFile(resolve(preparedRoot, "node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js"), "utf8")
+    readFile(resolve(preparedRoot, "node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js"), "utf8"),
+    readFile(resolve(preparedRoot, "node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js"), "utf8")
   ]);
   assert.match(bundle, /searchTimeoutMs:\s*100000/u);
-  assert.match(settingsUi, /webSearchProtocolInherit:\s*"Default"/u);
-  assert.match(settingsUi, /webSearchProtocolInherit:\s*"默认"/u);
-  assert.match(settingsUi, /webSearchProtocolInherit:\s*"預設"/u);
-  assert.match(settingsUi, /webSearchProtocolHint:\s*"Choose a protocol supported by this Provider\."/u);
-  assert.match(settingsUi, /webSearchProtocolHint:\s*"请选择该提供方支持的协议。"/u);
-  assert.match(settingsUi, /webSearchProtocolHint:\s*"請選擇該提供方支援的協定。"/u);
+  assert.doesNotMatch(modelsSettingsUi, /webSearchProtocol|WEB_SEARCH_PROTOCOLS/u);
+  assert.match(pluginsSettingsUi, /webSearchModeFollowModel:\s*"Follow current model"/u);
+  assert.match(pluginsSettingsUi, /webSearchModeFollowModel:\s*"跟随当前模型"/u);
+  assert.match(pluginsSettingsUi, /webSearchModeFollowModel:\s*"跟隨目前模型"/u);
+  assert.doesNotMatch(pluginsSettingsUi, /current model \(default\)|当前模型（默认）|目前模型（預設）/u);
+});
+
+test("unset search capability automatically follows the active model API protocol", async t => {
+  const cases = [
+    {
+      apiProtocol: "openai-responses",
+      expectedPath: "/api/responses",
+      response: {
+        output_text: "responses answer",
+        output: [{ content: [{ annotations: [{ url_citation: { url: "https://sources.test/responses" } }] }] }]
+      }
+    },
+    {
+      apiProtocol: "openai-completions",
+      expectedPath: "/api/chat/completions",
+      response: { choices: [{ message: { content: "chat answer", citations: [{ url: "https://sources.test/chat" }] } }] }
+    },
+    {
+      apiProtocol: "anthropic-messages",
+      expectedPath: "/api/messages",
+      response: {
+        content: [
+          { type: "text", text: "messages answer" },
+          { type: "web_search_tool_result", content: [{ url: "https://sources.test/messages" }] }
+        ]
+      }
+    }
+  ];
+
+  for (const item of cases) {
+    await t.test(item.apiProtocol, async () => {
+      let observed;
+      const { engine, resolvedRefs } = createEngine({
+        routes: {
+          "provider-a/model-a": {
+            provider: "provider-a",
+            model: "model-a",
+            endpoint: "https://provider-a.test/api",
+            apiProtocol: item.apiProtocol,
+            credentialRef: "PROVIDER_A_KEY"
+          }
+        },
+        fetchImpl: async (url, options) => {
+          observed = { url: new URL(url), options, body: JSON.parse(options.body) };
+          return jsonResponse(item.response);
+        }
+      });
+      const result = await engine.search(agent(), { query: "automatic search", maxResults: 1 });
+      assert.equal(observed.url.pathname, item.expectedPath);
+      const auth = observed.options.headers.authorization ?? observed.options.headers["x-api-key"];
+      assert.equal(auth, item.apiProtocol === "anthropic-messages" ? secretA : `Bearer ${secretA}`);
+      assert.equal(observed.body.model, "model-a");
+      assert.deepEqual(resolvedRefs, ["PROVIDER_A_KEY"]);
+      assert.equal(result.sources.length, 1);
+    });
+  }
 });
 
 test("standard protocols inherit the active model route and normalize sources", async t => {
@@ -191,7 +247,7 @@ test("unknown capabilities and protocols fail without blind probes", async () =>
     fetchImpl: async () => { fetches += 1; return jsonResponse({}); }
   }).engine;
   await assert.rejects(missing.search(agent(), { query: "none" }), error =>
-    /does not declare web search capability/u.test(error.message) && !/DEEPSEEK_API_KEY/u.test(error.message));
+    /does not support automatic web search/u.test(error.message) && !/DEEPSEEK_API_KEY/u.test(error.message));
 
   const unavailable = createEngine({
     routes: {

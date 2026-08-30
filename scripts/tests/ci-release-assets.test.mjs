@@ -11,7 +11,12 @@ const version = "1.0.0";
 const commit = "0123456789abcdef0123456789abcdef01234567";
 const toolchainLock = {
   node: { version: "24.20.0", moduleAbi: "137" },
-  toolchain: { rust: "1.98.0", pnpm: "11.7.0", tauriCli: "2.11.4" }
+  toolchain: { rust: "1.98.0", pnpm: "11.24.0", tauriCli: "2.11.4" },
+  runtimeSource: {
+    repository: "https://example.invalid/runtime.git",
+    ref: "runtime-v1.0.0",
+    commit: "89abcdef0123456789abcdef0123456789abcdef"
+  }
 };
 const targets = new Map([
   ["aarch64-apple-darwin", ["DeepSeek Desktop_1.0.0_aarch64.dmg"]],
@@ -31,7 +36,15 @@ async function fixture(root, mutate = value => value) {
     const buildInfoName = `BUILD-INFO.${target}.json`;
     const buildInfo = mutate({
       schemaVersion: 1,
-      application: { productName: "DeepSeek Desktop", version },
+      application: {
+        productName: "DeepSeek Desktop",
+        version,
+        identifier: "deepseek.desktop",
+        slug: "deepseek-desktop",
+        description: "Local AI agent workspace",
+        authors: ["DeepSeek Desktop Contributors"],
+        repository: "https://example.invalid/desktop"
+      },
       desktop: { commit, dirty: false },
       toolchain: {
         nodeVersion: toolchainLock.node.version,
@@ -40,7 +53,15 @@ async function fixture(root, mutate = value => value) {
         pnpmVersion: toolchainLock.toolchain.pnpm,
         tauriCliVersion: toolchainLock.toolchain.tauriCli
       },
-      harness: { repository: "https://example.invalid/runtime.git", commit: "runtime-commit", sha256: "runtime-hash" },
+      harness: {
+        repository: toolchainLock.runtimeSource.repository,
+        requestedRef: null,
+        resolvedRef: toolchainLock.runtimeSource.ref,
+        commit: toolchainLock.runtimeSource.commit,
+        packageName: "@deepseek-ai/dsh",
+        version: "1.0.0",
+        sha256: hash(`runtime-${target}`)
+      },
       target,
       channel: "community",
       signed: false,
@@ -77,7 +98,7 @@ test("accepts platform-specific Runtime closure digests", async t => {
   t.after(() => rm(root, { recursive: true, force: true }));
   await fixture(root, (buildInfo, target) => ({
     ...buildInfo,
-    harness: { ...buildInfo.harness, sha256: `closure-${target}` }
+    harness: { ...buildInfo.harness, sha256: hash(`closure-${target}`) }
   }));
   const result = await prepareCiReleaseAssets({
     inputRoot: root,
@@ -93,12 +114,30 @@ test("rejects a target built from another Runtime commit", async t => {
   const root = await mkdtemp(join(tmpdir(), "deepseek-ci-release-runtime-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await fixture(root, (buildInfo, target) => target === "x86_64-apple-darwin"
-    ? { ...buildInfo, harness: { ...buildInfo.harness, commit: "another-runtime-commit" } }
+    ? { ...buildInfo, harness: { ...buildInfo.harness, commit: "f".repeat(40) } }
     : buildInfo);
   await assert.rejects(
     prepareCiReleaseAssets({ inputRoot: root, outputRoot: join(root, "publish"), version, commit, toolchainLock }),
-    /release identity mismatch for x86_64-apple-darwin: harness\.commit/u
+    /Runtime source does not match the toolchain lock/u
   );
+});
+
+test("rejects missing Runtime and signature provenance even when every target omits it", async t => {
+  for (const field of ["harness", "signed"]) {
+    await t.test(field, async () => {
+      const root = await mkdtemp(join(tmpdir(), `deepseek-ci-release-missing-${field}-`));
+      t.after(() => rm(root, { recursive: true, force: true }));
+      await fixture(root, buildInfo => {
+        const copy = { ...buildInfo };
+        delete copy[field];
+        return copy;
+      });
+      await assert.rejects(
+        prepareCiReleaseAssets({ inputRoot: root, outputRoot: join(root, "publish"), version, commit, toolchainLock }),
+        field === "harness" ? /Runtime identity is invalid/u : /signature identity is invalid/u
+      );
+    });
+  }
 });
 
 test("rejects a target built with another toolchain identity", async t => {

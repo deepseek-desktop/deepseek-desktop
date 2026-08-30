@@ -259,7 +259,14 @@ pub fn run() {
                 }
             },
         ))
-        .plugin(tauri_plugin_opener::init())
+        // The isolated workbench has no Tauri IPC permissions. Let its normal
+        // navigation reach the Rust allowlist instead of injecting an opener
+        // script that would intercept links and then fail capability checks.
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(

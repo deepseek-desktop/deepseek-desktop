@@ -17,7 +17,7 @@
 具体发行必须精确使用仓库 lock：
 
 - Node `24.20.0`，module ABI `137`
-- pnpm `11.7.0`
+- pnpm `11.24.0`
 - Rust `1.98.0`
 - Tauri CLI `2.11.4`
 
@@ -36,12 +36,12 @@ git fetch --tags origin
 保护现有 WIP，不移动失败或已发布 Tag。完成代码修复后执行：
 
 ```bash
-corepack pnpm@11.7.0 app:sync --check
-corepack pnpm@11.7.0 runtime:sync --check
-corepack pnpm@11.7.0 verify
-corepack pnpm@11.7.0 test:e2e
-corepack pnpm@11.7.0 runtime:smoke
-corepack pnpm@11.7.0 desktop:package
+corepack pnpm@11.24.0 app:sync --check
+corepack pnpm@11.24.0 runtime:sync --check
+corepack pnpm@11.24.0 verify
+corepack pnpm@11.24.0 test:e2e
+corepack pnpm@11.24.0 runtime:smoke
+corepack pnpm@11.24.0 desktop:package
 ```
 
 尚未获准创建发行 Tag 时使用 `desktop:package` 生成本机验收包，它会记录源码 dirty 状态但不会伪装成社区发行。获准发布后，GitHub Tag 矩阵统一调用门禁更严格的 `package:community`。前面的独立命令用于缩短定位反馈，只报告实际运行过的结果。

@@ -31,17 +31,17 @@
 日常修改运行与范围匹配的检查。发行相关或跨边界变更至少执行：
 
 ```bash
-corepack pnpm@11.7.0 verify
-corepack pnpm@11.7.0 test:e2e
-corepack pnpm@11.7.0 runtime:smoke
+corepack pnpm@11.24.0 verify
+corepack pnpm@11.24.0 test:e2e
+corepack pnpm@11.24.0 runtime:smoke
 ```
 
 配置和 Runtime 来源变更还应执行：
 
 ```bash
-corepack pnpm@11.7.0 app:sync --check
-corepack pnpm@11.7.0 runtime:sync --check
-corepack pnpm@11.7.0 release:smoke
+corepack pnpm@11.24.0 app:sync --check
+corepack pnpm@11.24.0 runtime:sync --check
+corepack pnpm@11.24.0 release:smoke
 ```
 
 只报告实际执行过的验证。当前机器不能替代其他操作系统的真机安装与运行结论。

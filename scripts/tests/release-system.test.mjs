@@ -32,7 +32,7 @@ const releaseToolchain = Object.freeze({
   nodeVersion: "24.20.0",
   nodeModuleAbi: "137",
   rustVersion: "1.98.0",
-  pnpmVersion: "11.7.0",
+  pnpmVersion: "11.24.0",
   tauriCliVersion: "2.11.4"
 });
 
@@ -351,7 +351,7 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
   await writeFile(join(directory, "runtime", "toolchain-lock.json"), `${JSON.stringify({
     node: { version: process.versions.node, moduleAbi: process.versions.modules },
     runtimeSource: { repository: runtimeRepository, ref: "v1.0.0", commit: runtimeCommit },
-    toolchain: { rust: "1.98.0", pnpm: "11.7.0" }
+    toolchain: { rust: "1.98.0", pnpm: "11.24.0" }
   })}\n`);
   await writeFile(join(directory, "target", "generated", "app-config.json"), "{}\n");
   await writeFile(join(directory, "target", "generated", "tauri.conf.json"), "{}\n");

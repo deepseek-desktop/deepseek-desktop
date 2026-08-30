@@ -28,7 +28,7 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 模型密钥会加密保存在本机，不进入日志、诊断包或浏览器存储。完整安装、配置和故障排查说明见[中文使用文档](docs/zh-CN/getting-started.md)。
 
-联网搜索默认“跟随当前模型”：Runtime 根据当前会话 Provider 声明的标准搜索协议，复用该 Provider 已保存的 API 地址、模型和凭据引用，不要求再次输入搜索密钥。切换模型后，下一次搜索会立即跟随新的 Provider；未声明搜索能力的自定义接口会明确提示，不会盲目试探协议或把密钥发送到其他服务。协议声明与扩展方式见[跟随当前模型的联网搜索](docs/zh-CN/runtime-web-search.md)。
+联网搜索默认“跟随当前模型”：用户仍按原流程配置模型 Provider，不需要选择联网搜索协议或重复输入搜索密钥。Runtime 会根据当前会话模型的 API 协议自动匹配标准搜索协议，并复用该 Provider 已保存的地址、模型和凭据引用；切换模型后，下一次搜索立即跟随新的 Provider。无法可靠识别的非标准接口会明确提示，不会盲目试探协议或把密钥发送到其他服务。协议映射与扩展方式见[跟随当前模型的联网搜索](docs/zh-CN/runtime-web-search.md)。
 
 ### macOS 提示“Apple 无法验证”怎么办
 
@@ -81,7 +81,7 @@ Rust Runtime 管理器
 ## 工具链
 
 - Node.js `24.20.0`
-- pnpm `11.7.0`
+- pnpm `11.24.0`
 - Rust `1.98.0`
 - Tauri CLI `2.11.4`
 - 本地开发默认选择 Harness 仓库最新的 SemVer 标签；社区版和正式发布只接受仓库内经过审计的固定提交
@@ -93,13 +93,13 @@ Rust Runtime 管理器
 ```bash
 git clone git@github.com:deepseek-desktop/deepseek-desktop.git
 cd deepseek-desktop
-corepack pnpm@11.7.0 install --frozen-lockfile
-corepack pnpm@11.7.0 app:sync
-corepack pnpm@11.7.0 runtime:sync
-corepack pnpm@11.7.0 verify
-corepack pnpm@11.7.0 test:e2e
-corepack pnpm@11.7.0 runtime:smoke
-corepack pnpm@11.7.0 tauri:dev
+corepack pnpm@11.24.0 install --frozen-lockfile
+corepack pnpm@11.24.0 app:sync
+corepack pnpm@11.24.0 runtime:sync
+corepack pnpm@11.24.0 verify
+corepack pnpm@11.24.0 test:e2e
+corepack pnpm@11.24.0 runtime:smoke
+corepack pnpm@11.24.0 tauri:dev
 ```
 
 `runtime/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Runtime 来源。`RUNTIME_REF` 留空时，本地 `runtime:sync` 自动选择仓库中最新的 SemVer 版本标签；显式填写时则使用指定 tag、commit 或开发分支。两种方式都会解析并锁定不可变 commit，并把请求 ref、最终 ref、commit、动态 CLI 入口和 Runtime 哈希写入不提交 Git 的 `target/generated/runtime-lock.json`。社区版和正式发布额外要求解析结果匹配 `runtime/toolchain-lock.json` 中经过审计的固定仓库与提交；上游出现新版本时必须先复核并更新固定来源，不能在无人审查时自动改变安装包内容。Runtime staging 只消费该生成 lock，并且只保留当前原生目标。
@@ -115,7 +115,7 @@ staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存�
 在仓库根目录执行：
 
 ```bash
-corepack pnpm@11.7.0 package:community
+corepack pnpm@11.24.0 package:community
 ```
 
 该命令会安装固定依赖及锁定版本所需的 Chromium Headless Shell，执行应用配置与 Runtime 同步、社区版发布门禁、单元测试、端到端测试、Runtime 校验和 smoke，并构建当前操作系统与架构的安装包。最终文件写入 `release/<version>/<target>/`，同时生成目标平台对应的内部 `BUILD-INFO.<target>.json` 和 `SHA256SUMS`。打包结束前还会扫描实际交付闭包，阻断 `.env`、本机绝对路径、真实凭据、私钥及逃逸符号链接。macOS 安装包由 Tauri 生成 `.app` 后直接通过 `hdiutil` 创建，不依赖 Finder 或 AppleScript。
@@ -123,7 +123,7 @@ corepack pnpm@11.7.0 package:community
 制作不要求干净 Git 工作区的本地定制包时使用：
 
 ```bash
-corepack pnpm@11.7.0 desktop:package
+corepack pnpm@11.24.0 desktop:package
 ```
 
 可复制 `.env.example` 为 `.env` 来定制应用元数据和 Runtime 来源。配置优先级为“命令行环境变量 > `.env` > 内置默认值”；`.env` 不会进入 Runtime、安装包、诊断包或发布目录。`RUNTIME_REF` 默认留空，本地开发会自动选择最新版本标签；社区版和正式发布仍受仓库内固定 Runtime 来源约束。`DESKTOP_APP_REPOSITORY` 默认留空：GitHub Actions 使用当前工作流仓库地址，本地开发读取公开的 Git `origin`；若 `origin` 只是本机路径，则继续读取 `package.json` 或项目内置仓库地址。作者和仓库地址会显示在关于页，仓库地址可直接用系统浏览器打开。

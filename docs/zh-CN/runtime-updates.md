@@ -35,7 +35,7 @@ RUNTIME_UPDATE_PUBLIC_KEY=<Ed25519 原始 32 字节公钥的 Base64>
 签名私钥不得提交 Git、写入 `.env`、复制到构建产物或放在公开 Worker。先在安全位置生成一次 Ed25519 密钥；下面命令的默认私钥路径位于被忽略的 `target/`，仅适合本地验证：
 
 ```bash
-corepack pnpm@11.7.0 runtime:update:keygen
+corepack pnpm@11.24.0 runtime:update:keygen
 ```
 
 把命令输出的 `RUNTIME_UPDATE_PUBLIC_KEY` 固化到下一次桌面发行配置中。正式私钥应由发布维护者保存在权限受限的外部路径、密码管理系统或签名服务中。
@@ -43,7 +43,7 @@ corepack pnpm@11.7.0 runtime:update:keygen
 四类受信任原生节点在同一个干净 Desktop commit 上分别执行：
 
 ```bash
-corepack pnpm@11.7.0 runtime:update:package -- \
+corepack pnpm@11.24.0 runtime:update:package -- \
   --output /shared/releases/runtime/1.0.0
 ```
 
@@ -52,7 +52,7 @@ Worker 自动识别 macOS arm64、macOS x64、Windows x64 或 Linux x64，只生
 四个平台描述和制品齐全后，发布维护者签名统一清单：
 
 ```bash
-corepack pnpm@11.7.0 runtime:update:manifest -- \
+corepack pnpm@11.24.0 runtime:update:manifest -- \
   --directory /shared/releases/runtime/1.0.0 \
   --signing-key /secure/runtime-update-signing-key.pem \
   --minimum-desktop 1.0.0 \

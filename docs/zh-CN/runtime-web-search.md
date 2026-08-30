@@ -1,6 +1,6 @@
 # 跟随当前模型的联网搜索
 
-DeepSeek Desktop 内置的 Harness Runtime 默认启用“跟随当前模型”联网搜索。普通用户只需要按现有方式配置模型 Provider、API 地址、密钥和模型；模型调用 `web_search` 时，Runtime 会读取当前会话实际使用的 Provider，并复用它的地址、模型和凭据引用，不需要再填写一份搜索密钥。
+DeepSeek Desktop 内置的 Harness Runtime 默认启用“跟随当前模型”联网搜索。普通用户只需要按现有方式配置模型 Provider、API 地址、密钥和模型，不需要在 Provider 表单中选择联网搜索协议；模型调用 `web_search` 时，Runtime 会读取当前会话实际使用的 Provider，自动匹配标准搜索协议，并复用它的地址、模型和凭据引用。
 
 切换会话模型后，下一次搜索会立即跟随新的 Provider。搜索失败只会结束本次工具调用，不影响继续使用当前模型对话。
 
@@ -8,14 +8,15 @@ DeepSeek Desktop 内置的 Harness Runtime 默认启用“跟随当前模型”�
 
 ## 能力边界
 
-联网搜索不会根据 Provider 名称、域名或厂商身份猜测协议。Runtime 只接受以下可信信息：
+联网搜索不会根据 Provider 名称、域名或厂商身份猜测协议。Runtime 按以下顺序确定能力：
 
-- Provider 显式声明的搜索能力；
+- Provider 或配置文件显式声明的搜索能力，作为高级覆盖；
+- 当前模型 API 协议对应的内置标准映射；
 - 标准协议能力发现；
 - MCP `tools/list` 返回的工具；
 - 经过完整性验证的兼容性元数据。
 
-完全未知的自定义 API 不会被连续发送不同请求来试探能力。这样可以避免重复计费、意外泄漏查询内容或把凭据发送到错误服务。Provider 未声明搜索能力时，界面会明确提示；用户仍可正常对话。
+完全未知的自定义 API 不会被连续发送不同请求来试探能力。这样可以避免重复计费、意外泄漏查询内容或把凭据发送到错误服务。无法自动匹配时会给出明确提示；用户仍可正常对话。
 
 设置页提供三种模式：
 
@@ -23,9 +24,17 @@ DeepSeek Desktop 内置的 Harness Runtime 默认启用“跟随当前模型”�
 - **禁用联网搜索**：不注册可用搜索路由；
 - **独立搜索服务**：显式选择单独配置的搜索 Provider，不会复用或转发当前模型的密钥。
 
-## Provider 能力声明
+## 自动映射与高级覆盖
 
-Provider 通过协议和能力元数据声明搜索支持。例如：
+普通用户不需要填写下面的配置。Runtime 当前自动映射：
+
+| 模型 API 协议 | 联网搜索协议 |
+| --- | --- |
+| `openai-responses` | `openai-responses-web-search` |
+| `openai-completions` | `openai-chat-completions-search` |
+| `anthropic-messages` | `anthropic-messages-web-search` |
+
+Provider 开发者或非标准接口可以通过配置文件显式覆盖自动映射。例如：
 
 ```yaml
 apiProtocol: openai-chat-completions
@@ -47,7 +56,7 @@ capabilities:
 
 `enable_search` 等非标准字段只能放在 Provider 的显式协议扩展声明中。扩展字段只允许有限数量的短标量值，不能覆盖模型、查询、工具或凭据等保留字段，也不能包含可执行代码或表达式。
 
-内置 Provider 可以在自己的适配器中给出经过审计的默认能力；自定义地址不会继承与其来源无关的默认能力。真实第三方服务仅用于可选兼容性验证，不进入核心路由、默认配置或厂商判断。
+内置 Provider 可以在自己的适配器中给出经过审计的能力；自定义地址只按模型 API 协议使用对应的标准映射，不会继承与其来源无关的厂商能力。真实第三方服务仅用于可选兼容性验证，不进入核心路由、默认配置或厂商判断。
 
 ## 第三方协议扩展
 

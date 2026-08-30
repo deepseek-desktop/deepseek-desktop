@@ -12,11 +12,16 @@ const MAX_REQUEST_FIELDS = 16;
 const PROTOCOL_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
 const REQUEST_FIELD = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+const DEFAULT_PROTOCOL_BY_MODEL_API = new Map([
+  ["openai-responses", "openai-responses-web-search"],
+  ["openai-completions", "openai-chat-completions-search"],
+  ["anthropic-messages", "anthropic-messages-web-search"],
+]);
 
 const messages = {
   "en-US": {
     routeMissing: "The current model route is unavailable, so web search cannot follow it.",
-    capabilityMissing: "The current model Provider does not declare web search capability.",
+    capabilityMissing: "The current model API protocol does not support automatic web search. Normal chat remains available.",
     protocolUnavailable: "The current model Provider declares a web search protocol that is unavailable in this Runtime.",
     credentialMissing: "The current model Provider credential is not configured. Save that Provider's API key in Models settings.",
     requestCanceled: "The current model Provider web search request was canceled. Normal chat remains available.",
@@ -28,7 +33,7 @@ const messages = {
   },
   "zh-CN": {
     routeMissing: "当前会话没有可用的模型路由，无法跟随当前模型联网搜索。",
-    capabilityMissing: "当前模型提供方未声明联网搜索能力。请在提供方高级设置中选择其支持的标准搜索协议。",
+    capabilityMissing: "当前模型的 API 协议暂不支持自动联网搜索，正常对话仍可继续。",
     protocolUnavailable: "当前模型提供方声明的联网搜索协议在此 Runtime 中不可用。",
     credentialMissing: "当前模型提供方的凭据尚未配置，请在模型设置中保存该提供方的 API 密钥。",
     requestCanceled: "当前模型提供方的联网搜索请求已取消，正常对话仍可继续。",
@@ -40,7 +45,7 @@ const messages = {
   },
   "zh-TW": {
     routeMissing: "目前工作階段沒有可用的模型路由，無法跟隨目前模型進行聯網搜尋。",
-    capabilityMissing: "目前模型提供方未宣告聯網搜尋能力。請在提供方進階設定中選擇其支援的標準搜尋協定。",
+    capabilityMissing: "目前模型的 API 協定暫不支援自動聯網搜尋，正常對話仍可繼續。",
     protocolUnavailable: "目前模型提供方宣告的聯網搜尋協定在此 Runtime 中無法使用。",
     credentialMissing: "目前模型提供方的憑據尚未設定，請在模型設定中儲存該提供方的 API 金鑰。",
     requestCanceled: "目前模型提供方的聯網搜尋請求已取消，正常對話仍可繼續。",
@@ -462,7 +467,11 @@ export class FollowModelSearchEngine {
     if (route.provider !== selection.provider || route.model !== selection.model) {
       fail("The model adapter returned a web search route for a different Provider or model.", "WEB_FOLLOW_MODEL_ROUTE_MISMATCH");
     }
-    const capability = route.webSearch;
+    const inferredProtocol = DEFAULT_PROTOCOL_BY_MODEL_API.get(route.apiProtocol);
+    const capability = route.webSearch ?? (inferredProtocol === undefined ? undefined : {
+      protocol: inferredProtocol,
+      credential: "inherit",
+    });
     if (typeof route.endpoint !== "string" || route.endpoint.length === 0 || typeof capability?.protocol !== "string") {
       fail(`The current Provider "${selection.provider}" has an invalid web search capability declaration.`, "WEB_FOLLOW_MODEL_CAPABILITY_INVALID");
     }
