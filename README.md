@@ -36,10 +36,22 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 **普通用户：**
 
-1. 将 `DeepSeek Desktop.app` 拖入“应用程序”目录。
-2. 在“访达 → 应用程序”中找到 DeepSeek Desktop，按住 `Control` 点击或右键点击应用，选择“打开”。
-3. 在再次出现的确认框中选择“打开”。完成一次确认后，后续可正常双击启动。
-4. 如果确认框中仍没有“打开”，先点“完成”，再进入“系统设置 → 隐私与安全”，在“安全性”区域找到被阻止的 DeepSeek Desktop，点击“仍要打开”并完成系统验证。
+1. 将 `DeepSeek Desktop.app` 拖入“应用程序”目录，然后尝试启动。
+2. 如果出现下图所示提示，请先确认安装包来自本项目 GitHub Releases，并已核对 `SHA256SUMS`。确认无误后点击“完成”，**不要点击“移到废纸篓”**。
+
+<p align="center">
+  <img src="docs/assets/macos-unverified-app-warning.png" alt="macOS 无法验证 DeepSeek Desktop 的提示" width="420">
+</p>
+
+3. 打开“系统设置 → 隐私与安全”，向下滚动到“安全性”区域。找到“已阻止 DeepSeek Desktop.app 以保护 Mac”，点击右侧的“仍要打开”。
+
+<p align="center">
+  <img src="docs/assets/macos-privacy-security-open-anyway.png" alt="在 macOS 隐私与安全设置中点击仍要打开" width="900">
+</p>
+
+4. 按系统提示使用登录密码或 Touch ID 完成验证；如果随后再次出现确认框，请选择“打开”。这项确认通常只需完成一次，之后可从“应用程序”目录正常双击启动。
+
+如果“仍要打开”没有出现，请重新启动一次 DeepSeek Desktop 触发拦截，再立即返回“系统设置 → 隐私与安全”查看。较旧版本的 macOS 可在“系统偏好设置 → 安全性与隐私 → 通用”中找到同类入口。
 
 **开发者：**确认安装包来源和 SHA-256 无误后，按以下两步操作。
 
