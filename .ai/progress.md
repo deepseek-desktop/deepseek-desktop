@@ -4,12 +4,12 @@
 - Runtime Supervisor 支持独立运行目录、随机端口、浏览器令牌换取会话 Cookie、带认证的 readiness、有限恢复、主动停止和进程树清理；旧版无令牌 Runtime 保持兼容，仅 Runtime 制品、进程退出或启动健康失败触发回滚，配置、凭据和权限错误保持原版本并给出明确诊断。
 - Desktop 首次启动无需选择目录；项目目录、会话和文件边界由 Runtime 工作台自行管理。支持模型 Provider 配置、模型切换、对话、文件操作和插件市场。
 - 使用跨平台本地加密凭据库，具备短期会话授权、记录枚举、失败回滚和旧明文索引迁移。
-- 提供三语界面、诊断脱敏导出、设置恢复、关于页与社区版更新边界；Runtime 启动令牌不会进入公开状态或导出日志，Runtime 更新默认采用“发现后提醒”。
+- 提供三语界面、诊断脱敏导出、设置恢复、关于页与社区版更新边界；Runtime 启动令牌不会进入公开状态或导出日志，Runtime 更新默认采用“发现后提醒”。诊断脱敏同时覆盖 `HOME`、`USERPROFILE` 和 `HOMEDRIVE` + `HOMEPATH`，Windows 导出不再泄漏用户目录路径。
 - 建立统一应用配置、Runtime 来源同步、不可变发布 pin、工具链校验和一键平台打包链路。
 - Runtime 已同步到官方 `0.1.2-alpha.1`（`cd5ef8148158`），新版部署根包名、桌面补丁及 HTTP Web Fetch 运行时闭包均已适配。
 - OpenAI Responses 兼容流在最终事件中会覆盖暂态工具 ID、名称、参数和 namespace，避免第三方兼容接口把 `glob` 等调用错误派发为 `read` 并产生缺少 `file_path` 的假错误。
 - Runtime 内置并默认启用 `@deepseek-ai/dsh-web-search-follow-model`：联网搜索绑定当前会话实际模型路由，通过 Provider 能力声明选择标准协议，安全复用 endpoint、model 和 `CredentialRef`；Provider 与外层工具分别使用 90 秒和 100 秒预算，取消和超时提示互相独立，模型切换与多会话不会串路由，未知 Provider 不盲探测，搜索失败不改变正常对话能力。
-- 工作台外部网页链接与新窗口请求优先由 Desktop 壳转交系统默认浏览器，失败时回退 WebView；受管 Runtime 页面和其他原生导航行为保持可用，桌面壳只隔离 Tauri 权限而不削减网页能力。
+- 工作台外部网页链接与新窗口请求优先由 Desktop 壳转交系统默认浏览器，失败时回退 WebView；受管 Runtime 页面和其他原生导航行为保持可用，桌面壳只隔离 Tauri 权限而不削减网页能力。判定读取当前受管 Origin，Runtime 重启换端口后自动跟随，未就绪期间拒绝 HTTP/HTTPS 导航而不外发带令牌地址。
 - 原生窗口标题读取构建注入的真实桌面版本，并统一使用单个 `v` 前缀，方便问题反馈定位。
 - 窗口恢复会先验证保存坐标是否仍落在已连接显示器；外接屏仍在线时保留原位置，断开后自动回到主显示器，避免应用运行但窗口位于屏幕外。
 - 正式发行统一由 GitHub Actions 官方托管 Runner 原生构建：完整 SemVer Tag 触发 macOS ARM64、macOS x64、Windows x64 和 Linux x64 矩阵，四目标全部成功后才创建 Release。
@@ -20,7 +20,7 @@
 - Runtime 正式启动、候选更新 smoke 和打包 smoke 统一在加载实时配置 profile 前启用 Node 内部模块访问，避免新目标闭包因 HMR 启动契约不一致失败，同时保持原生 Runtime 的实时重载体验。
 - 工具链锁统一要求四个平台使用 Node `24.20.0` / ABI `137`；各官方 Runner 在打包前验证实际版本，缓存与内部 BUILD-INFO 同时绑定目标 triple 和工具链身份。
 - `.ai/skills/release-workflow.md` 是 Agent 唯一发布运行手册，固化本地前置门禁、不可变 SemVer Tag、四平台 job 诊断、新 Tag 恢复以及 Release 资产与 SHA-256 验收。
-- 已建立 Runtime 独立更新协议：四平台原生生产闭包、Ed25519 签名清单、清单有效期与反回放、流式下载、兼容性与包版本验证、受限解压、真实服务启动 smoke、原子切换、上一版回滚、内置基线恢复和无引用旧版本清理。
+- 已建立 Runtime 独立更新协议：四平台原生生产闭包、Ed25519 签名清单、清单有效期与反回放、流式下载、兼容性与包版本验证、受限解压、真实服务启动 smoke、原子切换、上一版回滚、内置基线恢复和无引用旧版本清理。反回放接受记录在暂存成功后写入、随内置基线恢复清除；启动激活在后台线程执行并对外发布 `applying`；启动失败回滚等待更新操作锁，不会因自动检查占锁而跳过。
 - 本地打包和 CI 原生矩阵均扫描实际交付闭包，拒绝 `.env`、密钥、本机绝对路径及符号链接泄漏；CI 第三方 Action 使用不可变 commit。
 - CI 的 `NO_STRIP` 仅允许出现在 Linux AppImage 打包步骤；macOS 与 Windows 不继承该变量。制品扫描协议 v2 允许 AppImage 根目录内的可移植相对链接，同时拒绝绝对链接、根外逃逸和循环；CI 使用项目工作区与 Runner 临时目录等精确根路径。PEM 私钥检查覆盖 UTF-8/UTF-16 文本，不误判 `libgnutls` 等系统库内置的公开自检向量；二进制仍扫描令牌和本机路径。
 - `v1.0.3` 已由 GitHub 原生矩阵完成 macOS ARM64、macOS x64、Windows x64、Linux x64 打包并发布社区预发行版；Release 仅包含五个安装制品和一份 `SHA256SUMS`，校验清单与托管制品摘要逐项一致。

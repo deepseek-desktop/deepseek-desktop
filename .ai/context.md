@@ -17,6 +17,8 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 模型凭据保存在跨平台本地加密凭据库中，不使用系统钥匙串，也不降级为 `.env` 或明文文件。
 - 联网搜索默认跟随当前会话模型 Provider，通过显式 `capabilities.webSearch` 协议声明复用该 Provider 的 endpoint、model 和 `CredentialRef`；Provider 请求使用 90 秒预算，外层工具使用 100 秒预算并区分取消与超时；核心路由不识别厂商、域名或 Provider ID，未知接口不盲试协议，也不跨 Provider 传递凭据。
 - Desktop 仅承载并隔离 Runtime 工作台，不改写页面交互：受管 loopback 页面在内嵌 WebView 中正常导航，外部 HTTP/HTTPS 链接优先交给系统默认浏览器，打开失败或其他原生导航行为由 WebView 继续处理。
+- 导航判定按当前受管 Origin 实时进行，不使用 WebView 创建时的快照；Runtime 未就绪期间没有可信 Origin，HTTP/HTTPS 导航一律拒绝而不转交系统浏览器，避免把带令牌的 loopback 地址交给外部程序。
+- Runtime 进程以 `--expose-internals` 启动：这是 Harness 插件加载器与 HMR 的硬性契约，同时意味着 Runtime 内所有代码（含第三方市场插件）都能访问 Node 内部模块，属于已知且被接受的边界放宽。
 - 加密凭据库主要防止意外明文泄漏；它不承诺抵御已经取得同一操作系统用户权限的恶意进程。
 - 社区版默认关闭桌面安装包自动更新；Runtime 独立更新默认采用“发现后提醒”，且只有在构建时配置可信 Ed25519 清单、公钥和发布者后才启用，二者不共用信任边界。
 - 正式四平台发行统一由 GitHub Actions 官方托管 Runner 原生构建：Pull Request 与 `master` 只做质量检查，完整 SemVer Tag 才进入 macOS ARM64/x64、Windows x64、Linux x64 矩阵。
@@ -24,6 +26,9 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 本机只执行源码验证、E2E、Runtime smoke 和当前 macOS 架构打包/启动测试；不以 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 作为正式发布前提。
 - 四平台统一使用工具链 lock 中的 Node `24.20.0` / ABI `137`，Runner 不得依赖全局版本漂移；内部 BUILD-INFO 用于矩阵汇总核验但不公开发布。
 - Runtime 更新只写入应用数据目录，执行签名与兼容校验、受限解压、启动 smoke、原子切换和自动回滚；安装包内置 Runtime 始终作为最终恢复基线。
+- 清单反回放在检查阶段只做校验，接受记录直到制品真正暂存成功才落盘；「恢复内置 Runtime」同时清除接受历史，使撤回后同版本换 commit 重新签发仍可安装。
+- 待安装 Runtime 的激活 smoke 与自动检查在后台线程串行执行，不占用驱动窗口的线程；激活期间对外发布 `applying` 状态。
+- 签名清单请求使用 30 秒预算，与制品下载的 20 分钟预算分离，避免更新服务停滞长时间占用更新操作锁。
 
 ## 版本基线
 
