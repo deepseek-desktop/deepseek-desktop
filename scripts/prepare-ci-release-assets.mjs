@@ -43,8 +43,54 @@ function parseChecksums(text) {
   return checksums;
 }
 
-function sameIdentity(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+// The Runtime closure digest is host-specific — native prebuilds are compiled by
+// the building platform — so the four targets legitimately report different
+// `harness.sha256`. Each BUILD-INFO still carries its own digest; it just cannot
+// be a cross-platform equality invariant. Everything else that proves "one release
+// from one source" is compared exactly.
+const IDENTITY_FIELDS = new Map([
+  ["application", null],
+  ["harness", new Set(["sha256"])],
+  ["toolchain", null],
+  ["signed", null]
+]);
+
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableValue(value[key])]));
+  }
+  return value;
+}
+
+function releaseIdentityOf(buildInfo) {
+  const identity = {};
+  for (const [field, hostSpecific] of IDENTITY_FIELDS) {
+    const value = buildInfo[field];
+    identity[field] = hostSpecific && value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).filter(([key]) => !hostSpecific.has(key)))
+      : value;
+  }
+  return stableValue(identity);
+}
+
+// Returns the dotted path of the first field that differs, so a failed aggregation
+// is diagnosable from the log instead of by downloading every platform artifact.
+function identityMismatch(left, right) {
+  for (const field of Object.keys(left)) {
+    if (JSON.stringify(left[field]) === JSON.stringify(right[field])) continue;
+    const from = left[field];
+    const to = right[field];
+    if (from && to && typeof from === "object" && typeof to === "object") {
+      for (const key of [...new Set([...Object.keys(from), ...Object.keys(to)])].sort()) {
+        if (JSON.stringify(from[key]) !== JSON.stringify(to[key])) {
+          return `${field}.${key} (${JSON.stringify(from[key])} != ${JSON.stringify(to[key])})`;
+        }
+      }
+    }
+    return field;
+  }
+  return null;
 }
 
 export async function prepareCiReleaseAssets({ inputRoot, outputRoot, version, commit, toolchainLock }) {
@@ -84,14 +130,10 @@ export async function prepareCiReleaseAssets({ inputRoot, outputRoot, version, c
       throw new Error(`release artifact audit is invalid for ${buildInfo.target}`);
     }
 
-    const identity = {
-      application: buildInfo.application,
-      harness: buildInfo.harness,
-      toolchain: buildInfo.toolchain,
-      signed: buildInfo.signed
-    };
+    const identity = releaseIdentityOf(buildInfo);
     releaseIdentity ??= identity;
-    if (!sameIdentity(releaseIdentity, identity)) throw new Error(`release identity mismatch for ${buildInfo.target}`);
+    const mismatch = identityMismatch(releaseIdentity, identity);
+    if (mismatch) throw new Error(`release identity mismatch for ${buildInfo.target}: ${mismatch}`);
 
     const directory = dirname(buildInfoPath);
     const targetFiles = allFiles.filter(path => dirname(path) === directory);

@@ -72,6 +72,47 @@ test("prepares exactly five public installers and one aggregate checksum file", 
   assert.doesNotMatch(await readFile(result.checksums, "utf8"), /BUILD-INFO/u);
 });
 
+test("accepts platform-specific Runtime closure digests", async t => {
+  const root = await mkdtemp(join(tmpdir(), "deepseek-ci-release-closure-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await fixture(root, (buildInfo, target) => ({
+    ...buildInfo,
+    harness: { ...buildInfo.harness, sha256: `closure-${target}` }
+  }));
+  const result = await prepareCiReleaseAssets({
+    inputRoot: root,
+    outputRoot: join(root, "publish"),
+    version,
+    commit,
+    toolchainLock
+  });
+  assert.equal(result.installers.length, 5);
+});
+
+test("rejects a target built from another Runtime commit", async t => {
+  const root = await mkdtemp(join(tmpdir(), "deepseek-ci-release-runtime-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await fixture(root, (buildInfo, target) => target === "x86_64-apple-darwin"
+    ? { ...buildInfo, harness: { ...buildInfo.harness, commit: "another-runtime-commit" } }
+    : buildInfo);
+  await assert.rejects(
+    prepareCiReleaseAssets({ inputRoot: root, outputRoot: join(root, "publish"), version, commit, toolchainLock }),
+    /release identity mismatch for x86_64-apple-darwin: harness\.commit/u
+  );
+});
+
+test("rejects a target built with another toolchain identity", async t => {
+  const root = await mkdtemp(join(tmpdir(), "deepseek-ci-release-identity-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await fixture(root, (buildInfo, target) => target === "x86_64-unknown-linux-gnu"
+    ? { ...buildInfo, application: { ...buildInfo.application, productName: "Other Desktop" } }
+    : buildInfo);
+  await assert.rejects(
+    prepareCiReleaseAssets({ inputRoot: root, outputRoot: join(root, "publish"), version, commit, toolchainLock }),
+    /release identity mismatch for x86_64-unknown-linux-gnu: application\.productName/u
+  );
+});
+
 test("rejects a target built from another Desktop commit", async t => {
   const root = await mkdtemp(join(tmpdir(), "deepseek-ci-release-source-"));
   t.after(() => rm(root, { recursive: true, force: true }));
