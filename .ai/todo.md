@@ -10,6 +10,6 @@
 ## 平台验证
 
 - Linux x64 仍需在真实发行环境完成安装、启动、Runtime、凭据、插件和对话验收后，才能声明平台完整可用。
-- 下一个明确授权的正式版本需由 GitHub Actions 官方 Runner 完成 macOS ARM64/x64、Windows x64 和 Linux x64 原生矩阵，并在发布后核验 5 个安装包与 `SHA256SUMS`。
+- `v1.0.16` 起 GitHub Release 不再自动标记 prerelease：该标记只由 SemVer prerelease 段决定，而社区版制品仍是未签名构建，因此未签名版本现在会显示为 Latest release。若希望它继续显示为预发行，需要在工作流中显式决定，而不是依赖版本号形态。
 
 当前没有已知阻塞本地社区版开发的代码问题。新发现的问题应先用源码和可复现证据确认，再加入本文件。
