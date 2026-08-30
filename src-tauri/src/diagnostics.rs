@@ -132,21 +132,50 @@ impl Diagnostics {
     }
 
     fn redact_paths(&self, value: &str) -> String {
-        let mut roots = vec![(
-            self.paths.data_dir.to_string_lossy().into_owned(),
-            "<data-dir-redacted>",
-        )];
-        if let Some(home) = std::env::var_os("HOME") {
-            roots.push((home.to_string_lossy().into_owned(), "<home-redacted>"));
-        }
-        roots.sort_by_key(|root| std::cmp::Reverse(root.0.len()));
-        roots
-            .into_iter()
-            .filter(|(path, _)| !path.is_empty())
-            .fold(value.to_owned(), |text, (path, placeholder)| {
-                text.replace(&path, placeholder)
-            })
+        redact_roots(
+            value,
+            &self.paths.data_dir.to_string_lossy(),
+            &home_directories(),
+        )
     }
+}
+
+fn redact_roots(value: &str, data_dir: &str, homes: &[String]) -> String {
+    let mut roots = vec![(data_dir, "<data-dir-redacted>")];
+    for home in homes {
+        roots.push((home.as_str(), "<home-redacted>"));
+    }
+    roots.sort_by_key(|root| std::cmp::Reverse(root.0.len()));
+    roots
+        .into_iter()
+        .filter(|(path, _)| !path.is_empty())
+        .fold(value.to_owned(), |text, (path, placeholder)| {
+            text.replace(path, placeholder)
+        })
+}
+
+/// Windows GUI processes carry the home directory in `USERPROFILE` (or the
+/// `HOMEDRIVE` + `HOMEPATH` pair) rather than `HOME`, so an export that only
+/// knows `HOME` ships `C:\Users\<name>\...` to whoever receives the bundle.
+fn home_directories() -> Vec<String> {
+    let mut roots = Vec::new();
+    for name in ["HOME", "USERPROFILE"] {
+        if let Some(value) = std::env::var_os(name) {
+            roots.push(value.to_string_lossy().into_owned());
+        }
+    }
+    if let (Some(drive), Some(path)) = (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH"))
+    {
+        roots.push(format!(
+            "{}{}",
+            drive.to_string_lossy(),
+            path.to_string_lossy()
+        ));
+    }
+    roots.retain(|root| !root.is_empty());
+    roots.sort();
+    roots.dedup();
+    roots
 }
 
 #[derive(Serialize)]
@@ -271,6 +300,19 @@ mod tests {
             redact("dsh web: http://127.0.0.1:43127/?token=<redacted>"),
             "dsh web: http://127.0.0.1:43127/?token=<redacted>"
         );
+    }
+
+    #[test]
+    fn redacts_windows_user_profile_paths() {
+        let homes = ["C:\\Users\\zhang".to_owned()];
+        let redacted = redact_roots(
+            "runtime=C:\\Users\\zhang\\AppData\\Roaming\\deepseek.desktop\\logs; project=C:\\Users\\zhang\\work",
+            "C:\\Users\\zhang\\AppData\\Roaming\\deepseek.desktop",
+            &homes,
+        );
+        assert!(!redacted.contains("zhang"), "{redacted}");
+        assert!(redacted.contains("<data-dir-redacted>\\logs"), "{redacted}");
+        assert!(redacted.contains("<home-redacted>\\work"), "{redacted}");
     }
 
     #[test]
