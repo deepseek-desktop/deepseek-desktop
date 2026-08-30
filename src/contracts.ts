@@ -21,7 +21,7 @@ export interface DesktopSettings {
   recoveryReason?: "corrupt" | "future" | null;
 }
 
-export type RuntimeUpdatePhase = "disabled" | "idle" | "checking" | "available" | "downloading" | "staged" | "applied" | "failed" | "rolled-back" | "pinned";
+export type RuntimeUpdatePhase = "disabled" | "idle" | "checking" | "available" | "downloading" | "staged" | "applying" | "applied" | "failed" | "rolled-back" | "pinned";
 
 export interface RuntimeUpdateStatus {
   enabled: boolean;

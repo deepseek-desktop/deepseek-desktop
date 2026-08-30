@@ -29,6 +29,10 @@ const ARCHIVE_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
 const EXTRACTED_LIMIT: u64 = 4 * 1024 * 1024 * 1024;
 const ENTRY_LIMIT: usize = 100_000;
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+/// The signed manifest is capped at `MANIFEST_LIMIT`, so it must not inherit the
+/// multi-gigabyte artifact budget: a stalled update host would otherwise hold the
+/// update operation lock — and block the user's own actions — for twenty minutes.
+const MANIFEST_TIMEOUT: Duration = Duration::from_secs(30);
 const SMOKE_TIMEOUT: Duration = Duration::from_secs(30);
 const MANIFEST_CLOCK_SKEW: chrono::TimeDelta = chrono::TimeDelta::minutes(15);
 
@@ -304,8 +308,16 @@ impl RuntimeStore {
         Ok(())
     }
 
-    fn accept_manifest(&self, payload: &RuntimeReleaseManifest) -> DesktopResult<()> {
-        let path = self.root.join(format!("accepted-{}.json", payload.channel));
+    fn accepted_manifest_path(&self, channel: &str) -> PathBuf {
+        self.root.join(format!("accepted-{channel}.json"))
+    }
+
+    /// Read-only half of the replay and downgrade gate. `check` runs it so a
+    /// replayed manifest never reaches a download, while the acceptance itself is
+    /// only recorded once an artifact has actually been staged — a manifest that
+    /// was merely looked at must not permanently bind the channel to its commit.
+    fn verify_manifest_acceptance(&self, payload: &RuntimeReleaseManifest) -> DesktopResult<()> {
+        let path = self.accepted_manifest_path(&payload.channel);
         let candidate_version = Version::parse(&payload.runtime_version).map_err(|error| {
             DesktopError::InvalidConfiguration(format!("Runtime version is invalid: {error}"))
         })?;
@@ -347,8 +359,13 @@ impl RuntimeStore {
                 ));
             }
         }
+        Ok(())
+    }
+
+    fn record_manifest_acceptance(&self, payload: &RuntimeReleaseManifest) -> DesktopResult<()> {
+        self.verify_manifest_acceptance(payload)?;
         write_json_atomic(
-            &path,
+            &self.accepted_manifest_path(&payload.channel),
             &AcceptedManifest {
                 schema_version: 1,
                 channel: payload.channel.clone(),
@@ -357,6 +374,24 @@ impl RuntimeStore {
                 runtime_commit: payload.runtime_commit.clone(),
             },
         )
+    }
+
+    /// Restoring the bundled baseline is the operator's recovery path, so it also
+    /// forgets the accepted history: a withdrawn release that has to be re-cut at
+    /// the same version with a different commit stays installable.
+    fn clear_accepted_manifests(&self) -> DesktopResult<()> {
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("accepted-")
+                && name.ends_with(".json")
+                && entry.file_type()?.is_file()
+            {
+                fs::remove_file(entry.path())?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -434,12 +469,18 @@ impl RuntimeUpdateManager {
         Ok(status)
     }
 
-    pub fn apply_pending_on_startup(&self) -> DesktopResult<RuntimeUpdateStatus> {
+    fn apply_pending_on_startup(&self) -> DesktopResult<RuntimeUpdateStatus> {
         let _operation = self.lock_operation()?;
         let settings = self.settings.get()?;
         if settings.runtime_pinned_version.is_some() {
             return self.publish(RuntimeUpdatePhase::Pinned, "pinned");
         }
+        // A pending pointer that cannot be read still has to reach activate_pending:
+        // that is the branch which quarantines it, so it does not fail every launch.
+        if matches!(read_pointer(&self.store.pending), Ok(None)) {
+            return self.status();
+        }
+        self.publish(RuntimeUpdatePhase::Applying, "applying")?;
         match self.store.activate_pending() {
             Ok(Some(pointer)) => {
                 self.diagnostics.append(
@@ -550,8 +591,13 @@ impl RuntimeUpdateManager {
                 return Err(error);
             }
         };
-        if let Err(error) = write_json_atomic(&self.store.pending, &pointer) {
+        if let Err(error) = self
+            .store
+            .record_manifest_acceptance(&release.payload)
+            .and_then(|()| write_json_atomic(&self.store.pending, &pointer))
+        {
             let _ = self.store.prune_versions();
+            self.publish(RuntimeUpdatePhase::Failed, "download-failed")?;
             return Err(error);
         }
         self.store.prune_versions()?;
@@ -566,22 +612,31 @@ impl RuntimeUpdateManager {
     pub fn restore_bundled(&self) -> DesktopResult<RuntimeUpdateStatus> {
         let _operation = self.lock_operation()?;
         self.store.restore_bundled()?;
+        self.store.clear_accepted_manifests()?;
+        *self.lock_available()? = None;
         self.diagnostics
             .append("runtime-update", "restored bundled Runtime baseline");
         self.publish(RuntimeUpdatePhase::RolledBack, "bundled-restored")
     }
 
-    pub fn rollback_after_start_failure(&self) -> DesktopResult<bool> {
-        let _operation = self.lock_operation()?;
-        self.rollback_after_start_failure_locked()
-    }
-
-    pub fn rollback_after_start_failure_wait(&self) -> DesktopResult<bool> {
+    /// Waits for the update operation lock instead of failing fast: an automatic
+    /// check or download can hold it for minutes, and skipping the rollback would
+    /// strand the user on a Runtime that cannot boot.
+    pub fn rollback_after_start_failure(&self) -> bool {
         let _operation = self
             .operation
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        self.rollback_after_start_failure_locked()
+        match self.rollback_after_start_failure_locked() {
+            Ok(rolled_back) => rolled_back,
+            Err(error) => {
+                self.diagnostics.append(
+                    "runtime-update",
+                    &format!("Runtime rollback after startup failure failed: {error}"),
+                );
+                false
+            }
+        }
     }
 
     fn rollback_after_start_failure_locked(&self) -> DesktopResult<bool> {
@@ -596,7 +651,24 @@ impl RuntimeUpdateManager {
         Ok(rolled_back)
     }
 
-    pub fn check_automatically(self: &Arc<Self>) {
+    /// Applying a staged Runtime runs the full candidate smoke — three child
+    /// processes plus a real local service boot — so it must never sit on the
+    /// thread that drives the window. The automatic check follows in the same
+    /// thread because both contend for the update operation lock.
+    pub fn start_startup_maintenance(self: &Arc<Self>) {
+        let manager = Arc::clone(self);
+        thread::spawn(move || {
+            if let Err(error) = manager.apply_pending_on_startup() {
+                manager.diagnostics.append(
+                    "runtime-update",
+                    &format!("startup Runtime activation failed: {error}"),
+                );
+            }
+            manager.check_automatically();
+        });
+    }
+
+    fn check_automatically(&self) {
         let settings = match self.settings.get() {
             Ok(settings) => settings,
             Err(_) => return,
@@ -604,17 +676,14 @@ impl RuntimeUpdateManager {
         if settings.runtime_update_mode == "manual" || settings.runtime_pinned_version.is_some() {
             return;
         }
-        let manager = Arc::clone(self);
-        thread::spawn(move || {
-            if manager.check().is_ok()
-                && manager.settings.get().is_ok_and(|current| {
-                    current.runtime_update_mode == "automatic"
-                        && current.runtime_pinned_version.is_none()
-                })
-            {
-                let _ = manager.download();
-            }
-        });
+        if self.check().is_ok()
+            && self.settings.get().is_ok_and(|current| {
+                current.runtime_update_mode == "automatic"
+                    && current.runtime_pinned_version.is_none()
+            })
+        {
+            let _ = self.download();
+        }
     }
 
     fn fetch_release(&self, channel: &str) -> DesktopResult<VerifiedRelease> {
@@ -641,7 +710,7 @@ impl RuntimeUpdateManager {
             ));
         }
         validate_artifact_url(&manifest_url, &artifact.url, &payload.allowed_origins)?;
-        self.store.accept_manifest(&payload)?;
+        self.store.verify_manifest_acceptance(&payload)?;
         Ok(VerifiedRelease {
             manifest_url,
             payload,
@@ -1230,7 +1299,7 @@ fn read_url_limited(url: &Url, limit: u64, expected_size: Option<u64>) -> Deskto
             Ok(fs::read(path)?)
         }
         "https" | "http" => {
-            let response = http_client()?
+            let response = http_client(MANIFEST_TIMEOUT)?
                 .get(url.clone())
                 .send()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
@@ -1302,7 +1371,7 @@ fn download_verified(
                 stream_to_file(File::open(path)?, &mut output, expected_size)?
             }
             "https" | "http" => {
-                let response = http_client()?
+                let response = http_client(DOWNLOAD_TIMEOUT)?
                     .get(url.clone())
                     .send()
                     .map_err(|error| DesktopError::Other(error.to_string()))?;
@@ -1375,10 +1444,10 @@ fn stream_to_file<R: Read>(
     Ok((written, format!("{:x}", digest.finalize())))
 }
 
-fn http_client() -> DesktopResult<Client> {
+fn http_client(timeout: Duration) -> DesktopResult<Client> {
     crate::runtime::install_crypto_provider()?;
     Client::builder()
-        .timeout(DOWNLOAD_TIMEOUT)
+        .timeout(timeout)
         .redirect(Policy::none())
         .user_agent(concat!(
             "DeepSeek-Desktop/",
@@ -1802,11 +1871,22 @@ mod tests {
             root,
         };
         let accepted = payload("stable", "1.2.0");
-        store.accept_manifest(&accepted).unwrap();
+        store.verify_manifest_acceptance(&accepted).unwrap();
+        assert!(
+            !store.accepted_manifest_path("stable").exists(),
+            "checking a manifest must not record it"
+        );
+        store.record_manifest_acceptance(&accepted).unwrap();
         let mut replay = payload("stable", "1.1.0");
         replay.issued_at = (now + chrono::TimeDelta::minutes(1)).to_rfc3339();
         replay.expires_at = (now + chrono::TimeDelta::hours(1)).to_rfc3339();
-        assert!(store.accept_manifest(&replay).is_err());
+        assert!(store.verify_manifest_acceptance(&replay).is_err());
+
+        let mut recut = payload("stable", "1.2.0");
+        recut.runtime_commit = "c".repeat(40);
+        assert!(store.verify_manifest_acceptance(&recut).is_err());
+        store.clear_accepted_manifests().unwrap();
+        store.verify_manifest_acceptance(&recut).unwrap();
     }
 
     #[test]

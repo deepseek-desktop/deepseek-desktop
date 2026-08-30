@@ -106,6 +106,7 @@ pub enum RuntimeUpdatePhase {
     Available,
     Downloading,
     Staged,
+    Applying,
     Applied,
     Failed,
     RolledBack,

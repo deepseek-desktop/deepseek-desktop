@@ -27,6 +27,11 @@ use crate::settings::{AppPaths, SettingsStore};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
 const RUNTIME_WORK_DIR_NAME: &str = concat!("runtime", "-workdir");
+/// Required, not optional hardening slack: the Harness plugin loader reaches the
+/// ESM cascaded loader through `internal/modules/esm/loader` and gates that on
+/// `process.execArgv.includes("--expose-internals")`, so dropping the flag breaks
+/// plugin loading and HMR outright. It widens Node's internal surface for
+/// everything the Runtime loads, third-party market plugins included.
 const NODE_EXPOSE_INTERNALS_ARGUMENT: &str = "--expose-internals";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
@@ -71,9 +76,36 @@ fn is_managed_runtime_origin(managed_origin: &Url, candidate: &Url) -> bool {
         && candidate.port_or_known_default() == managed_origin.port_or_known_default()
 }
 
-fn is_external_web_url(managed_origin: &Url, candidate: &Url) -> bool {
-    !is_managed_runtime_origin(managed_origin, candidate)
-        && matches!(candidate.scheme(), "http" | "https")
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Navigation {
+    Allow,
+    Deny,
+    External,
+}
+
+/// The Runtime binds a fresh random port on every start, so the managed origin is
+/// read at navigation time rather than captured when the workbench webview is
+/// built. While no Runtime is ready there is no origin to trust, and a web URL is
+/// denied outright — handing it to the system browser could publish a tokenized
+/// loopback URL that is about to become stale.
+fn classify_navigation(managed_origin: Option<&Url>, candidate: &Url) -> Navigation {
+    if !matches!(candidate.scheme(), "http" | "https") {
+        return Navigation::Allow;
+    }
+    match managed_origin {
+        Some(managed) if is_managed_runtime_origin(managed, candidate) => Navigation::Allow,
+        Some(_) => Navigation::External,
+        None => Navigation::Deny,
+    }
+}
+
+type ManagedOrigin = Arc<Mutex<Option<Url>>>;
+
+fn current_managed_origin(origin: &ManagedOrigin) -> Option<Url> {
+    origin
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
 }
 
 pub struct RuntimeSupervisor {
@@ -85,6 +117,7 @@ pub struct RuntimeSupervisor {
     runtime_updates: Arc<RuntimeUpdateManager>,
     operation: Mutex<()>,
     inner: Mutex<RuntimeInner>,
+    managed_origin: ManagedOrigin,
     workbench_visible: AtomicBool,
 }
 
@@ -125,6 +158,7 @@ impl RuntimeSupervisor {
                 browser_launch_url: None,
                 manual_stop: false,
             }),
+            managed_origin: Arc::new(Mutex::new(None)),
             workbench_visible: AtomicBool::new(false),
         });
         Self::start_monitor(&supervisor);
@@ -197,9 +231,9 @@ impl RuntimeSupervisor {
             self.emit_surface("workbench");
             return Ok(());
         }
-        let navigation_origin = url.clone();
+        let navigation_origin = Arc::clone(&self.managed_origin);
         let navigation_app = self.app.clone();
-        let new_window_origin = url.clone();
+        let new_window_origin = Arc::clone(&self.managed_origin);
         let new_window_app = self.app.clone();
         let main_window = self
             .app
@@ -210,25 +244,39 @@ impl RuntimeSupervisor {
             tauri::webview::WebviewBuilder::new("workbench", tauri::WebviewUrl::External(url))
                 .initialization_script(DISABLE_TEXT_ASSISTANCE_SCRIPT)
                 .on_navigation(move |candidate| {
-                    let managed = is_managed_runtime_origin(&navigation_origin, candidate);
-                    if is_external_web_url(&navigation_origin, candidate) {
-                        return navigation_app
+                    match classify_navigation(
+                        current_managed_origin(&navigation_origin).as_ref(),
+                        candidate,
+                    ) {
+                        Navigation::Allow => true,
+                        Navigation::Deny => false,
+                        // A failed hand-off leaves the page to the webview, so the
+                        // link is never silently lost.
+                        Navigation::External => navigation_app
                             .opener()
                             .open_url(candidate.as_str(), None::<&str>)
-                            .is_err();
+                            .is_err(),
                     }
-                    managed || !matches!(candidate.scheme(), "http" | "https")
                 })
                 .on_new_window(move |candidate, _features| {
-                    if is_external_web_url(&new_window_origin, &candidate)
-                        && new_window_app
-                            .opener()
-                            .open_url(candidate.as_str(), None::<&str>)
-                            .is_ok()
-                    {
-                        return tauri::webview::NewWindowResponse::Deny;
+                    match classify_navigation(
+                        current_managed_origin(&new_window_origin).as_ref(),
+                        &candidate,
+                    ) {
+                        Navigation::Allow => tauri::webview::NewWindowResponse::Allow,
+                        Navigation::Deny => tauri::webview::NewWindowResponse::Deny,
+                        Navigation::External => {
+                            if new_window_app
+                                .opener()
+                                .open_url(candidate.as_str(), None::<&str>)
+                                .is_ok()
+                            {
+                                tauri::webview::NewWindowResponse::Deny
+                            } else {
+                                tauri::webview::NewWindowResponse::Allow
+                            }
+                        }
                     }
-                    tauri::webview::NewWindowResponse::Allow
                 });
         let webview = match main_window.add_child(builder, position, size) {
             Ok(webview) => webview,
@@ -595,8 +643,16 @@ impl RuntimeSupervisor {
             inner.browser_launch_url = Some(ready_url);
             inner.status = status.clone();
         }
+        self.set_managed_origin(Some(runtime_http));
         self.emit(&status);
         Ok(status)
+    }
+
+    fn set_managed_origin(&self, origin: Option<Url>) {
+        *self
+            .managed_origin
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = origin;
     }
 
     fn stop_locked(&self, manual: bool) -> DesktopResult<RuntimeStatus> {
@@ -646,11 +702,15 @@ impl RuntimeSupervisor {
 
     fn publish(&self, status: RuntimeStatus) -> DesktopResult<RuntimeStatus> {
         let mut inner = self.lock_inner()?;
-        if status.phase != RuntimePhase::Ready {
+        let ready = status.phase == RuntimePhase::Ready;
+        if !ready {
             inner.browser_launch_url = None;
         }
         inner.status = status.clone();
         drop(inner);
+        if !ready {
+            self.set_managed_origin(None);
+        }
         self.emit(&status);
         Ok(status)
     }
@@ -791,16 +851,8 @@ impl RuntimeSupervisor {
 
     fn recover_with_available_rollback(&self) -> RollbackRecovery {
         loop {
-            match self.runtime_updates.rollback_after_start_failure_wait() {
-                Ok(true) => {}
-                Ok(false) => return RollbackRecovery::Unavailable,
-                Err(error) => {
-                    self.diagnostics.append(
-                        "runtime-update",
-                        &format!("Runtime rollback failed during recovery: {error}"),
-                    );
-                    return RollbackRecovery::Unavailable;
-                }
+            if !self.runtime_updates.rollback_after_start_failure() {
+                return RollbackRecovery::Unavailable;
             }
             let _ = self.show_management();
             let _ = self.publish(RuntimeStatus {
@@ -1846,21 +1898,69 @@ mod tests {
             "http://example.com/docs",
             "http://127.0.0.1:43128/other-runtime",
         ] {
-            assert!(
-                is_external_web_url(&managed, &Url::parse(candidate).unwrap()),
+            assert_eq!(
+                classify_navigation(Some(&managed), &Url::parse(candidate).unwrap()),
+                Navigation::External,
                 "{candidate}"
             );
         }
         for candidate in [
             "http://127.0.0.1:43127/conversation",
+            "http://127.0.0.1:43127/?token=launch_token",
             "file:///tmp/local.html",
             "javascript:alert('blocked')",
             "mailto:developer@example.com",
         ] {
-            assert!(
-                !is_external_web_url(&managed, &Url::parse(candidate).unwrap()),
+            assert_eq!(
+                classify_navigation(Some(&managed), &Url::parse(candidate).unwrap()),
+                Navigation::Allow,
                 "{candidate}"
             );
         }
+    }
+
+    #[test]
+    fn follows_the_runtime_to_a_new_port_after_a_restart() {
+        let restarted = Url::parse("http://127.0.0.1:43128/").unwrap();
+        let relaunch = Url::parse("http://127.0.0.1:43128/?token=launch_token").unwrap();
+        assert_eq!(
+            classify_navigation(Some(&restarted), &relaunch),
+            Navigation::Allow
+        );
+        let stale = Url::parse("http://127.0.0.1:43127/").unwrap();
+        assert_eq!(
+            classify_navigation(Some(&stale), &relaunch),
+            Navigation::External,
+            "a stale snapshot would publish the launch token to the system browser"
+        );
+    }
+
+    #[test]
+    fn denies_web_navigation_while_no_runtime_is_managed() {
+        for candidate in [
+            "http://127.0.0.1:43127/?token=launch_token",
+            "https://example.com/docs",
+        ] {
+            assert_eq!(
+                classify_navigation(None, &Url::parse(candidate).unwrap()),
+                Navigation::Deny,
+                "{candidate}"
+            );
+        }
+        assert_eq!(
+            classify_navigation(None, &Url::parse("mailto:developer@example.com").unwrap()),
+            Navigation::Allow
+        );
+    }
+
+    #[test]
+    fn reads_the_managed_origin_through_the_shared_handle() {
+        let origin: ManagedOrigin = Arc::new(Mutex::new(None));
+        assert_eq!(current_managed_origin(&origin), None);
+        *origin.lock().unwrap() = Some(Url::parse("http://127.0.0.1:43127/").unwrap());
+        assert_eq!(
+            current_managed_origin(&origin),
+            Some(Url::parse("http://127.0.0.1:43127/").unwrap())
+        );
     }
 }

@@ -49,7 +49,7 @@ async fn runtime_start(state: State<'_, AppState>) -> DesktopResult<RuntimeStatu
                     if first_failure.is_none() {
                         first_failure = Some(error);
                     }
-                    if !updater.rollback_after_start_failure()? {
+                    if !updater.rollback_after_start_failure() {
                         return Err(first_failure.expect("Runtime failure was captured"));
                     }
                 }
@@ -311,7 +311,6 @@ pub fn run() {
                 Arc::clone(&runtime_store),
             )?;
             runtime_updates.recover_invalid_current()?;
-            runtime_updates.apply_pending_on_startup()?;
             let supervisor = RuntimeSupervisor::new(
                 app_handle,
                 paths,
@@ -341,7 +340,7 @@ pub fn run() {
             });
             let locale = app.state::<AppState>().settings.get()?.locale;
             native_menu::install(app.handle(), &locale)?;
-            runtime_updates.check_automatically();
+            runtime_updates.start_startup_maintenance();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
