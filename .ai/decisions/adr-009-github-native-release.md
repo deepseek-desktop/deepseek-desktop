@@ -6,7 +6,7 @@
 
 ## 决策
 
-DeepSeek Desktop 的正式四平台发行统一使用 GitHub Actions 官方托管 Runner。Pull Request 和 `master` push 只执行质量检查；带或不带 `v` 前缀的完整 SemVer Tag 才触发 macOS ARM64、macOS x64、Windows x64 和 Linux x64 原生矩阵。
+DeepSeek Desktop 的正式四平台发行统一使用 GitHub Actions 官方托管 Runner。Pull Request 和普通分支 push 不触发发布工作流；只有带或不带 `v` 前缀的完整 SemVer Tag 才执行质量门禁并触发 macOS ARM64、macOS x64、Windows x64 和 Linux x64 原生矩阵。
 
 四个平台都调用现有 `package:community`，不复制打包逻辑。矩阵全部成功后，汇总任务严格验证两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和统一 SHA-256；公开 Release 只包含这 5 个安装包与 `SHA256SUMS`。内部 BUILD-INFO 只用于目标和来源核验。
 

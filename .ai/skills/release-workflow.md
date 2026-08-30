@@ -5,8 +5,8 @@
 ## 决策
 
 - 正式四平台发布只使用 `.github/workflows/community-build.yml` 的 GitHub 官方托管 Runner 原生矩阵。
-- Pull Request 和 `master` push 只做质量检查。
-- 带或不带 `v` 的完整 SemVer Tag 才构建安装包和创建 Release。
+- Pull Request 和普通分支 push 不触发发布工作流。
+- 只有带或不带 `v` 的完整 SemVer Tag 才运行质量门禁、构建安装包和创建 Release。
 - 四个平台都调用现有 `package:community`，禁止复制第二套打包逻辑。
 - 本机只验证源码、E2E、Runtime smoke 和当前 macOS 架构安装包。
 - 不把 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 当作正式发布前提。
@@ -100,7 +100,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 
 | 现象 | 处理 |
 | --- | --- |
-| `master` 与 Tag 重复打包 | `master` 只允许质量检查；`native-build` 必须是 tag-only |
+| 普通提交出现发布构建记录 | 工作流只能监听完整 SemVer Tag；禁止添加 PR、分支 push 或手动触发入口 |
 | 已签名版本仍被标为 prerelease | 检查生成配置的 `release.signed` 是否为布尔 `true`；`ci-release-prerelease.mjs` 对缺失或非布尔的签名声明一律按未签名处理 |
 | Release 多出 BUILD-INFO | 只从五类安装包生成公开目录，发布前检查文件总数为 6 |
 | Windows 路径过长 | 保持 Windows Job 在短路径 detached clone 中打包 |

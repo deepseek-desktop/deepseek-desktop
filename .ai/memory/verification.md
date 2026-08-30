@@ -14,7 +14,7 @@
 - `corepack pnpm@11.24.0 runtime:smoke`：通过父进程退出清理与 Runtime `0.1.2-alpha.1` 一次完整启停循环。
 - `corepack pnpm@11.24.0 desktop:package`：在当前 macOS ARM64 主机完成同步、完整门禁、Tauri 应用、DMG 构建和 77,369 个交付文件扫描；Runtime 生产闭包为 26,187 个文件，开发测试源码已剔除。产物为 `release/1.0.0/aarch64-apple-darwin/DeepSeek Desktop_1.0.0_aarch64.dmg`，SHA-256 为 `1df3bb6e3efeb670ca045965317fcf658e15fd4730fb0a741be6a4badbab7f65`。
 - 成品应用真实启动：直接启动构建出的 `DeepSeek Desktop.app`，窗口恢复到外接屏幕；点击启动后拉起安装包内置 Node `24.20.0` 和 Runtime，并在同一个原生窗口进入 Harness 工作台。普通点击 IBM 来源链接会交给系统浏览器，右键“Open Link in New Window”会打开 Microsoft Azure 来源页；两次操作后 Desktop 与 Runtime 进程均保持运行，结束测试后 Runtime 子进程随 Desktop 终止。
-- GitHub 工作流协议：Pull Request 与 `master` 只执行质量检查；完整 SemVer Tag 才启动 macOS ARM64、macOS x64、Windows x64、Linux x64 原生矩阵。结构化汇总器只接受四份来源一致的内部构建信息，公开 Release 只输出五个安装包与统一 `SHA256SUMS`。
+- GitHub 工作流协议：Pull Request 与普通分支 push 不触发发布工作流；完整 SemVer Tag 才执行质量门禁并启动 macOS ARM64、macOS x64、Windows x64、Linux x64 原生矩阵。结构化汇总器只接受四份来源一致的内部构建信息，公开 Release 只输出五个安装包与统一 `SHA256SUMS`。
 
 ## 能力边界
 

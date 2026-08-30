@@ -273,7 +273,13 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   const linuxPackageSteps = [...workflow.matchAll(/if: runner\.os == 'Linux'[^\n]*\n\s+run:[^\n]*\n\s+env:\n\s+NO_STRIP:\s+"1"/gu)];
   assert.equal(noStripAssignments.length, 1, "NO_STRIP must only be assigned by the Linux tag build");
   assert.equal(linuxPackageSteps.length, 1, "the Linux tag build must disable stripping");
-  assert.doesNotMatch(workflow, /workflow_dispatch|desktop:package/u);
+  assert.match(
+    workflow,
+    /^on:\n  push:\n    tags:\n      - "\*\.\*\.\*"\n      - "v\*\.\*\.\*"\n\npermissions:/mu,
+    "the release workflow must only listen for version tags"
+  );
+  assert.doesNotMatch(workflow, /pull_request|branches:|workflow_dispatch|desktop:package/u);
+  assert.doesNotMatch(workflow, /if:\s+startsWith\(github\.ref, 'refs\/tags\/'\)/u);
   assert.match(workflow, /test "\$\{#assets\[@\]\}" -eq 6/u);
   assert.match(workflow, /node scripts\/prepare-ci-release-assets\.mjs/u);
   assert.match(workflow, /release\/\*\*\/SHA256SUMS/u);

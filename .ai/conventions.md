@@ -21,7 +21,7 @@
 - 设置、索引和生成配置采用原子写入；损坏数据应隔离，不静默覆盖。
 - 不引入明文凭据 fallback，不通过命令参数、长期环境变量或日志传递 API Key。
 - 不为临时验证修改产品源码；Runtime 补丁必须与锁定版本、marker 和验证脚本一起维护。
-- Pull Request 和 `master` push 只运行质量检查；仅带或不带 `v` 前缀的完整 SemVer Tag 触发正式四平台构建。
+- Pull Request 和普通分支 push 不触发发布工作流；只有带或不带 `v` 前缀的完整 SemVer Tag 才触发质量门禁与正式四平台构建。
 - macOS ARM64、macOS x64、Windows x64 和 Linux x64 必须分别由对应 GitHub 官方托管 Runner 原生打包，并统一复用 `package:community`。
 - 公开 Release 必须等待四个平台全部成功，只上传两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`；内部 BUILD-INFO 不作为公开资产。
 - Runtime 更新不得写应用安装目录，不得在用户机器拉源码或编译；Windows 的 smoke、替换和重启进程必须保持无控制台窗口。

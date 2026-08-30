@@ -42,7 +42,7 @@ RUNTIME_REPOSITORY / RUNTIME_REF
   -> GitHub Release：5 个安装包 + SHA256SUMS
 ```
 
-Pull Request 和 `master` push 只运行质量检查，不创建安装包或 Release。正式发布以 `.github/workflows/community-build.yml` 为唯一入口；矩阵全部成功后才允许汇总发布，不完整版本不得公开。
+Pull Request 和普通分支 push 不触发发布工作流。正式发布以 `.github/workflows/community-build.yml` 为唯一入口；只有完整 SemVer Tag 才运行质量门禁和四平台矩阵，矩阵全部成功后才允许汇总发布，不完整版本不得公开。
 
 `scripts/release-system/` 保留通用 Controller、Worker 和 filesystem Provider 作为实验与协议测试实现，不是正式发布前提；本机不再通过 Rosetta、Docker 或虚拟机模拟四平台发行。
 

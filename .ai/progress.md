@@ -14,7 +14,7 @@
 - 窗口恢复会先验证保存坐标是否仍落在已连接显示器；外接屏仍在线时保留原位置，断开后自动回到主显示器，避免应用运行但窗口位于屏幕外。
 - 正式发行统一由 GitHub Actions 官方托管 Runner 原生构建：完整 SemVer Tag 触发 macOS ARM64、macOS x64、Windows x64 和 Linux x64 矩阵，四目标全部成功后才创建 Release。
 - 四个平台复用唯一 `package:community` / `desktop:package` 构建事实来源；公开 Release 只保留两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和统一 `SHA256SUMS`。
-- Pull Request 和 `master` push 只运行质量检查。本机仅执行 `verify`、`test:e2e`、`runtime:smoke` 和当前 macOS 架构打包/启动检查，不再把 Rosetta、Docker、Parallels 或本地 Controller/Worker 当作正式发行依赖。
+- Pull Request 和普通分支 push 不触发发布工作流；完整 SemVer Tag 才运行质量门禁与四平台构建。本机仅执行 `verify`、`test:e2e`、`runtime:smoke` 和当前 macOS 架构打包/启动检查，不再把 Rosetta、Docker、Parallels 或本地 Controller/Worker 当作正式发行依赖。
 - 历史本地发布协议和缓存组件继续用于协议测试与实验，不进入 Agent 默认发布手册。
 - Runtime 平台 smoke 使用仅允许 `127.0.0.1` 的有界原生 HTTP 客户端，在 readiness 地址出现后等待端口真正接受请求并同时检查子进程存活，消除 Linux 启动竞态与 Rosetta Undici 套接字兼容失败。
 - Runtime 正式启动、候选更新 smoke 和打包 smoke 统一在加载实时配置 profile 前启用 Node 内部模块访问，避免新目标闭包因 HMR 启动契约不一致失败，同时保持原生 Runtime 的实时重载体验。

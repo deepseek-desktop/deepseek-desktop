@@ -1,6 +1,6 @@
 # DeepSeek Desktop
 
-[![社区版构建](https://github.com/deepseek-desktop/deepseek-desktop/actions/workflows/community-build.yml/badge.svg)](https://github.com/deepseek-desktop/deepseek-desktop/actions/workflows/community-build.yml)
+[![社区版发布](https://github.com/deepseek-desktop/deepseek-desktop/actions/workflows/community-build.yml/badge.svg)](https://github.com/deepseek-desktop/deepseek-desktop/actions/workflows/community-build.yml)
 [![许可证](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区桌面应用。用户无需另外安装 Node.js、pnpm、Rust 或其他框架应用。本项目与 DeepSeek 不存在隶属、合作或官方背书关系。
@@ -154,8 +154,8 @@ DeepSeek Desktop 将桌面外壳与 Harness Runtime 分开更新。安装包内�
 
 正式发布统一由 GitHub Actions 官方托管 Runner 原生构建，不要求维护者在一台电脑上准备虚拟机、Rosetta 或 Docker：
 
-- Pull Request 和 `master` push 只运行质量检查，不创建安装包或 Release。
-- 带或不带 `v` 前缀的完整 SemVer Tag 触发四平台矩阵，例如 `1.0.0`、`v1.0.0`、`v1.0.0-rc.1`。
+- Pull Request 和普通分支 push 不触发发布工作流，也不创建安装包或 Release。
+- 只有带或不带 `v` 前缀的完整 SemVer Tag 才触发质量门禁和四平台矩阵，例如 `1.0.0`、`v1.0.0`、`v1.0.0-rc.1`。
 - macOS ARM64、macOS x64、Windows x64、Linux x64 分别在对应官方 Runner 上调用同一个 `package:community`。
 - 四个平台全部成功后才创建 GitHub Release；任何目标失败都不会发布不完整版本。
 - Release 只公开两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和统一 `SHA256SUMS`，内部 `BUILD-INFO` 不作为下载附件。

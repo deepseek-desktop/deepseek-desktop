@@ -22,7 +22,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 加密凭据库主要防止意外明文泄漏；它不承诺抵御已经取得同一操作系统用户权限的恶意进程。
 - 社区版默认关闭桌面安装包自动更新；Runtime 独立更新默认采用“发现后提醒”，且只有在构建时配置可信 Ed25519 清单、公钥和发布者后才启用，二者不共用信任边界。
 - 未签名制品发布时一律标记 GitHub prerelease，不占据 Latest release 位置；该判断取自生成配置的 `release.signed`，与 SemVer 版本号形态无关，签名接入后自动恢复为正式发布。
-- 正式四平台发行统一由 GitHub Actions 官方托管 Runner 原生构建：Pull Request 与 `master` 只做质量检查，完整 SemVer Tag 才进入 macOS ARM64/x64、Windows x64、Linux x64 矩阵。
+- 正式四平台发行统一由 GitHub Actions 官方托管 Runner 原生构建：Pull Request 与普通分支 push 不触发发布工作流，只有完整 SemVer Tag 才运行质量门禁并进入 macOS ARM64/x64、Windows x64、Linux x64 矩阵。
 - 四个平台复用唯一 `package:community` / `desktop:package` 构建事实；全部成功后才创建 Release，公开资产只包含 5 个安装包和 `SHA256SUMS`。
 - 本机只执行源码验证、E2E、Runtime smoke 和当前 macOS 架构打包/启动测试；不以 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 作为正式发布前提。
 - 四平台统一使用工具链 lock 中的 Node `24.20.0` / ABI `137`，Runner 不得依赖全局版本漂移；内部 BUILD-INFO 用于矩阵汇总核验但不公开发布。

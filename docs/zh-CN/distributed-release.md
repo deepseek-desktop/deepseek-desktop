@@ -6,8 +6,8 @@ DeepSeek Desktop 的正式发布统一使用 GitHub Actions 官方托管 Runner 
 
 `.github/workflows/community-build.yml` 是多平台发布入口：
 
-1. Pull Request 和 `master` push 只运行 `ci:shell-quality`，不构建安装包、不创建 Release。
-2. 完整 SemVer Tag 先通过严格版本解析和质量门禁。
+1. Pull Request 和普通分支 push 不触发该工作流。
+2. 只有完整 SemVer Tag 才触发工作流，并先通过严格版本解析和 `ci:shell-quality` 质量门禁。
 3. 四个官方 Runner 分别调用同一个 `package:community`：
    - `macos-15`：macOS ARM64 DMG
    - `macos-15-intel`：macOS x64 DMG
@@ -86,7 +86,7 @@ git push origin v1.0.0
 - Node 与其他工具链读取仓库精确 lock，不使用 Runner 上碰巧存在的全局版本。
 - 安装包扫描拒绝 `.env`、凭据、私钥、本机绝对路径和逃逸符号链接。
 - Apple Developer ID、公证、Windows Authenticode 和 Tauri Updater 密钥通过受保护 CI Secrets 接入，不写入源码、日志或构建附件。
-- 公开 Pull Request 只执行托管质量检查，不触发任何开发者本地节点。
+- 公开 Pull Request 不触发发布工作流，也不触发任何开发者本地节点。
 
 ## 故障恢复
 

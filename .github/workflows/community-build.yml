@@ -1,9 +1,7 @@
-name: Community Build
+name: Community Release
 
 on:
-  pull_request:
   push:
-    branches: [master]
     tags:
       - "*.*.*"
       - "v*.*.*"
@@ -12,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: community-build-${{ github.ref }}
+  group: community-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,7 +30,6 @@ jobs:
       - run: corepack pnpm@11.24.0 ci:shell-quality
 
   native-build:
-    if: startsWith(github.ref, 'refs/tags/')
     needs: shell-quality
     strategy:
       fail-fast: false
@@ -107,7 +104,6 @@ jobs:
           retention-days: 30
 
   publish-release:
-    if: startsWith(github.ref, 'refs/tags/')
     needs: native-build
     runs-on: ubuntu-24.04
     permissions:
