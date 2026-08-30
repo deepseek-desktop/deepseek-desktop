@@ -68,7 +68,7 @@ macOS 本机至少检查：
 | Windows x64 | `windows-2022` | EXE |
 | Linux x64 | `ubuntu-22.04` | AppImage、DEB |
 
-四个 Job 全部成功后才能运行 `publish-release`。稳定版本不加 `--prerelease`；带 prerelease 标识的版本必须加。
+四个 Job 全部成功后才能运行 `publish-release`。prerelease 标记由 `scripts/ci-release-prerelease.mjs` 决定：**制品未签名一律标记 prerelease**，已签名版本再按 SemVer prerelease 段判断。GitHub 的 Latest release 是用户默认下载和 `/releases/latest` 的返回值，未签名制品不应占据该位置；签名接入后同一规则自动把正式版本提升为 Latest。
 
 ## 公开资产
 
@@ -101,7 +101,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 | 现象 | 处理 |
 | --- | --- |
 | `master` 与 Tag 重复打包 | `master` 只允许质量检查；`native-build` 必须是 tag-only |
-| 稳定版本被标为 prerelease | 检查 `DESKTOP_RELEASE_PRERELEASE` 是否由 SemVer prerelease 段计算 |
+| 已签名版本仍被标为 prerelease | 检查生成配置的 `release.signed` 是否为布尔 `true`；`ci-release-prerelease.mjs` 对缺失或非布尔的签名声明一律按未签名处理 |
 | Release 多出 BUILD-INFO | 只从五类安装包生成公开目录，发布前检查文件总数为 6 |
 | Windows 路径过长 | 保持 Windows Job 在短路径 detached clone 中打包 |
 | Windows 重试报 Runtime 文件只读 | 恢复内容缓存后只把工作副本递归设为可写，缓存本体仍做哈希核验 |

@@ -158,19 +158,23 @@ fn redact_roots(value: &str, data_dir: &str, homes: &[String]) -> String {
 /// `HOMEDRIVE` + `HOMEPATH` pair) rather than `HOME`, so an export that only
 /// knows `HOME` ships `C:\Users\<name>\...` to whoever receives the bundle.
 fn home_directories() -> Vec<String> {
+    home_directories_from(|name| {
+        std::env::var_os(name).map(|value| value.to_string_lossy().into_owned())
+    })
+}
+
+/// Takes the environment as a lookup so the Windows resolution is covered by a
+/// test on every platform: mutating the real environment is process-global and
+/// racy under a parallel test runner.
+fn home_directories_from(lookup: impl Fn(&str) -> Option<String>) -> Vec<String> {
     let mut roots = Vec::new();
     for name in ["HOME", "USERPROFILE"] {
-        if let Some(value) = std::env::var_os(name) {
-            roots.push(value.to_string_lossy().into_owned());
+        if let Some(value) = lookup(name) {
+            roots.push(value);
         }
     }
-    if let (Some(drive), Some(path)) = (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH"))
-    {
-        roots.push(format!(
-            "{}{}",
-            drive.to_string_lossy(),
-            path.to_string_lossy()
-        ));
+    if let (Some(drive), Some(path)) = (lookup("HOMEDRIVE"), lookup("HOMEPATH")) {
+        roots.push(format!("{drive}{path}"));
     }
     roots.retain(|root| !root.is_empty());
     roots.sort();
@@ -300,6 +304,66 @@ mod tests {
             redact("dsh web: http://127.0.0.1:43127/?token=<redacted>"),
             "dsh web: http://127.0.0.1:43127/?token=<redacted>"
         );
+    }
+
+    fn environment(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + use<> {
+        let pairs: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect();
+        move |name| {
+            pairs
+                .iter()
+                .find(|(candidate, _)| candidate == name)
+                .map(|(_, value)| value.clone())
+        }
+    }
+
+    #[test]
+    fn resolves_the_home_directory_on_every_platform() {
+        assert_eq!(
+            home_directories_from(environment(&[("HOME", "/Users/zhang")])),
+            vec!["/Users/zhang".to_owned()]
+        );
+        // A Windows GUI process has no HOME.
+        assert_eq!(
+            home_directories_from(environment(&[("USERPROFILE", "C:\\Users\\zhang")])),
+            vec!["C:\\Users\\zhang".to_owned()]
+        );
+        assert_eq!(
+            home_directories_from(environment(&[
+                ("HOMEDRIVE", "C:"),
+                ("HOMEPATH", "\\Users\\zhang")
+            ])),
+            vec!["C:\\Users\\zhang".to_owned()]
+        );
+        // The same profile reached two ways must not produce two roots.
+        assert_eq!(
+            home_directories_from(environment(&[
+                ("USERPROFILE", "C:\\Users\\zhang"),
+                ("HOMEDRIVE", "C:"),
+                ("HOMEPATH", "\\Users\\zhang"),
+            ])),
+            vec!["C:\\Users\\zhang".to_owned()]
+        );
+        assert!(home_directories_from(environment(&[("HOME", "")])).is_empty());
+        assert!(home_directories_from(environment(&[("HOMEDRIVE", "C:")])).is_empty());
+        assert!(home_directories_from(environment(&[])).is_empty());
+    }
+
+    #[test]
+    fn redacts_a_windows_profile_resolved_from_the_environment() {
+        let homes = home_directories_from(environment(&[
+            ("USERPROFILE", "C:\\Users\\zhang"),
+            ("HOMEDRIVE", "C:"),
+            ("HOMEPATH", "\\Users\\zhang"),
+        ]));
+        let redacted = redact_roots(
+            "runtime=C:\\Users\\zhang\\Documents\\work; cache=C:\\Users\\zhang\\AppData\\Local\\npm",
+            "C:\\Users\\zhang\\AppData\\Roaming\\deepseek.desktop",
+            &homes,
+        );
+        assert!(!redacted.contains("zhang"), "{redacted}");
     }
 
     #[test]

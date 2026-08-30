@@ -277,7 +277,8 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   assert.match(workflow, /test "\$\{#assets\[@\]\}" -eq 6/u);
   assert.match(workflow, /node scripts\/prepare-ci-release-assets\.mjs/u);
   assert.match(workflow, /release\/\*\*\/SHA256SUMS/u);
-  assert.match(workflow, /DESKTOP_RELEASE_PRERELEASE/u);
+  assert.match(workflow, /node scripts\/ci-release-prerelease\.mjs/u);
+  assert.doesNotMatch(workflow, /DESKTOP_RELEASE_PRERELEASE/u);
 });
 
 test("release argument parser ignores the package-manager separator", () => {

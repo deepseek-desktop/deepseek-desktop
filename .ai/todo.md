@@ -9,7 +9,16 @@
 
 ## 平台验证
 
-- Linux x64 仍需在真实发行环境完成安装、启动、Runtime、凭据、插件和对话验收后，才能声明平台完整可用。
-- `v1.0.16` 起 GitHub Release 不再自动标记 prerelease：该标记只由 SemVer prerelease 段决定，而社区版制品仍是未签名构建，因此未签名版本现在会显示为 Latest release。若希望它继续显示为预发行，需要在工作流中显式决定，而不是依赖版本号形态。
+四平台矩阵每次发布都在各自原生 Runner 上执行 `package:community`，因此以下已是自动覆盖，不需要重复人工确认：
+
+- `verify` 全链（含 Rust 单元测试）在 macOS ARM64/x64、Windows x64、Linux x64 各跑一次；诊断脱敏的 `USERPROFILE` 与 `HOMEDRIVE` + `HOMEPATH` 解析由注入环境的用例覆盖，四个平台都会执行。
+- `test:e2e` 与 `runtime:smoke`（真实 Runtime 启动 + 父进程消亡清理）在四个平台各跑一次。
+- 交付闭包扫描拒绝 `.env`、密钥、本机绝对路径和符号链接逃逸，四个平台各扫一次。
+
+仍然只能由真机人工完成、当前尚未做的：
+
+- Windows x64 与 Linux x64 的**桌面应用本身**启动验收：安装包安装、原生窗口标题、点击启动后 Runtime sidecar 拉起、工作台同窗口加载、退出无残留。目前只有 macOS ARM64 做过（见 `progress.md`）。CI 验证的是 Runtime 闭包能启动，不是 Tauri 外壳能启动。
+- Linux x64 的凭据库、插件市场和对话链路验收。
+- 未签名制品在 Gatekeeper 与 SmartScreen 下的实际拦截表现。
 
 当前没有已知阻塞本地社区版开发的代码问题。新发现的问题应先用源码和可复现证据确认，再加入本文件。
