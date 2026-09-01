@@ -5,6 +5,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import process from "node:process";
 
 import { findInstalledPackages, listInstalledPackages } from "../../scripts/lib/installed-packages.mjs";
+import { downloadVerified } from "../../scripts/lib/download-verified.mjs";
 import { atomicWriteJson } from "../../scripts/release-system/common.mjs";
 import {
   contentCacheKey,
@@ -173,25 +174,6 @@ async function pruneNativeArtifacts(nodeModules, target) {
       await stat(join(directory, profile.koffiTriplet, "koffi.node"));
     }
   }
-}
-
-async function downloadVerified(url, destination, expectedSha256) {
-  try {
-    if (await hashFile(destination) === expectedSha256) return;
-  } catch {}
-  await mkdir(dirname(destination), { recursive: true });
-  const temporary = `${destination}.part`;
-  await rm(temporary, { force: true });
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`could not download ${url}: HTTP ${response.status}`);
-  await writeFile(temporary, new Uint8Array(await response.arrayBuffer()));
-  const actual = await hashFile(temporary);
-  if (actual !== expectedSha256) {
-    await rm(temporary, { force: true });
-    throw new Error(`download checksum mismatch for ${url}: expected ${expectedSha256}, got ${actual}`);
-  }
-  await rm(destination, { force: true });
-  await rename(temporary, destination);
 }
 
 async function stageOfficialNode(target, sidecar, licenseDestination) {
