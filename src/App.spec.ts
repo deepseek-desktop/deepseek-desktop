@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import { appConfig } from "./app-config";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { checkForUpdates, checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, ignoreDesktopUpdate, openDesktopRelease, openRepository, openWorkbench, saveSettings, startRuntime } from "./desktop";
+import { checkForUpdates, checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, ignoreDesktopUpdate, openDesktopMenu, openDesktopRelease, openRepository, openWorkbench, saveSettings, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
@@ -33,6 +33,7 @@ const runtime: RuntimeStatus = {
 };
 
 const listeners = vi.hoisted(() => ({
+  locale: undefined as ((locale: "zh-CN" | "zh-TW" | "en-US") => void) | undefined,
   settingsView: undefined as ((view: "runtime" | "diagnostics" | "update" | "desktop-update" | "about") => void) | undefined,
   surface: undefined as ((surface: "settings" | "workbench") => void) | undefined
 }));
@@ -68,6 +69,10 @@ vi.mock("./desktop", () => ({
   getSettings: vi.fn(async () => ({ ...settings })),
   onRuntimeStatus: vi.fn(async () => () => undefined),
   onRuntimeUpdateStatus: vi.fn(async () => () => undefined),
+  onDesktopLocale: vi.fn(async (handler) => {
+    listeners.locale = handler;
+    return () => undefined;
+  }),
   onDesktopSettingsView: vi.fn(async (handler) => {
     listeners.settingsView = handler;
     return () => undefined;
@@ -77,6 +82,7 @@ vi.mock("./desktop", () => ({
     return () => undefined;
   }),
   ignoreDesktopUpdate: vi.fn(async version => ({ ...settings, desktopUpdateIgnoredVersion: version })),
+  openDesktopMenu: vi.fn(),
   openDesktopRelease: vi.fn(),
   openRepository: vi.fn(),
   openWorkbench: vi.fn(),
@@ -125,6 +131,8 @@ describe(`${appConfig.productName} shell`, () => {
     vi.clearAllMocks();
     listeners.settingsView = undefined;
     listeners.surface = undefined;
+    listeners.locale = undefined;
+    delete (window as Window & { __DEEPSEEK_DESKTOP_MENU_ONLY__?: boolean }).__DEEPSEEK_DESKTOP_MENU_ONLY__;
     vi.mocked(checkForUpdates).mockResolvedValue({
       enabled: false,
       channel: "community",
@@ -158,6 +166,58 @@ describe(`${appConfig.productName} shell`, () => {
     expect(wrapper.text()).toContain("Runtime ready");
     expect(wrapper.text()).toContain("Runtime");
     expect(wrapper.text()).toContain("Diagnostics");
+    expect(wrapper.get('[role="menubar"]').text()).toContain("FileEditViewWindowHelp");
+  });
+
+  it("keeps one keyboard-accessible menu bar in the Desktop Shell", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const wrapper = mount(App, { attachTo: host, global: { plugins: [i18n] } });
+    await flushPromises();
+
+    const menuBar = wrapper.get('[role="menubar"]');
+    const menuButtons = menuBar.findAll('[role="menuitem"]');
+    expect(menuButtons.map(button => button.text())).toEqual(["文件", "编辑", "视图", "窗口", "帮助"]);
+
+    await menuButtons[0].trigger("keydown", { key: "ArrowRight" });
+    expect(document.activeElement).toBe(menuButtons[1].element);
+    await menuButtons[1].trigger("keydown", { key: "Enter" });
+    expect(openDesktopMenu).toHaveBeenCalledWith("edit", expect.any(Number));
+    wrapper.unmount();
+    host.remove();
+  });
+
+  it("does not reopen a native menu while its popup is still active", async () => {
+    let finishOpening: (() => void) | undefined;
+    vi.mocked(openDesktopMenu).mockImplementationOnce(() => new Promise<void>(resolve => {
+      finishOpening = resolve;
+    }));
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    const fileMenu = wrapper.get('[role="menuitem"]');
+    await fileMenu.trigger("click");
+    await fileMenu.trigger("click");
+
+    expect(openDesktopMenu).toHaveBeenCalledTimes(1);
+    finishOpening?.();
+    await flushPromises();
+  });
+
+  it("keeps the dedicated workbench menu synchronized with the saved locale", async () => {
+    settings.locale = "zh-TW";
+    (window as Window & { __DEEPSEEK_DESKTOP_MENU_ONLY__?: boolean }).__DEEPSEEK_DESKTOP_MENU_ONLY__ = true;
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    expect(startRuntime).not.toHaveBeenCalled();
+    expect(wrapper.get('[role="menubar"]').text()).toBe("檔案編輯顯示方式視窗輔助說明");
+
+    listeners.locale?.("en-US");
+    await flushPromises();
+    expect(wrapper.get('[role="menubar"]').text()).toBe("FileEditViewWindowHelp");
+    wrapper.unmount();
+    delete (window as Window & { __DEEPSEEK_DESKTOP_MENU_ONLY__?: boolean }).__DEEPSEEK_DESKTOP_MENU_ONLY__;
   });
 
   it("opens settings from a native menu event and returns to the preserved workbench", async () => {

@@ -6,6 +6,7 @@ export const messages = {
   "zh-CN": {
     app: { name: appName, subtitle: "本地 AI Agent 工作台" },
     common: { start: "启动", retry: "重试", open: "打开工作台", stop: "停止", save: "保存", close: "关闭", languageSelector: "切换语言" },
+    menu: { label: "应用菜单", file: "文件", edit: "编辑", view: "视图", window: "窗口", help: "帮助" },
     runtime: {
       idle: "准备启动",
       starting: "正在启动 Runtime",
@@ -51,11 +52,12 @@ export const messages = {
       channels: { stable: "稳定版", preview: "预览版" },
       messages: { idle: "尚未检查 Runtime 更新。", not_configured: "未配置可信 Runtime 更新服务。", checking: "正在检查 Runtime 更新。", available: "发现 Runtime {version}。", up_to_date: "当前 Runtime 已是最新版本。", downloading: "正在下载并校验 Runtime。", applying: "正在安装并验证新 Runtime，请稍候。", restart_to_apply: "Runtime {version} 已就绪，将在下次启动安装。", applied: "Runtime 更新已安装。", check_failed: "Runtime 更新检查失败，当前版本未受影响。", download_failed: "Runtime 下载或校验失败，当前版本未受影响。", smoke_failed: "新 Runtime 启动验证失败，已保留当前版本。", pinned: "当前 Runtime 已固定，不会自动更新。", bundled_restored: "已恢复安装包内置 Runtime。", startup_rollback: "新 Runtime 启动失败，已自动回滚。" }
     },
-    error: { unexpected: "操作失败，请查看诊断信息。", settingsSaveFailed: "设置保存失败，已恢复原设置。", diagnosticsExportFailed: "诊断包导出失败。", logsExportFailed: "日志导出失败。", updateCheckFailed: "Desktop 更新检查失败。", updateOpenFailed: "无法打开官方 Desktop Release 页面。", runtimeUpdateCheckFailed: "Runtime 更新检查失败，当前版本未受影响。", runtimeUpdateDownloadFailed: "Runtime 下载或校验失败，当前版本未受影响。", runtimeRestoreFailed: "恢复内置 Runtime 失败。", initializationFailed: "桌面应用初始化失败，请重新启动或查看日志。", eventChannelFailed: "状态事件通道连接失败，请刷新运行状态。" }
+    error: { unexpected: "操作失败，请查看诊断信息。", menuOpenFailed: "菜单无法打开，请重试。", settingsSaveFailed: "设置保存失败，已恢复原设置。", diagnosticsExportFailed: "诊断包导出失败。", logsExportFailed: "日志导出失败。", updateCheckFailed: "Desktop 更新检查失败。", updateOpenFailed: "无法打开官方 Desktop Release 页面。", runtimeUpdateCheckFailed: "Runtime 更新检查失败，当前版本未受影响。", runtimeUpdateDownloadFailed: "Runtime 下载或校验失败，当前版本未受影响。", runtimeRestoreFailed: "恢复内置 Runtime 失败。", initializationFailed: "桌面应用初始化失败，请重新启动或查看日志。", eventChannelFailed: "状态事件通道连接失败，请刷新运行状态。" }
   },
   "zh-TW": {
     app: { name: appName, subtitle: "本機 AI Agent 工作臺" },
     common: { start: "啟動", retry: "重試", open: "開啟工作臺", stop: "停止", save: "儲存", close: "關閉", languageSelector: "切換語言" },
+    menu: { label: "應用程式選單", file: "檔案", edit: "編輯", view: "顯示方式", window: "視窗", help: "輔助說明" },
     runtime: {
       idle: "準備啟動",
       starting: "正在啟動 Runtime",
@@ -101,11 +103,12 @@ export const messages = {
       channels: { stable: "穩定版", preview: "預覽版" },
       messages: { idle: "尚未檢查 Runtime 更新。", not_configured: "未設定可信 Runtime 更新服務。", checking: "正在檢查 Runtime 更新。", available: "發現 Runtime {version}。", up_to_date: "目前 Runtime 已是最新版本。", downloading: "正在下載並驗證 Runtime。", applying: "正在安裝並驗證新 Runtime，請稍候。", restart_to_apply: "Runtime {version} 已準備完成，將在下次啟動安裝。", applied: "Runtime 更新已安裝。", check_failed: "Runtime 更新檢查失敗，目前版本未受影響。", download_failed: "Runtime 下載或驗證失敗，目前版本未受影響。", smoke_failed: "新 Runtime 啟動驗證失敗，已保留目前版本。", pinned: "目前 Runtime 已固定，不會自動更新。", bundled_restored: "已還原安裝包內建 Runtime。", startup_rollback: "新 Runtime 啟動失敗，已自動回復。" }
     },
-    error: { unexpected: "操作失敗，請查看診斷資訊。", settingsSaveFailed: "設定儲存失敗，已恢復原設定。", diagnosticsExportFailed: "診斷包匯出失敗。", logsExportFailed: "日誌匯出失敗。", updateCheckFailed: "Desktop 更新檢查失敗。", updateOpenFailed: "無法開啟官方 Desktop Release 頁面。", runtimeUpdateCheckFailed: "Runtime 更新檢查失敗，目前版本未受影響。", runtimeUpdateDownloadFailed: "Runtime 下載或驗證失敗，目前版本未受影響。", runtimeRestoreFailed: "還原內建 Runtime 失敗。", initializationFailed: "桌面應用程式初始化失敗，請重新啟動或查看日誌。", eventChannelFailed: "狀態事件通道連線失敗，請重新整理執行狀態。" }
+    error: { unexpected: "操作失敗，請查看診斷資訊。", menuOpenFailed: "選單無法開啟，請重試。", settingsSaveFailed: "設定儲存失敗，已恢復原設定。", diagnosticsExportFailed: "診斷包匯出失敗。", logsExportFailed: "日誌匯出失敗。", updateCheckFailed: "Desktop 更新檢查失敗。", updateOpenFailed: "無法開啟官方 Desktop Release 頁面。", runtimeUpdateCheckFailed: "Runtime 更新檢查失敗，目前版本未受影響。", runtimeUpdateDownloadFailed: "Runtime 下載或驗證失敗，目前版本未受影響。", runtimeRestoreFailed: "還原內建 Runtime 失敗。", initializationFailed: "桌面應用程式初始化失敗，請重新啟動或查看日誌。", eventChannelFailed: "狀態事件通道連線失敗，請重新整理執行狀態。" }
   },
   "en-US": {
     app: { name: appName, subtitle: "Local AI agent workspace" },
     common: { start: "Start", retry: "Retry", open: "Open workbench", stop: "Stop", save: "Save", close: "Close", languageSelector: "Change language" },
+    menu: { label: "Application menu", file: "File", edit: "Edit", view: "View", window: "Window", help: "Help" },
     runtime: {
       idle: "Ready to start",
       starting: "Starting runtime",
@@ -151,6 +154,6 @@ export const messages = {
       channels: { stable: "Stable", preview: "Preview" },
       messages: { idle: "Runtime updates have not been checked.", not_configured: "A trusted Runtime update service is not configured.", checking: "Checking for a Runtime update.", available: "Runtime {version} is available.", up_to_date: "The current Runtime is up to date.", downloading: "Downloading and verifying the Runtime.", applying: "Installing and verifying the new Runtime.", restart_to_apply: "Runtime {version} is ready and will install at the next launch.", applied: "The Runtime update was installed.", check_failed: "The Runtime check failed. The current version was not changed.", download_failed: "The Runtime download or verification failed. The current version was not changed.", smoke_failed: "The new Runtime failed its startup check. The current version was kept.", pinned: "The current Runtime is pinned and will not update automatically.", bundled_restored: "The bundled Runtime was restored.", startup_rollback: "The new Runtime failed to start and was rolled back automatically." }
     },
-    error: { unexpected: "The operation failed. Open diagnostics for details.", settingsSaveFailed: "The settings could not be saved. The previous value was restored.", diagnosticsExportFailed: "Diagnostics could not be exported.", logsExportFailed: "Logs could not be exported.", updateCheckFailed: "The Desktop update check failed.", updateOpenFailed: "The official Desktop Release page could not be opened.", runtimeUpdateCheckFailed: "The Runtime update check failed. The current version was not changed.", runtimeUpdateDownloadFailed: "The Runtime download or verification failed. The current version was not changed.", runtimeRestoreFailed: "The bundled Runtime could not be restored.", initializationFailed: "The desktop application could not initialize. Restart it or inspect the logs.", eventChannelFailed: "The status event channel could not connect. Refresh the runtime status." }
+    error: { unexpected: "The operation failed. Open diagnostics for details.", menuOpenFailed: "The menu could not be opened. Try again.", settingsSaveFailed: "The settings could not be saved. The previous value was restored.", diagnosticsExportFailed: "Diagnostics could not be exported.", logsExportFailed: "Logs could not be exported.", updateCheckFailed: "The Desktop update check failed.", updateOpenFailed: "The official Desktop Release page could not be opened.", runtimeUpdateCheckFailed: "The Runtime update check failed. The current version was not changed.", runtimeUpdateDownloadFailed: "The Runtime download or verification failed. The current version was not changed.", runtimeRestoreFailed: "The bundled Runtime could not be restored.", initializationFailed: "The desktop application could not initialize. Restart it or inspect the logs.", eventChannelFailed: "The status event channel could not connect. Refresh the runtime status." }
   }
 } as const;

@@ -1,5 +1,9 @@
-use tauri::AppHandle;
-use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+#[cfg(any(target_os = "macos", test))]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "macos")]
+use tauri::menu::SubmenuBuilder;
+use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder};
+use tauri::{AppHandle, Manager};
 
 use crate::error::{DesktopError, DesktopResult};
 
@@ -15,17 +19,55 @@ pub const QUIT_MENU_ID: &str = "desktop-quit";
 pub const FULLSCREEN_MENU_ID: &str = "desktop-fullscreen";
 pub const MINIMIZE_MENU_ID: &str = "desktop-minimize";
 pub const MAXIMIZE_MENU_ID: &str = "desktop-maximize";
+pub const WINDOW_MENU_HEIGHT_LOGICAL: f64 = 38.0;
+
+#[cfg(target_os = "macos")]
+static NATIVE_MENU_POPUP_OPEN: AtomicBool = AtomicBool::new(false);
+
+#[cfg(any(target_os = "macos", test))]
+struct NativeMenuPopupGuard<'a> {
+    open: &'a AtomicBool,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl<'a> NativeMenuPopupGuard<'a> {
+    fn try_acquire(open: &'a AtomicBool) -> Option<Self> {
+        open.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .ok()
+            .map(|_| Self { open })
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl Drop for NativeMenuPopupGuard<'_> {
+    fn drop(&mut self) {
+        self.open.store(false, Ordering::Release);
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn content_top_inset(window: &tauri::Window) -> DesktopResult<f64> {
+    use objc2_app_kit::NSWindow;
+
+    let ns_window: &NSWindow = unsafe { &*window.ns_window().map_err(desktop_error)?.cast() };
+    let content_view = ns_window.contentView().ok_or_else(|| {
+        DesktopError::Other("macOS window content view is unavailable".to_owned())
+    })?;
+    let content_frame = content_view.frame();
+    let layout = ns_window.contentLayoutRect();
+    Ok((content_frame.size.height - (layout.origin.y + layout.size.height)).max(0.0))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn content_top_inset(_window: &tauri::Window) -> DesktopResult<f64> {
+    Ok(0.0)
+}
 
 #[cfg(target_os = "macos")]
 const APP_NAME: &str = env!("DEEPSEEK_DESKTOP_APP_NAME");
 
 #[derive(Clone, Copy)]
 struct MenuLabels {
-    file: &'static str,
-    edit: &'static str,
-    view: &'static str,
-    window: &'static str,
-    help: &'static str,
     about: &'static str,
     settings: &'static str,
     close: &'static str,
@@ -54,37 +96,11 @@ pub(crate) struct CloseConfirmationLabels {
     pub(crate) cancel: &'static str,
 }
 
+#[cfg(target_os = "macos")]
 pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
     let labels = labels(locale);
-    let workbench = item(
-        app,
-        WORKBENCH_MENU_ID,
-        labels.workbench,
-        Some("CmdOrCtrl+1"),
-    )?;
-    let settings = item(app, SETTINGS_MENU_ID, labels.settings, Some("CmdOrCtrl+,"))?;
-    let close = item(app, CLOSE_MENU_ID, labels.close, Some("CmdOrCtrl+W"))?;
     let quit = item(app, QUIT_MENU_ID, labels.quit, Some("CmdOrCtrl+Q"))?;
-    let fullscreen = item(app, FULLSCREEN_MENU_ID, labels.fullscreen, None)?;
-    let minimize = item(app, MINIMIZE_MENU_ID, labels.minimize, None)?;
-    let maximize = item(app, MAXIMIZE_MENU_ID, labels.maximize, None)?;
-    let desktop_update = item(app, DESKTOP_UPDATE_MENU_ID, labels.desktop_update, None)?;
-    let runtime_update = item(app, RUNTIME_UPDATE_MENU_ID, labels.runtime_update, None)?;
-    let diagnostics = item(
-        app,
-        DIAGNOSTICS_MENU_ID,
-        labels.diagnostics,
-        Some("CmdOrCtrl+Shift+D"),
-    )?;
-    let documentation = item(app, DOCUMENTATION_MENU_ID, labels.documentation, None)?;
-    let about = item(app, ABOUT_MENU_ID, labels.about, None)?;
-
-    #[cfg(target_os = "macos")]
     let application = SubmenuBuilder::new(app, APP_NAME)
-        .item(&about)
-        .separator()
-        .item(&settings)
-        .separator()
         .services()
         .separator()
         .hide()
@@ -94,62 +110,131 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
         .item(&quit)
         .build()
         .map_err(desktop_error)?;
-
-    let file = {
-        let builder = SubmenuBuilder::new(app, labels.file);
-        #[cfg(not(target_os = "macos"))]
-        let builder = builder.item(&settings).separator();
-        let builder = builder.item(&close);
-        #[cfg(not(target_os = "macos"))]
-        let builder = builder.separator().item(&quit);
-        builder.build().map_err(desktop_error)?
-    };
-    let edit = SubmenuBuilder::new(app, labels.edit)
-        .undo_with_text(labels.undo)
-        .redo_with_text(labels.redo)
-        .separator()
-        .cut_with_text(labels.cut)
-        .copy_with_text(labels.copy)
-        .paste_with_text(labels.paste)
-        .select_all_with_text(labels.select_all)
-        .build()
-        .map_err(desktop_error)?;
-    let view = SubmenuBuilder::new(app, labels.view)
-        .item(&workbench)
-        .separator()
-        .item(&fullscreen)
-        .build()
-        .map_err(desktop_error)?;
-    let window = SubmenuBuilder::new(app, labels.window)
-        .item(&minimize)
-        .item(&maximize)
-        .build()
-        .map_err(desktop_error)?;
-    let help = {
-        let builder = SubmenuBuilder::new(app, labels.help)
-            .item(&desktop_update)
-            .item(&runtime_update)
-            .item(&diagnostics)
-            .separator()
-            .item(&documentation);
-        #[cfg(not(target_os = "macos"))]
-        let builder = builder.separator().item(&about);
-        builder.build().map_err(desktop_error)?
-    };
-
-    let builder = MenuBuilder::new(app);
-    #[cfg(target_os = "macos")]
-    let builder = builder.item(&application);
-    let menu = builder
-        .item(&file)
-        .item(&edit)
-        .item(&view)
-        .item(&window)
-        .item(&help)
+    let menu = MenuBuilder::new(app)
+        .item(&application)
         .build()
         .map_err(desktop_error)?;
     app.set_menu(menu).map_err(desktop_error)?;
     Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn install(app: &AppHandle, _locale: &str) -> DesktopResult<()> {
+    app.remove_menu().map_err(desktop_error)?;
+    Ok(())
+}
+
+pub fn popup(
+    app: &AppHandle,
+    locale: &str,
+    menu_name: &str,
+    anchor_x: f64,
+    workbench_visible: bool,
+) -> DesktopResult<()> {
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
+    let scale_factor = window.scale_factor().map_err(desktop_error)?;
+    let inner_size = window.inner_size().map_err(desktop_error)?;
+    let logical_width = f64::from(inner_size.width) / scale_factor;
+    if !anchor_x.is_finite() {
+        return Err(DesktopError::InvalidConfiguration(
+            "desktop menu anchor must be finite".to_owned(),
+        ));
+    }
+    let anchor_x = anchor_x.clamp(0.0, logical_width);
+
+    // AppKit aborts when NSMenu's blocking popup loop is entered a second time.
+    #[cfg(target_os = "macos")]
+    let _popup_guard = match NativeMenuPopupGuard::try_acquire(&NATIVE_MENU_POPUP_OPEN) {
+        Some(guard) => guard,
+        None => return Ok(()),
+    };
+
+    if workbench_visible {
+        if let Some(workbench) = app.get_webview("workbench") {
+            workbench.set_focus().map_err(desktop_error)?;
+        }
+    } else if let Some(main) = app.get_webview("main") {
+        main.set_focus().map_err(desktop_error)?;
+    }
+
+    let labels = labels(locale);
+    let menu = match menu_name {
+        "file" => {
+            let settings = item(app, SETTINGS_MENU_ID, labels.settings, Some("CmdOrCtrl+,"))?;
+            let close = item(app, CLOSE_MENU_ID, labels.close, Some("CmdOrCtrl+W"))?;
+            let quit = item(app, QUIT_MENU_ID, labels.quit, Some("CmdOrCtrl+Q"))?;
+            MenuBuilder::new(app)
+                .item(&settings)
+                .separator()
+                .item(&close)
+                .item(&quit)
+                .build()
+        }
+        "edit" => MenuBuilder::new(app)
+            .undo_with_text(labels.undo)
+            .redo_with_text(labels.redo)
+            .separator()
+            .cut_with_text(labels.cut)
+            .copy_with_text(labels.copy)
+            .paste_with_text(labels.paste)
+            .select_all_with_text(labels.select_all)
+            .build(),
+        "view" => {
+            let workbench = item(
+                app,
+                WORKBENCH_MENU_ID,
+                labels.workbench,
+                Some("CmdOrCtrl+1"),
+            )?;
+            let fullscreen = item(app, FULLSCREEN_MENU_ID, labels.fullscreen, None)?;
+            MenuBuilder::new(app)
+                .item(&workbench)
+                .separator()
+                .item(&fullscreen)
+                .build()
+        }
+        "window" => {
+            let minimize = item(app, MINIMIZE_MENU_ID, labels.minimize, None)?;
+            let maximize = item(app, MAXIMIZE_MENU_ID, labels.maximize, None)?;
+            MenuBuilder::new(app)
+                .item(&minimize)
+                .item(&maximize)
+                .build()
+        }
+        "help" => {
+            let desktop_update = item(app, DESKTOP_UPDATE_MENU_ID, labels.desktop_update, None)?;
+            let runtime_update = item(app, RUNTIME_UPDATE_MENU_ID, labels.runtime_update, None)?;
+            let diagnostics = item(
+                app,
+                DIAGNOSTICS_MENU_ID,
+                labels.diagnostics,
+                Some("CmdOrCtrl+Shift+D"),
+            )?;
+            let documentation = item(app, DOCUMENTATION_MENU_ID, labels.documentation, None)?;
+            let about = item(app, ABOUT_MENU_ID, labels.about, None)?;
+            MenuBuilder::new(app)
+                .item(&desktop_update)
+                .item(&runtime_update)
+                .item(&diagnostics)
+                .separator()
+                .item(&documentation)
+                .separator()
+                .item(&about)
+                .build()
+        }
+        _ => {
+            return Err(DesktopError::InvalidConfiguration(
+                "unknown desktop menu".to_owned(),
+            ));
+        }
+    }
+    .map_err(desktop_error)?;
+
+    let popup_y = content_top_inset(&window)? + WINDOW_MENU_HEIGHT_LOGICAL;
+    menu.popup_at(window, tauri::LogicalPosition::new(anchor_x, popup_y))
+        .map_err(desktop_error)
 }
 
 fn item(
@@ -168,11 +253,6 @@ fn item(
 fn labels(locale: &str) -> MenuLabels {
     match locale {
         "zh-TW" => MenuLabels {
-            file: "檔案",
-            edit: "編輯",
-            view: "顯示方式",
-            window: "視窗",
-            help: "輔助說明",
             about: "關於 DeepSeek Desktop",
             settings: "設定…",
             close: "關閉視窗",
@@ -193,11 +273,6 @@ fn labels(locale: &str) -> MenuLabels {
             documentation: "使用說明",
         },
         "en-US" => MenuLabels {
-            file: "File",
-            edit: "Edit",
-            view: "View",
-            window: "Window",
-            help: "Help",
             about: "About DeepSeek Desktop",
             settings: "Settings…",
             close: "Close Window",
@@ -218,11 +293,6 @@ fn labels(locale: &str) -> MenuLabels {
             documentation: "Documentation",
         },
         _ => MenuLabels {
-            file: "文件",
-            edit: "编辑",
-            view: "视图",
-            window: "窗口",
-            help: "帮助",
             about: "关于 DeepSeek Desktop",
             settings: "设置…",
             close: "关闭窗口",
@@ -270,4 +340,22 @@ pub(crate) fn close_confirmation_labels(locale: &str) -> CloseConfirmationLabels
 
 fn desktop_error(error: impl std::fmt::Display) -> DesktopError {
     DesktopError::Other(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NativeMenuPopupGuard;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn native_menu_popup_guard_rejects_reentry_and_releases_on_drop() {
+        let open = AtomicBool::new(false);
+        let guard = NativeMenuPopupGuard::try_acquire(&open).expect("first popup should open");
+
+        assert!(NativeMenuPopupGuard::try_acquire(&open).is_none());
+        drop(guard);
+
+        assert!(!open.load(Ordering::Acquire));
+        assert!(NativeMenuPopupGuard::try_acquire(&open).is_some());
+    }
 }

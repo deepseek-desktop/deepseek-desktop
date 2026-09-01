@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import DesktopMenuBar from "./DesktopMenuBar.vue";
 import deepSeekDesktopLogo from "./assets/deepseek-desktop.svg";
 import type { DesktopAbout, DesktopSettings, DesktopSettingsView, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
 import {
@@ -14,10 +15,12 @@ import {
   getRuntimeUpdateStatus,
   getSettings,
   ignoreDesktopUpdate,
+  onDesktopLocale,
   onDesktopSettingsView,
   onDesktopSurface,
   onRuntimeStatus,
   onRuntimeUpdateStatus,
+  openDesktopMenu,
   openDesktopRelease,
   openWorkbench,
   openRepository,
@@ -26,11 +29,15 @@ import {
   startRuntime,
   stopRuntime
 } from "./desktop";
+import type { DesktopMenuName } from "./desktop";
 import { normalizeLocale, type SupportedLocale } from "./i18n";
 
 type ViewName = Exclude<DesktopSettingsView, "desktop-update">;
 
 const { locale, t } = useI18n();
+const menuOnly = Boolean((window as Window & {
+  __DEEPSEEK_DESKTOP_MENU_ONLY__?: boolean;
+}).__DEEPSEEK_DESKTOP_MENU_ONLY__);
 const view = ref<ViewName>("runtime");
 const busy = ref(false);
 const notice = ref("");
@@ -66,9 +73,11 @@ let unlisten: (() => void) | undefined;
 let unlistenSurface: (() => void) | undefined;
 let unlistenSettingsView: (() => void) | undefined;
 let unlistenRuntimeUpdate: (() => void) | undefined;
+let unlistenLocale: (() => void) | undefined;
 const workbenchVisible = ref(false);
 const updatePromptVisible = ref(false);
 let workbenchOpening = false;
+let desktopMenuOpening = false;
 
 const phaseLabel = computed(() => t(`runtime.${runtime.value.phase}`));
 const runtimeStartLabel = computed(() => runtime.value.phase === "failed" ? t("common.retry") : t("common.start"));
@@ -202,7 +211,6 @@ async function showWorkbench(): Promise<void> {
   workbenchOpening = true;
   try {
     await openWorkbench();
-    workbenchVisible.value = true;
   } catch {
     notice.value = t("error.unexpected");
   } finally {
@@ -213,6 +221,18 @@ async function showWorkbench(): Promise<void> {
 async function closeSettings(): Promise<void> {
   if (runtime.value.phase !== "ready") return;
   await showWorkbench();
+}
+
+async function showDesktopMenu(menu: DesktopMenuName, anchorX: number): Promise<void> {
+  if (desktopMenuOpening) return;
+  desktopMenuOpening = true;
+  try {
+    await openDesktopMenu(menu, anchorX);
+  } catch {
+    notice.value = t("error.menuOpenFailed");
+  } finally {
+    desktopMenuOpening = false;
+  }
 }
 
 function handleSettingsKeydown(event: KeyboardEvent): void {
@@ -421,6 +441,17 @@ async function visitRepository(): Promise<void> {
 }
 
 onMounted(async () => {
+  if (menuOnly) {
+    try {
+      unlistenLocale = await onDesktopLocale(next => {
+        locale.value = normalizeLocale(next);
+      });
+      locale.value = normalizeLocale((await getSettings()).locale);
+    } catch {
+      // Keep the navigator locale when the dedicated menu cannot read Shell settings.
+    }
+    return;
+  }
   window.addEventListener("keydown", handleSettingsKeydown);
   try {
     [settings.value, runtime.value, about.value, runtimeUpdate.value] = await Promise.all([
@@ -474,12 +505,18 @@ onBeforeUnmount(() => {
   unlistenSurface?.();
   unlistenSettingsView?.();
   unlistenRuntimeUpdate?.();
+  unlistenLocale?.();
 });
 </script>
 
 <template>
-  <main class="desktop-shell">
-    <section class="settings-window" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <main v-if="menuOnly" class="desktop-menu-only">
+    <DesktopMenuBar @open="showDesktopMenu" />
+  </main>
+  <main v-else class="desktop-shell" :class="{ 'workbench-surface': workbenchVisible }">
+    <DesktopMenuBar @open="showDesktopMenu" />
+    <div class="desktop-surface">
+    <section v-show="!workbenchVisible" class="settings-window" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <header class="topbar">
       <div class="brand">
         <img class="brand-mark" :src="deepSeekDesktopLogo" alt="" aria-hidden="true" />
@@ -682,5 +719,6 @@ onBeforeUnmount(() => {
         </section>
       </div>
     </section>
+    </div>
   </main>
 </template>

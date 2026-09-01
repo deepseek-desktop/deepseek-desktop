@@ -5,6 +5,8 @@ import type { DesktopAbout, DesktopSettings, DesktopSettingsView, DesktopSurface
 
 const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 
+export type DesktopMenuName = "file" | "edit" | "view" | "window" | "help";
+
 const browserSettings: DesktopSettings = {
   schemaVersion: 5,
   locale: "zh-CN",
@@ -62,6 +64,10 @@ export async function saveSettings(settings: DesktopSettings): Promise<DesktopSe
 
 export async function openWorkbench(): Promise<void> {
   if (inTauri()) await invoke("runtime_open");
+}
+
+export async function openDesktopMenu(menu: DesktopMenuName, anchorX: number): Promise<void> {
+  if (inTauri()) await invoke("desktop_menu_popup", { menu, anchorX });
 }
 
 export async function getAbout(): Promise<DesktopAbout> {
@@ -187,4 +193,9 @@ export async function onDesktopSurface(handler: (surface: DesktopSurface) => voi
 export async function onDesktopSettingsView(handler: (view: DesktopSettingsView) => void): Promise<UnlistenFn> {
   if (!inTauri()) return () => undefined;
   return listen<DesktopSettingsView>("desktop://settings-view", event => handler(event.payload));
+}
+
+export async function onDesktopLocale(handler: (locale: DesktopSettings["locale"]) => void): Promise<UnlistenFn> {
+  if (!inTauri()) return () => undefined;
+  return listen<DesktopSettings["locale"]>("desktop://locale", event => handler(event.payload));
 }

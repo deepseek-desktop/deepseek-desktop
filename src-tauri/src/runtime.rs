@@ -38,6 +38,8 @@ const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_RESTARTS: u8 = 2;
 const PROFILE_PACKAGE_DIGEST_FILE: &str = ".deepseek-desktop-source.sha256";
 const READY_PREFIX: &str = "dsh web: http://127.0.0.1:";
+const DESKTOP_MENU_WEBVIEW_LABEL: &str = "desktop-menu";
+const DESKTOP_MENU_INITIALIZATION_SCRIPT: &str = "window.__DEEPSEEK_DESKTOP_MENU_ONLY__ = true;";
 const DISABLE_TEXT_ASSISTANCE_SCRIPT: &str = r#"
 (() => {
   const selector = "input, textarea, [contenteditable='true'], [contenteditable='']";
@@ -346,6 +348,11 @@ impl RuntimeSupervisor {
                 .hide()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
         }
+        if let Some(webview) = self.app.get_webview(DESKTOP_MENU_WEBVIEW_LABEL) {
+            webview
+                .hide()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+        }
         if let Some(main) = self.app.get_webview("main") {
             main.show()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
@@ -368,20 +375,65 @@ impl RuntimeSupervisor {
         }
     }
 
+    pub fn workbench_visible(&self) -> bool {
+        self.workbench_visible.load(Ordering::Acquire)
+    }
+
     fn layout_workbench(&self) -> DesktopResult<()> {
         let window = self
             .app
             .get_window("main")
             .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
         let (position, size) = self.workbench_bounds(&window)?;
+        let menu_position = tauri::LogicalPosition::new(
+            0.0,
+            (position.y - crate::native_menu::WINDOW_MENU_HEIGHT_LOGICAL).max(0.0),
+        );
+        let menu_size =
+            tauri::LogicalSize::new(size.width, crate::native_menu::WINDOW_MENU_HEIGHT_LOGICAL);
+        self.ensure_desktop_menu(&window, menu_position, menu_size)?;
+        if let Some(main) = self.app.get_webview("main") {
+            main.hide()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+        }
         if let Some(workbench) = self.app.get_webview("workbench") {
             workbench
                 .set_bounds(tauri::Rect {
-                    position: tauri::Position::Physical(position),
-                    size: tauri::Size::Physical(size),
+                    position: tauri::Position::Logical(position),
+                    size: tauri::Size::Logical(size),
                 })
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
         }
+        Ok(())
+    }
+
+    fn ensure_desktop_menu(
+        &self,
+        window: &tauri::Window,
+        position: tauri::LogicalPosition<f64>,
+        size: tauri::LogicalSize<f64>,
+    ) -> DesktopResult<()> {
+        if let Some(webview) = self.app.get_webview(DESKTOP_MENU_WEBVIEW_LABEL) {
+            webview
+                .set_bounds(tauri::Rect {
+                    position: tauri::Position::Logical(position),
+                    size: tauri::Size::Logical(size),
+                })
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            webview
+                .show()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            return Ok(());
+        }
+
+        let builder = tauri::webview::WebviewBuilder::new(
+            DESKTOP_MENU_WEBVIEW_LABEL,
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .initialization_script(DESKTOP_MENU_INITIALIZATION_SCRIPT);
+        window
+            .add_child(builder, position, size)
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
         Ok(())
     }
 
@@ -397,9 +449,18 @@ impl RuntimeSupervisor {
         let size = window
             .inner_size()
             .map_err(|error| DesktopError::Other(error.to_string()))?;
+        let scale_factor = window
+            .scale_factor()
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        let logical_size = size.to_logical::<f64>(scale_factor);
+        let top_inset =
+            crate::native_menu::content_top_inset(&window)?.clamp(0.0, logical_size.height);
         main.set_bounds(tauri::Rect {
-            position: tauri::Position::Physical(tauri::PhysicalPosition::new(0, 0)),
-            size: tauri::Size::Physical(size),
+            position: tauri::Position::Logical(tauri::LogicalPosition::new(0.0, top_inset)),
+            size: tauri::Size::Logical(tauri::LogicalSize::new(
+                logical_size.width,
+                (logical_size.height - top_inset).max(0.0),
+            )),
         })
         .map_err(|error| DesktopError::Other(error.to_string()))?;
         Ok(())
@@ -408,11 +469,15 @@ impl RuntimeSupervisor {
     fn workbench_bounds(
         &self,
         window: &tauri::Window,
-    ) -> DesktopResult<(tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>)> {
+    ) -> DesktopResult<(tauri::LogicalPosition<f64>, tauri::LogicalSize<f64>)> {
         let window_size = window
             .inner_size()
             .map_err(|error| DesktopError::Other(error.to_string()))?;
-        Ok(workbench_geometry(window_size))
+        let scale_factor = window
+            .scale_factor()
+            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        let top_inset = crate::native_menu::content_top_inset(window)?;
+        Ok(workbench_geometry(window_size, scale_factor, top_inset))
     }
 
     fn emit_surface(&self, surface: &str) {
@@ -1326,8 +1391,20 @@ fn parse_ready_url(line: &str) -> Option<String> {
 
 fn workbench_geometry(
     window_size: tauri::PhysicalSize<u32>,
-) -> (tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>) {
-    (tauri::PhysicalPosition::new(0, 0), window_size)
+    scale_factor: f64,
+    top_inset: f64,
+) -> (tauri::LogicalPosition<f64>, tauri::LogicalSize<f64>) {
+    let logical_size = window_size.to_logical::<f64>(scale_factor);
+    let top_inset = top_inset.clamp(0.0, logical_size.height);
+    let menu_height =
+        crate::native_menu::WINDOW_MENU_HEIGHT_LOGICAL.clamp(0.0, logical_size.height - top_inset);
+    (
+        tauri::LogicalPosition::new(0.0, top_inset + menu_height),
+        tauri::LogicalSize::new(
+            logical_size.width,
+            (logical_size.height - top_inset - menu_height).max(0.0),
+        ),
+    )
 }
 
 fn authenticate_runtime(url: &str) -> DesktopResult<Url> {
@@ -1716,10 +1793,14 @@ mod tests {
     }
 
     #[test]
-    fn fills_the_native_window_with_the_embedded_workbench() {
-        let (position, size) = workbench_geometry(tauri::PhysicalSize::new(2240, 1440));
-        assert_eq!(position, tauri::PhysicalPosition::new(0, 0));
-        assert_eq!(size, tauri::PhysicalSize::new(2240, 1440));
+    fn reserves_the_shell_menu_above_the_embedded_workbench() {
+        let (position, size) = workbench_geometry(tauri::PhysicalSize::new(2240, 1440), 2.0, 28.0);
+        assert_eq!(position, tauri::LogicalPosition::new(0.0, 66.0));
+        assert_eq!(size, tauri::LogicalSize::new(1120.0, 654.0));
+
+        let (position, size) = workbench_geometry(tauri::PhysicalSize::new(1000, 700), 1.0, 0.0);
+        assert_eq!(position, tauri::LogicalPosition::new(0.0, 38.0));
+        assert_eq!(size, tauri::LogicalSize::new(1000.0, 662.0));
     }
 
     #[test]

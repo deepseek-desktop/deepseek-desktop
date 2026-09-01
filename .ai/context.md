@@ -12,7 +12,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - Desktop 是稳定原生外壳，不选择、保存或注册用户项目目录；Runtime 工作台自行管理项目目录。Runtime 从应用数据目录内的独立 `runtime-workdir` 启动，Desktop 只依赖公开启动、健康和凭据协议。
 - OpenAI Responses 兼容流的最终 `output_item.done` 事件是工具调用 ID、名称、参数和 namespace 的权威事实；不得沿用 `output_item.added` 中可能过期的工具身份，否则会把 `glob` 等调用误派发为 `read`。
 - Harness 工作台是唯一主界面；运行状态、诊断、Desktop 更新、Runtime 更新和关于按需显示为同一原生窗口中的设置层。设置打开时只隐藏工作台子 WebView，关闭时复用原页面和同一 Runtime，不重新导航或丢失会话状态。
-- 功能菜单只由 Tauri 原生菜单提供一次，macOS、Windows、Linux 统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；macOS 额外保留系统规范的应用菜单，Vue 和 Runtime 页面都不绘制或注入重复菜单。
+- 唯一完整功能菜单由 Desktop Shell 固定显示在窗口内容区顶部左侧，macOS、Windows、Linux 统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；标题由 Vue 三语渲染，展开项由 Tauri 弹出原生菜单。Runtime 子 WebView 从菜单栏下方开始，不注入菜单脚本也不获得 IPC；macOS 系统栏只保留最小应用菜单，Windows/Linux 不挂载重复的完整原生窗口菜单。
 - Desktop 初始化后自动启动空闲 Runtime，并在 readiness 通过后直接打开工作台；已就绪 Runtime 不重复启动，启动失败时打开设置层中的重试、恢复和诊断入口。
 - 窗口状态按显示器恢复；保存位置仍能落在已连接显示器时保持不变，目标显示器断开时回到当前主显示器可见区域。
 - 工作台 WebView 不获得通用 Tauri Shell、文件系统或任意 IPC 权限。

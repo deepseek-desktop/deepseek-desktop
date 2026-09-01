@@ -26,12 +26,15 @@ test("automatic Runtime startup, language switching, and status views fully load
   await expect.poll(() => brandMark.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByRole("heading", { name: "Runtime 已就绪" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "设置" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "应用菜单" })).toHaveCount(0);
+  const desktopMenu = page.getByRole("menubar", { name: "应用菜单" });
+  await expect(desktopMenu).toBeVisible();
+  await expect(desktopMenu.getByRole("menuitem")).toHaveText(["文件", "编辑", "视图", "窗口", "帮助"]);
   await expect(page.getByRole("button", { name: "开始使用" })).toHaveCount(0);
   await page.getByLabel("切换语言").selectOption("en-US");
   await expect(page.getByRole("heading", { name: "Runtime ready" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Close settings and return to the workbench" })).toBeVisible();
   await expect(page.getByText("Choose a workspace")).toHaveCount(0);
+  await expect(page.getByRole("menubar", { name: "Application menu" }).getByRole("menuitem")).toHaveText(["File", "Edit", "View", "Window", "Help"]);
 
   await page.getByRole("button", { name: /Diagnostics/ }).click();
   await expect(page.getByRole("heading", { name: "Runtime diagnostics" })).toBeVisible();

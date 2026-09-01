@@ -7,12 +7,66 @@
 }
 
 * { box-sizing: border-box; }
+html, body, #app { width: 100%; height: 100%; }
 body { margin: 0; min-width: 760px; min-height: 560px; overflow: hidden; }
 button, input, select { font: inherit; }
 button { cursor: pointer; }
 
 .desktop-shell {
-  min-height: 100vh;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  overflow: hidden;
+  background: #f6f8f9;
+}
+
+.desktop-menu-only {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #fff;
+}
+
+.desktop-menu-only .desktop-menu-bar { height: 100%; }
+
+.desktop-menu-bar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  color: #26343d;
+  background: #fff;
+  border-bottom: 1px solid #dce4e7;
+  scrollbar-width: none;
+  user-select: none;
+}
+.desktop-menu-bar::-webkit-scrollbar { display: none; }
+.desktop-menu-trigger {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 10px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.desktop-menu-trigger:hover,
+.desktop-menu-trigger:focus-visible {
+  background: #edf2f4;
+  outline: none;
+}
+
+.desktop-surface {
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -23,11 +77,12 @@ button { cursor: pointer; }
     #f6f8f9;
   background-size: 32px 32px;
 }
+.workbench-surface .desktop-surface { padding: 0; background: #fff; }
 
 .settings-window {
   position: relative;
   width: min(1120px, 100%);
-  height: min(820px, calc(100vh - 40px));
+  height: min(820px, calc(100% - 40px));
   min-height: 0;
   display: grid;
   grid-template-rows: 76px minmax(0, 1fr);
@@ -186,7 +241,11 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
 @media (prefers-color-scheme: dark) {
   :root { color: #e4ebee; background: #101719; }
   .brand-mark { filter: brightness(0) invert(1); }
-  .desktop-shell { background-color: #11191b; background-image: linear-gradient(rgba(60, 181, 157, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 181, 157, 0.05) 1px, transparent 1px); }
+  .desktop-shell, .desktop-menu-bar { color: #e4ebee; background-color: #11191b; }
+  .desktop-menu-bar { border-color: #2b373b; }
+  .desktop-menu-trigger:hover, .desktop-menu-trigger:focus-visible { background: #263236; }
+  .desktop-surface { background-color: #11191b; background-image: linear-gradient(rgba(60, 181, 157, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 181, 157, 0.05) 1px, transparent 1px); }
+  .workbench-surface .desktop-surface { background: #101719; }
   .settings-window, .topbar, .side-nav { background: rgba(18, 27, 30, 0.97); border-color: #2b373b; }
   .icon-button { color: #e4ebee; }
   .icon-button:hover, .icon-button:focus-visible { background: #263236; }
@@ -199,7 +258,7 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
 }
 
 @media (max-height: 620px) {
-  .desktop-shell { padding: 10px; }
-  .settings-window { height: calc(100vh - 20px); }
+  .desktop-surface { padding: 10px; }
+  .settings-window { height: calc(100% - 20px); }
   .content { padding-top: 36px; }
 }

@@ -18,7 +18,7 @@ use error::{DesktopError, DesktopResult};
 use runtime::RuntimeSupervisor;
 use runtime_update::{RuntimeStore, RuntimeUpdateManager};
 use settings::{AppPaths, SettingsStore};
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_opener::OpenerExt;
 
@@ -164,7 +164,25 @@ fn settings_update(
 ) -> DesktopResult<DesktopSettings> {
     let settings = state.settings.update(settings)?;
     native_menu::install(&app, &settings.locale)?;
+    let _ = app.emit("desktop://locale", settings.locale.clone());
     Ok(settings)
+}
+
+#[tauri::command]
+fn desktop_menu_popup(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    menu: String,
+    anchor_x: f64,
+) -> DesktopResult<()> {
+    let locale = state.settings.get()?.locale;
+    native_menu::popup(
+        &app,
+        &locale,
+        &menu,
+        anchor_x,
+        state.supervisor.workbench_visible(),
+    )
 }
 
 #[tauri::command]
@@ -491,6 +509,7 @@ pub fn run() {
             runtime_open,
             settings_get,
             settings_update,
+            desktop_menu_popup,
             desktop_about,
             repository_open,
             update_check,
