@@ -18,7 +18,7 @@ use error::{DesktopError, DesktopResult};
 use runtime::RuntimeSupervisor;
 use runtime_update::{RuntimeStore, RuntimeUpdateManager};
 use settings::{AppPaths, SettingsStore};
-use tauri::{Manager, State};
+use tauri::{LogicalPosition, Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_opener::OpenerExt;
 
@@ -149,6 +149,27 @@ async fn runtime_open(state: State<'_, AppState>) -> DesktopResult<()> {
     tauri::async_runtime::spawn_blocking(move || supervisor.open_runtime())
         .await
         .map_err(|error| DesktopError::Other(error.to_string()))?
+}
+
+#[tauri::command]
+fn desktop_menu_popup(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    menu: String,
+    x: f64,
+    y: f64,
+) -> DesktopResult<()> {
+    if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 {
+        return Err(DesktopError::InvalidConfiguration(
+            "desktop menu position is invalid".to_owned(),
+        ));
+    }
+    state.supervisor.focus_active_surface()?;
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
+    let locale = state.settings.get()?.locale;
+    native_menu::popup(&app, &window, &locale, &menu, LogicalPosition::new(x, y))
 }
 
 #[tauri::command]
@@ -352,6 +373,34 @@ pub fn run() {
                     None::<&str>,
                 );
             }
+            native_menu::CLOSE_MENU_ID | native_menu::QUIT_MENU_ID => {
+                if let Some(window) = app.get_window("main") {
+                    let _ = window.close();
+                }
+            }
+            native_menu::FULLSCREEN_MENU_ID => {
+                if let Some(window) = app.get_window("main")
+                    && let Ok(fullscreen) = window.is_fullscreen()
+                {
+                    let _ = window.set_fullscreen(!fullscreen);
+                }
+            }
+            native_menu::MINIMIZE_MENU_ID => {
+                if let Some(window) = app.get_window("main") {
+                    let _ = window.minimize();
+                }
+            }
+            native_menu::MAXIMIZE_MENU_ID => {
+                if let Some(window) = app.get_window("main")
+                    && let Ok(maximized) = window.is_maximized()
+                {
+                    let _ = if maximized {
+                        window.unmaximize()
+                    } else {
+                        window.maximize()
+                    };
+                }
+            }
             _ => {}
         })
         .setup(|app| {
@@ -406,6 +455,7 @@ pub fn run() {
             runtime_start,
             runtime_stop,
             runtime_open,
+            desktop_menu_popup,
             settings_get,
             settings_update,
             desktop_about,

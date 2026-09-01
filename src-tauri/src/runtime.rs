@@ -22,6 +22,7 @@ use crate::contracts::{RuntimePhase, RuntimeStatus};
 use crate::credential_vault::RuntimeSession;
 use crate::diagnostics::Diagnostics;
 use crate::error::{DesktopError, DesktopResult};
+use crate::native_menu;
 use crate::runtime_update::{RuntimeLocation, RuntimeStore, RuntimeUpdateManager};
 use crate::settings::{AppPaths, SettingsStore};
 
@@ -38,6 +39,7 @@ const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_RESTARTS: u8 = 2;
 const PROFILE_PACKAGE_DIGEST_FILE: &str = ".deepseek-desktop-source.sha256";
 const READY_PREFIX: &str = "dsh web: http://127.0.0.1:";
+const WORKBENCH_MENU_PATH_PREFIX: &str = "/__deepseek_desktop_menu__/";
 const DISABLE_TEXT_ASSISTANCE_SCRIPT: &str = r#"
 (() => {
   const selector = "input, textarea, [contenteditable='true'], [contenteditable='']";
@@ -69,6 +71,70 @@ const DISABLE_TEXT_ASSISTANCE_SCRIPT: &str = r#"
   }
 })();
 "#;
+const WORKBENCH_MENU_SCRIPT: &str = r#"
+(() => {
+  const menuId = "__deepseek_desktop_menu";
+  const menus = ["file", "edit", "view", "window", "help"];
+  const labels = {
+    "zh-CN": ["文件", "编辑", "视图", "窗口", "帮助"],
+    "zh-TW": ["檔案", "編輯", "檢視", "視窗", "說明"],
+    "en-US": ["File", "Edit", "View", "Window", "Help"]
+  };
+  const locale = () => {
+    const value = document.documentElement.lang || navigator.language;
+    if (value.toLowerCase().startsWith("zh-tw") || value.toLowerCase().startsWith("zh-hant")) return "zh-TW";
+    if (value.toLowerCase().startsWith("zh")) return "zh-CN";
+    return "en-US";
+  };
+  const install = () => {
+    if (!document.body || document.getElementById(menuId)) return;
+    const style = document.createElement("style");
+    style.textContent = `
+      #${menuId} { all: initial; position: fixed; inset: 0 0 auto 0; z-index: 2147483647;
+        height: 34px; display: flex; align-items: stretch; padding: 0 8px; box-sizing: border-box;
+        border-bottom: 1px solid #dce4e7; background: rgba(255, 255, 255, .97);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      #${menuId} button { all: unset; min-width: 48px; height: 34px; padding: 0 10px; box-sizing: border-box;
+        color: #34434d; border-radius: 4px; font: 13px/34px inherit; text-align: center; cursor: default; }
+      #${menuId} button:hover, #${menuId} button:focus-visible { background: #edf2f4; outline: none; }
+      #${menuId} button:active { background: #dfe7ea; }
+      html { overflow: hidden !important; }
+      body { box-sizing: border-box !important; height: 100vh !important; padding-top: 34px !important; }
+      @media (prefers-color-scheme: dark) {
+        #${menuId} { border-color: #2b373b; background: rgba(18, 27, 30, .97); }
+        #${menuId} button { color: #e4ebee; }
+        #${menuId} button:hover, #${menuId} button:focus-visible { background: #263236; }
+      }
+    `;
+    document.head.appendChild(style);
+    const menu = document.createElement("nav");
+    menu.id = menuId;
+    menu.setAttribute("aria-label", "DeepSeek Desktop menu");
+    menus.forEach((name, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.menu = name;
+      button.setAttribute("aria-haspopup", "menu");
+      button.addEventListener("click", () => {
+        const bounds = button.getBoundingClientRect();
+        const link = document.createElement("a");
+        link.href = `${location.origin}/__deepseek_desktop_menu__/${name}?x=${bounds.left}&y=${bounds.bottom}`;
+        link.click();
+      });
+      menu.appendChild(button);
+    });
+    document.body.appendChild(menu);
+    const translate = () => {
+      const current = labels[locale()];
+      menu.querySelectorAll("button").forEach((button, index) => { button.textContent = current[index]; });
+    };
+    translate();
+    new MutationObserver(translate).observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install, { once: true });
+  else install();
+})();
+"#;
 
 fn is_managed_runtime_origin(managed_origin: &Url, candidate: &Url) -> bool {
     candidate.scheme() == managed_origin.scheme()
@@ -81,6 +147,44 @@ enum Navigation {
     Allow,
     Deny,
     External,
+}
+
+#[derive(Debug, PartialEq)]
+struct WorkbenchMenuRequest {
+    menu: String,
+    x: f64,
+    y: f64,
+}
+
+fn parse_workbench_menu_request(
+    managed_origin: Option<&Url>,
+    candidate: &Url,
+) -> Option<WorkbenchMenuRequest> {
+    if !managed_origin.is_some_and(|managed| is_managed_runtime_origin(managed, candidate)) {
+        return None;
+    }
+    let menu = candidate.path().strip_prefix(WORKBENCH_MENU_PATH_PREFIX)?;
+    if !matches!(menu, "file" | "edit" | "view" | "window" | "help") {
+        return None;
+    }
+    let mut x = None;
+    let mut y = None;
+    for (name, value) in candidate.query_pairs() {
+        match name.as_ref() {
+            "x" => x = value.parse::<f64>().ok(),
+            "y" => y = value.parse::<f64>().ok(),
+            _ => {}
+        }
+    }
+    let (x, y) = (x?, y?);
+    if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 || x > 100_000.0 || y > 100_000.0 {
+        return None;
+    }
+    Some(WorkbenchMenuRequest {
+        menu: menu.to_owned(),
+        x,
+        y,
+    })
 }
 
 /// The Runtime binds a fresh random port on every start, so the managed origin is
@@ -234,14 +338,10 @@ impl RuntimeSupervisor {
                 .navigate(url)
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
             self.workbench_visible.store(true, Ordering::Release);
-            self.layout_workbench()?;
             webview
                 .show()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
-            if let Some(main) = self.app.get_webview("main") {
-                main.hide()
-                    .map_err(|error| DesktopError::Other(error.to_string()))?;
-            }
+            self.layout_workbench()?;
             webview
                 .set_focus()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
@@ -250,6 +350,8 @@ impl RuntimeSupervisor {
         }
         let navigation_origin = Arc::clone(&self.managed_origin);
         let navigation_app = self.app.clone();
+        let menu_app = self.app.clone();
+        let menu_settings = Arc::clone(&self.settings);
         let new_window_origin = Arc::clone(&self.managed_origin);
         let new_window_app = self.app.clone();
         let main_window = self
@@ -260,11 +362,26 @@ impl RuntimeSupervisor {
         let builder =
             tauri::webview::WebviewBuilder::new("workbench", tauri::WebviewUrl::External(url))
                 .initialization_script(DISABLE_TEXT_ASSISTANCE_SCRIPT)
+                .initialization_script(WORKBENCH_MENU_SCRIPT)
                 .on_navigation(move |candidate| {
-                    match classify_navigation(
-                        current_managed_origin(&navigation_origin).as_ref(),
-                        candidate,
-                    ) {
+                    let managed_origin = current_managed_origin(&navigation_origin);
+                    if let Some(request) =
+                        parse_workbench_menu_request(managed_origin.as_ref(), candidate)
+                    {
+                        if let Some(window) = menu_app.get_window("main")
+                            && let Ok(settings) = menu_settings.get()
+                        {
+                            let _ = native_menu::popup(
+                                &menu_app,
+                                &window,
+                                &settings.locale,
+                                &request.menu,
+                                tauri::LogicalPosition::new(request.x, request.y),
+                            );
+                        }
+                        return false;
+                    }
+                    match classify_navigation(managed_origin.as_ref(), candidate) {
                         Navigation::Allow => true,
                         Navigation::Deny => false,
                         // A failed hand-off leaves the page to the webview, so the
@@ -305,10 +422,6 @@ impl RuntimeSupervisor {
         };
         self.workbench_visible.store(true, Ordering::Release);
         self.layout_workbench()?;
-        if let Some(main) = self.app.get_webview("main") {
-            main.hide()
-                .map_err(|error| DesktopError::Other(error.to_string()))?;
-        }
         webview
             .set_focus()
             .map_err(|error| DesktopError::Other(error.to_string()))?;
@@ -342,6 +455,22 @@ impl RuntimeSupervisor {
         } else {
             self.layout_management()
         }
+    }
+
+    pub fn focus_active_surface(&self) -> DesktopResult<()> {
+        if self.workbench_visible.load(Ordering::Acquire)
+            && let Some(workbench) = self.app.get_webview("workbench")
+        {
+            workbench
+                .set_focus()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            return Ok(());
+        }
+        if let Some(main) = self.app.get_webview("main") {
+            main.set_focus()
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+        }
+        Ok(())
     }
 
     fn layout_workbench(&self) -> DesktopResult<()> {
@@ -1699,6 +1828,46 @@ mod tests {
     }
 
     #[test]
+    fn accepts_only_bounded_known_workbench_menu_requests() {
+        let managed = Url::parse("http://127.0.0.1:43127/").unwrap();
+        assert_eq!(
+            parse_workbench_menu_request(
+                Some(&managed),
+                &Url::parse("http://127.0.0.1:43127/__deepseek_desktop_menu__/view?x=104.5&y=34")
+                    .unwrap()
+            ),
+            Some(WorkbenchMenuRequest {
+                menu: "view".to_owned(),
+                x: 104.5,
+                y: 34.0,
+            })
+        );
+        assert!(
+            parse_workbench_menu_request(
+                Some(&managed),
+                &Url::parse("http://127.0.0.1:43127/__deepseek_desktop_menu__/unknown?x=0&y=34")
+                    .unwrap()
+            )
+            .is_none()
+        );
+        assert!(
+            parse_workbench_menu_request(
+                Some(&managed),
+                &Url::parse("http://127.0.0.1:43127/__deepseek_desktop_menu__/view?x=-1&y=34")
+                    .unwrap()
+            )
+            .is_none()
+        );
+        assert!(
+            parse_workbench_menu_request(
+                Some(&managed),
+                &Url::parse("https://example.com/__deepseek_desktop_menu__/view?x=0&y=34").unwrap()
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
     fn treats_repeated_start_for_active_runtime_as_idempotent() {
         for phase in [
             RuntimePhase::Starting,
@@ -1905,6 +2074,16 @@ mod tests {
         assert!(!DISABLE_TEXT_ASSISTANCE_SCRIPT.contains("element.value"));
         assert!(DISABLE_TEXT_ASSISTANCE_SCRIPT.contains("MutationObserver"));
         assert!(DISABLE_TEXT_ASSISTANCE_SCRIPT.contains("focusin"));
+    }
+
+    #[test]
+    fn injects_a_fixed_local_menu_without_exposing_desktop_commands() {
+        for menu in ["file", "edit", "view", "window", "help"] {
+            assert!(WORKBENCH_MENU_SCRIPT.contains(menu));
+        }
+        assert!(WORKBENCH_MENU_SCRIPT.contains(WORKBENCH_MENU_PATH_PREFIX));
+        assert!(WORKBENCH_MENU_SCRIPT.contains("position: fixed"));
+        assert!(!WORKBENCH_MENU_SCRIPT.contains("__TAURI_INTERNALS__"));
     }
 
     #[test]

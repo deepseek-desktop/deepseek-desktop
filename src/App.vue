@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import deepSeekDesktopLogo from "./assets/deepseek-desktop.svg";
-import type { DesktopAbout, DesktopSettings, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopMenu, DesktopSettings, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
 import {
   checkRuntimeUpdate,
   checkForUpdates,
@@ -17,6 +17,7 @@ import {
   onRuntimeStatus,
   onRuntimeUpdateStatus,
   openWorkbench,
+  popupDesktopMenu,
   openRepository,
   restoreBundledRuntime,
   saveSettings,
@@ -62,6 +63,7 @@ let unlistenSurface: (() => void) | undefined;
 let unlistenRuntimeUpdate: (() => void) | undefined;
 const workbenchVisible = ref(false);
 let workbenchOpening = false;
+const desktopMenus: DesktopMenu[] = ["file", "edit", "view", "window", "help"];
 
 const phaseLabel = computed(() => t(`runtime.${runtime.value.phase}`));
 const runtimeStartLabel = computed(() => runtime.value.phase === "failed" ? t("common.retry") : t("common.start"));
@@ -159,6 +161,16 @@ async function persistSettings(): Promise<void> {
 function navigate(next: ViewName): void {
   notice.value = "";
   view.value = next;
+}
+
+async function openDesktopMenu(menu: DesktopMenu, event: MouseEvent): Promise<void> {
+  const button = event.currentTarget as HTMLButtonElement;
+  const bounds = button.getBoundingClientRect();
+  try {
+    await popupDesktopMenu(menu, bounds.left, bounds.bottom);
+  } catch {
+    notice.value = t("error.unexpected");
+  }
 }
 
 async function selectLocale(value: Event): Promise<void> {
@@ -404,6 +416,17 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="desktop-shell">
+    <nav class="app-menu-bar" :aria-label="t('menu.label')">
+      <button
+        v-for="menu in desktopMenus"
+        :key="menu"
+        type="button"
+        aria-haspopup="menu"
+        @click="openDesktopMenu(menu, $event)"
+      >
+        {{ t(`menu.${menu}`) }}
+      </button>
+    </nav>
     <header class="topbar">
       <div class="brand">
         <img class="brand-mark" :src="deepSeekDesktopLogo" alt="" aria-hidden="true" />

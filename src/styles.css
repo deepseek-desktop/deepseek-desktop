@@ -1,4 +1,5 @@
 :root {
+  --app-menu-height: 34px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #13202b;
   background: #eef3f5;
@@ -19,6 +20,34 @@ button { cursor: pointer; }
     #f6f8f9;
   background-size: 32px 32px;
 }
+
+.app-menu-bar {
+  height: var(--app-menu-height);
+  display: flex;
+  align-items: stretch;
+  padding: 0 8px;
+  border-bottom: 1px solid #dce4e7;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.app-menu-bar button {
+  min-width: 48px;
+  height: var(--app-menu-height);
+  padding: 0 10px;
+  color: #34434d;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.app-menu-bar button:hover,
+.app-menu-bar button:focus-visible {
+  background: #edf2f4;
+  outline: none;
+}
+
+.app-menu-bar button:active { background: #dfe7ea; }
 
 .topbar {
   height: 76px;
@@ -50,7 +79,7 @@ button { cursor: pointer; }
   border-radius: 6px;
 }
 
-.workspace-layout { display: grid; grid-template-columns: 218px minmax(0, 1fr); height: calc(100vh - 76px); }
+.workspace-layout { display: grid; grid-template-columns: 218px minmax(0, 1fr); height: calc(100vh - var(--app-menu-height) - 76px); }
 .side-nav { padding: 28px 16px; border-right: 1px solid #dce4e7; background: rgba(250, 252, 252, 0.9); }
 .side-nav button {
   width: 100%;
@@ -126,7 +155,10 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
   :root { color: #e4ebee; background: #101719; }
   .brand-mark { filter: brightness(0) invert(1); }
   .desktop-shell { background-color: #11191b; background-image: linear-gradient(rgba(60, 181, 157, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 181, 157, 0.05) 1px, transparent 1px); }
-  .topbar, .side-nav { background: rgba(18, 27, 30, 0.94); border-color: #2b373b; }
+  .app-menu-bar, .topbar, .side-nav { background: rgba(18, 27, 30, 0.94); border-color: #2b373b; }
+  .app-menu-bar button { color: #e4ebee; }
+  .app-menu-bar button:hover, .app-menu-bar button:focus-visible { background: #263236; }
+  .app-menu-bar button:active { background: #334145; }
   .runtime-panel, .plain-list { background: #182226; border-color: #2c3a3e; }
   .locale-select, .button.secondary, .setting-select, .setting-input { color: #e4ebee; background: #182226; border-color: #3a484d; }
   .plain-list div { border-color: #273337; }

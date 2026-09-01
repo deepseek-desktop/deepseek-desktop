@@ -5,6 +5,7 @@ const appName = appConfig.productName;
 export const messages = {
   "zh-CN": {
     app: { name: appName, subtitle: "本地 AI Agent 工作台" },
+    menu: { label: "应用菜单", file: "文件", edit: "编辑", view: "视图", window: "窗口", help: "帮助" },
     common: { start: "启动", retry: "重试", open: "打开工作台", stop: "停止", save: "保存", close: "关闭", languageSelector: "切换语言" },
     runtime: {
       idle: "准备启动",
@@ -55,6 +56,7 @@ export const messages = {
   },
   "zh-TW": {
     app: { name: appName, subtitle: "本機 AI Agent 工作臺" },
+    menu: { label: "應用程式選單", file: "檔案", edit: "編輯", view: "檢視", window: "視窗", help: "輔助說明" },
     common: { start: "啟動", retry: "重試", open: "開啟工作臺", stop: "停止", save: "儲存", close: "關閉", languageSelector: "切換語言" },
     runtime: {
       idle: "準備啟動",
@@ -105,6 +107,7 @@ export const messages = {
   },
   "en-US": {
     app: { name: appName, subtitle: "Local AI agent workspace" },
+    menu: { label: "Application menu", file: "File", edit: "Edit", view: "View", window: "Window", help: "Help" },
     common: { start: "Start", retry: "Retry", open: "Open workbench", stop: "Stop", save: "Save", close: "Close", languageSelector: "Change language" },
     runtime: {
       idle: "Ready to start",

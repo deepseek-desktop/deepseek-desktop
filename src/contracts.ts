@@ -1,5 +1,6 @@
 export type RuntimePhase = "idle" | "starting" | "ready" | "stopping" | "recovering" | "failed";
 export type DesktopSurface = "management" | "workbench";
+export type DesktopMenu = "file" | "edit" | "view" | "window" | "help";
 
 export interface RuntimeStatus {
   phase: RuntimePhase;

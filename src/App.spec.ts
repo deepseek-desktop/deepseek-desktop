@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import { appConfig } from "./app-config";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, openRepository, openWorkbench, saveSettings, startRuntime } from "./desktop";
+import { checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, openRepository, openWorkbench, popupDesktopMenu, saveSettings, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
@@ -61,6 +61,7 @@ vi.mock("./desktop", () => ({
   onDesktopSurface: vi.fn(async () => () => undefined),
   openRepository: vi.fn(),
   openWorkbench: vi.fn(),
+  popupDesktopMenu: vi.fn(),
   saveSettings: vi.fn(async value => value),
   downloadRuntimeUpdate: vi.fn(async () => ({
     enabled: true, phase: "staged", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
@@ -124,6 +125,23 @@ describe(`${appConfig.productName} shell`, () => {
     expect(wrapper.text()).toContain("Runtime ready");
     expect(wrapper.text()).toContain("Runtime");
     expect(wrapper.text()).toContain("Diagnostics");
+  });
+
+  it("opens each window menu through the typed desktop bridge", async () => {
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    const menu = wrapper.get('nav[aria-label="应用菜单"]');
+    expect(menu.findAll("button").map(button => button.text())).toEqual([
+      "文件",
+      "编辑",
+      "视图",
+      "窗口",
+      "帮助"
+    ]);
+    await menu.findAll("button")[2]?.trigger("click");
+
+    expect(popupDesktopMenu).toHaveBeenCalledWith("view", 0, 0);
   });
 
   it("opens an already running Runtime without starting a second process", async () => {

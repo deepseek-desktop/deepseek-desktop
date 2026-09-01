@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { appConfig } from "./app-config";
-import type { DesktopAbout, DesktopSettings, DesktopSurface, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopMenu, DesktopSettings, DesktopSurface, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
 
 const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 
@@ -60,6 +60,10 @@ export async function saveSettings(settings: DesktopSettings): Promise<DesktopSe
 
 export async function openWorkbench(): Promise<void> {
   if (inTauri()) await invoke("runtime_open");
+}
+
+export async function popupDesktopMenu(menu: DesktopMenu, x: number, y: number): Promise<void> {
+  if (inTauri()) await invoke("desktop_menu_popup", { menu, x, y });
 }
 
 export async function getAbout(): Promise<DesktopAbout> {
