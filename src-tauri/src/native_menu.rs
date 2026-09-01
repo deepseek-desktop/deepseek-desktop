@@ -37,6 +37,14 @@ struct MenuLabels {
     documentation: &'static str,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct CloseConfirmationLabels {
+    pub(crate) title: &'static str,
+    pub(crate) message: &'static str,
+    pub(crate) confirm: &'static str,
+    pub(crate) cancel: &'static str,
+}
+
 pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
     let labels = labels(locale);
 
@@ -203,18 +211,51 @@ fn labels(locale: &str) -> MenuLabels {
     }
 }
 
+pub(crate) fn close_confirmation_labels(locale: &str) -> CloseConfirmationLabels {
+    match locale {
+        "zh-TW" => CloseConfirmationLabels {
+            title: "關閉 DeepSeek Desktop？",
+            message: "關閉視窗將停止目前執行中的任務。確定要關閉嗎？",
+            confirm: "關閉",
+            cancel: "取消",
+        },
+        "en-US" => CloseConfirmationLabels {
+            title: "Close DeepSeek Desktop?",
+            message: "Closing the window will stop any tasks currently running. Do you want to close it?",
+            confirm: "Close",
+            cancel: "Cancel",
+        },
+        _ => CloseConfirmationLabels {
+            title: "关闭 DeepSeek Desktop？",
+            message: "关闭窗口将停止当前运行中的任务。确定要关闭吗？",
+            confirm: "关闭",
+            cancel: "取消",
+        },
+    }
+}
+
 fn desktop_error(error: tauri::Error) -> DesktopError {
     DesktopError::Other(error.to_string())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::labels;
+    use super::{close_confirmation_labels, labels};
 
     #[test]
     fn provides_complete_surface_labels_for_all_supported_locales() {
         assert_eq!(labels("zh-CN").workbench, "工作台");
         assert_eq!(labels("zh-TW").workbench, "工作臺");
         assert_eq!(labels("en-US").management, "Desktop Management");
+    }
+
+    #[test]
+    fn provides_close_confirmation_labels_for_all_supported_locales() {
+        assert_eq!(close_confirmation_labels("zh-CN").confirm, "关闭");
+        assert_eq!(
+            close_confirmation_labels("zh-TW").title,
+            "關閉 DeepSeek Desktop？"
+        );
+        assert_eq!(close_confirmation_labels("en-US").cancel, "Cancel");
     }
 }

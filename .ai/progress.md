@@ -12,6 +12,8 @@
 - 工作台不再注入会因 Tauri IPC 隔离而失败的 opener 点击脚本；普通链接和右键新窗口请求由 Rust 导航门禁转交系统默认浏览器。受管 Runtime 页面、同源 Blob、`mailto` 和 `tel` 保持可用，`file`、`javascript`、`data`、自定义 scheme 和跨源 Blob 均拒绝。macOS 成品已实测普通点击与右键新窗口分别打开 IBM 和 Microsoft Azure 来源页，Desktop 与 Runtime 不退出。
 - 原生窗口标题读取构建注入的真实桌面版本，并统一使用单个 `v` 前缀，方便问题反馈定位。
 - 窗口恢复会先验证保存坐标是否仍落在已连接显示器；外接屏仍在线时保留原位置，断开后自动回到主显示器，避免应用运行但窗口位于屏幕外。
+- Runtime 模型设置页的内容列和滚动区具备明确的 flex 高度约束，Windows 小窗口中的长自定义 Provider 表单可以滚动到最后一项；锁定 Runtime 使用可重复、路径受限且要求唯一命中的文本替换，避免压缩产物整行 patch 漂移。
+- 点击原生窗口关闭按钮会按当前语言显示确认框；取消后窗口和 Runtime 保持运行，确认后退出整个 Desktop 并由既有退出清理链停止 Runtime，避免误关和无窗口后台残留。
 - 正式发行统一由 GitHub Actions 官方托管 Runner 原生构建：完整 SemVer Tag 触发 macOS ARM64、macOS x64、Windows x64 和 Linux x64 矩阵，四目标全部成功后才创建 Release。
 - 四个平台复用唯一 `package:community` / `desktop:package` 构建事实来源；公开 Release 只保留两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和统一 `SHA256SUMS`。
 - Pull Request 和普通分支 push 不触发发布工作流；完整 SemVer Tag 才运行质量门禁与四平台构建。本机仅执行 `verify`、`test:e2e`、`runtime:smoke` 和当前 macOS 架构打包/启动检查，不再把 Rosetta、Docker、Parallels 或本地 Controller/Worker 当作正式发行依赖。

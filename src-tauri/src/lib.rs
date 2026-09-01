@@ -9,6 +9,7 @@ mod settings;
 mod updater;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{env, thread};
 
 use contracts::{DesktopAbout, DesktopSettings, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus};
@@ -18,6 +19,7 @@ use runtime::RuntimeSupervisor;
 use runtime_update::{RuntimeStore, RuntimeUpdateManager};
 use settings::{AppPaths, SettingsStore};
 use tauri::{Manager, State};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_opener::OpenerExt;
 
 const MIN_REACHABLE_WIDTH: i64 = 160;
@@ -28,6 +30,8 @@ struct AppState {
     diagnostics: Arc<Diagnostics>,
     supervisor: Arc<RuntimeSupervisor>,
     runtime_updates: Arc<RuntimeUpdateManager>,
+    close_dialog_open: AtomicBool,
+    close_approved: AtomicBool,
 }
 
 #[tauri::command]
@@ -278,6 +282,51 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            let tauri::WindowEvent::CloseRequested { api, .. } = event else {
+                return;
+            };
+            let app_handle = window.app_handle().clone();
+            let Some(state) = app_handle.try_state::<AppState>() else {
+                return;
+            };
+            if state.close_approved.load(Ordering::Acquire) {
+                return;
+            }
+
+            api.prevent_close();
+            if state.close_dialog_open.swap(true, Ordering::AcqRel) {
+                return;
+            }
+
+            let locale = state
+                .settings
+                .get()
+                .map(|settings| settings.locale)
+                .unwrap_or_else(|_| "zh-CN".to_owned());
+            let labels = native_menu::close_confirmation_labels(&locale);
+            let dialog = window
+                .dialog()
+                .message(labels.message)
+                .title(labels.title)
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    labels.confirm.to_owned(),
+                    labels.cancel.to_owned(),
+                ))
+                .parent(window);
+            thread::spawn(move || {
+                let confirmed = dialog.blocking_show();
+                let Some(state) = app_handle.try_state::<AppState>() else {
+                    return;
+                };
+                state.close_dialog_open.store(false, Ordering::Release);
+                if confirmed {
+                    state.close_approved.store(true, Ordering::Release);
+                    app_handle.exit(0);
+                }
+            });
+        })
         .on_menu_event(|app, event| match event.id().as_ref() {
             native_menu::WORKBENCH_MENU_ID => {
                 if let Some(state) = app.try_state::<AppState>() {
@@ -344,6 +393,8 @@ pub fn run() {
                 diagnostics,
                 supervisor,
                 runtime_updates: Arc::clone(&runtime_updates),
+                close_dialog_open: AtomicBool::new(false),
+                close_approved: AtomicBool::new(false),
             });
             let locale = app.state::<AppState>().settings.get()?.locale;
             native_menu::install(app.handle(), &locale)?;

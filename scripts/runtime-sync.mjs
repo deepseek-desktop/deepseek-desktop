@@ -9,6 +9,7 @@ import { loadBuildConfig } from "./lib/build-config.mjs";
 import { selectLatestHarnessTag } from "./lib/harness-ref.mjs";
 import { findInstalledPackages } from "./lib/installed-packages.mjs";
 import { applyPackagePatch } from "./lib/package-patch.mjs";
+import { applyPackageTextReplacements } from "./lib/package-text-replacement.mjs";
 import { assertPinnedRuntimeSource } from "./lib/runtime-source-pin.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -451,6 +452,10 @@ async function applyDesktopPatches(moduleRoots) {
         const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
         manifest.dependencies = { ...manifest.dependencies, [patch.dependency]: patch.version };
         await writeJson(manifestPath, manifest);
+        continue;
+      }
+      if (patch.operation === "replace-text") {
+        applyPackageTextReplacements(directory, patch.moduleFile, patch.replacements);
         continue;
       }
       if (!patch.file) throw new Error(`Desktop patch file is missing for ${patch.packageName}:${patch.id}`);
