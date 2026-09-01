@@ -66,8 +66,8 @@ Pull Request 和普通分支 push 不触发发布工作流。正式发布以 `.g
 
 ## 运行链路
 
-1. 桌面应用读取壳层设置，不要求选择项目目录。
-2. Rust Supervisor 在应用数据目录内的独立运行目录中，以随机端口启动捆绑的 Node/Harness Runtime。
+1. 桌面应用读取壳层设置，不要求选择项目目录，并在管理 Shell 初始化后异步请求启动空闲 Runtime。
+2. Rust Supervisor 在应用数据目录内的独立运行目录中，以随机端口启动捆绑的 Node/Harness Runtime；已就绪实例不会重复启动，失败时管理 Shell 保持可用。
 3. Runtime 通过受限会话调用桌面凭据 helper，不接收长期明文环境变量。
 4. readiness 通过后，同一原生窗口切换到受管 Harness Origin。
 5. Runtime 异常退出时按有限次数恢复；用户主动停止或应用退出时清理进程树。

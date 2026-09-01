@@ -92,29 +92,42 @@ describe(`${appConfig.productName} shell`, () => {
       errorCode: null
     });
     vi.clearAllMocks();
+    vi.mocked(startRuntime).mockResolvedValue({
+      ...runtime,
+      phase: "ready",
+      url: "http://127.0.0.1:49152"
+    });
     i18n.global.locale.value = "zh-CN";
   });
 
-  it("loads onboarding and switches all visible navigation to English", async () => {
+  it("starts the Runtime automatically and switches visible navigation to English", async () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
-    expect(wrapper.text()).toContain(`欢迎使用 ${appConfig.productName}`);
+
+    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(openWorkbench).toHaveBeenCalledOnce();
+    expect(wrapper.text()).toContain("Runtime 已就绪");
+    expect(wrapper.text()).not.toContain("开始使用");
 
     await wrapper.get("select").setValue("en-US");
     await flushPromises();
-    expect(wrapper.text()).toContain(`Welcome to ${appConfig.productName}`);
+    expect(wrapper.text()).toContain("Runtime ready");
     expect(wrapper.text()).toContain("Runtime");
     expect(wrapper.text()).toContain("Diagnostics");
   });
 
-  it("starts onboarding without requiring a Desktop workspace", async () => {
+  it("opens an already running Runtime without starting a second process", async () => {
+    Object.assign(runtime, {
+      phase: "ready",
+      url: "http://127.0.0.1:49152"
+    });
+
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
-    const continueButton = () => wrapper.findAll("button").find(button => button.text() === "继续");
-    await continueButton()?.trigger("click");
-    expect(wrapper.text()).toContain("配置模型");
-    expect(wrapper.text()).not.toContain("选择工作区");
-    expect(wrapper.findAll("button").find(button => button.text() === "启动工作台")).toBeDefined();
+
+    expect(startRuntime).not.toHaveBeenCalled();
+    expect(openWorkbench).toHaveBeenCalledOnce();
+    expect(wrapper.text()).toContain("Runtime 已就绪");
   });
 
   it("retries an early failure without a Desktop workspace", async () => {
@@ -137,24 +150,27 @@ describe(`${appConfig.productName} shell`, () => {
     expect(wrapper.text()).toContain("Runtime 已就绪");
   });
 
-  it("starts an idle runtime without a Desktop workspace", async () => {
-    settings.onboardingCompleted = true;
-    vi.mocked(startRuntime).mockResolvedValue({
-      ...runtime,
-      phase: "ready",
-      url: "http://127.0.0.1:49152"
-    });
+  it("starts an idle Runtime without requiring a Desktop workspace", async () => {
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(openWorkbench).toHaveBeenCalledOnce();
+    expect(wrapper.text()).toContain("运行状态");
+    expect(wrapper.text()).not.toContain("选择工作区");
+    expect(wrapper.findAll("button").find(button => button.text() === "启动")).toBeUndefined();
+  });
+
+  it("keeps the management view available when automatic startup fails", async () => {
+    vi.mocked(startRuntime).mockRejectedValue(new Error("startup failed"));
 
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
-    const startButton = wrapper.findAll("button").find(button => button.text() === "启动");
-    expect(startButton).toBeDefined();
-    await startButton?.trigger("click");
-    await flushPromises();
 
-    expect(startRuntime).toHaveBeenCalledWith();
-    expect(openWorkbench).toHaveBeenCalledOnce();
+    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(openWorkbench).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("运行状态");
+    expect(wrapper.text()).toContain("操作失败，请查看诊断信息");
   });
 
   it("clears diagnostics notices when leaving the diagnostics view", async () => {
@@ -174,7 +190,7 @@ describe(`${appConfig.productName} shell`, () => {
     await flushPromises();
     expect(wrapper.text()).toContain("/tmp/dsh-diagnostics.json");
 
-    await wrapper.findAll("button").find(button => button.text().includes("开始使用"))?.trigger("click");
+    await wrapper.findAll("button").find(button => button.text().includes("运行状态"))?.trigger("click");
     expect(wrapper.text()).not.toContain("/tmp/dsh-diagnostics.json");
   });
 

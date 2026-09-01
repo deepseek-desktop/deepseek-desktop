@@ -5,15 +5,7 @@ const appName = appConfig.productName;
 export const messages = {
   "zh-CN": {
     app: { name: appName, subtitle: "本地 AI Agent 工作台" },
-    common: { continue: "继续", back: "返回", start: "启动", retry: "重试", open: "打开工作台", stop: "停止", save: "保存", close: "关闭", languageSelector: "切换语言" },
-    features: { runtime: "本地 Runtime", runtimeValue: "仅监听 127.0.0.1", vault: "加密凭据库", vaultValue: "密钥加密后仅保存在本机", workbench: "独立工作台", workbenchValue: "项目目录由工作台管理" },
-    onboarding: {
-      welcomeTitle: `欢迎使用 ${appName}`,
-      welcomeDescription: "Runtime、会话和凭据都保存在本机。",
-      modelTitle: "配置模型",
-      modelDescription: "启动后前往模型设置添加 Provider 和密钥。",
-      start: "启动工作台"
-    },
+    common: { start: "启动", retry: "重试", open: "打开工作台", stop: "停止", save: "保存", close: "关闭", languageSelector: "切换语言" },
     runtime: {
       idle: "准备启动",
       starting: "正在启动 Runtime",
@@ -46,7 +38,7 @@ export const messages = {
         restartLimitReached: "Runtime 已达到自动恢复次数上限。"
       }
     },
-    navigation: { label: "桌面导航", onboarding: "开始使用", runtime: "运行状态", diagnostics: "诊断", update: "更新", about: "关于" },
+    navigation: { label: "桌面导航", runtime: "运行状态", diagnostics: "诊断", update: "更新", about: "关于" },
     diagnostics: { eyebrow: "诊断", title: "运行诊断", description: "导出经过脱敏的状态、版本和日志。", export: "导出诊断包", exported: "诊断包已导出", exportLogs: "导出日志", logsExported: "日志已导出", runtime: "Runtime" },
     settings: { recovered: { corrupt: "设置文件已损坏，已备份原文件并恢复默认设置。", future: "设置文件来自更高版本，已备份原文件并恢复默认设置。" } },
     about: { eyebrow: "应用信息", title: `关于 ${appName}`, desktopVersion: "桌面版本", runtimeVersion: "Runtime 版本", nodeVersion: "Node 版本", channel: "更新通道", author: "作者", repository: "项目仓库", local: "本地构建", community: "社区版", stable: "稳定版", signed: "已签名发行构建", unsigned: "未签名构建" },
@@ -62,15 +54,7 @@ export const messages = {
   },
   "zh-TW": {
     app: { name: appName, subtitle: "本機 AI Agent 工作臺" },
-    common: { continue: "繼續", back: "返回", start: "啟動", retry: "重試", open: "開啟工作臺", stop: "停止", save: "儲存", close: "關閉", languageSelector: "切換語言" },
-    features: { runtime: "本機 Runtime", runtimeValue: "僅監聽 127.0.0.1", vault: "加密憑證庫", vaultValue: "金鑰加密後僅儲存在本機", workbench: "獨立工作臺", workbenchValue: "專案目錄由工作臺管理" },
-    onboarding: {
-      welcomeTitle: `歡迎使用 ${appName}`,
-      welcomeDescription: "Runtime、工作階段和憑證都儲存在本機。",
-      modelTitle: "設定模型",
-      modelDescription: "啟動後前往模型設定新增 Provider 和金鑰。",
-      start: "啟動工作臺"
-    },
+    common: { start: "啟動", retry: "重試", open: "開啟工作臺", stop: "停止", save: "儲存", close: "關閉", languageSelector: "切換語言" },
     runtime: {
       idle: "準備啟動",
       starting: "正在啟動 Runtime",
@@ -103,7 +87,7 @@ export const messages = {
         restartLimitReached: "Runtime 已達自動復原次數上限。"
       }
     },
-    navigation: { label: "桌面導覽", onboarding: "開始使用", runtime: "執行狀態", diagnostics: "診斷", update: "更新", about: "關於" },
+    navigation: { label: "桌面導覽", runtime: "執行狀態", diagnostics: "診斷", update: "更新", about: "關於" },
     diagnostics: { eyebrow: "診斷", title: "執行診斷", description: "匯出經過遮蔽的狀態、版本和日誌。", export: "匯出診斷包", exported: "診斷包已匯出", exportLogs: "匯出日誌", logsExported: "日誌已匯出", runtime: "Runtime" },
     settings: { recovered: { corrupt: "設定檔已損壞，已備份原檔並恢復預設設定。", future: "設定檔來自較新版本，已備份原檔並恢復預設設定。" } },
     about: { eyebrow: "應用程式資訊", title: `關於 ${appName}`, desktopVersion: "桌面版本", runtimeVersion: "Runtime 版本", nodeVersion: "Node 版本", channel: "更新通道", author: "作者", repository: "專案倉庫", local: "本機構建", community: "社群版", stable: "穩定版", signed: "已簽章發行構建", unsigned: "未簽章構建" },
@@ -119,15 +103,7 @@ export const messages = {
   },
   "en-US": {
     app: { name: appName, subtitle: "Local AI agent workspace" },
-    common: { continue: "Continue", back: "Back", start: "Start", retry: "Retry", open: "Open workbench", stop: "Stop", save: "Save", close: "Close", languageSelector: "Change language" },
-    features: { runtime: "Local runtime", runtimeValue: "Listens only on 127.0.0.1", vault: "Encrypted credential vault", vaultValue: "Keys remain encrypted on this device", workbench: "Independent workbench", workbenchValue: "Project folders are managed in the workbench" },
-    onboarding: {
-      welcomeTitle: `Welcome to ${appName}`,
-      welcomeDescription: "The runtime, sessions, and credentials stay on this device.",
-      modelTitle: "Configure a model",
-      modelDescription: "After startup, open Model Settings to add a provider and credential.",
-      start: "Start workbench"
-    },
+    common: { start: "Start", retry: "Retry", open: "Open workbench", stop: "Stop", save: "Save", close: "Close", languageSelector: "Change language" },
     runtime: {
       idle: "Ready to start",
       starting: "Starting runtime",
@@ -160,7 +136,7 @@ export const messages = {
         restartLimitReached: "The runtime reached its automatic recovery limit."
       }
     },
-    navigation: { label: "Desktop navigation", onboarding: "Get started", runtime: "Runtime", diagnostics: "Diagnostics", update: "Updates", about: "About" },
+    navigation: { label: "Desktop navigation", runtime: "Runtime", diagnostics: "Diagnostics", update: "Updates", about: "About" },
     diagnostics: { eyebrow: "Diagnostics", title: "Runtime diagnostics", description: "Export redacted status, version, and log information.", export: "Export diagnostics", exported: "Diagnostics exported", exportLogs: "Export logs", logsExported: "Logs exported", runtime: "Runtime" },
     settings: { recovered: { corrupt: "The settings file was damaged. The original was backed up and defaults were restored.", future: "The settings file came from a newer version. The original was backed up and defaults were restored." } },
     about: { eyebrow: "Application information", title: `About ${appName}`, desktopVersion: "Desktop version", runtimeVersion: "Runtime version", nodeVersion: "Node version", channel: "Update channel", author: "Author", repository: "Repository", local: "Local build", community: "Community", stable: "Stable", signed: "Signed release build", unsigned: "Unsigned build" },

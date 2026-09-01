@@ -17,7 +17,7 @@
 
 仍然只能由真机人工完成、当前尚未做的：
 
-- Windows x64 与 Linux x64 的**桌面应用本身**启动验收：安装包安装、原生窗口标题、点击启动后 Runtime sidecar 拉起、工作台同窗口加载、退出无残留。目前只有 macOS ARM64 做过（见 `progress.md`）。CI 验证的是 Runtime 闭包能启动，不是 Tauri 外壳能启动。
+- Windows x64 与 Linux x64 的**桌面应用本身**启动验收：安装包安装、原生窗口标题、应用启动后 Runtime sidecar 自动拉起、工作台同窗口加载、退出无残留。目前只有 macOS ARM64 做过（见 `progress.md`）。CI 验证的是 Runtime 闭包能启动，不是 Tauri 外壳能启动。
 - Linux x64 的凭据库、插件市场和对话链路验收。
 - 未签名制品在 Gatekeeper 与 SmartScreen 下的实际拦截表现。
 

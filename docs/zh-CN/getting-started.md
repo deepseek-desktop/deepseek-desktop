@@ -19,10 +19,10 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 当前社区版产物名称和发布说明必须明确带有 `community` / `unsigned`；其中 macOS 的 `unsigned` 表示没有 Apple Developer ID 身份签名和公证，不代表应用 Bundle 缺少本地 ad-hoc 完整性签名。社区版不能作为已认证 Stable 版本对外宣传。
 
-## 首次使用
+## 开始使用
 
-1. 启动 DeepSeek Desktop，选择界面语言。
-2. 启动本地工作台。主程序会在 `127.0.0.1` 上申请随机端口，并在当前桌面窗口中自动进入工作台，不需要预先选择目录、填写端口或打开第二个窗口。
+1. 启动 DeepSeek Desktop。主程序会自动启动本地 Runtime，在 `127.0.0.1` 上申请随机端口，并在就绪后直接进入当前窗口中的工作台。
+2. 无需点击启动、预先选择目录、填写端口或打开第二个窗口；界面语言可随时在“桌面管理”中切换。
 3. 打开工作台的模型设置，选择 Provider，并写入 API Key 或 OAuth grant。
 4. 在工作台中按会话需要添加或切换项目目录，再创建会话并开始任务。模型未配置或外部 Provider 不可用时，Runtime 仍可进入设置和诊断页面，但真实模型请求不会被伪造成成功。
 
@@ -36,7 +36,7 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 插件来自独立开发者。安装前应查看插件来源、许可证和权限说明，不要安装来源不明或要求超出任务所需权限的插件。
 
-Desktop 不保存、选择或注册项目目录。项目目录完全由 Runtime 工作台自身管理，Desktop 与 Runtime 只通过本地服务启动地址、健康状态和凭据协议连接；上游调整工作区接口时不需要同步修改桌面首次引导。
+Desktop 不保存、选择或注册项目目录。项目目录完全由 Runtime 工作台自身管理，Desktop 与 Runtime 只通过本地服务启动地址、健康状态和凭据协议连接；上游调整工作区接口时不需要同步修改桌面启动流程。
 
 模型凭据由桌面专用 Credential Provider 写入本机加密凭据库。macOS、Windows 和 Linux 使用同一套 XChaCha20-Poly1305 认证加密、跨进程文件锁和原子写入机制，不访问系统钥匙串，也不会弹出系统凭据授权窗口。凭据库不可用或损坏时会明确失败，不会降级写入 `.credentials.yaml`、`.env`、日志、浏览器存储或其他明文文件。新增自定义 Provider 时，如果凭据写入失败，桌面 Runtime 会回滚本次新增的 Provider 配置，修复凭据库后可以直接重试，不会把失败的首次提交误报为 Provider ID 重复。
 
@@ -58,7 +58,7 @@ DeepSeek Desktop 使用系统应用数据目录，不向安装目录写运行数
 
 | 内容 | 说明 |
 | --- | --- |
-| `settings.json` | Shell 语言、首次引导、桌面更新与 Runtime 独立更新设置 |
+| `settings.json` | Shell 语言、桌面更新与 Runtime 独立更新设置 |
 | `dsh/` | Runtime profile、会话、设置和插件数据 |
 | `runtime-workdir/` | Runtime 进程的独立内部工作目录，不代表用户项目目录 |
 | `credential-vault.json` | XChaCha20-Poly1305 加密后的模型凭据和 record 索引，不包含可读明文 |

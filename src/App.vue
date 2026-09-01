@@ -25,11 +25,10 @@ import {
 } from "./desktop";
 import { normalizeLocale, type SupportedLocale } from "./i18n";
 
-type ViewName = "onboarding" | "runtime" | "diagnostics" | "update" | "about";
+type ViewName = "runtime" | "diagnostics" | "update" | "about";
 
 const { locale, t } = useI18n();
-const view = ref<ViewName>("onboarding");
-const onboardingStep = ref(0);
+const view = ref<ViewName>("runtime");
 const busy = ref(false);
 const notice = ref("");
 const runtime = ref<RuntimeStatus>({
@@ -114,7 +113,6 @@ const runtimeUpdateDescription = computed(() => {
   });
 });
 const canDownloadRuntime = computed(() => runtimeUpdate.value?.phase === "available" && !busy.value);
-const canStart = computed(() => !busy.value);
 
 async function persistSettings(): Promise<void> {
   settings.value = await saveSettings(settings.value);
@@ -139,26 +137,9 @@ async function selectLocale(value: Event): Promise<void> {
   }
 }
 
-async function launch(): Promise<void> {
+async function startFromStatus(clearNotice = true): Promise<void> {
   busy.value = true;
-  notice.value = "";
-  try {
-    runtime.value = await startRuntime();
-    settings.value.onboardingCompleted = true;
-    await persistSettings();
-    view.value = "runtime";
-    await showWorkbench();
-  } catch {
-    notice.value = t("error.unexpected");
-    view.value = "runtime";
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function startFromStatus(): Promise<void> {
-  busy.value = true;
-  notice.value = "";
+  if (clearNotice) notice.value = "";
   try {
     runtime.value = await startRuntime();
     await showWorkbench();
@@ -324,7 +305,6 @@ onMounted(async () => {
       getRuntimeUpdateStatus()
     ]);
     locale.value = settings.value.locale;
-    view.value = settings.value.onboardingCompleted ? "runtime" : "onboarding";
     if (settings.value.recoveryReason) {
       notice.value = t(settingsRecoveryKeys[settings.value.recoveryReason]);
     }
@@ -346,7 +326,11 @@ onMounted(async () => {
   } catch {
     notice.value = t("error.eventChannelFailed");
   }
-  await showWorkbench();
+  if (runtime.value.phase === "ready") {
+    await showWorkbench();
+  } else if (runtime.value.phase === "idle") {
+    await startFromStatus(false);
+  }
 });
 
 onBeforeUnmount(() => {
@@ -375,53 +359,22 @@ onBeforeUnmount(() => {
 
     <section class="workspace-layout">
       <nav class="side-nav" :aria-label="t('navigation.label')">
-        <button :class="{ active: view === 'onboarding' }" @click="navigate('onboarding')">
-          <span aria-hidden="true">01</span>{{ t("navigation.onboarding") }}
-        </button>
         <button :class="{ active: view === 'runtime' }" @click="navigate('runtime')">
-          <span aria-hidden="true">02</span>{{ t("navigation.runtime") }}
+          <span aria-hidden="true">01</span>{{ t("navigation.runtime") }}
         </button>
         <button :class="{ active: view === 'diagnostics' }" @click="navigate('diagnostics')">
-          <span aria-hidden="true">03</span>{{ t("navigation.diagnostics") }}
+          <span aria-hidden="true">02</span>{{ t("navigation.diagnostics") }}
         </button>
         <button :class="{ active: view === 'update' }" @click="navigate('update')">
-          <span aria-hidden="true">04</span>{{ t("navigation.update") }}
+          <span aria-hidden="true">03</span>{{ t("navigation.update") }}
         </button>
         <button :class="{ active: view === 'about' }" @click="navigate('about')">
-          <span aria-hidden="true">05</span>{{ t("navigation.about") }}
+          <span aria-hidden="true">04</span>{{ t("navigation.about") }}
         </button>
       </nav>
 
       <section class="content" aria-live="polite">
-        <template v-if="view === 'onboarding'">
-          <div class="section-heading">
-            <span class="eyebrow">{{ String(onboardingStep + 1).padStart(2, "0") }} / 02</span>
-            <h1>{{ t(["onboarding.welcomeTitle", "onboarding.modelTitle"][onboardingStep]) }}</h1>
-            <p>{{ t(["onboarding.welcomeDescription", "onboarding.modelDescription"][onboardingStep]) }}</p>
-          </div>
-
-          <div v-if="onboardingStep === 0" class="feature-grid">
-            <div><strong>{{ t("features.runtime") }}</strong><span>{{ t("features.runtimeValue") }}</span></div>
-            <div><strong>{{ t("features.vault") }}</strong><span>{{ t("features.vaultValue") }}</span></div>
-            <div><strong>{{ t("features.workbench") }}</strong><span>{{ t("features.workbenchValue") }}</span></div>
-          </div>
-
-          <div v-else class="model-step">
-            <span class="status-dot"></span>
-            <div>
-              <strong>{{ t("onboarding.modelTitle") }}</strong>
-              <p>{{ t("onboarding.modelDescription") }}</p>
-            </div>
-          </div>
-
-          <footer class="actions">
-            <button v-if="onboardingStep > 0" class="button secondary" @click="onboardingStep -= 1">{{ t("common.back") }}</button>
-            <button v-if="onboardingStep < 1" class="button primary" @click="onboardingStep += 1">{{ t("common.continue") }}</button>
-            <button v-else class="button primary" :disabled="!canStart" @click="launch">{{ t("onboarding.start") }}</button>
-          </footer>
-        </template>
-
-        <template v-else-if="view === 'runtime'">
+        <template v-if="view === 'runtime'">
           <div class="section-heading">
             <span class="eyebrow">{{ t("runtime.supervisor") }}</span>
             <h1>{{ phaseLabel }}</h1>
@@ -439,7 +392,7 @@ onBeforeUnmount(() => {
           <footer class="actions">
             <button v-if="runtime.phase === 'ready'" class="button primary" @click="showWorkbench">{{ t("common.open") }}</button>
             <button v-if="runtime.phase === 'ready'" class="button secondary" :disabled="busy" @click="stop">{{ t("common.stop") }}</button>
-            <button v-else-if="runtime.phase === 'failed' || runtime.phase === 'idle'" class="button primary" :disabled="busy" @click="startFromStatus">{{ runtimeStartLabel }}</button>
+            <button v-else-if="runtime.phase === 'failed' || runtime.phase === 'idle'" class="button primary" :disabled="busy" @click="startFromStatus()">{{ runtimeStartLabel }}</button>
             <button v-else class="button primary" disabled>{{ phaseLabel }}</button>
           </footer>
         </template>
