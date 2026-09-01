@@ -29,6 +29,11 @@
 - `v1.0.20` GitHub Actions 原生矩阵成功，Run `33488866877` 绑定 commit `d41fca2f8db423c587d0a2972f759b1619039440`：质量门禁 9 分 07 秒、Linux x64 14 分 54 秒、macOS ARM64 16 分、Windows x64 28 分 08 秒、macOS x64 53 分 14 秒、发布 59 秒，工作流总墙钟约 1 小时 03 分 28 秒。
 - `v1.0.20` Release 为未签名 prerelease，公开资产严格为两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`。下载后执行 `shasum -a 256 -c SHA256SUMS`，五个安装包全部返回 `OK`；六个正文直达下载链接均经 GitHub 重定向后返回 HTTP 200，Release 正文无需依赖 `Assets` 展开状态。
 - `v1.0.21` 的 Linux 质量门禁发现 macOS 专用 `APP_NAME` 常量缺少条件编译，Clippy `-D warnings` 以 dead code 拒绝构建；原生矩阵和发布任务均未启动，未创建不完整 Release。旧 Tag 保持不变，修复使用新的不可变 Tag。
+- `v1.0.24` 发布前独立复核（`41d61a5`）：`app:sync --check`、`runtime:sync --check`、`verify` 12 阶段（80 配置 / 155 键 × 3 locale / 16 Vue / 19 跟随模型搜索 / 73 Rust / Clippy `-D warnings`）、`test:e2e` 2 项、`runtime:smoke` 与 `desktop:package` 全部通过；产物 BUILD-INFO 记录 commit `41d61a5`、`dirty=false`、闭包扫描 77369 个文件、工具链与 lock 一致。
+- `v1.0.24` 成品 DMG 本机验收：SHA256SUMS 校验通过，`codesign --verify --deep --strict` 通过，主二进制原生 `arm64`，窗口标题含版本号；LaunchServices 启动后自动拉起 Runtime sidecar，窗口内菜单栏正确渲染「文件 / 编辑 / 视图 / 窗口 / 帮助」；多轮菜单交互尝试期间 Desktop 与 Runtime PID 均未变化，`~/Library/Logs/DiagnosticReports` 中 DeepSeek 崩溃报告保持 5 份未增加；退出后 app 与 Runtime 进程均归零。
+- 视图菜单崩溃根因独立印证：本机现存最新崩溃报告来自 `1.0.23`，`EXC_BAD_ACCESS` / `SIGSEGV`，栈为 `objc_loadWeakRetained` -> Tao `mouse_motion` -> `mouse_moved` -> AppKit `_routeMouseMovedEvent`，与修复注释和 ADR-011 约束描述逐帧一致。
+- 该轮**未**独立复现并清除崩溃路径：合成点击无法使 NSMenu 弹出保持到可采样，F10 疑被 macOS 媒体键拦截，WebView 内容未暴露在辅助功能树中。反复开关视图菜单不崩溃这一结论仍来源于本文件上文记录的 `1.0.24-test.1` 真机验收，不是本轮结果。
+- `v1.0.24` GitHub Actions 原生矩阵成功，Run `33546669378` 绑定 commit `41d61a5`：`shell-quality` 与四个 `native-build`、`publish-release` 六个 Job 全部成功。Release 为未签名 prerelease，公开资产严格为两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`；正文六条直达下载链接与当前 Tag 一致；抽检下载托管的 Windows 安装包，实测 SHA-256 与清单逐字一致、大小 58335442 相符。
 
 ## 能力边界
 

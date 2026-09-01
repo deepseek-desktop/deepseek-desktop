@@ -2,7 +2,7 @@
 
 - Harness 工作台成为单窗口唯一主界面；运行状态、诊断、Desktop 更新、Runtime 更新和关于改为同窗口设置层。打开设置只隐藏工作台子 WebView，关闭时复用同一页面与 Runtime，不重新导航、不丢失会话状态；Runtime 仍不获得 Tauri IPC。
 - macOS、Windows、Linux 的唯一完整功能菜单固定显示在窗口内容区顶部左侧，统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；Vue Shell 渲染三语标题，Tauri 弹出系统原生菜单项。Runtime 子 WebView 从菜单栏下方开始且不注入脚本，macOS 仅保留最小应用菜单，Windows/Linux 不挂载重复的完整原生窗口菜单。
-- macOS 窗口菜单采用系统当前光标位置弹出，避免带坐标的 `NSMenu` 绑定 Tao 根 `NSView` 后在 macOS 26 关闭菜单时触发空 `mouseMoved` 崩溃；Windows/Linux 仍保留原来的窗口内坐标定位。
+- macOS 窗口菜单采用系统当前光标位置弹出，并在 Desktop 初始化时为锁定的 Tao `0.35.3` 安装空 `NSEvent` 防护；macOS 26 在原生菜单收起后偶发传入空 `mouseMoved:` 事件时只丢弃该无效事件，正常鼠标事件继续调用 Tao 原实现。Windows/Linux 仍保留窗口内坐标定位且不应用该平台补丁。
 - Runtime Supervisor 支持独立运行目录、随机端口、浏览器令牌换取会话 Cookie、带认证的 readiness、有限恢复、主动停止和进程树清理；旧版无令牌 Runtime 保持兼容，仅 Runtime 制品、进程退出或启动健康失败触发回滚，配置、凭据和权限错误保持原版本并给出明确诊断。
 - Desktop 启动后自动拉起空闲 Runtime，并在 readiness 通过后直接进入工作台；已就绪实例不重复启动，失败时保留管理、重试和诊断入口。用户无需点击启动或选择目录，项目目录、会话和文件边界由 Runtime 工作台自行管理。
 - 使用跨平台本地加密凭据库，具备短期会话授权、记录枚举、失败回滚和旧明文索引迁移。
@@ -33,4 +33,5 @@
 - `v1.0.20` 已由 GitHub 官方 Runner 完成 macOS ARM64、macOS x64、Windows x64、Linux x64 原生矩阵并发布，Release 恰好包含五个安装制品和一份 `SHA256SUMS`，五个安装包下载后均通过统一清单校验，六个正文直达链接返回 HTTP 200，tag 指向 `d41fca2`。`v1.0.18` 与 `v1.0.19` 均在发布前门禁安全失败且未产生不完整 Release，恢复时使用新 Tag，没有移动旧 Tag。
 - 汇总门禁的跨平台身份比对排除 `harness.sha256`：Runtime 生产闭包内的 native prebuild 由各构建主机编译，四平台必然得到不同摘要；四份实测 BUILD-INFO 确认这是唯一跨平台变化字段，其余字段仍精确比对。
 - 本机 macOS ARM64 验收包已按发布手册四项检查通过：DMG 校验和一致、包内应用启动且窗口标题为真实版本、Runtime sidecar 作为应用子进程启动并仅监听 127.0.0.1 随机端口、工作台在同一原生窗口加载、退出后无残留进程与监听。启动令牌在 `desktop.log` 中以 `<redacted>` 记录。
+- `v1.0.24` 已由 GitHub 官方 Runner 完成四平台原生矩阵并发布（未签名 prerelease），公开资产为五个安装包加 `SHA256SUMS`，正文直达下载链接与 Tag 一致。
 - 后续判断必须以当前 HEAD、生成锁和实际 diff 为准，不能用历史发行结果替代当前验证。
