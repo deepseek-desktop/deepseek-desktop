@@ -282,6 +282,8 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   assert.doesNotMatch(workflow, /if:\s+startsWith\(github\.ref, 'refs\/tags\/'\)/u);
   assert.match(workflow, /test "\$\{#assets\[@\]\}" -eq 6/u);
   assert.match(workflow, /node scripts\/prepare-ci-release-assets\.mjs/u);
+  assert.match(workflow, /node scripts\/prepare-ci-release-notes\.mjs/u);
+  assert.match(workflow, /--notes-file release-assets\/RELEASE-NOTES\.md/u);
   assert.match(workflow, /release\/\*\*\/SHA256SUMS/u);
   assert.match(workflow, /node scripts\/ci-release-prerelease\.mjs/u);
   assert.doesNotMatch(workflow, /DESKTOP_RELEASE_PRERELEASE/u);

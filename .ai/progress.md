@@ -16,6 +16,7 @@
 - 点击原生窗口关闭按钮会按当前语言显示确认框；取消后窗口和 Runtime 保持运行，确认后退出整个 Desktop 并由既有退出清理链停止 Runtime，避免误关和无窗口后台残留。
 - 正式发行统一由 GitHub Actions 官方托管 Runner 原生构建：完整 SemVer Tag 触发 macOS ARM64、macOS x64、Windows x64 和 Linux x64 矩阵，四目标全部成功后才创建 Release。
 - 四个平台复用唯一 `package:community` / `desktop:package` 构建事实来源；公开 Release 只保留两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和统一 `SHA256SUMS`。
+- Release 正文会在确认六个公开文件完整后，按当前 Tag 和版本生成五个平台安装包及 `SHA256SUMS` 的直达链接；GitHub 自带 `Assets` 是否展开不再影响用户下载。
 - Pull Request 和普通分支 push 不触发发布工作流；完整 SemVer Tag 才运行质量门禁与四平台构建。本机仅执行 `verify`、`test:e2e`、`runtime:smoke` 和当前 macOS 架构打包/启动检查，不再把 Rosetta、Docker、Parallels 或本地 Controller/Worker 当作正式发行依赖。
 - 历史本地发布协议和缓存组件继续用于协议测试与实验，不进入 Agent 默认发布手册。
 - Runtime 平台 smoke 使用仅允许 `127.0.0.1` 的有界原生 HTTP 客户端，在 readiness 地址出现后等待端口真正接受请求并同时检查子进程存活，消除 Linux 启动竞态与 Rosetta Undici 套接字兼容失败。
@@ -27,7 +28,7 @@
 - 本地打包和 CI 原生矩阵均扫描实际交付闭包，拒绝 `.env`、密钥、本机绝对路径及符号链接泄漏；CI 第三方 Action 使用不可变 commit。
 - Runtime staging 在生成 manifest 前移除依赖包中的 `test`、`tests`、`__tests__` 及 `*.spec.*` / `*.test.*` 开发源码，闭包策略进入内容寻址缓存键；校验器会拒绝测试文件回流，避免上游测试凭据样本进入安装包。
 - CI 的 `NO_STRIP` 仅允许出现在 Linux AppImage 打包步骤；macOS 与 Windows 不继承该变量。制品扫描协议 v2 允许 AppImage 根目录内的可移植相对链接，同时拒绝绝对链接、根外逃逸和循环；CI 使用项目工作区与 Runner 临时目录等精确根路径。PEM 私钥检查覆盖 UTF-8/UTF-16 文本，不误判 `libgnutls` 等系统库内置的公开自检向量；二进制仍扫描令牌和本机路径。
-- `v1.0.16` 已由 GitHub 官方 Runner 完成 macOS ARM64、macOS x64、Windows x64、Linux x64 原生矩阵并发布，Release 恰好包含五个安装制品和一份 `SHA256SUMS`，托管制品摘要抽检与清单一致，tag 指向 `e252bce`。此前 `v1.0.15` 四平台构建全部成功但汇总失败；远端 tag `v1.0.6`—`v1.0.8` 的运行被取消、未产出 Release；本地 `v1.0.3`、`v1.0.9`—`v1.0.14` 从未推送，不代表已发布事实。
+- `v1.0.20` 已由 GitHub 官方 Runner 完成 macOS ARM64、macOS x64、Windows x64、Linux x64 原生矩阵并发布，Release 恰好包含五个安装制品和一份 `SHA256SUMS`，五个安装包下载后均通过统一清单校验，六个正文直达链接返回 HTTP 200，tag 指向 `d41fca2`。`v1.0.18` 与 `v1.0.19` 均在发布前门禁安全失败且未产生不完整 Release，恢复时使用新 Tag，没有移动旧 Tag。
 - 汇总门禁的跨平台身份比对排除 `harness.sha256`：Runtime 生产闭包内的 native prebuild 由各构建主机编译，四平台必然得到不同摘要；四份实测 BUILD-INFO 确认这是唯一跨平台变化字段，其余字段仍精确比对。
 - 本机 macOS ARM64 验收包已按发布手册四项检查通过：DMG 校验和一致、包内应用启动且窗口标题为真实版本、Runtime sidecar 作为应用子进程启动并仅监听 127.0.0.1 随机端口、工作台在同一原生窗口加载、退出后无残留进程与监听。启动令牌在 `desktop.log` 中以 `<redacted>` 记录。
 - 后续判断必须以当前 HEAD、生成锁和实际 diff 为准，不能用历史发行结果替代当前验证。

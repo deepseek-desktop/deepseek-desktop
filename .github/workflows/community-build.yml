@@ -124,6 +124,8 @@ jobs:
           merge-multiple: true
       - name: Prepare release assets
         run: node scripts/prepare-ci-release-assets.mjs
+      - name: Prepare release notes
+        run: node scripts/prepare-ci-release-notes.mjs
       - name: Publish community release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -140,6 +142,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$product_name ${GITHUB_REF_NAME#v}" \
-            --notes-file .github/release-notes-community.md \
+            --notes-file release-assets/RELEASE-NOTES.md \
             "${release_flags[@]}" \
             --verify-tag

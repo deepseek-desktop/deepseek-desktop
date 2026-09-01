@@ -72,7 +72,7 @@ macOS 本机至少检查：
 
 ## 公开资产
 
-Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-INFO` 供汇总核验，但不得公开。
+Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-INFO` 供汇总核验，但不得公开。GitHub 的 `Assets` 展开状态由站点界面控制，仓库不能强制默认展开；`prepare-ci-release-notes.mjs` 必须根据当前 Tag 和完整公开资产集合在正文顶部生成 5 个安装包及 `SHA256SUMS` 的直接下载链接，让用户无需展开 `Assets` 也能下载。
 
 汇总门禁必须检查：
 
@@ -81,6 +81,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 - EXE、AppImage、DEB 各一份。
 - 文件名无冲突。
 - `SHA256SUMS` 覆盖全部 5 个安装包。
+- Release 正文中的直接下载链接与当前 Tag、版本和上述 6 个公开文件逐项一致。
 - Tag、应用版本和 commit 一致。
 
 ## 发布步骤
@@ -92,7 +93,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 3. 创建新的 annotated Tag；已有 `v` 时保持，没有时按约定补 `v`。
 4. 推送 `master` 和新 Tag，不 force push、不移动旧 Tag。
 5. 等待质量检查、四平台矩阵和汇总发布全部完成。
-6. 重新读取 Release，核对 5 个安装包、`SHA256SUMS`、名称、大小、摘要和 Tag/commit。
+6. 重新读取 Release，核对 5 个安装包、`SHA256SUMS`、名称、大小、摘要、正文直接下载链接和 Tag/commit。
 
 任何平台失败都不发布不完整版本。修复后使用下一个未占用 Tag；不能反复移动失败 Tag。
 

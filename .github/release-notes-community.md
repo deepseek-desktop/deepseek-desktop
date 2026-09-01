@@ -2,6 +2,8 @@
 
 这是内置固定版本本地 Runtime 的独立、非官方社区发行版。
 
+<!-- release-downloads -->
+
 ## 主要变化
 
 - Runtime 已同步至官方 `0.1.2-alpha.1`，锁定提交 `cd5ef8148158`，并适配新的 Python Runtime 部署根包名
