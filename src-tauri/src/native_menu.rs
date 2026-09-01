@@ -16,6 +16,7 @@ pub const FULLSCREEN_MENU_ID: &str = "desktop-fullscreen";
 pub const MINIMIZE_MENU_ID: &str = "desktop-minimize";
 pub const MAXIMIZE_MENU_ID: &str = "desktop-maximize";
 
+#[cfg(target_os = "macos")]
 const APP_NAME: &str = env!("DEEPSEEK_DESKTOP_APP_NAME");
 
 #[derive(Clone, Copy)]
