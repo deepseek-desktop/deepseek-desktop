@@ -18,7 +18,7 @@ const settingsCss = [
   ".settings-panel{width:800px;max-width:calc(100vw - 48px);height:min(800px,calc(100vh - 48px));display:flex;overflow:hidden}",
   ".settings-nav{flex:none;width:188px}",
   ".settings-header{box-sizing:border-box;flex:none;height:54px}",
-  ...settingsPatch.replacements.map(replacement => replacement.after)
+  ...settingsPatch.replacements.map(replacement => `.fixture${replacement.after}`)
 ].join("");
 
 const className = (localName: string): string => {

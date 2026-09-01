@@ -127,17 +127,17 @@
       "moduleFile": "lib/client.js",
       "replacements": [
         {
-          "before": ".lWGWKa_content{flex-direction:column;flex:1;min-width:0;display:flex}",
-          "after": ".lWGWKa_content{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden}"
+          "before": "_content{flex-direction:column;flex:1;min-width:0;display:flex}",
+          "after": "_content{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden}"
         },
         {
-          "before": ".lWGWKa_options{flex:1;min-height:0;padding:0 24px 24px;overflow-y:auto}",
-          "after": ".lWGWKa_options{flex:1;min-height:0;height:0;padding:0 24px 24px;overflow-y:auto}"
+          "before": "_options{flex:1;min-height:0;padding:0 24px 24px;overflow-y:auto}",
+          "after": "_options{flex:1;min-height:0;height:0;padding:0 24px 24px;overflow-y:auto}"
         }
       ],
       "markers": [
-        ".lWGWKa_content{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden}",
-        ".lWGWKa_options{flex:1;min-height:0;height:0;padding:0 24px 24px;overflow-y:auto}"
+        "_content{flex-direction:column;flex:1;min-width:0;min-height:0;display:flex;overflow:hidden}",
+        "_options{flex:1;min-height:0;height:0;padding:0 24px 24px;overflow-y:auto}"
       ],
       "id": "settings-scroll-container"
     },
