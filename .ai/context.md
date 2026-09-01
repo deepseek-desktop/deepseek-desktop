@@ -13,6 +13,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - OpenAI Responses 兼容流的最终 `output_item.done` 事件是工具调用 ID、名称、参数和 namespace 的权威事实；不得沿用 `output_item.added` 中可能过期的工具身份，否则会把 `glob` 等调用误派发为 `read`。
 - Harness 工作台是唯一主界面；运行状态、诊断、Desktop 更新、Runtime 更新和关于按需显示为同一原生窗口中的设置层。设置打开时只隐藏工作台子 WebView，关闭时复用原页面和同一 Runtime，不重新导航或丢失会话状态。
 - 唯一完整功能菜单由 Desktop Shell 固定显示在窗口内容区顶部左侧，macOS、Windows、Linux 统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；标题由 Vue 三语渲染，展开项由 Tauri 弹出原生菜单。Runtime 子 WebView 从菜单栏下方开始，不注入菜单脚本也不获得 IPC；macOS 系统栏只保留最小应用菜单，Windows/Linux 不挂载重复的完整原生窗口菜单。
+- macOS 26 原生上下文菜单收起后可能向 Tao `0.35.3` 的 `mouseMoved:` 传入空 `NSEvent`；Desktop 只在 macOS 初始化时安装空事件防护，正常事件转发原实现，Windows/Linux 不受影响。依赖升级后必须重新核对 `TaoView` 方法契约与该防护是否仍有必要。
 - Desktop 初始化后自动启动空闲 Runtime，并在 readiness 通过后直接打开工作台；已就绪 Runtime 不重复启动，启动失败时打开设置层中的重试、恢复和诊断入口。
 - 窗口状态按显示器恢复；保存位置仍能落在已连接显示器时保持不变，目标显示器断开时回到当前主显示器可见区域。
 - 工作台 WebView 不获得通用 Tauri Shell、文件系统或任意 IPC 权限。

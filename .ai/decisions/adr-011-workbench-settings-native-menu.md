@@ -29,7 +29,7 @@ Desktop 外壳版本检查与 Runtime 更新保持两条信任链。未签名社
 - 专用菜单 WebView 启动时读取已保存语言，并通过只携带 locale 的受限 Shell 事件实时跟随设置切换。
 - 菜单高度使用逻辑像素定义，Runtime 子 WebView 在每次缩放和窗口尺寸变化后按实际 scale factor 重新计算物理边界。
 - macOS 原生菜单弹出期间必须由 Rust 进程级门闩拒绝重复请求，避免多个 WebView 或辅助功能重复触发 AppKit 菜单循环；Vue 调用层同时抑制尚未完成的重复 IPC。
-- macOS 必须使用系统当前光标位置弹出菜单，不得把带坐标的 `NSMenu` 绑定到 Tao 根 `NSView`；macOS 26 在关闭该类菜单后可能把空 `mouseMoved` 事件路由给 Tao，导致主线程空指针崩溃。Windows/Linux 继续使用窗口内逻辑坐标定位。
+- macOS 使用系统当前光标位置弹出菜单；Windows/Linux 使用窗口内逻辑坐标定位。macOS 26 在任一种原生上下文菜单定位方式下都可能在菜单收起后向 Tao `mouseMoved:` 传入空 `NSEvent`，而锁定的 Tao `0.35.3` 将该参数建模为非空 Rust 引用并直接解引用。Desktop 初始化时必须为 `TaoView.mouseMoved:` 安装窄范围保护：仅丢弃空事件，所有正常事件原样调用 Tao 原实现；类或方法契约不存在时安全拒绝启动，不静默降级。
 - Desktop Release 请求禁止重定向、凭据和超大响应；候选不完整或版本无效时不得提醒。
 - Atom 回退只能读取官方仓库、合法 SemVer tag 与该 tag 下的完整制品集合；解析失败必须安全失败。
 - Windows 与 Linux 的窗口内菜单、原生弹出项、窗口关闭和设置层视觉仍需对应系统真机验收。
