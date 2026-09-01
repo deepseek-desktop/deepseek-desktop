@@ -1,6 +1,6 @@
 export type RuntimePhase = "idle" | "starting" | "ready" | "stopping" | "recovering" | "failed";
-export type DesktopSurface = "management" | "workbench";
-export type DesktopMenu = "file" | "edit" | "view" | "window" | "help";
+export type DesktopSurface = "settings" | "workbench";
+export type DesktopSettingsView = "runtime" | "diagnostics" | "update" | "desktop-update" | "about";
 
 export interface RuntimeStatus {
   phase: RuntimePhase;
@@ -24,6 +24,8 @@ export interface DesktopSettings {
   runtimeUpdatePublisher: string | null;
   runtimeUpdatePublicKey: string | null;
   runtimePinnedVersion: string | null;
+  desktopUpdateLastCheckAt: string | null;
+  desktopUpdateIgnoredVersion: string | null;
   recoveryReason?: "corrupt" | "future" | null;
 }
 
@@ -61,5 +63,9 @@ export interface UpdateStatus {
   channel: string;
   currentVersion: string;
   availableVersion: string | null;
+  releaseTag: string | null;
+  publishedAt: string | null;
+  releaseNotes: string | null;
+  prerelease: boolean;
   message: string;
 }

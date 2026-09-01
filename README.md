@@ -24,7 +24,7 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 3. 进入工作台的“设置 → 模型”，添加官方或自定义 Provider，填写 API 地址和密钥，并获取可用模型。
 4. 在对话输入区切换模型，创建会话后即可进行对话、代码修改和项目文件操作。
 5. 在“设置 → 插件”中打开 DSH Market，浏览、安装、更新或卸载插件；桌面版已内置所需包管理器。
-6. 通过系统“视图”菜单在“工作台”和“桌面管理”之间切换。运行异常时可在“诊断”页分别导出脱敏日志或诊断包。
+6. 应用默认停留在工作台；需要运行状态、更新、诊断或关于信息时，通过系统原生菜单打开“设置”。关闭设置会回到原来的对话和工作区，不会重启 Runtime。
 
 模型密钥会加密保存在本机，不进入日志、诊断包或浏览器存储。完整安装、配置和故障排查说明见[中文使用文档](docs/zh-CN/getting-started.md)。
 
@@ -86,7 +86,7 @@ Rust Runtime 管理器
   -> 本地加密凭据库
 ```
 
-桌面端只创建一个操作系统窗口。Runtime 就绪后，工作台会在隔离子 WebView 中占满内容区，不保留重复工具栏。Desktop 只负责 Runtime 生命周期、更新、凭据和原生窗口，不保存或注册用户项目目录；项目目录由 Runtime 工作台自己的会话和工作区能力管理。Runtime 从应用数据目录内的独立运行目录启动，避免把 Desktop 壳的路径语义传给 Runtime。原生“视图”菜单可在“工作台”（`Cmd/Ctrl+1`）和“桌面管理”（`Cmd/Ctrl+2`）之间切换；设置、诊断、更新和 Runtime 恢复均在原窗口完成。应用退出时会保存窗口位置、尺寸和全屏状态；下次启动优先恢复到上次使用的显示器，原显示器已断开时自动回到当前可见显示器。
+桌面端只创建一个操作系统窗口。Runtime 就绪后，工作台会在隔离子 WebView 中占满内容区，不保留重复工具栏。Desktop 只负责 Runtime 生命周期、更新、凭据和原生窗口，不保存或注册用户项目目录；项目目录由 Runtime 工作台自己的会话和工作区能力管理。Runtime 从应用数据目录内的独立运行目录启动，避免把 Desktop 壳的路径语义传给 Runtime。macOS、Windows 和 Linux 都使用操作系统原生的“文件 / 编辑 / 视图 / 窗口 / 帮助”菜单；设置、诊断、Desktop 更新、Runtime 更新和关于均在当前窗口的设置层中打开。打开设置只隐藏工作台，关闭设置直接恢复同一个工作台页面，不重新导航、不丢失会话状态。应用退出时会保存窗口位置、尺寸和全屏状态；下次启动优先恢复到上次使用的显示器，原显示器已断开时自动回到当前可见显示器。
 
 工作台 WebView 不获得 Tauri shell、文件系统或通用 IPC 权限，只能访问受管回环 Origin。每次 Runtime 启动都会生成短期凭据会话，真实 token 仅通过标准输入交付，应用数据目录只保存 SHA-256 授权摘要。Runtime 启动后会移除 Helper 相关环境变量，避免普通工具子进程继承短期会话。macOS、Windows 和 Linux 使用同一套 XChaCha20-Poly1305 加密凭据库，并采用原子替换、跨进程锁和私有 Unix 文件权限；不会降级写入 `.env`、YAML、浏览器存储或明文凭据文件。凭据库以当前操作系统用户为信任边界，不能防御已取得同一用户文件权限的恶意程序或 Agent 工具。
 
@@ -142,13 +142,15 @@ corepack pnpm@11.24.0 desktop:package
 
 ## Runtime 独立更新
 
+Desktop 外壳启动后每天最多静默检查一次自身版本，也可以从“帮助 → 检查 Desktop 更新”随时手动检查。社区版从构建时固定的官方 GitHub 仓库读取 Release 列表，按完整 SemVer、发布时间和五个平台安装包是否齐全筛选，不依赖可能指向旧正式版的 `latest`。发现新版时会在当前窗口显示版本、发布时间和摘要，并提供“前往下载 / 稍后提醒 / 忽略此版本”；未签名社区版只打开固定官方 Release 页面，不自动下载安装，也不接受远端返回的任意下载地址。Desktop 版本提醒与下面的 Runtime 独立更新是两条不同链路。
+
 DeepSeek Desktop 将桌面外壳与 Harness Runtime 分开更新。安装包内始终保留一份经过构建验证的 Runtime；可信更新服务可另外发布 macOS arm64、macOS x64、Windows x64 和 Linux x64 的原生 Runtime 生产闭包。用户机器只下载当前平台的压缩制品，不拉取源码、不安装构建工具，也不在本机编译 Runtime。
 
-“桌面管理 → 更新”提供三种方式：自动下载并在下次启动安装、发现后提醒、仅手动检查；默认使用“发现后提醒”，由用户确认后再下载，也可以固定当前 Runtime 或恢复安装包内置版本。Runtime 更新源默认使用安装包配置的官方源；高级用户也可以切换到自定义源，并一次性配置签名清单地址、Runtime 仓库身份、发布者和 Ed25519 公钥。切换来源会立即作废尚未下载的旧候选，不会把旧地址或旧公钥继续用于新来源。
+“设置 → 更新 → Runtime 独立更新”提供三种方式：自动下载并在下次启动安装、发现后提醒、仅手动检查；默认使用“发现后提醒”，由用户确认后再下载，也可以固定当前 Runtime 或恢复安装包内置版本。Runtime 更新源默认使用安装包配置的官方源；高级用户也可以切换到自定义源，并一次性配置签名清单地址、Runtime 仓库身份、发布者和 Ed25519 公钥。切换来源会立即作废尚未下载的旧候选，不会把旧地址或旧公钥继续用于新来源。
 
 候选版本只有在未过期且未重放的签名清单、发布者、仓库、平台、协议、桌面版本范围、Node ABI、凭据插件、DSH Market、大小和 SHA-256 全部匹配后才会进入 staging。下次启动会在隔离目录真实启动本地服务并完成 readiness 与认证 HTTP 探活，再原子切换；启动失败或运行恢复达到上限时自动回滚上一版，上一版不可用时回到安装包内置版。更新器只保留当前、上一版和待安装版本，并清理中断的 staging。更新目录只位于系统应用数据目录，不修改应用安装目录。
 
-默认 `.env.example` 没有配置官方更新清单和公钥，因此不会连接任何 Runtime 更新服务；用户仍可在桌面管理中显式信任并配置完整的自定义更新源档案。发行维护者通过 `RUNTIME_UPDATE_MANIFEST_URL`、`RUNTIME_UPDATE_PUBLIC_KEY`、`RUNTIME_UPDATE_PUBLISHER` 和 `RUNTIME_REPOSITORY` 固化官方档案；其中 `RUNTIME_REPOSITORY` 只表示构建来源和清单中的仓库身份，客户端不会据此拉源码或编译。显式设置 `RUNTIME_REF` 的开发构建默认关闭自动下载，避免联调版本被替换。清单可放在 filesystem/NAS、普通 HTTPS 静态站点、GitHub、GitLab、Gitee、Gitea 或自建服务，不依赖 GitHub Release API。完整用户行为、安全边界、清单格式和发布命令见 [Runtime 独立更新指南](docs/zh-CN/runtime-updates.md)。
+默认 `.env.example` 没有配置官方更新清单和公钥，因此不会连接任何 Runtime 更新服务；用户仍可在设置中显式信任并配置完整的自定义更新源档案。发行维护者通过 `RUNTIME_UPDATE_MANIFEST_URL`、`RUNTIME_UPDATE_PUBLIC_KEY`、`RUNTIME_UPDATE_PUBLISHER` 和 `RUNTIME_REPOSITORY` 固化官方档案；其中 `RUNTIME_REPOSITORY` 只表示构建来源和清单中的仓库身份，客户端不会据此拉源码或编译。显式设置 `RUNTIME_REF` 的开发构建默认关闭自动下载，避免联调版本被替换。清单可放在 filesystem/NAS、普通 HTTPS 静态站点、GitHub、GitLab、Gitee、Gitea 或自建服务，不依赖 GitHub Release API。完整用户行为、安全边界、清单格式和发布命令见 [Runtime 独立更新指南](docs/zh-CN/runtime-updates.md)。
 
 单台主机只构建其原生目标。默认和示例版本始终使用 `1.0.0`。符合 SemVer 的标签都会触发 GitHub Actions，可带或不带 `v` 前缀，例如 `1.0.0`、`v1.0.0`、`v0.1.0-community.13`；完整 SemVer 校验会在构建开始时执行，非法标签不会进入发行。全部平台通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。发布构建从标签注入真实版本，不需要修改源码中的默认或示例版本。
 
@@ -166,7 +168,7 @@ DeepSeek Desktop 将桌面外壳与 Harness Runtime 分开更新。安装包内�
 
 ## 发布边界
 
-当前社区版没有安装包可信发布者身份，因此桌面应用安装包自动更新保持关闭。Runtime 独立更新是另一条边界：只有构建时明确配置可信 Ed25519 清单与发布者的发行版才会启用，未配置时不联网检查。macOS 产物只有 ad-hoc Bundle 签名，没有 Apple Developer ID 签名和公证。未来 Stable 桌面版本必须通过 `pnpm release:check stable`，提供 Updater、Apple 和 Windows 签名材料，并完成对应平台的干净系统安装验收。
+当前社区版没有安装包可信发布者身份，因此 Desktop 自动下载安装保持关闭；应用只检查构建时固定的官方 Release 列表并由用户自行确认下载。Runtime 独立更新是另一条边界：只有构建时明确配置可信 Ed25519 清单与发布者的发行版才会启用，未配置时不联网检查。macOS 产物只有 ad-hoc Bundle 签名，没有 Apple Developer ID 签名和公证。未来 Stable 桌面版本必须通过 `pnpm release:check stable`，提供 Updater、Apple 和 Windows 签名材料，并完成对应平台的干净系统安装验收。
 
 GitHub Actions 原生矩阵构建 macOS arm64/x64、Windows x64 和 Linux x64 产物。macOS arm64 与 Windows x64 还必须完成真实安装、启动、正常退出、孤儿进程、卸载和重装验收；某个平台构建成功不代表其他平台已经完成安装验收。
 

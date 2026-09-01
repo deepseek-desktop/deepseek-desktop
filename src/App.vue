@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import deepSeekDesktopLogo from "./assets/deepseek-desktop.svg";
-import type { DesktopAbout, DesktopMenu, DesktopSettings, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopSettings, DesktopSettingsView, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
 import {
   checkRuntimeUpdate,
   checkForUpdates,
@@ -13,11 +13,13 @@ import {
   getRuntimeStatus,
   getRuntimeUpdateStatus,
   getSettings,
+  ignoreDesktopUpdate,
+  onDesktopSettingsView,
   onDesktopSurface,
   onRuntimeStatus,
   onRuntimeUpdateStatus,
+  openDesktopRelease,
   openWorkbench,
-  popupDesktopMenu,
   openRepository,
   restoreBundledRuntime,
   saveSettings,
@@ -26,7 +28,7 @@ import {
 } from "./desktop";
 import { normalizeLocale, type SupportedLocale } from "./i18n";
 
-type ViewName = "runtime" | "diagnostics" | "update" | "about";
+type ViewName = Exclude<DesktopSettingsView, "desktop-update">;
 
 const { locale, t } = useI18n();
 const view = ref<ViewName>("runtime");
@@ -40,7 +42,7 @@ const runtime = ref<RuntimeStatus>({
   errorCode: null
 });
 const settings = ref<DesktopSettings>({
-  schemaVersion: 4,
+  schemaVersion: 5,
   locale: normalizeLocale(navigator.language),
   onboardingCompleted: false,
   updateChannel: "community",
@@ -53,6 +55,8 @@ const settings = ref<DesktopSettings>({
   runtimeUpdatePublisher: null,
   runtimeUpdatePublicKey: null,
   runtimePinnedVersion: null,
+  desktopUpdateLastCheckAt: null,
+  desktopUpdateIgnoredVersion: null,
   recoveryReason: null
 });
 const about = ref<DesktopAbout | null>(null);
@@ -60,10 +64,11 @@ const update = ref<UpdateStatus | null>(null);
 const runtimeUpdate = ref<RuntimeUpdateStatus | null>(null);
 let unlisten: (() => void) | undefined;
 let unlistenSurface: (() => void) | undefined;
+let unlistenSettingsView: (() => void) | undefined;
 let unlistenRuntimeUpdate: (() => void) | undefined;
 const workbenchVisible = ref(false);
+const updatePromptVisible = ref(false);
 let workbenchOpening = false;
-const desktopMenus: DesktopMenu[] = ["file", "edit", "view", "window", "help"];
 
 const phaseLabel = computed(() => t(`runtime.${runtime.value.phase}`));
 const runtimeStartLabel = computed(() => runtime.value.phase === "failed" ? t("common.retry") : t("common.start"));
@@ -108,6 +113,8 @@ const updateDescription = computed(() => {
     "updates-disabled": "update.disabled",
     "signed-updater-not-configured": "update.notConfigured",
     "update-available": "update.available",
+    "update-ignored": "update.ignored",
+    "check-skipped": "update.skipped",
     "up-to-date": "update.current"
   }[update.value.message] || "update.current";
   return t(messageKey, { version: update.value.availableVersion || "" });
@@ -163,16 +170,6 @@ function navigate(next: ViewName): void {
   view.value = next;
 }
 
-async function openDesktopMenu(menu: DesktopMenu, event: MouseEvent): Promise<void> {
-  const button = event.currentTarget as HTMLButtonElement;
-  const bounds = button.getBoundingClientRect();
-  try {
-    await popupDesktopMenu(menu, bounds.left, bounds.bottom);
-  } catch {
-    notice.value = t("error.unexpected");
-  }
-}
-
 async function selectLocale(value: Event): Promise<void> {
   const next = (value.target as HTMLSelectElement).value as SupportedLocale;
   const previous = settings.value.locale;
@@ -213,6 +210,23 @@ async function showWorkbench(): Promise<void> {
   }
 }
 
+async function closeSettings(): Promise<void> {
+  if (runtime.value.phase !== "ready") return;
+  await showWorkbench();
+}
+
+function handleSettingsKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape" && updatePromptVisible.value) {
+    event.preventDefault();
+    updatePromptVisible.value = false;
+    return;
+  }
+  if (event.key === "Escape" && !workbenchVisible.value && runtime.value.phase === "ready") {
+    event.preventDefault();
+    void closeSettings();
+  }
+}
+
 async function stop(): Promise<void> {
   busy.value = true;
   try {
@@ -242,12 +256,49 @@ async function exportLogFile(): Promise<void> {
   }
 }
 
-async function checkUpdate(): Promise<void> {
+function formatPublishedAt(value: string | null): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat(locale.value, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+async function checkUpdate(silent = false): Promise<void> {
   try {
-    update.value = await checkForUpdates();
-    notice.value = updateDescription.value;
+    update.value = await checkForUpdates(silent);
+    settings.value = await getSettings();
+    updatePromptVisible.value = update.value.message === "update-available" && Boolean(update.value.releaseTag);
+    if (!silent) notice.value = updateDescription.value;
   } catch {
-    notice.value = t("error.updateCheckFailed");
+    if (!silent) notice.value = t("error.updateCheckFailed");
+  }
+}
+
+async function downloadDesktopUpdate(): Promise<void> {
+  if (!update.value?.releaseTag) return;
+  try {
+    await openDesktopRelease(update.value.releaseTag);
+    updatePromptVisible.value = false;
+    await closeSettings();
+  } catch {
+    notice.value = t("error.updateOpenFailed");
+  }
+}
+
+async function deferDesktopUpdate(): Promise<void> {
+  updatePromptVisible.value = false;
+  await closeSettings();
+}
+
+async function ignoreAvailableDesktopUpdate(): Promise<void> {
+  if (!update.value?.availableVersion) return;
+  try {
+    settings.value = await ignoreDesktopUpdate(update.value.availableVersion);
+    update.value.message = "update-ignored";
+    updatePromptVisible.value = false;
+    await closeSettings();
+  } catch {
+    notice.value = t("error.settingsSaveFailed");
   }
 }
 
@@ -370,6 +421,7 @@ async function visitRepository(): Promise<void> {
 }
 
 onMounted(async () => {
+  window.addEventListener("keydown", handleSettingsKeydown);
   try {
     [settings.value, runtime.value, about.value, runtimeUpdate.value] = await Promise.all([
       getSettings(),
@@ -394,6 +446,14 @@ onMounted(async () => {
     unlistenSurface = await onDesktopSurface(surface => {
       workbenchVisible.value = surface === "workbench";
     });
+    unlistenSettingsView = await onDesktopSettingsView(next => {
+      if (next === "desktop-update") {
+        navigate("update");
+        void checkUpdate(false);
+      } else {
+        navigate(next);
+      }
+    });
     unlistenRuntimeUpdate = await onRuntimeUpdateStatus(status => {
       runtimeUpdate.value = status;
     });
@@ -405,42 +465,45 @@ onMounted(async () => {
   } else if (runtime.value.phase === "idle") {
     await startFromStatus(false);
   }
+  void checkUpdate(true);
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleSettingsKeydown);
   unlisten?.();
   unlistenSurface?.();
+  unlistenSettingsView?.();
   unlistenRuntimeUpdate?.();
 });
 </script>
 
 <template>
   <main class="desktop-shell">
-    <nav class="app-menu-bar" :aria-label="t('menu.label')">
-      <button
-        v-for="menu in desktopMenus"
-        :key="menu"
-        type="button"
-        aria-haspopup="menu"
-        @click="openDesktopMenu(menu, $event)"
-      >
-        {{ t(`menu.${menu}`) }}
-      </button>
-    </nav>
-    <header class="topbar">
+    <section class="settings-window" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <header class="topbar">
       <div class="brand">
         <img class="brand-mark" :src="deepSeekDesktopLogo" alt="" aria-hidden="true" />
         <span>
-          <strong>{{ t("app.name") }}</strong>
-          <small>{{ t("app.subtitle") }}</small>
+          <strong id="settings-title">{{ t("navigation.settings") }}</strong>
+          <small>{{ t("app.name") }}</small>
         </span>
       </div>
-      <select class="locale-select" :value="locale" :aria-label="t('common.languageSelector')" @change="selectLocale">
-        <option value="zh-CN">简体中文</option>
-        <option value="zh-TW">繁體中文</option>
-        <option value="en-US">English</option>
-      </select>
-    </header>
+      <div class="topbar-actions">
+        <select class="locale-select" :value="locale" :aria-label="t('common.languageSelector')" @change="selectLocale">
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="en-US">English</option>
+        </select>
+        <button
+          v-if="runtime.phase === 'ready'"
+          class="icon-button"
+          type="button"
+          :aria-label="t('navigation.closeSettings')"
+          :title="t('navigation.closeSettings')"
+          @click="closeSettings"
+        >×</button>
+      </div>
+      </header>
 
     <section class="workspace-layout">
       <nav class="side-nav" :aria-label="t('navigation.label')">
@@ -511,7 +574,7 @@ onBeforeUnmount(() => {
             <div><span>{{ t("update.status") }}</span><strong>{{ updateDescription }}</strong></div>
           </div>
           <footer class="actions">
-            <button class="button secondary" @click="checkUpdate">{{ t("update.check") }}</button>
+            <button class="button secondary" @click="checkUpdate(false)">{{ t("update.check") }}</button>
           </footer>
           <h2 class="subsection-title">{{ t("runtimeUpdate.title") }}</h2>
           <div v-if="runtimeUpdate" class="plain-list compact-list">
@@ -596,6 +659,28 @@ onBeforeUnmount(() => {
 
         <p v-if="notice" class="notice">{{ notice }}</p>
       </section>
+    </section>
+      <div v-if="updatePromptVisible && update" class="desktop-update-backdrop">
+        <section class="desktop-update-prompt" role="alertdialog" aria-modal="true" aria-labelledby="desktop-update-title">
+          <div class="desktop-update-heading">
+            <div>
+              <span class="eyebrow">{{ t("update.desktopTitle") }}</span>
+              <h2 id="desktop-update-title">{{ t("update.promptTitle", { version: update.availableVersion || "" }) }}</h2>
+            </div>
+            <span v-if="update.prerelease" class="release-badge">{{ t("update.prerelease") }}</span>
+          </div>
+          <dl class="desktop-update-meta">
+            <div><dt>{{ t("update.publishedAt") }}</dt><dd>{{ formatPublishedAt(update.publishedAt) }}</dd></div>
+            <div><dt>{{ t("update.summary") }}</dt><dd class="update-notes">{{ update.releaseNotes || t("update.noSummary") }}</dd></div>
+          </dl>
+          <p class="community-update-notice">{{ t("update.communityNotice") }}</p>
+          <footer class="actions wrap-actions">
+            <button class="button secondary" @click="ignoreAvailableDesktopUpdate">{{ t("update.ignoreVersion") }}</button>
+            <button class="button secondary" @click="deferDesktopUpdate">{{ t("update.later") }}</button>
+            <button class="button primary" @click="downloadDesktopUpdate">{{ t("update.download") }}</button>
+          </footer>
+        </section>
+      </div>
     </section>
   </main>
 </template>

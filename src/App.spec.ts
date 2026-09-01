@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import { appConfig } from "./app-config";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, openRepository, openWorkbench, popupDesktopMenu, saveSettings, startRuntime } from "./desktop";
+import { checkForUpdates, checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, ignoreDesktopUpdate, openDesktopRelease, openRepository, openWorkbench, saveSettings, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   locale: "zh-CN",
   onboardingCompleted: false,
   updateChannel: "community",
@@ -20,6 +20,8 @@ const settings: DesktopSettings = {
   runtimeUpdatePublisher: null,
   runtimeUpdatePublicKey: null,
   runtimePinnedVersion: null,
+  desktopUpdateLastCheckAt: null,
+  desktopUpdateIgnoredVersion: null,
   recoveryReason: null
 };
 const runtime: RuntimeStatus = {
@@ -30,8 +32,16 @@ const runtime: RuntimeStatus = {
   errorCode: null
 };
 
+const listeners = vi.hoisted(() => ({
+  settingsView: undefined as ((view: "runtime" | "diagnostics" | "update" | "desktop-update" | "about") => void) | undefined,
+  surface: undefined as ((surface: "settings" | "workbench") => void) | undefined
+}));
+
 vi.mock("./desktop", () => ({
-  checkForUpdates: vi.fn(),
+  checkForUpdates: vi.fn(async () => ({
+    enabled: false, channel: "community", currentVersion: "1.0.0", availableVersion: null,
+    releaseTag: null, publishedAt: null, releaseNotes: null, prerelease: false, message: "up-to-date"
+  })),
   checkRuntimeUpdate: vi.fn(async () => ({
     enabled: true, phase: "available", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
     availableVersion: "1.1.0", pendingVersion: null, channel: "stable", mode: "automatic", pinnedVersion: null,
@@ -58,10 +68,18 @@ vi.mock("./desktop", () => ({
   getSettings: vi.fn(async () => ({ ...settings })),
   onRuntimeStatus: vi.fn(async () => () => undefined),
   onRuntimeUpdateStatus: vi.fn(async () => () => undefined),
-  onDesktopSurface: vi.fn(async () => () => undefined),
+  onDesktopSettingsView: vi.fn(async (handler) => {
+    listeners.settingsView = handler;
+    return () => undefined;
+  }),
+  onDesktopSurface: vi.fn(async (handler) => {
+    listeners.surface = handler;
+    return () => undefined;
+  }),
+  ignoreDesktopUpdate: vi.fn(async version => ({ ...settings, desktopUpdateIgnoredVersion: version })),
+  openDesktopRelease: vi.fn(),
   openRepository: vi.fn(),
   openWorkbench: vi.fn(),
-  popupDesktopMenu: vi.fn(),
   saveSettings: vi.fn(async value => value),
   downloadRuntimeUpdate: vi.fn(async () => ({
     enabled: true, phase: "staged", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
@@ -80,7 +98,7 @@ vi.mock("./desktop", () => ({
 describe(`${appConfig.productName} shell`, () => {
   beforeEach(() => {
     Object.assign(settings, {
-      schemaVersion: 4,
+      schemaVersion: 5,
       locale: "zh-CN",
       onboardingCompleted: false,
       updateChannel: "community",
@@ -93,6 +111,8 @@ describe(`${appConfig.productName} shell`, () => {
       runtimeUpdatePublisher: null,
       runtimeUpdatePublicKey: null,
       runtimePinnedVersion: null,
+      desktopUpdateLastCheckAt: null,
+      desktopUpdateIgnoredVersion: null,
       recoveryReason: null
     });
     Object.assign(runtime, {
@@ -103,6 +123,19 @@ describe(`${appConfig.productName} shell`, () => {
       errorCode: null
     });
     vi.clearAllMocks();
+    listeners.settingsView = undefined;
+    listeners.surface = undefined;
+    vi.mocked(checkForUpdates).mockResolvedValue({
+      enabled: false,
+      channel: "community",
+      currentVersion: "1.0.0",
+      availableVersion: null,
+      releaseTag: null,
+      publishedAt: null,
+      releaseNotes: null,
+      prerelease: false,
+      message: "up-to-date"
+    });
     vi.mocked(startRuntime).mockResolvedValue({
       ...runtime,
       phase: "ready",
@@ -127,21 +160,32 @@ describe(`${appConfig.productName} shell`, () => {
     expect(wrapper.text()).toContain("Diagnostics");
   });
 
-  it("opens each window menu through the typed desktop bridge", async () => {
+  it("opens settings from a native menu event and returns to the preserved workbench", async () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
 
-    const menu = wrapper.get('nav[aria-label="应用菜单"]');
-    expect(menu.findAll("button").map(button => button.text())).toEqual([
-      "文件",
-      "编辑",
-      "视图",
-      "窗口",
-      "帮助"
-    ]);
-    await menu.findAll("button")[2]?.trigger("click");
+    listeners.surface?.("settings");
+    listeners.settingsView?.("diagnostics");
+    await flushPromises();
+    expect(wrapper.get("h1").text()).toBe("运行诊断");
 
-    expect(popupDesktopMenu).toHaveBeenCalledWith("view", 0, 0);
+    await wrapper.get('button[aria-label="关闭设置并返回工作台"]').trigger("click");
+    await flushPromises();
+
+    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(openWorkbench).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts a manual Desktop update check from the native menu event", async () => {
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    listeners.surface?.("settings");
+    listeners.settingsView?.("desktop-update");
+    await flushPromises();
+
+    expect(wrapper.get("h1").text()).toBe("更新");
+    expect(checkForUpdates).toHaveBeenLastCalledWith(false);
   });
 
   it("opens an already running Runtime without starting a second process", async () => {
@@ -274,5 +318,40 @@ describe(`${appConfig.productName} shell`, () => {
       runtimeUpdatePublicKey: "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="
     }));
     expect(wrapper.text()).toContain("Runtime 更新源已保存");
+  });
+
+  it("shows a Desktop release reminder and can ignore that exact version", async () => {
+    vi.mocked(checkForUpdates).mockResolvedValue({
+      enabled: false,
+      channel: "community",
+      currentVersion: "1.0.0",
+      availableVersion: "1.1.0-beta.1",
+      releaseTag: "v1.1.0-beta.1",
+      publishedAt: "2026-08-30T10:00:00Z",
+      releaseNotes: "A tested community release.",
+      prerelease: true,
+      message: "update-available"
+    });
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("发现 Desktop 1.1.0-beta.1");
+    expect(wrapper.text()).toContain("预发布版");
+    expect(wrapper.text()).toContain("A tested community release.");
+    await wrapper.findAll("button").find(button => button.text() === "忽略此版本")?.trigger("click");
+    await flushPromises();
+
+    expect(ignoreDesktopUpdate).toHaveBeenCalledWith("1.1.0-beta.1");
+    expect(openDesktopRelease).not.toHaveBeenCalled();
+  });
+
+  it("does not interrupt startup when the silent Desktop update check fails", async () => {
+    vi.mocked(checkForUpdates).mockRejectedValue(new Error("offline"));
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(openWorkbench).toHaveBeenCalledOnce();
+    expect(wrapper.text()).not.toContain("Desktop 更新检查失败");
   });
 });

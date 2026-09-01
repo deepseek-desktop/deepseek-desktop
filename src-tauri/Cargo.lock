@@ -767,6 +767,7 @@ dependencies = [
  "fs2",
  "getrandom 0.3.4",
  "libc",
+ "quick-xml",
  "reqwest",
  "rustls",
  "semver",

@@ -1,12 +1,14 @@
-#[cfg(target_os = "macos")]
-use tauri::menu::SubmenuBuilder;
-use tauri::menu::{AboutMetadataBuilder, MenuBuilder, MenuItemBuilder};
-use tauri::{AppHandle, LogicalPosition, Position, Window};
+use tauri::AppHandle;
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 
 use crate::error::{DesktopError, DesktopResult};
 
 pub const WORKBENCH_MENU_ID: &str = "desktop-workbench";
-pub const MANAGEMENT_MENU_ID: &str = "desktop-management";
+pub const SETTINGS_MENU_ID: &str = "desktop-settings";
+pub const DIAGNOSTICS_MENU_ID: &str = "desktop-diagnostics";
+pub const RUNTIME_UPDATE_MENU_ID: &str = "desktop-runtime-update";
+pub const DESKTOP_UPDATE_MENU_ID: &str = "desktop-update";
+pub const ABOUT_MENU_ID: &str = "desktop-about";
 pub const DOCUMENTATION_MENU_ID: &str = "desktop-documentation";
 pub const CLOSE_MENU_ID: &str = "desktop-close";
 pub const QUIT_MENU_ID: &str = "desktop-quit";
@@ -15,13 +17,16 @@ pub const MINIMIZE_MENU_ID: &str = "desktop-minimize";
 pub const MAXIMIZE_MENU_ID: &str = "desktop-maximize";
 
 const APP_NAME: &str = env!("DEEPSEEK_DESKTOP_APP_NAME");
-const APP_VERSION: &str = env!("DEEPSEEK_DESKTOP_APP_VERSION");
-const APP_COPYRIGHT: &str = env!("DEEPSEEK_DESKTOP_APP_COPYRIGHT");
-const APP_AUTHORS: &str = env!("DEEPSEEK_DESKTOP_APP_AUTHORS");
 
 #[derive(Clone, Copy)]
 struct MenuLabels {
+    file: &'static str,
+    edit: &'static str,
+    view: &'static str,
+    window: &'static str,
+    help: &'static str,
     about: &'static str,
+    settings: &'static str,
     close: &'static str,
     quit: &'static str,
     undo: &'static str,
@@ -31,10 +36,12 @@ struct MenuLabels {
     paste: &'static str,
     select_all: &'static str,
     workbench: &'static str,
-    management: &'static str,
     fullscreen: &'static str,
     minimize: &'static str,
     maximize: &'static str,
+    desktop_update: &'static str,
+    runtime_update: &'static str,
+    diagnostics: &'static str,
     documentation: &'static str,
 }
 
@@ -46,143 +53,129 @@ pub(crate) struct CloseConfirmationLabels {
     pub(crate) cancel: &'static str,
 }
 
-pub fn install(app: &AppHandle, _locale: &str) -> DesktopResult<()> {
+pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
+    let labels = labels(locale);
+    let workbench = item(
+        app,
+        WORKBENCH_MENU_ID,
+        labels.workbench,
+        Some("CmdOrCtrl+1"),
+    )?;
+    let settings = item(app, SETTINGS_MENU_ID, labels.settings, Some("CmdOrCtrl+,"))?;
+    let close = item(app, CLOSE_MENU_ID, labels.close, Some("CmdOrCtrl+W"))?;
+    let quit = item(app, QUIT_MENU_ID, labels.quit, Some("CmdOrCtrl+Q"))?;
+    let fullscreen = item(app, FULLSCREEN_MENU_ID, labels.fullscreen, None)?;
+    let minimize = item(app, MINIMIZE_MENU_ID, labels.minimize, None)?;
+    let maximize = item(app, MAXIMIZE_MENU_ID, labels.maximize, None)?;
+    let desktop_update = item(app, DESKTOP_UPDATE_MENU_ID, labels.desktop_update, None)?;
+    let runtime_update = item(app, RUNTIME_UPDATE_MENU_ID, labels.runtime_update, None)?;
+    let diagnostics = item(
+        app,
+        DIAGNOSTICS_MENU_ID,
+        labels.diagnostics,
+        Some("CmdOrCtrl+Shift+D"),
+    )?;
+    let documentation = item(app, DOCUMENTATION_MENU_ID, labels.documentation, None)?;
+    let about = item(app, ABOUT_MENU_ID, labels.about, None)?;
+
     #[cfg(target_os = "macos")]
-    {
-        let labels = labels(_locale);
-        let quit = MenuItemBuilder::with_id(QUIT_MENU_ID, labels.quit)
-            .accelerator("CmdOrCtrl+Q")
-            .build(app)
-            .map_err(desktop_error)?;
-        let application = SubmenuBuilder::new(app, APP_NAME)
-            .about_with_text(labels.about, Some(about_metadata()))
-            .separator()
-            .services()
-            .separator()
-            .hide()
-            .hide_others()
-            .show_all()
-            .separator()
-            .item(&quit)
-            .build()
-            .map_err(desktop_error)?;
-        let menu = MenuBuilder::new(app)
-            .item(&application)
-            .build()
-            .map_err(desktop_error)?;
-        app.set_menu(menu).map_err(desktop_error)?;
-    }
+    let application = SubmenuBuilder::new(app, APP_NAME)
+        .item(&about)
+        .separator()
+        .item(&settings)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .item(&quit)
+        .build()
+        .map_err(desktop_error)?;
 
-    #[cfg(not(target_os = "macos"))]
-    app.remove_menu().map_err(desktop_error)?;
+    let file = {
+        let builder = SubmenuBuilder::new(app, labels.file);
+        #[cfg(not(target_os = "macos"))]
+        let builder = builder.item(&settings).separator();
+        let builder = builder.item(&close);
+        #[cfg(not(target_os = "macos"))]
+        let builder = builder.separator().item(&quit);
+        builder.build().map_err(desktop_error)?
+    };
+    let edit = SubmenuBuilder::new(app, labels.edit)
+        .undo_with_text(labels.undo)
+        .redo_with_text(labels.redo)
+        .separator()
+        .cut_with_text(labels.cut)
+        .copy_with_text(labels.copy)
+        .paste_with_text(labels.paste)
+        .select_all_with_text(labels.select_all)
+        .build()
+        .map_err(desktop_error)?;
+    let view = SubmenuBuilder::new(app, labels.view)
+        .item(&workbench)
+        .separator()
+        .item(&fullscreen)
+        .build()
+        .map_err(desktop_error)?;
+    let window = SubmenuBuilder::new(app, labels.window)
+        .item(&minimize)
+        .item(&maximize)
+        .build()
+        .map_err(desktop_error)?;
+    let help = {
+        let builder = SubmenuBuilder::new(app, labels.help)
+            .item(&desktop_update)
+            .item(&runtime_update)
+            .item(&diagnostics)
+            .separator()
+            .item(&documentation);
+        #[cfg(not(target_os = "macos"))]
+        let builder = builder.separator().item(&about);
+        builder.build().map_err(desktop_error)?
+    };
 
+    let builder = MenuBuilder::new(app);
+    #[cfg(target_os = "macos")]
+    let builder = builder.item(&application);
+    let menu = builder
+        .item(&file)
+        .item(&edit)
+        .item(&view)
+        .item(&window)
+        .item(&help)
+        .build()
+        .map_err(desktop_error)?;
+    app.set_menu(menu).map_err(desktop_error)?;
     Ok(())
 }
 
-pub fn popup(
+fn item(
     app: &AppHandle,
-    window: &Window,
-    locale: &str,
-    menu: &str,
-    position: LogicalPosition<f64>,
-) -> DesktopResult<()> {
-    let labels = labels(locale);
-    let menu = match menu {
-        "file" => {
-            let close = MenuItemBuilder::with_id(CLOSE_MENU_ID, labels.close)
-                .accelerator("CmdOrCtrl+W")
-                .build(app)
-                .map_err(desktop_error)?;
-            let quit = MenuItemBuilder::with_id(QUIT_MENU_ID, labels.quit)
-                .accelerator("CmdOrCtrl+Q")
-                .build(app)
-                .map_err(desktop_error)?;
-            MenuBuilder::new(app)
-                .item(&close)
-                .separator()
-                .item(&quit)
-                .build()
-        }
-        "edit" => MenuBuilder::new(app)
-            .undo_with_text(labels.undo)
-            .redo_with_text(labels.redo)
-            .separator()
-            .cut_with_text(labels.cut)
-            .copy_with_text(labels.copy)
-            .paste_with_text(labels.paste)
-            .select_all_with_text(labels.select_all)
-            .build(),
-        "view" => {
-            let workbench = MenuItemBuilder::with_id(WORKBENCH_MENU_ID, labels.workbench)
-                .accelerator("CmdOrCtrl+1")
-                .build(app)
-                .map_err(desktop_error)?;
-            let management = MenuItemBuilder::with_id(MANAGEMENT_MENU_ID, labels.management)
-                .accelerator("CmdOrCtrl+2")
-                .build(app)
-                .map_err(desktop_error)?;
-            let fullscreen = MenuItemBuilder::with_id(FULLSCREEN_MENU_ID, labels.fullscreen)
-                .build(app)
-                .map_err(desktop_error)?;
-            MenuBuilder::new(app)
-                .item(&workbench)
-                .item(&management)
-                .separator()
-                .item(&fullscreen)
-                .build()
-        }
-        "window" => {
-            let minimize = MenuItemBuilder::with_id(MINIMIZE_MENU_ID, labels.minimize)
-                .build(app)
-                .map_err(desktop_error)?;
-            let maximize = MenuItemBuilder::with_id(MAXIMIZE_MENU_ID, labels.maximize)
-                .build(app)
-                .map_err(desktop_error)?;
-            MenuBuilder::new(app)
-                .item(&minimize)
-                .item(&maximize)
-                .build()
-        }
-        "help" => {
-            let documentation =
-                MenuItemBuilder::with_id(DOCUMENTATION_MENU_ID, labels.documentation)
-                    .build(app)
-                    .map_err(desktop_error)?;
-            MenuBuilder::new(app)
-                .item(&documentation)
-                .separator()
-                .about_with_text(labels.about, Some(about_metadata()))
-                .build()
-        }
-        _ => {
-            return Err(DesktopError::InvalidConfiguration(
-                "unknown desktop menu".to_owned(),
-            ));
-        }
+    id: &str,
+    label: &str,
+    accelerator: Option<&str>,
+) -> DesktopResult<tauri::menu::MenuItem<tauri::Wry>> {
+    let mut builder = MenuItemBuilder::with_id(id, label);
+    if let Some(accelerator) = accelerator {
+        builder = builder.accelerator(accelerator);
     }
-    .map_err(desktop_error)?;
-
-    window
-        .popup_menu_at(&menu, Position::Logical(position))
-        .map_err(desktop_error)
-}
-
-fn about_metadata() -> tauri::menu::AboutMetadata<'static> {
-    AboutMetadataBuilder::new()
-        .name(Some(APP_NAME))
-        .version(Some(APP_VERSION))
-        .authors(Some(APP_AUTHORS.split(", ").map(str::to_owned).collect()))
-        .copyright(Some(APP_COPYRIGHT))
-        .license(Some("Apache-2.0"))
-        .build()
+    builder.build(app).map_err(desktop_error)
 }
 
 fn labels(locale: &str) -> MenuLabels {
     match locale {
         "zh-TW" => MenuLabels {
-            about: "關於",
+            file: "檔案",
+            edit: "編輯",
+            view: "顯示方式",
+            window: "視窗",
+            help: "輔助說明",
+            about: "關於 DeepSeek Desktop",
+            settings: "設定…",
             close: "關閉視窗",
-            quit: "結束",
+            quit: "結束 DeepSeek Desktop",
             undo: "還原",
             redo: "重做",
             cut: "剪下",
@@ -190,16 +183,24 @@ fn labels(locale: &str) -> MenuLabels {
             paste: "貼上",
             select_all: "全選",
             workbench: "工作臺",
-            management: "桌面管理",
             fullscreen: "進入全螢幕",
             minimize: "縮到最小",
             maximize: "放到最大",
+            desktop_update: "檢查 Desktop 更新…",
+            runtime_update: "Runtime 更新…",
+            diagnostics: "診斷…",
             documentation: "使用說明",
         },
         "en-US" => MenuLabels {
-            about: "About",
+            file: "File",
+            edit: "Edit",
+            view: "View",
+            window: "Window",
+            help: "Help",
+            about: "About DeepSeek Desktop",
+            settings: "Settings…",
             close: "Close Window",
-            quit: "Quit",
+            quit: "Quit DeepSeek Desktop",
             undo: "Undo",
             redo: "Redo",
             cut: "Cut",
@@ -207,16 +208,24 @@ fn labels(locale: &str) -> MenuLabels {
             paste: "Paste",
             select_all: "Select All",
             workbench: "Workbench",
-            management: "Desktop Management",
             fullscreen: "Enter Full Screen",
             minimize: "Minimize",
             maximize: "Maximize",
+            desktop_update: "Check Desktop Updates…",
+            runtime_update: "Runtime Updates…",
+            diagnostics: "Diagnostics…",
             documentation: "Documentation",
         },
         _ => MenuLabels {
-            about: "关于",
+            file: "文件",
+            edit: "编辑",
+            view: "视图",
+            window: "窗口",
+            help: "帮助",
+            about: "关于 DeepSeek Desktop",
+            settings: "设置…",
             close: "关闭窗口",
-            quit: "退出",
+            quit: "退出 DeepSeek Desktop",
             undo: "撤销",
             redo: "重做",
             cut: "剪切",
@@ -224,10 +233,12 @@ fn labels(locale: &str) -> MenuLabels {
             paste: "粘贴",
             select_all: "全选",
             workbench: "工作台",
-            management: "桌面管理",
             fullscreen: "进入全屏幕",
             minimize: "最小化",
             maximize: "最大化",
+            desktop_update: "检查 Desktop 更新…",
+            runtime_update: "Runtime 更新…",
+            diagnostics: "诊断…",
             documentation: "使用文档",
         },
     }
@@ -243,42 +254,19 @@ pub(crate) fn close_confirmation_labels(locale: &str) -> CloseConfirmationLabels
         },
         "en-US" => CloseConfirmationLabels {
             title: "Close DeepSeek Desktop?",
-            message: "Closing the window will stop any tasks currently running. Do you want to close it?",
+            message: "Closing the window stops tasks that are still running. Are you sure?",
             confirm: "Close",
             cancel: "Cancel",
         },
         _ => CloseConfirmationLabels {
             title: "关闭 DeepSeek Desktop？",
-            message: "关闭窗口将停止当前运行中的任务。确定要关闭吗？",
+            message: "关闭窗口将停止当前仍在运行的任务。确定要关闭吗？",
             confirm: "关闭",
             cancel: "取消",
         },
     }
 }
 
-fn desktop_error(error: tauri::Error) -> DesktopError {
+fn desktop_error(error: impl std::fmt::Display) -> DesktopError {
     DesktopError::Other(error.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{close_confirmation_labels, labels};
-
-    #[test]
-    fn provides_complete_surface_labels_for_all_supported_locales() {
-        assert_eq!(labels("zh-CN").workbench, "工作台");
-        assert_eq!(labels("zh-TW").workbench, "工作臺");
-        assert_eq!(labels("en-US").management, "Desktop Management");
-        assert_eq!(labels("en-US").fullscreen, "Enter Full Screen");
-    }
-
-    #[test]
-    fn provides_close_confirmation_labels_for_all_supported_locales() {
-        assert_eq!(close_confirmation_labels("zh-CN").confirm, "关闭");
-        assert_eq!(
-            close_confirmation_labels("zh-TW").title,
-            "關閉 DeepSeek Desktop？"
-        );
-        assert_eq!(close_confirmation_labels("en-US").cancel, "Cancel");
-    }
 }

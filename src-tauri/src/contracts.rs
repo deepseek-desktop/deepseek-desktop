@@ -48,6 +48,10 @@ pub struct DesktopSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_pinned_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desktop_update_last_check_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desktop_update_ignored_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery_reason: Option<String>,
 }
 
@@ -67,13 +71,15 @@ impl Default for DesktopSettings {
             runtime_update_publisher: None,
             runtime_update_public_key: None,
             runtime_pinned_version: None,
+            desktop_update_last_check_at: None,
+            desktop_update_ignored_version: None,
             recovery_reason: None,
         }
     }
 }
 
 pub const fn current_settings_schema_version() -> u8 {
-    4
+    5
 }
 
 fn default_runtime_update_channel() -> String {
@@ -112,6 +118,10 @@ pub struct UpdateStatus {
     pub channel: String,
     pub current_version: String,
     pub available_version: Option<String>,
+    pub release_tag: Option<String>,
+    pub published_at: Option<String>,
+    pub release_notes: Option<String>,
+    pub prerelease: bool,
     pub message: String,
 }
 

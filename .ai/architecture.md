@@ -48,14 +48,14 @@ Pull Request 和普通分支 push 不触发发布工作流。正式发布以 `.g
 
 ## 代码职责
 
-- `src/`：Vue 3 桌面管理 Shell、三语国际化、类型化 IPC 和视图状态。
+- `src/`：Vue 3 同窗设置层、三语国际化、类型化 IPC 和视图状态。
 - `src-tauri/src/runtime.rs`：Runtime 状态机、独立运行目录、进程生命周期、探活、恢复和嵌入式工作台。
 - `src-tauri/src/runtime_update.rs`：签名 Runtime 清单、平台下载、受限解压、版本指针、smoke、切换与回滚。
 - `src-tauri/src/credential_vault.rs`：本地加密凭据库、短期 Runtime 会话授权及旧索引迁移。
 - `src-tauri/src/settings.rs`：原子设置读写、损坏或未来 schema 隔离恢复。
 - `src-tauri/src/diagnostics.rs`：日志轮转、脱敏和诊断导出。
-- `src-tauri/src/native_menu.rs`：窗口内统一菜单的原生弹出项、窗口命令及页面切换入口；macOS 系统栏只保留必要应用菜单。
-- `src-tauri/src/updater.rs`：桌面安装包更新边界；与 Runtime 独立更新分离，社区版保持关闭。
+- `src-tauri/src/native_menu.rs`：唯一系统原生菜单、窗口命令及设置页入口；macOS 额外保留规范应用菜单。
+- `src-tauri/src/updater.rs`：Desktop 安装包更新边界；按固定官方仓库 Release 列表、SemVer、发布时间和资产完整性生成社区版提醒，与 Runtime 独立更新分离。
 - `runtime/packages/credentials-vault/`：Harness Credential Provider 代理，通过 stdin/stdout JSON 调用桌面 helper。
 - `runtime/packages/web-search-follow-model/`：Provider 无关的联网搜索路由、标准协议执行器和受控第三方协议注册服务。
 - `runtime/patches/`：针对锁定 Runtime 的最小桌面集成补丁，必须有 marker 和验证。
@@ -66,10 +66,10 @@ Pull Request 和普通分支 push 不触发发布工作流。正式发布以 `.g
 
 ## 运行链路
 
-1. 桌面应用读取壳层设置，不要求选择项目目录，并在管理 Shell 初始化后异步请求启动空闲 Runtime。
+1. 桌面应用读取壳层设置，不要求选择项目目录，并在本地设置层初始化后异步请求启动空闲 Runtime。
 2. Rust Supervisor 在应用数据目录内的独立运行目录中，以随机端口启动捆绑的 Node/Harness Runtime；已就绪实例不会重复启动，失败时管理 Shell 保持可用。
 3. Runtime 通过受限会话调用桌面凭据 helper，不接收长期明文环境变量。
-4. readiness 通过后，同一原生窗口嵌入受管 Harness Origin；Desktop 初始化脚本在页面顶部注入统一菜单条，菜单点击经当前 loopback Origin 的保留路径交给 Rust 校验并弹出原生菜单。
+4. readiness 通过后，同一原生窗口嵌入受管 Harness Origin；Tauri 提供唯一系统原生菜单。打开设置时隐藏工作台子 WebView，关闭时按相同受管 Origin 直接恢复，不重新导航。
 5. Runtime 异常退出时按有限次数恢复；用户主动停止或应用退出时清理进程树。
 6. 已配置可信更新服务时，候选 Runtime 下载到应用数据目录并在下次启动 smoke 后切换；失败回滚上一版或内置基线。
 
@@ -89,7 +89,19 @@ web_search 工具
 
 Desktop 与 Runtime 的关系是“原生壳 + 本地 Web 应用”：Desktop 不调用 Runtime 私有工作区 API，不保存用户项目目录，也不把自身运行目录解释为用户工作区。会话、项目目录和文件边界由 Runtime 工作台自己的稳定公共能力负责。
 
-窗口内菜单由 Desktop 渲染五组三语标题，Tauri 负责系统原生弹出项。桌面管理页直接使用主 WebView 菜单；工作台显示时，由 Desktop 初始化脚本注入固定菜单条并让 Runtime 内容避开顶部 34px。菜单按钮只能访问当前受管 Origin 下的保留路径，Rust 在导航前验证 Origin、菜单名与有限坐标并拒绝实际跳页。能力清单只包含 `main`，不向 Runtime 页面开放 Tauri IPC。
+系统菜单完全由 Tauri 构建为“文件 / 编辑 / 视图 / 窗口 / 帮助”，设置与 Runtime 页面都不渲染第二套菜单。菜单事件只调用 Desktop 内部受限命令；能力清单仍只包含 `main`，不向 Runtime 页面开放 Tauri IPC。
+
+Desktop 版本提醒链路：
+
+```text
+启动每日检查 / 帮助手动检查
+  -> 构建时固定的 GitHub 仓库 Releases API（禁止重定向）
+  -> draft / prerelease / 完整 SemVer / 发布时间 / 五平台资产完整性
+  -> 当前窗口提醒
+  -> 固定仓库 + 已验证 tag 构造官方 Release 页面
+```
+
+远端 Release 的资产下载 URL 不进入客户端命令，社区版不自动安装未签名 Desktop 制品。忽略版本和每日检查时间只保存在壳层设置中，不进入 Runtime 配置。
 
 ## 安全边界
 

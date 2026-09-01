@@ -18,7 +18,7 @@ use error::{DesktopError, DesktopResult};
 use runtime::RuntimeSupervisor;
 use runtime_update::{RuntimeStore, RuntimeUpdateManager};
 use settings::{AppPaths, SettingsStore};
-use tauri::{LogicalPosition, Manager, State};
+use tauri::{Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_opener::OpenerExt;
 
@@ -152,27 +152,6 @@ async fn runtime_open(state: State<'_, AppState>) -> DesktopResult<()> {
 }
 
 #[tauri::command]
-fn desktop_menu_popup(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    menu: String,
-    x: f64,
-    y: f64,
-) -> DesktopResult<()> {
-    if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 {
-        return Err(DesktopError::InvalidConfiguration(
-            "desktop menu position is invalid".to_owned(),
-        ));
-    }
-    state.supervisor.focus_active_surface()?;
-    let window = app
-        .get_window("main")
-        .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
-    let locale = state.settings.get()?.locale;
-    native_menu::popup(&app, &window, &locale, &menu, LogicalPosition::new(x, y))
-}
-
-#[tauri::command]
 fn settings_get(state: State<'_, AppState>) -> DesktopResult<DesktopSettings> {
     state.settings.get()
 }
@@ -249,8 +228,43 @@ fn repository_open(app: tauri::AppHandle) -> DesktopResult<()> {
 async fn update_check(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    silent: bool,
 ) -> DesktopResult<UpdateStatus> {
-    updater::check(&app, &state.settings.get()?).await
+    let now = chrono::Utc::now();
+    let mut settings = state.settings.get()?;
+    if silent && !updater::check_due(settings.desktop_update_last_check_at.as_deref(), now) {
+        return Ok(updater::skipped_status(&settings));
+    }
+    settings.desktop_update_last_check_at = Some(now.to_rfc3339());
+    let settings = state.settings.update(settings)?;
+    let status = updater::check(&app, &settings).await?;
+    if status.message == "update-available" {
+        state.supervisor.show_settings("update")?;
+    }
+    Ok(status)
+}
+
+#[tauri::command]
+fn desktop_update_ignore(
+    state: State<'_, AppState>,
+    version: String,
+) -> DesktopResult<DesktopSettings> {
+    let version = semver::Version::parse(version.trim()).map_err(|_| {
+        DesktopError::InvalidConfiguration(
+            "Desktop ignored version must be valid SemVer".to_owned(),
+        )
+    })?;
+    let mut settings = state.settings.get()?;
+    settings.desktop_update_ignored_version = Some(version.to_string());
+    state.settings.update(settings)
+}
+
+#[tauri::command]
+fn desktop_update_open_release(app: tauri::AppHandle, tag: String) -> DesktopResult<()> {
+    let page = updater::official_release_page(&tag)?;
+    app.opener()
+        .open_url(page, None::<&str>)
+        .map_err(|error| DesktopError::Other(error.to_string()))
 }
 
 #[tauri::command]
@@ -354,17 +368,37 @@ pub fn run() {
                     let supervisor = Arc::clone(&state.supervisor);
                     thread::spawn(move || {
                         if supervisor.open_runtime().is_err() {
-                            let _ = supervisor.show_management();
+                            let _ = supervisor.show_settings("runtime");
                         }
                     });
                 }
             }
-            native_menu::MANAGEMENT_MENU_ID => {
+            native_menu::SETTINGS_MENU_ID => {
                 if let Some(state) = app.try_state::<AppState>() {
                     let supervisor = Arc::clone(&state.supervisor);
                     thread::spawn(move || {
-                        let _ = supervisor.show_management();
+                        let _ = supervisor.show_settings("runtime");
                     });
+                }
+            }
+            native_menu::DIAGNOSTICS_MENU_ID => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let _ = state.supervisor.show_settings("diagnostics");
+                }
+            }
+            native_menu::RUNTIME_UPDATE_MENU_ID => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let _ = state.supervisor.show_settings("update");
+                }
+            }
+            native_menu::DESKTOP_UPDATE_MENU_ID => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let _ = state.supervisor.show_settings("desktop-update");
+                }
+            }
+            native_menu::ABOUT_MENU_ID => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let _ = state.supervisor.show_settings("about");
                 }
             }
             native_menu::DOCUMENTATION_MENU_ID => {
@@ -455,12 +489,13 @@ pub fn run() {
             runtime_start,
             runtime_stop,
             runtime_open,
-            desktop_menu_popup,
             settings_get,
             settings_update,
             desktop_about,
             repository_open,
             update_check,
+            desktop_update_ignore,
+            desktop_update_open_release,
             runtime_update_status,
             runtime_update_check,
             runtime_update_download,

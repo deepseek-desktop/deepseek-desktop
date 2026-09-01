@@ -108,6 +108,8 @@ impl SettingsStore {
         normalize_optional(&mut settings.runtime_update_repository);
         normalize_optional(&mut settings.runtime_update_publisher);
         normalize_optional(&mut settings.runtime_update_public_key);
+        normalize_optional(&mut settings.desktop_update_last_check_at);
+        normalize_optional(&mut settings.desktop_update_ignored_version);
         validate(&settings)?;
         let mut current = self
             .current
@@ -251,6 +253,19 @@ fn migrate_settings(mut value: serde_json::Value) -> serde_json::Result<serde_js
         object.insert("runtimeUpdatePublisher".to_owned(), serde_json::Value::Null);
         object.insert("runtimeUpdatePublicKey".to_owned(), serde_json::Value::Null);
     }
+    if schema <= 4 {
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?;
+        object.insert(
+            "desktopUpdateLastCheckAt".to_owned(),
+            serde_json::Value::Null,
+        );
+        object.insert(
+            "desktopUpdateIgnoredVersion".to_owned(),
+            serde_json::Value::Null,
+        );
+    }
     value
         .as_object_mut()
         .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?
@@ -358,6 +373,24 @@ fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
             "runtime pinned version must be valid SemVer".to_owned(),
         ));
     }
+    if settings
+        .desktop_update_last_check_at
+        .as_deref()
+        .is_some_and(|value| chrono::DateTime::parse_from_rfc3339(value).is_err())
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Desktop update check time must be RFC 3339".to_owned(),
+        ));
+    }
+    if settings
+        .desktop_update_ignored_version
+        .as_deref()
+        .is_some_and(|version| semver::Version::parse(version).is_err())
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Desktop ignored version must be valid SemVer".to_owned(),
+        ));
+    }
     Ok(())
 }
 
@@ -434,6 +467,27 @@ mod tests {
             ..DesktopSettings::default()
         };
         assert!(validate(&invalid).is_err());
+    }
+
+    #[test]
+    fn accepts_only_valid_desktop_update_memory() {
+        let valid = DesktopSettings {
+            desktop_update_last_check_at: Some("2026-08-30T10:00:00Z".to_owned()),
+            desktop_update_ignored_version: Some("1.2.0-beta.1".to_owned()),
+            ..DesktopSettings::default()
+        };
+        assert!(validate(&valid).is_ok());
+
+        let invalid_time = DesktopSettings {
+            desktop_update_last_check_at: Some("yesterday".to_owned()),
+            ..DesktopSettings::default()
+        };
+        assert!(validate(&invalid_time).is_err());
+        let invalid_version = DesktopSettings {
+            desktop_update_ignored_version: Some("latest".to_owned()),
+            ..DesktopSettings::default()
+        };
+        assert!(validate(&invalid_version).is_err());
     }
 
     #[test]
@@ -593,6 +647,22 @@ mod tests {
         assert!(settings.runtime_update_repository.is_none());
         assert!(settings.runtime_update_publisher.is_none());
         assert!(settings.runtime_update_public_key.is_none());
+    }
+
+    #[test]
+    fn migrates_schema_four_to_desktop_update_memory() {
+        let mut value = serde_json::to_value(DesktopSettings::default()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.insert("schemaVersion".to_owned(), serde_json::json!(4));
+        object.remove("desktopUpdateLastCheckAt");
+        object.remove("desktopUpdateIgnoredVersion");
+
+        let settings: DesktopSettings =
+            serde_json::from_value(migrate_settings(value).unwrap()).unwrap();
+
+        assert_eq!(settings.schema_version, current_settings_schema_version());
+        assert!(settings.desktop_update_last_check_at.is_none());
+        assert!(settings.desktop_update_ignored_version.is_none());
     }
 
     #[test]

@@ -1,10 +1,11 @@
 # 当前交付摘要
 
-- 单原生窗口承载桌面管理与 Harness 工作台；macOS、Windows、Linux 统一在窗口内顶部显示三语“文件 / 编辑 / 视图 / 窗口 / 帮助”，展开项继续使用系统原生菜单。管理页由主 Shell 显示菜单，工作台菜单由 Desktop 初始化脚本注入，点击仅通过受管同源保留路径请求原生弹出项，Runtime 不获得 Tauri IPC；macOS ARM64 成品已实测菜单布局、Runtime 内容避让和“视图”原生弹出菜单。
+- Harness 工作台成为单窗口唯一主界面；运行状态、诊断、Desktop 更新、Runtime 更新和关于改为同窗口设置层。打开设置只隐藏工作台子 WebView，关闭时复用同一页面与 Runtime，不重新导航、不丢失会话状态；Runtime 仍不获得 Tauri IPC。
+- macOS、Windows、Linux 的功能菜单收敛为 Tauri 创建的唯一系统原生“文件 / 编辑 / 视图 / 窗口 / 帮助”结构；macOS 保留系统规范应用菜单，Vue 与 Runtime 页面不再绘制或注入重复菜单。
 - Runtime Supervisor 支持独立运行目录、随机端口、浏览器令牌换取会话 Cookie、带认证的 readiness、有限恢复、主动停止和进程树清理；旧版无令牌 Runtime 保持兼容，仅 Runtime 制品、进程退出或启动健康失败触发回滚，配置、凭据和权限错误保持原版本并给出明确诊断。
 - Desktop 启动后自动拉起空闲 Runtime，并在 readiness 通过后直接进入工作台；已就绪实例不重复启动，失败时保留管理、重试和诊断入口。用户无需点击启动或选择目录，项目目录、会话和文件边界由 Runtime 工作台自行管理。
 - 使用跨平台本地加密凭据库，具备短期会话授权、记录枚举、失败回滚和旧明文索引迁移。
-- 提供三语界面、诊断脱敏导出、设置恢复、关于页与社区版更新边界；Runtime 启动令牌不会进入公开状态或导出日志，Runtime 更新默认采用“发现后提醒”。诊断脱敏同时覆盖 `HOME`、`USERPROFILE` 和 `HOMEDRIVE` + `HOMEPATH`，Windows 导出不再泄漏用户目录路径。
+- 提供三语界面、诊断脱敏导出、设置恢复、关于页与两条独立更新边界；Runtime 启动令牌不会进入公开状态或导出日志，Runtime 更新默认采用“发现后提醒”。社区版 Desktop 每天最多从构建时固定的官方 GitHub 仓库检查一次 Release，也允许手动检查；只选择完整 SemVer 且五个平台公开资产齐全的候选，提醒可前往固定官方 Release、稍后处理或忽略该版本，不自动安装未签名制品。诊断脱敏同时覆盖 `HOME`、`USERPROFILE` 和 `HOMEDRIVE` + `HOMEPATH`，Windows 导出不再泄漏用户目录路径。
 - 建立统一应用配置、Runtime 来源同步、不可变发布 pin、工具链校验和一键平台打包链路。
 - Runtime 已同步到官方 `0.1.2-alpha.1`（`cd5ef8148158`），新版部署根包名、桌面补丁及 HTTP Web Fetch 运行时闭包均已适配。
 - OpenAI Responses 兼容流在最终事件中会覆盖暂态工具 ID、名称、参数和 namespace，避免第三方兼容接口把 `glob` 等调用错误派发为 `read` 并产生缺少 `file_path` 的假错误。

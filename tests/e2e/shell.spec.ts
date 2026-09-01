@@ -25,25 +25,19 @@ test("automatic Runtime startup, language switching, and status views fully load
   await expect(brandMark).toBeVisible();
   await expect.poll(() => brandMark.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByRole("heading", { name: "Runtime 已就绪" })).toBeVisible();
-  const applicationMenu = page.getByRole("navigation", { name: "应用菜单" });
-  await expect(applicationMenu.getByRole("button")).toHaveText(["文件", "编辑", "视图", "窗口", "帮助"]);
+  await expect(page.getByRole("dialog", { name: "设置" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "应用菜单" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "开始使用" })).toHaveCount(0);
   await page.getByLabel("切换语言").selectOption("en-US");
   await expect(page.getByRole("heading", { name: "Runtime ready" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Application menu" }).getByRole("button")).toHaveText([
-    "File",
-    "Edit",
-    "View",
-    "Window",
-    "Help"
-  ]);
+  await expect(page.getByRole("button", { name: "Close settings and return to the workbench" })).toBeVisible();
   await expect(page.getByText("Choose a workspace")).toHaveCount(0);
 
   await page.getByRole("button", { name: /Diagnostics/ }).click();
   await expect(page.getByRole("heading", { name: "Runtime diagnostics" })).toBeVisible();
   await page.getByRole("button", { name: /Updates/ }).click();
   await expect(page.getByRole("heading", { name: "Updates", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Desktop application" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Desktop update" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Independent Runtime update" })).toBeVisible();
   const runtimeUpdateSource = page.getByRole("combobox", { name: "Runtime update source" });
   await expect(runtimeUpdateSource).toHaveValue("official");
@@ -55,6 +49,9 @@ test("automatic Runtime startup, language switching, and status views fully load
   await expect(page.getByRole("button", { name: "Save update source" })).toBeDisabled();
   await expect(page.getByRole("combobox", { name: "Update behavior" })).toHaveValue("notify");
   await expect(page.getByRole("combobox", { name: "Runtime channel" })).toHaveValue("stable");
+  await expect(page.getByRole("button", { name: "Restore bundled Runtime" })).toBeVisible();
+  const settingsContent = page.locator(".content");
+  await settingsContent.evaluate(element => element.scrollTo({ top: element.scrollHeight }));
   await expect(page.getByRole("button", { name: "Restore bundled Runtime" })).toBeVisible();
   await page.getByRole("button", { name: /About/ }).click();
   await expect(page.getByRole("heading", { name: `About ${appConfig.productName}` })).toBeVisible();

@@ -1,12 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { appConfig } from "./app-config";
-import type { DesktopAbout, DesktopMenu, DesktopSettings, DesktopSurface, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopSettings, DesktopSettingsView, DesktopSurface, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
 
 const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 
 const browserSettings: DesktopSettings = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   locale: "zh-CN",
   onboardingCompleted: false,
   updateChannel: "community",
@@ -19,6 +19,8 @@ const browserSettings: DesktopSettings = {
   runtimeUpdatePublisher: null,
   runtimeUpdatePublicKey: null,
   runtimePinnedVersion: null,
+  desktopUpdateLastCheckAt: null,
+  desktopUpdateIgnoredVersion: null,
   recoveryReason: null
 };
 
@@ -62,10 +64,6 @@ export async function openWorkbench(): Promise<void> {
   if (inTauri()) await invoke("runtime_open");
 }
 
-export async function popupDesktopMenu(menu: DesktopMenu, x: number, y: number): Promise<void> {
-  if (inTauri()) await invoke("desktop_menu_popup", { menu, x, y });
-}
-
 export async function getAbout(): Promise<DesktopAbout> {
   if (!inTauri()) {
     return {
@@ -90,17 +88,37 @@ export async function openRepository(): Promise<void> {
   await invoke("repository_open");
 }
 
-export async function checkForUpdates(): Promise<UpdateStatus> {
+export async function checkForUpdates(silent = false): Promise<UpdateStatus> {
   if (!inTauri()) {
     return {
       enabled: false,
       channel: "community",
       currentVersion: appConfig.version,
       availableVersion: null,
+      releaseTag: null,
+      publishedAt: null,
+      releaseNotes: null,
+      prerelease: false,
       message: "updates-disabled"
     };
   }
-  return invoke<UpdateStatus>("update_check");
+  return invoke<UpdateStatus>("update_check", { silent });
+}
+
+export async function ignoreDesktopUpdate(version: string): Promise<DesktopSettings> {
+  if (!inTauri()) {
+    browserSettings.desktopUpdateIgnoredVersion = version;
+    return { ...browserSettings };
+  }
+  return invoke<DesktopSettings>("desktop_update_ignore", { version });
+}
+
+export async function openDesktopRelease(tag: string): Promise<void> {
+  if (!inTauri()) {
+    window.open(`${appConfig.repository}/releases/tag/${encodeURIComponent(tag)}`, "_blank", "noopener,noreferrer");
+    return;
+  }
+  await invoke("desktop_update_open_release", { tag });
 }
 
 function browserRuntimeUpdateStatus(): RuntimeUpdateStatus {
@@ -164,4 +182,9 @@ export async function onRuntimeStatus(handler: (status: RuntimeStatus) => void):
 export async function onDesktopSurface(handler: (surface: DesktopSurface) => void): Promise<UnlistenFn> {
   if (!inTauri()) return () => undefined;
   return listen<DesktopSurface>("desktop://surface", event => handler(event.payload));
+}
+
+export async function onDesktopSettingsView(handler: (view: DesktopSettingsView) => void): Promise<UnlistenFn> {
+  if (!inTauri()) return () => undefined;
+  return listen<DesktopSettingsView>("desktop://settings-view", event => handler(event.payload));
 }

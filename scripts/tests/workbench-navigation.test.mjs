@@ -14,4 +14,7 @@ test("isolated workbench links reach the Rust navigation allowlist", async () =>
   assert.match(runtime, /\.on_navigation\(/u);
   assert.match(runtime, /\.on_new_window\(/u);
   assert.match(runtime, /\.opener\(\)\s*\.open_url\(/u);
+  assert.doesNotMatch(runtime, /WORKBENCH_MENU_SCRIPT|__deepseek_desktop_menu__/u);
+  assert.match(runtime, /\.hide\(\)/u);
+  assert.match(runtime, /should_navigate_workbench/u);
 });
