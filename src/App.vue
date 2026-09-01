@@ -39,13 +39,18 @@ const runtime = ref<RuntimeStatus>({
   errorCode: null
 });
 const settings = ref<DesktopSettings>({
-  schemaVersion: 3,
+  schemaVersion: 4,
   locale: normalizeLocale(navigator.language),
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
   runtimeUpdateChannel: "stable",
   runtimeUpdateMode: "notify",
+  runtimeUpdateSource: "official",
+  runtimeUpdateManifestUrl: null,
+  runtimeUpdateRepository: null,
+  runtimeUpdatePublisher: null,
+  runtimeUpdatePublicKey: null,
   runtimePinnedVersion: null,
   recoveryReason: null
 });
@@ -113,6 +118,39 @@ const runtimeUpdateDescription = computed(() => {
   });
 });
 const canDownloadRuntime = computed(() => runtimeUpdate.value?.phase === "available" && !busy.value);
+const runtimeUpdateSourceDraft = ref({
+  source: "official" as DesktopSettings["runtimeUpdateSource"],
+  manifestUrl: "",
+  repository: "",
+  publisher: "",
+  publicKey: ""
+});
+const runtimeUpdateSourceComplete = computed(() =>
+  runtimeUpdateSourceDraft.value.source === "official"
+  || [
+    runtimeUpdateSourceDraft.value.manifestUrl,
+    runtimeUpdateSourceDraft.value.repository,
+    runtimeUpdateSourceDraft.value.publisher,
+    runtimeUpdateSourceDraft.value.publicKey
+  ].every(value => value.trim().length > 0)
+);
+const runtimeUpdateSourceDirty = computed(() =>
+  runtimeUpdateSourceDraft.value.source !== settings.value.runtimeUpdateSource
+  || runtimeUpdateSourceDraft.value.manifestUrl !== (settings.value.runtimeUpdateManifestUrl || "")
+  || runtimeUpdateSourceDraft.value.repository !== (settings.value.runtimeUpdateRepository || "")
+  || runtimeUpdateSourceDraft.value.publisher !== (settings.value.runtimeUpdatePublisher || "")
+  || runtimeUpdateSourceDraft.value.publicKey !== (settings.value.runtimeUpdatePublicKey || "")
+);
+
+function syncRuntimeUpdateSourceDraft(): void {
+  runtimeUpdateSourceDraft.value = {
+    source: settings.value.runtimeUpdateSource,
+    manifestUrl: settings.value.runtimeUpdateManifestUrl || "",
+    repository: settings.value.runtimeUpdateRepository || "",
+    publisher: settings.value.runtimeUpdatePublisher || "",
+    publicKey: settings.value.runtimeUpdatePublicKey || ""
+  };
+}
 
 async function persistSettings(): Promise<void> {
   settings.value = await saveSettings(settings.value);
@@ -270,6 +308,29 @@ async function selectRuntimeUpdateChannel(value: Event): Promise<void> {
   }
 }
 
+async function saveRuntimeUpdateSource(): Promise<void> {
+  if (busy.value || !runtimeUpdateSourceComplete.value) return;
+  busy.value = true;
+  const previous = { ...settings.value };
+  settings.value.runtimeUpdateSource = runtimeUpdateSourceDraft.value.source;
+  settings.value.runtimeUpdateManifestUrl = runtimeUpdateSourceDraft.value.manifestUrl.trim() || null;
+  settings.value.runtimeUpdateRepository = runtimeUpdateSourceDraft.value.repository.trim() || null;
+  settings.value.runtimeUpdatePublisher = runtimeUpdateSourceDraft.value.publisher.trim() || null;
+  settings.value.runtimeUpdatePublicKey = runtimeUpdateSourceDraft.value.publicKey.trim() || null;
+  try {
+    await persistSettings();
+    syncRuntimeUpdateSourceDraft();
+    runtimeUpdate.value = await getRuntimeUpdateStatus();
+    notice.value = t("runtimeUpdate.sourceSaved");
+  } catch {
+    settings.value = previous;
+    syncRuntimeUpdateSourceDraft();
+    notice.value = t("error.settingsSaveFailed");
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function toggleRuntimePin(value: Event): Promise<void> {
   if (busy.value) return;
   busy.value = true;
@@ -305,6 +366,7 @@ onMounted(async () => {
       getRuntimeUpdateStatus()
     ]);
     locale.value = settings.value.locale;
+    syncRuntimeUpdateSourceDraft();
     if (settings.value.recoveryReason) {
       notice.value = t(settingsRecoveryKeys[settings.value.recoveryReason]);
     }
@@ -434,6 +496,35 @@ onBeforeUnmount(() => {
             <div><span>{{ t("runtimeUpdate.source") }}</span><strong>{{ t(`runtimeUpdate.sources.${runtimeUpdate.currentSource}`) }}</strong></div>
             <div><span>{{ t("runtimeUpdate.commit") }}</span><code>{{ runtimeUpdate.currentCommit.slice(0, 12) }}</code></div>
             <div><span>{{ t("runtimeUpdate.status") }}</span><strong>{{ runtimeUpdateDescription }}</strong></div>
+            <div>
+              <label for="runtime-update-source">{{ t("runtimeUpdate.updateSource") }}</label>
+              <select id="runtime-update-source" v-model="runtimeUpdateSourceDraft.source" class="setting-select" :disabled="busy">
+                <option value="official">{{ t("runtimeUpdate.updateSources.official") }}</option>
+                <option value="custom">{{ t("runtimeUpdate.updateSources.custom") }}</option>
+              </select>
+            </div>
+            <template v-if="runtimeUpdateSourceDraft.source === 'custom'">
+              <div>
+                <label for="runtime-update-manifest-url">{{ t("runtimeUpdate.manifestUrl") }}</label>
+                <input id="runtime-update-manifest-url" v-model="runtimeUpdateSourceDraft.manifestUrl" class="setting-input" type="url" spellcheck="false" :disabled="busy" :placeholder="t('runtimeUpdate.manifestUrlPlaceholder')" />
+              </div>
+              <div>
+                <label for="runtime-update-repository">{{ t("runtimeUpdate.repository") }}</label>
+                <input id="runtime-update-repository" v-model="runtimeUpdateSourceDraft.repository" class="setting-input" type="url" spellcheck="false" :disabled="busy" placeholder="https://example.com/deepseek-harness.git" />
+              </div>
+              <div>
+                <label for="runtime-update-publisher">{{ t("runtimeUpdate.publisher") }}</label>
+                <input id="runtime-update-publisher" v-model="runtimeUpdateSourceDraft.publisher" class="setting-input" type="text" spellcheck="false" :disabled="busy" placeholder="deepseek-desktop" />
+              </div>
+              <div>
+                <label for="runtime-update-public-key">{{ t("runtimeUpdate.publicKey") }}</label>
+                <input id="runtime-update-public-key" v-model="runtimeUpdateSourceDraft.publicKey" class="setting-input" type="text" spellcheck="false" autocomplete="off" :disabled="busy" :placeholder="t('runtimeUpdate.publicKeyPlaceholder')" />
+              </div>
+            </template>
+            <div class="runtime-source-save">
+              <span>{{ t("runtimeUpdate.sourceHelp") }}</span>
+              <button class="button secondary" :disabled="busy || !runtimeUpdateSourceDirty || !runtimeUpdateSourceComplete" @click="saveRuntimeUpdateSource">{{ t("runtimeUpdate.saveSource") }}</button>
+            </div>
             <div>
               <label for="runtime-update-mode">{{ t("runtimeUpdate.mode") }}</label>
               <select id="runtime-update-mode" class="setting-select" :value="settings.runtimeUpdateMode" :disabled="busy" @change="selectRuntimeUpdateMode">

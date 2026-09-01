@@ -5,7 +5,7 @@
 - macOS Apple Developer ID 签名与公证尚未接入；具备证书后再启用 stable 发布门禁。
 - Windows Authenticode 可信发布者签名尚未接入。
 - 桌面安装包自动更新保持关闭，直到安装包签名、Updater 签名材料和真实升级回滚验证全部闭环。
-- Runtime 独立更新协议已实现；正式配置更新地址与发布公钥前，仍需使用受信任 macOS x64、Windows x64 和 Linux x64 节点完成制品生成、下载、中断、切换和回滚演练。
+- Runtime 独立更新协议及官方/自定义更新源档案已实现；正式配置官方更新地址与发布公钥前，仍需使用受信任 macOS x64、Windows x64 和 Linux x64 节点完成制品生成、下载、中断、切换和回滚演练。
 
 ## 平台验证
 

@@ -8,7 +8,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 760px; min-height: 560px; overflow: hidden; }
-button, select { font: inherit; }
+button, input, select { font: inherit; }
 button { cursor: pointer; }
 
 .desktop-shell {
@@ -69,7 +69,7 @@ button { cursor: pointer; }
 .side-nav button span { color: #99a5ac; font-size: 11px; font-variant-numeric: tabular-nums; }
 .side-nav button.active { color: #0e6f62; background: #e6f3ef; font-weight: 650; }
 
-.content { width: min(920px, calc(100% - 64px)); margin: 0 auto; padding: 64px 0 36px; overflow-y: auto; }
+.content { width: min(920px, calc(100% - 64px)); height: 100%; min-height: 0; margin: 0 auto; padding: 64px 0 36px; overflow-y: auto; }
 .section-heading { max-width: 680px; }
 .eyebrow { color: #148777; font-size: 12px; font-weight: 750; text-transform: uppercase; }
 .section-heading h1 { margin: 12px 0 10px; font-size: 34px; line-height: 1.2; letter-spacing: 0; }
@@ -95,7 +95,9 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
 .plain-list span { color: #7a8891; }
 .subsection-title { margin: 32px 0 -22px; font-size: 16px; }
 .compact-list { margin-top: 32px; }
-.setting-select { width: min(320px, 100%); height: 36px; padding: 0 10px; border: 1px solid #ccd6da; border-radius: 5px; background: #fff; color: inherit; }
+.setting-select, .setting-input { width: min(520px, 100%); height: 36px; padding: 0 10px; border: 1px solid #ccd6da; border-radius: 5px; background: #fff; color: inherit; }
+.setting-select { width: min(320px, 100%); }
+.runtime-source-save span { font-size: 13px; line-height: 1.5; }
 .toggle-label { display: inline-flex; align-items: center; gap: 8px; }
 .toggle-label input { width: 16px; height: 16px; accent-color: #137f70; }
 .wrap-actions { flex-wrap: wrap; }
@@ -126,7 +128,7 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
   .desktop-shell { background-color: #11191b; background-image: linear-gradient(rgba(60, 181, 157, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 181, 157, 0.05) 1px, transparent 1px); }
   .topbar, .side-nav { background: rgba(18, 27, 30, 0.94); border-color: #2b373b; }
   .runtime-panel, .plain-list { background: #182226; border-color: #2c3a3e; }
-  .locale-select, .button.secondary, .setting-select { color: #e4ebee; background: #182226; border-color: #3a484d; }
+  .locale-select, .button.secondary, .setting-select, .setting-input { color: #e4ebee; background: #182226; border-color: #3a484d; }
   .plain-list div { border-color: #273337; }
   .repository-link { color: #5bc8b5; }
 }

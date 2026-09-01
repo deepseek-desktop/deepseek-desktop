@@ -36,6 +36,14 @@ test("automatic Runtime startup, language switching, and status views fully load
   await expect(page.getByRole("heading", { name: "Updates", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Desktop application" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Independent Runtime update" })).toBeVisible();
+  const runtimeUpdateSource = page.getByRole("combobox", { name: "Runtime update source" });
+  await expect(runtimeUpdateSource).toHaveValue("official");
+  await runtimeUpdateSource.selectOption("custom");
+  await expect(page.getByRole("textbox", { name: "Manifest URL" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Runtime repository" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Publisher" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Ed25519 public key" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save update source" })).toBeDisabled();
   await expect(page.getByRole("combobox", { name: "Update behavior" })).toHaveValue("notify");
   await expect(page.getByRole("combobox", { name: "Runtime channel" })).toHaveValue("stable");
   await expect(page.getByRole("button", { name: "Restore bundled Runtime" })).toBeVisible();

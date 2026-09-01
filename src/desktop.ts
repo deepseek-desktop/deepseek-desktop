@@ -6,13 +6,18 @@ import type { DesktopAbout, DesktopSettings, DesktopSurface, RuntimeStatus, Runt
 const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 
 const browserSettings: DesktopSettings = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   locale: "zh-CN",
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
   runtimeUpdateChannel: appConfig.runtimeUpdate.channel,
   runtimeUpdateMode: appConfig.runtimeUpdate.autoUpdate ? "automatic" : "notify",
+  runtimeUpdateSource: "official",
+  runtimeUpdateManifestUrl: null,
+  runtimeUpdateRepository: null,
+  runtimeUpdatePublisher: null,
+  runtimeUpdatePublicKey: null,
   runtimePinnedVersion: null,
   recoveryReason: null
 };

@@ -19,7 +19,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use url::Url;
 use uuid::Uuid;
 
-use crate::contracts::{RuntimeUpdatePhase, RuntimeUpdateStatus};
+use crate::contracts::{DesktopSettings, RuntimeUpdatePhase, RuntimeUpdateStatus};
 use crate::diagnostics::Diagnostics;
 use crate::error::{DesktopError, DesktopResult};
 use crate::settings::{AppPaths, SettingsStore, write_json_atomic};
@@ -147,6 +147,7 @@ struct RuntimePackageMetadata {
 #[derive(Clone, Debug)]
 struct VerifiedRelease {
     manifest_url: Url,
+    source_fingerprint: [u8; 32],
     payload: RuntimeReleaseManifest,
     artifact: RuntimeArtifact,
 }
@@ -405,7 +406,7 @@ impl RuntimeUpdateManager {
         let config = RuntimeUpdateConfig::from_build()?;
         let current = store.location().unwrap_or_else(|_| store.bundled.clone());
         let saved = settings.get()?;
-        let enabled = config.manifest_url.is_some() && config.public_key.is_some();
+        let enabled = config.resolved_for(&saved)?.is_enabled();
         Ok(Arc::new(Self {
             app,
             settings,
@@ -435,6 +436,9 @@ impl RuntimeUpdateManager {
 
     pub fn status(&self) -> DesktopResult<RuntimeUpdateStatus> {
         let settings = self.settings.get()?;
+        let config = self.config.resolved_for(&settings)?;
+        let source_fingerprint = config.source_fingerprint();
+        let enabled = config.is_enabled();
         let location = self
             .store
             .location()
@@ -444,6 +448,7 @@ impl RuntimeUpdateManager {
             let mut available = self.lock_available()?;
             let stale = available.as_ref().is_some_and(|release| {
                 release.payload.channel != settings.runtime_update_channel
+                    || release.source_fingerprint != source_fingerprint
                     || settings.runtime_pinned_version.is_some()
             });
             if stale {
@@ -454,6 +459,7 @@ impl RuntimeUpdateManager {
         status.current_version = location.version;
         status.current_commit = location.commit;
         status.current_source = location.source;
+        status.enabled = enabled;
         status.channel = settings.runtime_update_channel;
         status.mode = settings.runtime_update_mode;
         status.pinned_version = settings.runtime_pinned_version;
@@ -461,7 +467,16 @@ impl RuntimeUpdateManager {
             status.phase = RuntimeUpdatePhase::Pinned;
             status.message = "pinned".to_owned();
             status.available_version = None;
-        } else if stale_available || status.phase == RuntimeUpdatePhase::Pinned {
+        } else if !enabled {
+            status.phase = RuntimeUpdatePhase::Disabled;
+            status.message = "not-configured".to_owned();
+            status.available_version = None;
+        } else if stale_available
+            || matches!(
+                status.phase,
+                RuntimeUpdatePhase::Pinned | RuntimeUpdatePhase::Disabled
+            )
+        {
             status.phase = RuntimeUpdatePhase::Idle;
             status.message = "idle".to_owned();
             status.available_version = None;
@@ -530,8 +545,9 @@ impl RuntimeUpdateManager {
         if !self.status()?.enabled {
             return self.publish(RuntimeUpdatePhase::Disabled, "not-configured");
         }
+        let config = self.config.resolved_for(&settings)?;
         self.publish(RuntimeUpdatePhase::Checking, "checking")?;
-        let release = match self.fetch_release(&settings.runtime_update_channel) {
+        let release = match self.fetch_release(&settings.runtime_update_channel, &config) {
             Ok(release) => release,
             Err(error) => {
                 self.diagnostics
@@ -567,6 +583,7 @@ impl RuntimeUpdateManager {
         if settings.runtime_pinned_version.is_some() {
             return self.publish(RuntimeUpdatePhase::Pinned, "pinned");
         }
+        let config = self.config.resolved_for(&settings)?;
         let release = self.lock_available()?.clone().ok_or_else(|| {
             DesktopError::InvalidConfiguration("check for a Runtime update first".to_owned())
         })?;
@@ -574,6 +591,12 @@ impl RuntimeUpdateManager {
             *self.lock_available()? = None;
             return Err(DesktopError::InvalidConfiguration(
                 "Runtime update channel changed; check for updates again".to_owned(),
+            ));
+        }
+        if release.source_fingerprint != config.source_fingerprint() {
+            *self.lock_available()? = None;
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime update source changed; check for updates again".to_owned(),
             ));
         }
         let mut status = self.publish(RuntimeUpdatePhase::Downloading, "downloading")?;
@@ -686,17 +709,21 @@ impl RuntimeUpdateManager {
         }
     }
 
-    fn fetch_release(&self, channel: &str) -> DesktopResult<VerifiedRelease> {
-        let manifest_url = self.config.manifest_url.clone().ok_or_else(|| {
+    fn fetch_release(
+        &self,
+        channel: &str,
+        config: &RuntimeUpdateConfig,
+    ) -> DesktopResult<VerifiedRelease> {
+        let manifest_url = config.manifest_url.clone().ok_or_else(|| {
             DesktopError::InvalidConfiguration(
                 "Runtime update manifest is not configured".to_owned(),
             )
         })?;
         let bytes = read_url_limited(&manifest_url, MANIFEST_LIMIT, None)?;
-        let payload = verify_manifest(&bytes, &self.config, channel)?;
+        let payload = verify_manifest(&bytes, config, channel)?;
         let artifact = payload
             .artifacts
-            .get(&self.config.target)
+            .get(&config.target)
             .cloned()
             .ok_or_else(|| {
                 DesktopError::InvalidConfiguration(
@@ -713,6 +740,7 @@ impl RuntimeUpdateManager {
         self.store.verify_manifest_acceptance(&payload)?;
         Ok(VerifiedRelease {
             manifest_url,
+            source_fingerprint: config.source_fingerprint(),
             payload,
             artifact,
         })
@@ -864,6 +892,63 @@ impl RuntimeUpdateConfig {
                     DesktopError::InvalidConfiguration("credential protocol is invalid".to_owned())
                 })?,
         })
+    }
+
+    fn resolved_for(&self, settings: &DesktopSettings) -> DesktopResult<Self> {
+        if settings.runtime_update_source == "official" {
+            return Ok(self.clone());
+        }
+        let (Some(manifest_url), Some(repository), Some(publisher), Some(public_key)) = (
+            settings.runtime_update_manifest_url.as_deref(),
+            settings.runtime_update_repository.as_deref(),
+            settings.runtime_update_publisher.as_deref(),
+            settings.runtime_update_public_key.as_deref(),
+        ) else {
+            let mut disabled = self.clone();
+            disabled.manifest_url = None;
+            disabled.publisher.clear();
+            disabled.public_key = None;
+            disabled.runtime_repository.clear();
+            return Ok(disabled);
+        };
+
+        let mut resolved = self.clone();
+        resolved.manifest_url = Some(Url::parse(manifest_url).map_err(|error| {
+            DesktopError::InvalidConfiguration(format!(
+                "Runtime update manifest URL is invalid: {error}"
+            ))
+        })?);
+        resolved.publisher = publisher.to_owned();
+        resolved.public_key = Some(parse_public_key(public_key)?);
+        resolved.runtime_repository = repository.to_owned();
+        Ok(resolved)
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.manifest_url.is_some()
+            && self.public_key.is_some()
+            && !self.publisher.is_empty()
+            && !self.runtime_repository.is_empty()
+    }
+
+    fn source_fingerprint(&self) -> [u8; 32] {
+        let mut digest = Sha256::new();
+        digest.update(
+            self.manifest_url
+                .as_ref()
+                .map(Url::as_str)
+                .unwrap_or_default()
+                .as_bytes(),
+        );
+        digest.update([0]);
+        digest.update(self.publisher.as_bytes());
+        digest.update([0]);
+        if let Some(public_key) = &self.public_key {
+            digest.update(public_key.as_bytes());
+        }
+        digest.update([0]);
+        digest.update(self.runtime_repository.as_bytes());
+        digest.finalize().into()
     }
 }
 
@@ -1740,6 +1825,63 @@ mod tests {
             runtime_protocol_version: 1,
             credential_protocol_version: 1,
         }
+    }
+
+    #[test]
+    fn custom_update_source_overrides_the_bundled_profile_as_one_trust_unit() {
+        let official_key = SigningKey::from_bytes(&[1_u8; 32]);
+        let custom_key = SigningKey::from_bytes(&[2_u8; 32]);
+        let official = config(&official_key);
+        let settings = DesktopSettings {
+            runtime_update_source: "custom".to_owned(),
+            runtime_update_manifest_url: Some(
+                "https://updates.example.com/runtime/manifest.json".to_owned(),
+            ),
+            runtime_update_repository: Some(
+                "https://git.example.com/runtime/runtime.git".to_owned(),
+            ),
+            runtime_update_publisher: Some("custom-publisher".to_owned()),
+            runtime_update_public_key: Some(
+                base64::engine::general_purpose::STANDARD
+                    .encode(custom_key.verifying_key().as_bytes()),
+            ),
+            ..DesktopSettings::default()
+        };
+
+        let resolved = official.resolved_for(&settings).unwrap();
+
+        assert!(resolved.is_enabled());
+        assert_eq!(
+            resolved.manifest_url.as_ref().map(Url::as_str),
+            Some("https://updates.example.com/runtime/manifest.json")
+        );
+        assert_eq!(resolved.publisher, "custom-publisher");
+        assert_eq!(resolved.public_key, Some(custom_key.verifying_key()));
+        assert_eq!(
+            resolved.runtime_repository,
+            "https://git.example.com/runtime/runtime.git"
+        );
+        assert_ne!(resolved.source_fingerprint(), official.source_fingerprint());
+    }
+
+    #[test]
+    fn incomplete_custom_update_source_is_disabled_without_falling_back() {
+        let key = SigningKey::from_bytes(&[3_u8; 32]);
+        let mut official = config(&key);
+        official.manifest_url = Some(Url::parse("https://official.example/manifest.json").unwrap());
+        let settings = DesktopSettings {
+            runtime_update_source: "custom".to_owned(),
+            runtime_update_manifest_url: Some(
+                "https://custom.example/runtime/manifest.json".to_owned(),
+            ),
+            ..DesktopSettings::default()
+        };
+
+        let resolved = official.resolved_for(&settings).unwrap();
+
+        assert!(!resolved.is_enabled());
+        assert!(resolved.manifest_url.is_none());
+        assert!(resolved.public_key.is_none());
     }
 
     fn payload(channel: &str, version: &str) -> RuntimeReleaseManifest {

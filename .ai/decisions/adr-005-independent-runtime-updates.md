@@ -10,6 +10,8 @@ DeepSeek Desktop 将桌面安装包更新和 Runtime 更新拆分。安装包始
 
 Runtime 更新配置使用 `RUNTIME_UPDATE_MANIFEST_URL`、`RUNTIME_UPDATE_CHANNEL`、`RUNTIME_AUTO_UPDATE`、`RUNTIME_UPDATE_PUBLISHER` 和 `RUNTIME_UPDATE_PUBLIC_KEY`。清单可以由 filesystem、HTTP 静态服务或任意代码托管平台承载，客户端不依赖 GitHub API。构建期显式固定 `RUNTIME_REF` 时默认关闭自动下载。
 
+构建配置形成默认的官方更新源档案。桌面设置允许用户切换到自定义档案，但必须把签名清单 URL、Runtime 仓库身份、发布者和 Ed25519 公钥作为一个信任单元配置；缺少任一项时禁用该来源，不回退到另一来源。`RUNTIME_REPOSITORY` 仍只负责构建期源码来源和清单身份，客户端不拉取源码或编译。更新检查结果绑定完整档案指纹，来源发生变化后必须重新检查。
+
 ## 兼容与信任
 
 - Ed25519 签名覆盖发布者、版本、有效期、频道、Desktop/Runtime/凭据协议、Desktop 兼容范围、Desktop/Runtime commit、Runtime 仓库、Node ABI、凭据插件、DSH Market 和各平台制品哈希。
@@ -17,6 +19,7 @@ Runtime 更新配置使用 `RUNTIME_UPDATE_MANIFEST_URL`、`RUNTIME_UPDATE_CHANN
 - Runtime 制品只能由对应原生平台受信任节点产生，签名清单默认要求四平台描述齐全、同源且干净。
 - HTTP 客户端不跟随重定向；跨 Origin 必须在签名清单中授权。压缩包拒绝路径穿越、链接、特殊文件、重复路径和解压炸弹。
 - 诊断只记录版本、commit、来源和阶段，不记录清单地址、令牌、签名私钥或模型凭据。
+- 自定义更新清单地址、仓库身份、发布者和公钥不会进入诊断包；设置文件中的公钥不是秘密，但与来源档案一起按敏感运行配置处理。
 
 ## 回滚
 

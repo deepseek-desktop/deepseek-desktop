@@ -8,10 +8,12 @@
 
 - `corepack pnpm@11.24.0 app:sync --check`：通过，生成配置与源码一致。
 - `corepack pnpm@11.24.0 runtime:sync --check`：通过，Runtime `0.1.2-alpha.1` 固定到 `cd5ef8148158c3a752a658978873241fdf8e2bbc`，来源、CLI 入口、部署闭包和制品哈希与生成锁一致。
-- `corepack pnpm@11.24.0 verify`：通过；配置与发行协议测试 74 项、Vue 测试 8 项、Rust 测试 57 项、Clippy `-D warnings`、3 个 locale / 122 个 key、凭据代理回归和 Runtime manifest 校验全部通过；另有 19 项跟随模型搜索测试覆盖自动协议映射、模型切换、多会话隔离、`CredentialRef` 继承、取消、超时、重定向和响应校验。
+- `corepack pnpm@11.24.0 verify`：通过；配置与发行协议测试 74 项、Vue 测试 9 项、Rust 测试 63 项、Clippy `-D warnings`、3 个 locale / 134 个 key、凭据代理回归和 Runtime manifest 校验全部通过；另有 19 项跟随模型搜索测试覆盖自动协议映射、模型切换、多会话隔离、`CredentialRef` 继承、取消、超时、重定向和响应校验。
 - `corepack pnpm@11.24.0 audit --prod --registry=https://registry.npmjs.org` 与 Runtime 子目录同项审计：均通过，无已知生产依赖漏洞。
 - `corepack pnpm@11.24.0 test:e2e -- tests/e2e/runtime-settings-layout.spec.ts`：通过 2 项 Playwright 测试，除 Shell 自动启动、语言切换和状态视图外，还在 `1000x700` 的 Windows 尺寸视口验证长 Runtime 设置表单可以滚动到最后一个操作按钮。
 - `corepack pnpm@11.24.0 runtime:smoke`：通过父进程退出清理与 Runtime `0.1.2-alpha.1` 一次完整启停循环。
+- `corepack pnpm@11.24.0 release:smoke`：通过分布式发布 HTTP 制品流式传输、校验与发布协议回归。
+- Runtime 更新源设置回归：官方档案保持默认；自定义档案原子绑定签名清单 URL、Runtime 仓库身份、发布者与 Ed25519 公钥。配置、来源切换、候选失效、缺失字段禁用且不跨源回退、诊断脱敏、三语文案和 E2E 表单均已验证。
 - `node scripts/with-rust.mjs tauri build --config target/generated/tauri.conf.json --bundles app`：通过，生成 macOS ARM64 `.app`，`codesign --verify --deep --strict` 通过。
 - `corepack pnpm@11.24.0 desktop:package`：在当前 macOS ARM64 主机完成同步、完整门禁、Tauri 应用、DMG 构建和 77,369 个交付文件扫描；Runtime 生产闭包为 26,187 个文件，开发测试源码已剔除。产物为 `release/1.0.0/aarch64-apple-darwin/DeepSeek Desktop_1.0.0_aarch64.dmg`，SHA-256 为 `611540d4fc7647c4a466bcba40ba1408bfd9fa9706a0e70aecc99d1f5c9ef87b`。
 - 成品应用真实启动：直接启动构建出的 `DeepSeek Desktop.app`，桌面壳无需选择目录或点击启动，即自动拉起安装包内置 Node `24.20.0` 与 Runtime；同一原生窗口直接呈现 Harness 工作台。实测点击关闭按钮会显示中文原生确认框：选择“取消”后 Desktop PID 与 Runtime 子进程均保持运行，再次选择“关闭”后两者均退出，无后台残留。

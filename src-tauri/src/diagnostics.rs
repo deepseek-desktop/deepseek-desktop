@@ -64,6 +64,11 @@ impl Diagnostics {
         let path = self.paths.diagnostics_dir.join(filename);
         let mut redacted_status = status.clone();
         redacted_status.url = status.url.as_ref().map(|url| redact(url));
+        let mut redacted_settings = settings.clone();
+        redacted_settings.runtime_update_manifest_url = None;
+        redacted_settings.runtime_update_repository = None;
+        redacted_settings.runtime_update_publisher = None;
+        redacted_settings.runtime_update_public_key = None;
         let document = DiagnosticDocument {
             generated_at: Utc::now().to_rfc3339(),
             desktop_version: env!("DEEPSEEK_DESKTOP_APP_VERSION"),
@@ -71,7 +76,7 @@ impl Diagnostics {
             target: env!("DEEPSEEK_DESKTOP_TARGET"),
             status: redacted_status,
             runtime_update: runtime_update.clone(),
-            settings: settings.clone(),
+            settings: redacted_settings,
             recent_log: self.read_tail(),
         };
         write_json_atomic(&path, &document)?;
@@ -495,6 +500,52 @@ mod tests {
         assert!(!log.contains("unsafe"));
         assert!(!log.contains("runtime_launch_token"));
         assert!(log.contains("token=<redacted>"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn omits_custom_runtime_update_trust_details_from_diagnostics() {
+        let root = std::env::temp_dir().join(format!(
+            "deepseek-desktop-update-source-diagnostics-{}",
+            std::process::id()
+        ));
+        let paths = AppPaths {
+            data_dir: root.join("data"),
+            dsh_home: root.join("data/dsh"),
+            logs_dir: root.join("data/logs"),
+            backups_dir: root.join("data/backups"),
+            diagnostics_dir: root.join("data/diagnostics"),
+            updates_dir: root.join("data/updates"),
+            settings_file: root.join("data/settings.json"),
+        };
+        fs::create_dir_all(&paths.logs_dir).unwrap();
+        let diagnostics = Diagnostics::new(paths);
+        let settings = DesktopSettings {
+            runtime_update_source: "custom".to_owned(),
+            runtime_update_manifest_url: Some(
+                "https://private.example/runtime/manifest.json".to_owned(),
+            ),
+            runtime_update_repository: Some(
+                "https://private.example/runtime/runtime.git".to_owned(),
+            ),
+            runtime_update_publisher: Some("private-publisher".to_owned()),
+            runtime_update_public_key: Some("private-public-key".to_owned()),
+            ..DesktopSettings::default()
+        };
+
+        let exported = diagnostics
+            .export(
+                &RuntimeStatus::default(),
+                &RuntimeUpdateStatus::default(),
+                &settings,
+            )
+            .unwrap();
+        let document = fs::read_to_string(exported).unwrap();
+
+        assert!(document.contains("\"runtimeUpdateSource\": \"custom\""));
+        assert!(!document.contains("private.example"));
+        assert!(!document.contains("private-publisher"));
+        assert!(!document.contains("private-public-key"));
         fs::remove_dir_all(root).unwrap();
     }
 

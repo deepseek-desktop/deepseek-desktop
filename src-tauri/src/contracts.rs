@@ -35,6 +35,16 @@ pub struct DesktopSettings {
     pub runtime_update_channel: String,
     #[serde(default = "default_runtime_update_mode")]
     pub runtime_update_mode: String,
+    #[serde(default = "default_runtime_update_source")]
+    pub runtime_update_source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_update_manifest_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_update_repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_update_publisher: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_update_public_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_pinned_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -51,6 +61,11 @@ impl Default for DesktopSettings {
             update_enabled: false,
             runtime_update_channel: default_runtime_update_channel(),
             runtime_update_mode: default_runtime_update_mode(),
+            runtime_update_source: default_runtime_update_source(),
+            runtime_update_manifest_url: None,
+            runtime_update_repository: None,
+            runtime_update_publisher: None,
+            runtime_update_public_key: None,
             runtime_pinned_version: None,
             recovery_reason: None,
         }
@@ -58,7 +73,7 @@ impl Default for DesktopSettings {
 }
 
 pub const fn current_settings_schema_version() -> u8 {
-    3
+    4
 }
 
 fn default_runtime_update_channel() -> String {
@@ -71,6 +86,10 @@ fn default_runtime_update_mode() -> String {
     } else {
         "notify".to_owned()
     }
+}
+
+fn default_runtime_update_source() -> String {
+    "official".to_owned()
 }
 
 #[derive(Clone, Debug, Serialize)]

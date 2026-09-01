@@ -3,17 +3,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import { appConfig } from "./app-config";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
-import { checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, openRepository, openWorkbench, startRuntime } from "./desktop";
+import { checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, openRepository, openWorkbench, saveSettings, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   locale: "zh-CN",
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
   runtimeUpdateChannel: "stable",
   runtimeUpdateMode: "automatic",
+  runtimeUpdateSource: "official",
+  runtimeUpdateManifestUrl: null,
+  runtimeUpdateRepository: null,
+  runtimeUpdatePublisher: null,
+  runtimeUpdatePublicKey: null,
   runtimePinnedVersion: null,
   recoveryReason: null
 };
@@ -74,13 +79,18 @@ vi.mock("./desktop", () => ({
 describe(`${appConfig.productName} shell`, () => {
   beforeEach(() => {
     Object.assign(settings, {
-      schemaVersion: 3,
+      schemaVersion: 4,
       locale: "zh-CN",
       onboardingCompleted: false,
       updateChannel: "community",
       updateEnabled: false,
       runtimeUpdateChannel: "stable",
       runtimeUpdateMode: "automatic",
+      runtimeUpdateSource: "official",
+      runtimeUpdateManifestUrl: null,
+      runtimeUpdateRepository: null,
+      runtimeUpdatePublisher: null,
+      runtimeUpdatePublicKey: null,
       runtimePinnedVersion: null,
       recoveryReason: null
     });
@@ -222,5 +232,29 @@ describe(`${appConfig.productName} shell`, () => {
     await flushPromises();
     expect(downloadRuntimeUpdate).toHaveBeenCalledOnce();
     expect(wrapper.text()).toContain("下次启动安装");
+  });
+
+  it("saves a complete custom Runtime update trust profile", async () => {
+    settings.onboardingCompleted = true;
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+    await wrapper.findAll("button").find(button => button.text().includes("更新"))?.trigger("click");
+
+    await wrapper.get("#runtime-update-source").setValue("custom");
+    await wrapper.get("#runtime-update-manifest-url").setValue("https://updates.example.com/runtime/manifest.json");
+    await wrapper.get("#runtime-update-repository").setValue("https://git.example.com/runtime/runtime.git");
+    await wrapper.get("#runtime-update-publisher").setValue("example-runtime");
+    await wrapper.get("#runtime-update-public-key").setValue("BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
+    await wrapper.findAll("button").find(button => button.text() === "保存更新源")?.trigger("click");
+    await flushPromises();
+
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeUpdateSource: "custom",
+      runtimeUpdateManifestUrl: "https://updates.example.com/runtime/manifest.json",
+      runtimeUpdateRepository: "https://git.example.com/runtime/runtime.git",
+      runtimeUpdatePublisher: "example-runtime",
+      runtimeUpdatePublicKey: "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="
+    }));
+    expect(wrapper.text()).toContain("Runtime 更新源已保存");
   });
 });
