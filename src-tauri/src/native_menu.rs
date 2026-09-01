@@ -134,15 +134,19 @@ pub fn popup(
     let window = app
         .get_window("main")
         .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
-    let scale_factor = window.scale_factor().map_err(desktop_error)?;
-    let inner_size = window.inner_size().map_err(desktop_error)?;
-    let logical_width = f64::from(inner_size.width) / scale_factor;
     if !anchor_x.is_finite() {
         return Err(DesktopError::InvalidConfiguration(
             "desktop menu anchor must be finite".to_owned(),
         ));
     }
-    let anchor_x = anchor_x.clamp(0.0, logical_width);
+
+    #[cfg(not(target_os = "macos"))]
+    let anchor_x = {
+        let scale_factor = window.scale_factor().map_err(desktop_error)?;
+        let inner_size = window.inner_size().map_err(desktop_error)?;
+        let logical_width = f64::from(inner_size.width) / scale_factor;
+        anchor_x.clamp(0.0, logical_width)
+    };
 
     // AppKit aborts when NSMenu's blocking popup loop is entered a second time.
     #[cfg(target_os = "macos")]
@@ -232,9 +236,19 @@ pub fn popup(
     }
     .map_err(desktop_error)?;
 
-    let popup_y = content_top_inset(&window)? + WINDOW_MENU_HEIGHT_LOGICAL;
-    menu.popup_at(window, tauri::LogicalPosition::new(anchor_x, popup_y))
-        .map_err(desktop_error)
+    #[cfg(target_os = "macos")]
+    {
+        // Passing a position binds NSMenu to Tao's root NSView. On macOS 26,
+        // closing that popup can route a null mouseMoved event into Tao.
+        menu.popup(window).map_err(desktop_error)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let popup_y = content_top_inset(&window)? + WINDOW_MENU_HEIGHT_LOGICAL;
+        menu.popup_at(window, tauri::LogicalPosition::new(anchor_x, popup_y))
+            .map_err(desktop_error)
+    }
 }
 
 fn item(
