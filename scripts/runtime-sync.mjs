@@ -421,7 +421,10 @@ async function prepareRemote(repository, ref) {
   if (recreateCheckout) {
     await rm(checkout, { recursive: true, force: true });
     await mkdir(dirname(checkout), { recursive: true });
-    runGit(["clone", "--no-checkout", mirror, checkout], root);
+    // A local clone hardlinks .git/objects by default, so git aborts with
+    // "hardlink different from source" whenever the mirror's background
+    // maintenance rewrites a commit-graph while the clone is running.
+    runGit(["clone", "--no-hardlinks", "--no-checkout", mirror, checkout], root);
     runGit(["checkout", "--detach", commit], checkout);
   }
   if (!recreateCheckout) {

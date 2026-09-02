@@ -33,3 +33,11 @@ test("rejects an invalid committed source pin", () => {
     commit: pin.commit
   }, { ...pin, commit: "latest" }), /immutable runtimeSource pin/u);
 });
+
+test("the cached Runtime checkout is cloned without hardlinks", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../runtime-sync.mjs", import.meta.url), "utf8");
+  // Hardlinking .git/objects from the local mirror races the mirror's own
+  // commit-graph maintenance and aborts the clone on any platform.
+  assert.match(source, /"clone",\s*"--no-hardlinks",\s*"--no-checkout"/u);
+});
