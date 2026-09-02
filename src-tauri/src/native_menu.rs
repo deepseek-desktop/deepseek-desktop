@@ -1,11 +1,6 @@
 #[cfg(any(target_os = "macos", test))]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "macos")]
-use std::{
-    ffi::{c_char, c_void},
-    sync::{OnceLock, atomic::AtomicPtr},
-};
-#[cfg(target_os = "macos")]
 use tauri::menu::SubmenuBuilder;
 use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder};
 use tauri::{AppHandle, Manager};
@@ -28,85 +23,6 @@ pub const WINDOW_MENU_HEIGHT_LOGICAL: f64 = 38.0;
 
 #[cfg(target_os = "macos")]
 static NATIVE_MENU_POPUP_OPEN: AtomicBool = AtomicBool::new(false);
-
-#[cfg(target_os = "macos")]
-type MouseMovedImplementation = unsafe extern "C" fn(*mut c_void, *const c_void, *mut c_void);
-
-#[cfg(target_os = "macos")]
-static ORIGINAL_TAO_MOUSE_MOVED: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
-
-#[cfg(target_os = "macos")]
-static TAO_MOUSE_MOVED_GUARD: OnceLock<Result<(), String>> = OnceLock::new();
-
-#[cfg(target_os = "macos")]
-unsafe extern "C" {
-    fn objc_getClass(name: *const c_char) -> *mut c_void;
-    fn sel_registerName(name: *const c_char) -> *const c_void;
-    fn class_getInstanceMethod(class: *const c_void, selector: *const c_void) -> *mut c_void;
-    fn method_getImplementation(method: *const c_void) -> *mut c_void;
-    fn method_setImplementation(method: *mut c_void, implementation: *const c_void) -> *mut c_void;
-}
-
-#[cfg(target_os = "macos")]
-unsafe extern "C" fn guarded_tao_mouse_moved(
-    view: *mut c_void,
-    selector: *const c_void,
-    event: *mut c_void,
-) {
-    // macOS 26 can route a nil NSEvent after a context menu closes. Tao 0.35
-    // models that argument as a Rust reference and otherwise dereferences it.
-    if !should_forward_tao_mouse_moved(event) {
-        return;
-    }
-
-    let original = ORIGINAL_TAO_MOUSE_MOVED.load(Ordering::Acquire);
-    if !original.is_null() {
-        let original: MouseMovedImplementation = unsafe { std::mem::transmute(original) };
-        unsafe { original(view, selector, event) };
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn should_forward_tao_mouse_moved(event: *mut c_void) -> bool {
-    !event.is_null()
-}
-
-#[cfg(target_os = "macos")]
-fn install_tao_mouse_moved_guard() -> DesktopResult<()> {
-    TAO_MOUSE_MOVED_GUARD
-        .get_or_init(|| {
-            let class = unsafe { objc_getClass(c"TaoView".as_ptr()) };
-            if class.is_null() {
-                return Err("TaoView is unavailable".to_owned());
-            }
-
-            let selector = unsafe { sel_registerName(c"mouseMoved:".as_ptr()) };
-            let method = unsafe { class_getInstanceMethod(class, selector) };
-            if method.is_null() {
-                return Err("TaoView mouseMoved: is unavailable".to_owned());
-            }
-
-            let original = unsafe { method_getImplementation(method) };
-            if original.is_null() {
-                return Err("TaoView mouseMoved: has no implementation".to_owned());
-            }
-            ORIGINAL_TAO_MOUSE_MOVED.store(original, Ordering::Release);
-
-            let previous = unsafe {
-                method_setImplementation(
-                    method,
-                    guarded_tao_mouse_moved as *const () as *const c_void,
-                )
-            };
-            if previous != original {
-                return Err("TaoView mouseMoved: changed during initialization".to_owned());
-            }
-            Ok(())
-        })
-        .as_ref()
-        .map(|_| ())
-        .map_err(|error| DesktopError::Other(error.clone()))
-}
 
 #[cfg(any(target_os = "macos", test))]
 struct NativeMenuPopupGuard<'a> {
@@ -182,7 +98,6 @@ pub(crate) struct CloseConfirmationLabels {
 
 #[cfg(target_os = "macos")]
 pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
-    install_tao_mouse_moved_guard()?;
     let labels = labels(locale);
     let quit = item(app, QUIT_MENU_ID, labels.quit, Some("CmdOrCtrl+Q"))?;
     let application = SubmenuBuilder::new(app, APP_NAME)
@@ -446,9 +361,6 @@ mod tests {
     use super::NativeMenuPopupGuard;
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    #[cfg(target_os = "macos")]
-    use super::should_forward_tao_mouse_moved;
-
     #[test]
     fn native_menu_popup_guard_rejects_reentry_and_releases_on_drop() {
         let open = AtomicBool::new(false);
@@ -459,14 +371,5 @@ mod tests {
 
         assert!(!open.load(Ordering::Acquire));
         assert!(NativeMenuPopupGuard::try_acquire(&open).is_some());
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn tao_mouse_moved_guard_only_drops_nil_events() {
-        assert!(!should_forward_tao_mouse_moved(std::ptr::null_mut()));
-        assert!(should_forward_tao_mouse_moved(
-            std::ptr::NonNull::dangling().as_ptr()
-        ));
     }
 }

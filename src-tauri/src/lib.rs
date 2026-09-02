@@ -6,6 +6,7 @@ mod native_menu;
 mod runtime;
 mod runtime_update;
 mod settings;
+mod tao_view_guard;
 mod updater;
 
 use std::sync::Arc;
@@ -327,10 +328,12 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(
+                    // Fullscreen is deliberately not restored: relaunching into a
+                    // fullscreen space hides the window chrome a first-time user
+                    // needs, and the previous session's mode is a poor default.
                     tauri_plugin_window_state::StateFlags::POSITION
                         | tauri_plugin_window_state::StateFlags::SIZE
-                        | tauri_plugin_window_state::StateFlags::MAXIMIZED
-                        | tauri_plugin_window_state::StateFlags::FULLSCREEN,
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
                 )
                 .build(),
         )
@@ -498,6 +501,8 @@ pub fn run() {
                 close_approved: AtomicBool::new(false),
             });
             let locale = app.state::<AppState>().settings.get()?.locale;
+            #[cfg(target_os = "macos")]
+            tao_view_guard::install()?;
             native_menu::install(app.handle(), &locale)?;
             runtime_updates.start_startup_maintenance();
             Ok(())
