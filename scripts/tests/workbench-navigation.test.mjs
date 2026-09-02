@@ -30,3 +30,15 @@ test("isolated workbench links reach the Rust navigation allowlist", async () =>
   assert.match(runtime, /\.hide\(\)/u);
   assert.match(runtime, /should_navigate_workbench/u);
 });
+
+test("closing a view never shares the quit path", async () => {
+  const lib = await readFile(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
+  const menu = await readFile(new URL("../../src-tauri/src/native_menu.rs", import.meta.url), "utf8");
+  // One window means window.close() quits, so the close item must not reach it.
+  assert.doesNotMatch(lib, /CLOSE_MENU_ID \| native_menu::QUIT_MENU_ID/u);
+  assert.match(lib, /CLOSE_MENU_ID => \{[\s\S]*?open_runtime\(\)/u);
+  assert.match(lib, /QUIT_MENU_ID => \{[\s\S]*?window\.close\(\)/u);
+  // The close item only exists while the settings layer is the closable surface.
+  assert.match(menu, /if !workbench_visible \{[\s\S]*?CLOSE_MENU_ID/u);
+  assert.match(menu, /close_settings/u);
+});

@@ -70,7 +70,7 @@ const APP_NAME: &str = env!("DEEPSEEK_DESKTOP_APP_NAME");
 struct MenuLabels {
     about: &'static str,
     settings: &'static str,
-    close: &'static str,
+    close_settings: &'static str,
     quit: &'static str,
     undo: &'static str,
     redo: &'static str,
@@ -155,26 +155,37 @@ pub fn popup(
         None => return Ok(()),
     };
 
+    // Returning keyboard focus to the visible surface is a nicety, not a
+    // precondition for showing the menu. AppKit can also be mid-transition here —
+    // a focus change during a fullscreen swap has aborted the process on a weak
+    // reference to a deallocating responder — so never propagate the failure.
     if workbench_visible {
         if let Some(workbench) = app.get_webview("workbench") {
-            workbench.set_focus().map_err(desktop_error)?;
+            let _ = workbench.set_focus();
         }
     } else if let Some(main) = app.get_webview("main") {
-        main.set_focus().map_err(desktop_error)?;
+        let _ = main.set_focus();
     }
 
     let labels = labels(locale);
     let menu = match menu_name {
         "file" => {
             let settings = item(app, SETTINGS_MENU_ID, labels.settings, Some("CmdOrCtrl+,"))?;
-            let close = item(app, CLOSE_MENU_ID, labels.close, Some("CmdOrCtrl+W"))?;
             let quit = item(app, QUIT_MENU_ID, labels.quit, Some("CmdOrCtrl+Q"))?;
-            MenuBuilder::new(app)
-                .item(&settings)
-                .separator()
-                .item(&close)
-                .item(&quit)
-                .build()
+            let mut builder = MenuBuilder::new(app).item(&settings);
+            // Merging the two windows into one left "close window" doing exactly
+            // what quitting does. It now closes the settings layer instead, and
+            // only appears while that layer is the surface a user could close.
+            if !workbench_visible {
+                let close = item(
+                    app,
+                    CLOSE_MENU_ID,
+                    labels.close_settings,
+                    Some("CmdOrCtrl+W"),
+                )?;
+                builder = builder.separator().item(&close);
+            }
+            builder.separator().item(&quit).build()
         }
         "edit" => MenuBuilder::new(app)
             .undo_with_text(labels.undo)
@@ -269,7 +280,7 @@ fn labels(locale: &str) -> MenuLabels {
         "zh-TW" => MenuLabels {
             about: "關於 DeepSeek Desktop",
             settings: "設定…",
-            close: "關閉視窗",
+            close_settings: "關閉設定",
             quit: "結束 DeepSeek Desktop",
             undo: "還原",
             redo: "重做",
@@ -289,7 +300,7 @@ fn labels(locale: &str) -> MenuLabels {
         "en-US" => MenuLabels {
             about: "About DeepSeek Desktop",
             settings: "Settings…",
-            close: "Close Window",
+            close_settings: "Close Settings",
             quit: "Quit DeepSeek Desktop",
             undo: "Undo",
             redo: "Redo",
@@ -309,7 +320,7 @@ fn labels(locale: &str) -> MenuLabels {
         _ => MenuLabels {
             about: "关于 DeepSeek Desktop",
             settings: "设置…",
-            close: "关闭窗口",
+            close_settings: "关闭设置",
             quit: "退出 DeepSeek Desktop",
             undo: "撤销",
             redo: "重做",

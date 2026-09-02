@@ -428,7 +428,15 @@ pub fn run() {
                     None::<&str>,
                 );
             }
-            native_menu::CLOSE_MENU_ID | native_menu::QUIT_MENU_ID => {
+            native_menu::CLOSE_MENU_ID => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let supervisor = Arc::clone(&state.supervisor);
+                    thread::spawn(move || {
+                        let _ = supervisor.open_runtime();
+                    });
+                }
+            }
+            native_menu::QUIT_MENU_ID => {
                 if let Some(window) = app.get_window("main") {
                     let _ = window.close();
                 }

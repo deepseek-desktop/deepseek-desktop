@@ -41,6 +41,14 @@
 - `v1.0.26` GitHub Actions 原生矩阵成功，Run `33592751008` 绑定 commit `2bded62`：六个 Job 全部成功。Release 标题为 `v1.0.26`（改为直接使用 Tag），未签名 prerelease，公开资产严格为两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`；正文六条直达下载链接与当前 Tag 一致；抽检下载托管的 Windows 安装包，实测 SHA-256 与清单逐字一致、大小 58351737 相符。
 - macOS 视图菜单崩溃路径在本轮**未**由本会话独立复现清除：合成点击无法使 NSMenu 弹出保持到可采样（已在两块显示器上确认无弹出），F10 疑被系统媒体键拦截，WebView 内容未暴露在辅助功能树中。该结论仍以上文 `1.0.24-test.3` 的 150 次五组菜单开关压力测试为准。
 
+## 已知未闭环缺陷
+
+- macOS `objc_storeWeak` 致命中止（`namespace: OBJC`，SIGABRT）共观察到三个来源，需分别对待：
+  - 菜单弹出经 `NSMenu popUpMenuPositioningItem:atLocation:inView:` 传入视图，`_NSPopUpMenu` 对其建立弱引用。仅在 `1.0.23` 出现，改为按光标位置弹出后未再复现。
+  - `-[NSWindow _setFirstResponderIvar:]` 对正在释放的响应者建立弱引用，由 `set_focus()` 触发。在 `1.0.26` 上于全屏进出压力过程中观察到一次，**没有稳定复现手段**。已把菜单弹出前与界面切换后的焦点调用改为不可失败（焦点只是锦上添花，不再中断弹出或让界面切换被误报为失败），但这只是缩小暴露面，不等于根因已消除。`Webview` 未暴露 `is_visible()`，无法在调用前确认目标仍在屏上。
+  - `___NSViewUpdateConstraints_block_invoke` 路径，由一次过宽的 `TaoView` 防护引入：丢弃 `viewDidMoveToWindow` 与 `resetCursorRects` 会留下陈旧 tracking rect。防护收窄后消失，已由用例锁定边界。
+- 上述第二项在真实使用中的触发概率与条件均未确定，不得在未取得复现前声称已修复。
+
 ## 能力边界
 
 - 上述结果证明当前源码、生成配置、锁定 Runtime、前端、本机 Runtime 启停链路与 macOS ARM64 安装版可运行；macOS 系统菜单、设置覆盖层、会话保持、关闭确认、Desktop 更新和外部文档打开已实测。Windows 设置页滚动由对应尺寸的浏览器回归覆盖，仍不能替代 Windows/Linux 原生应用真机视觉、菜单和关闭行为验收。

@@ -261,9 +261,9 @@ impl RuntimeSupervisor {
                 .show()
                 .map_err(|error| DesktopError::Other(error.to_string()))?;
             self.layout_workbench()?;
-            webview
-                .set_focus()
-                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            // A surface switch is complete once it is shown and laid out; a
+            // failed focus must not report the switch itself as failed.
+            let _ = webview.set_focus();
             self.emit_surface("workbench");
             return Ok(());
         }
@@ -326,9 +326,7 @@ impl RuntimeSupervisor {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(managed_url);
         self.workbench_visible.store(true, Ordering::Release);
         self.layout_workbench()?;
-        webview
-            .set_focus()
-            .map_err(|error| DesktopError::Other(error.to_string()))?;
+        let _ = webview.set_focus();
         self.emit_surface("workbench");
         Ok(())
     }
@@ -359,8 +357,7 @@ impl RuntimeSupervisor {
         }
         self.layout_settings()?;
         if let Some(main) = self.app.get_webview("main") {
-            main.set_focus()
-                .map_err(|error| DesktopError::Other(error.to_string()))?;
+            let _ = main.set_focus();
         }
         let _ = self.app.emit("desktop://settings-view", view);
         self.emit_surface("settings");
