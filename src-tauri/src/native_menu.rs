@@ -250,7 +250,7 @@ pub fn popup(
     #[cfg(target_os = "macos")]
     {
         // Passing a position binds NSMenu to Tao's root NSView. On macOS 26,
-        // closing that popup can route a null mouseMoved event into Tao.
+        // AppKit can later deliver input to that view after Tao detached its state.
         menu.popup(window).map_err(desktop_error)
     }
 

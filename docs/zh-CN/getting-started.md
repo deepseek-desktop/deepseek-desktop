@@ -4,7 +4,7 @@ DeepSeek Desktop 是内置锁定版本本地 Runtime 的独立、非官方社区
 
 桌面 Shell、应用程序和安装包统一使用固定上游提交中的侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Runtime，不代表官方发行或品牌授权。
 
-源码默认和文档示例版本固定为 `1.0.0`，实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，桌面安装包自动更新也未启用，因此不能作为已认证 Stable 版本宣传。Runtime 独立更新只会在发行版预置可信签名清单与公钥时启用。
+源码默认和文档示例版本固定为 `1.0.0`，实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，桌面安装包自动更新也未启用，因此不能作为已认证 Stable 版本宣传。Runtime 与 Desktop 外壳独立，用户可以在设置中只更换 Runtime 仓库地址。
 
 工程源码位于仓库根目录。`runtime/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Runtime 来源；`runtime:sync` 在本地开发且 `RUNTIME_REF` 为空时自动选择 Runtime 仓库最新的 SemVer 版本标签，显式填写时使用指定来源，随后统一解析为不可变 commit。社区版和正式发布还必须匹配仓库内经过审计的固定 Runtime 提交，避免可变标签在无人复核时改变发行内容。同步结果写入当前构建专用的 `target/generated/runtime-lock.json`。Runtime 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Runtime manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
@@ -89,7 +89,7 @@ macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows �
 
 桌面安装包和 Runtime 使用两条独立更新链路。Desktop 启动后每天最多静默检查一次自身版本，也可从“帮助 → 检查 Desktop 更新”手动检查。社区版只读取构建时固定的官方 GitHub 仓库 Release 列表，按完整 SemVer、发布时间及五个平台安装包完整性选择候选；发现新版后显示版本、时间与摘要，可选择前往官方 Release、稍后提醒或忽略该版本。当前社区版未签名，因此不会自动下载安装，也不会使用远端提供的任意下载地址。
 
-Runtime 更新可在“设置 → 更新 → Runtime 独立更新”中选择“自动下载并在下次启动安装”“发现后提醒”或“仅手动检查”，也可以固定当前版本。只有发行版内置了可信 Runtime 清单地址、公钥和发布者身份时该功能才会启用；默认社区配置不连接更新服务。下载的新 Runtime 会在应用数据目录中完成 SHA-256、签名、平台与协议校验，启动 smoke 通过后才切换；失败会保留当前版本并自动回滚，用户也可随时恢复安装包内置 Runtime。更详细的维护与离线恢复说明见 [Runtime 独立更新指南](runtime-updates.md)。
+Runtime 更新可在“设置 → 更新 → Runtime 独立更新”中选择“自动下载并在下次启动安装”“发现后提醒”或“仅手动检查”，也可以固定当前版本。设置页默认显示社区 Runtime 仓库；用户可替换为官方上游或自己的兼容 fork，不需要配置额外清单、公钥或发布者。Desktop 会在应用数据目录使用内置 Node/pnpm 准备候选并执行真实启动 smoke，通过后才在下次启动切换；失败会保留当前版本并自动回滚，用户也可随时恢复安装包内置 Runtime。更详细的行为与离线恢复说明见 [Runtime 独立更新指南](runtime-updates.md)。
 
 卸载应用不会自动删除 Runtime 工作台管理的项目目录或应用数据。需要完全清理时，先卸载 DeepSeek Desktop，再由用户主动删除系统应用数据目录。新版只使用社区版内置的本地加密凭据库，不访问系统钥匙串。
 

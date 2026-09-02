@@ -19,13 +19,19 @@ RUNTIME_REPOSITORY / RUNTIME_REF
   -> runtime/scripts/stage-runtime.mjs
   -> Tauri sidecar / resources
 
-可信 Runtime 更新配置
+Runtime 仓库地址（默认构建仓库或用户覆盖）
+  -> Git 默认分支 HEAD -> 应用数据目录浅克隆
+  -> 内置 Node / pnpm 安装锁定依赖并构建
+  -> 补齐 Desktop 辅助包与 Node sidecar
+  -> CLI / Node ABI / 包版本 / 真实服务 smoke
+  -> 原子 current 指针 -> 失败回滚 previous / bundled
+  -> 只保留 current / previous / pending 引用版本
+
+可选签名制品配置
   -> scripts/runtime-update/ 各原生节点生成生产闭包
   -> 四平台描述一致性 + Ed25519 签名清单
-  -> 应用数据目录 staging / 版本目录
   -> 有效期 / 防重放 + SHA-256 + 来源 / 平台 / 协议 / 包版本校验
-  -> 真实本地服务 smoke -> 原子 current 指针 -> 失败回滚 previous / bundled
-  -> 只保留 current / previous / pending 引用版本
+  -> 与仓库模式共用版本指针、smoke 和回滚
 ```
 
 `target/` 是生成与缓存目录，不是源码事实。稳定工具链、Runtime 发布来源和第三方制品校验和由 `runtime/toolchain-lock.json` 维护。
@@ -50,7 +56,7 @@ Pull Request 和普通分支 push 不触发发布工作流。正式发布以 `.g
 
 - `src/`：Vue 3 固定窗口菜单、同窗设置层、三语国际化、类型化 IPC 和视图状态。
 - `src-tauri/src/runtime.rs`：Runtime 状态机、独立运行目录、进程生命周期、探活、恢复和嵌入式工作台。
-- `src-tauri/src/runtime_update.rs`：签名 Runtime 清单、平台下载、受限解压、版本指针、smoke、切换与回滚。
+- `src-tauri/src/runtime_update.rs`：用户仓库拉取与本机候选准备、可选签名 Runtime 清单、版本指针、smoke、切换与回滚。
 - `src-tauri/src/credential_vault.rs`：本地加密凭据库、短期 Runtime 会话授权及旧索引迁移。
 - `src-tauri/src/settings.rs`：原子设置读写、损坏或未来 schema 隔离恢复。
 - `src-tauri/src/diagnostics.rs`：日志轮转、脱敏和诊断导出。
@@ -71,7 +77,7 @@ Pull Request 和普通分支 push 不触发发布工作流。正式发布以 `.g
 3. Runtime 通过受限会话调用桌面凭据 helper，不接收长期明文环境变量。
 4. readiness 通过后，同一原生窗口在固定 Shell 菜单栏下方嵌入受管 Harness Origin；五个菜单标题触发 Tauri 原生弹出项。打开设置时隐藏工作台子 WebView，关闭时按相同受管 Origin 直接恢复，不重新导航。
 5. Runtime 异常退出时按有限次数恢复；用户主动停止或应用退出时清理进程树。
-6. 已配置可信更新服务时，候选 Runtime 下载到应用数据目录并在下次启动 smoke 后切换；失败回滚上一版或内置基线。
+6. Runtime 更新检查绑定设置中的仓库覆盖值或构建默认仓库；源码候选在应用数据目录准备并通过 smoke 后于下次启动切换，失败回滚上一版或内置基线。发行版预置完整签名制品配置时，未覆盖仓库的用户继续走预构建下载通道。
 
 联网搜索链路独立于 Desktop 壳：
 

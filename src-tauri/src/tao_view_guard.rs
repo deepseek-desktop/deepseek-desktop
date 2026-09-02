@@ -9,27 +9,35 @@
 //! ... state.ns_window.load()          // objc_loadWeakRetained
 //! ```
 //!
-//! `ns_window` is the first field, so a null ivar makes that call read address
-//! zero and the process dies with `EXC_BAD_ACCESS` at `0x0`. AppKit delivers
-//! mouse-tracking and layout callbacks to views whose state is not (or no longer)
-//! attached — closing a native menu, moving between menu titles and resizing the
-//! window all reproduce it — so the crash is reachable from ordinary use.
+//! A missing state pointer, or a pointer whose `ViewState` has already been freed
+//! by `TaoView.dealloc`, makes the weak-window load read invalid memory and the
+//! process dies with `EXC_BAD_ACCESS`. AppKit can still deliver delayed input while
+//! a view is being torn down — closing a native menu, changing fullscreen state and
+//! resizing the window all reproduce it — so the crash is reachable from ordinary
+//! use.
 //!
-//! The guard replaces those handlers with trampolines that drop the callback when
-//! `taoState` is null and forward everything else to Tao untouched. It only
-//! Only pure event-delivery handlers are guarded. Dropping a mouse event for a
-//! view that has no state is invisible, whereas `viewDidMoveToWindow` and
-//! `resetCursorRects` rebuild the tracking rect and cursor rects AppKit relies on
-//! — skipping those leaves stale tracking registrations behind and AppKit later
+//! The guard marks a view before Tao starts deallocating its state, then replaces
+//! input handlers with trampolines that drop callbacks for detached or deallocating
+//! views and forward everything else to Tao untouched. Only pure event-delivery
+//! handlers are guarded. Dropping an input event for a view that has no live state
+//! is invisible, whereas `viewDidMoveToWindow` and
+//! `resetCursorRects` rebuild the tracking rect and cursor rects AppKit relies on;
+//! skipping those leaves stale tracking registrations behind and AppKit later
 //! aborts trying to weakly reference a deallocating view.
 
+use std::collections::HashSet;
 use std::ffi::{c_char, c_void};
+use std::sync::LazyLock;
+use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::error::{DesktopError, DesktopResult};
 
 type ArgumentHandler = unsafe extern "C" fn(*mut c_void, *const c_void, *mut c_void);
+type VoidHandler = unsafe extern "C" fn(*mut c_void, *const c_void);
+type InitWithTaoHandler =
+    unsafe extern "C" fn(*mut c_void, *const c_void, *mut c_void) -> *mut c_void;
 
 unsafe extern "C" {
     fn objc_getClass(name: *const c_char) -> *mut c_void;
@@ -44,9 +52,65 @@ unsafe extern "C" {
     ) -> *mut c_void;
 }
 
+static DEALLOCATING_VIEWS: LazyLock<Mutex<HashSet<usize>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+static ORIGINAL_DEALLOC: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+static ORIGINAL_INIT_WITH_TAO: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+fn with_deallocating_views<T>(action: impl FnOnce(&mut HashSet<usize>) -> T) -> T {
+    let mut views = DEALLOCATING_VIEWS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    action(&mut views)
+}
+
+fn view_is_deallocating(view: *mut c_void) -> bool {
+    with_deallocating_views(|views| views.contains(&(view as usize)))
+}
+
+fn mark_view_deallocating(view: *mut c_void) {
+    with_deallocating_views(|views| {
+        views.insert(view as usize);
+    });
+}
+
+fn mark_view_initialized(view: *mut c_void) {
+    with_deallocating_views(|views| {
+        views.remove(&(view as usize));
+    });
+}
+
+unsafe extern "C" fn guarded_dealloc(view: *mut c_void, selector: *const c_void) {
+    mark_view_deallocating(view);
+    let original = ORIGINAL_DEALLOC.load(Ordering::Acquire);
+    if original.is_null() {
+        return;
+    }
+    let original: VoidHandler = unsafe { std::mem::transmute(original) };
+    unsafe { original(view, selector) };
+}
+
+unsafe extern "C" fn guarded_init_with_tao(
+    view: *mut c_void,
+    selector: *const c_void,
+    state: *mut c_void,
+) -> *mut c_void {
+    let original = ORIGINAL_INIT_WITH_TAO.load(Ordering::Acquire);
+    if original.is_null() {
+        return std::ptr::null_mut();
+    }
+    let original: InitWithTaoHandler = unsafe { std::mem::transmute(original) };
+    let initialized = unsafe { original(view, selector, state) };
+    if !initialized.is_null() {
+        mark_view_initialized(initialized);
+    }
+    initialized
+}
+
 /// True only when Tao has a live `ViewState` attached to this view.
 fn view_state_is_attached(view: *mut c_void) -> bool {
-    if view.is_null() {
+    if view.is_null() || view_is_deallocating(view) {
         return false;
     }
     let mut state = std::ptr::null_mut();
@@ -167,30 +231,20 @@ pub fn install() -> DesktopResult<()> {
             if class.is_null() {
                 return Err("TaoView is unavailable".to_owned());
             }
+            install_handler(
+                class,
+                c"dealloc",
+                &ORIGINAL_DEALLOC,
+                guarded_dealloc as *const () as *const c_void,
+            )?;
+            install_handler(
+                class,
+                c"initWithTao:",
+                &ORIGINAL_INIT_WITH_TAO,
+                guarded_init_with_tao as *const () as *const c_void,
+            )?;
             for guarded in GUARDED_SELECTORS {
-                let selector = unsafe { sel_registerName(guarded.name.as_ptr()) };
-                let method = unsafe { class_getInstanceMethod(class, selector) };
-                if method.is_null() {
-                    return Err(format!(
-                        "TaoView {} is unavailable",
-                        guarded.name.to_string_lossy()
-                    ));
-                }
-                let original = unsafe { method_getImplementation(method) };
-                if original.is_null() {
-                    return Err(format!(
-                        "TaoView {} has no implementation",
-                        guarded.name.to_string_lossy()
-                    ));
-                }
-                guarded.original.store(original, Ordering::Release);
-                let previous = unsafe { method_setImplementation(method, guarded.trampoline) };
-                if previous != original {
-                    return Err(format!(
-                        "TaoView {} changed during initialization",
-                        guarded.name.to_string_lossy()
-                    ));
-                }
+                install_handler(class, guarded.name, guarded.original, guarded.trampoline)?;
             }
             Ok(())
         })
@@ -199,13 +253,54 @@ pub fn install() -> DesktopResult<()> {
         .map_err(|error| DesktopError::Other(error.clone()))
 }
 
+fn install_handler(
+    class: *mut c_void,
+    name: &std::ffi::CStr,
+    original_slot: &AtomicPtr<c_void>,
+    trampoline: *const c_void,
+) -> Result<(), String> {
+    let selector = unsafe { sel_registerName(name.as_ptr()) };
+    let method = unsafe { class_getInstanceMethod(class, selector) };
+    if method.is_null() {
+        return Err(format!("TaoView {} is unavailable", name.to_string_lossy()));
+    }
+    let original = unsafe { method_getImplementation(method) };
+    if original.is_null() {
+        return Err(format!(
+            "TaoView {} has no implementation",
+            name.to_string_lossy()
+        ));
+    }
+    original_slot.store(original, Ordering::Release);
+    let previous = unsafe { method_setImplementation(method, trampoline) };
+    if previous != original {
+        return Err(format!(
+            "TaoView {} changed during initialization",
+            name.to_string_lossy()
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{GUARDED_SELECTORS, view_state_is_attached};
+    use super::{
+        GUARDED_SELECTORS, mark_view_deallocating, mark_view_initialized, view_state_is_attached,
+    };
 
     #[test]
     fn a_view_without_attached_state_is_never_forwarded() {
         assert!(!view_state_is_attached(std::ptr::null_mut()));
+    }
+
+    #[test]
+    fn a_deallocating_view_is_never_forwarded_and_reuse_is_cleared_on_init() {
+        let view = 0x1000usize as *mut std::ffi::c_void;
+        mark_view_deallocating(view);
+        assert!(!view_state_is_attached(view));
+
+        mark_view_initialized(view);
+        assert!(!super::view_is_deallocating(view));
     }
 
     #[test]

@@ -13,7 +13,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - OpenAI Responses 兼容流的最终 `output_item.done` 事件是工具调用 ID、名称、参数和 namespace 的权威事实；不得沿用 `output_item.added` 中可能过期的工具身份，否则会把 `glob` 等调用误派发为 `read`。
 - Harness 工作台是唯一主界面；运行状态、诊断、Desktop 更新、Runtime 更新和关于按需显示为同一原生窗口中的设置层。设置打开时只隐藏工作台子 WebView，关闭时复用原页面和同一 Runtime，不重新导航或丢失会话状态。
 - 唯一完整功能菜单由 Desktop Shell 固定显示在窗口内容区顶部左侧，macOS、Windows、Linux 统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；标题由 Vue 三语渲染，展开项由 Tauri 弹出原生菜单。Runtime 子 WebView 从菜单栏下方开始，不注入菜单脚本也不获得 IPC；macOS 系统栏只保留最小应用菜单，Windows/Linux 不挂载重复的完整原生窗口菜单。
-- macOS 26 原生上下文菜单收起后可能向 Tao `0.35.3` 的 `mouseMoved:` 传入空 `NSEvent`；Desktop 只在 macOS 初始化时安装空事件防护，正常事件转发原实现，Windows/Linux 不受影响。依赖升级后必须重新核对 `TaoView` 方法契约与该防护是否仍有必要。
+- macOS 26 可能在 Tao `0.35.3` 已从 `TaoView` 移除 `taoState` 后继续投递输入事件；Tao 随后把空状态当作有效 `ViewState` 读取并在 `objc_loadWeakRetained` 崩溃。Desktop 只在 macOS 初始化时保护纯事件投递处理器：状态缺失时丢弃事件，状态存在时转发原实现；生命周期、布局和 tracking rect 回调不得拦截。Windows/Linux 不受影响，依赖升级后必须重新核对 `TaoView` 方法契约与该防护是否仍有必要。
 - Desktop 初始化后自动启动空闲 Runtime，并在 readiness 通过后直接打开工作台；已就绪 Runtime 不重复启动，启动失败时打开设置层中的重试、恢复和诊断入口。
 - 窗口状态按显示器恢复；保存位置仍能落在已连接显示器时保持不变，目标显示器断开时回到当前主显示器可见区域。
 - 工作台 WebView 不获得通用 Tauri Shell、文件系统或任意 IPC 权限。
@@ -23,14 +23,14 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 导航判定按当前受管 Origin 实时进行，不使用 WebView 创建时的快照；Runtime 未就绪期间没有可信 Origin，HTTP/HTTPS 导航一律拒绝而不转交系统浏览器，避免把带令牌的 loopback 地址交给外部程序。
 - Runtime 进程以 `--expose-internals` 启动：这是 Harness 插件加载器与 HMR 的硬性契约，同时意味着 Runtime 内所有代码（含第三方市场插件）都能访问 Node 内部模块，属于已知且被接受的边界放宽。
 - 加密凭据库主要防止意外明文泄漏；它不承诺抵御已经取得同一操作系统用户权限的恶意进程。
-- 社区版保持关闭 Desktop 自动下载安装，但每天最多从构建时固定的官方 GitHub 仓库静默检查一次 Release，也允许手动检查；候选按完整 SemVer、发布时间、draft/prerelease 状态和五个平台资产完整性选择，不使用 `latest`，提醒只打开由固定仓库和验证后 tag 构造的官方 Release 页面。Runtime 独立更新默认采用“发现后提醒”，且只有在构建时配置可信 Ed25519 清单、公钥和发布者后才启用，二者不共用信任边界。
+- 社区版保持关闭 Desktop 自动下载安装，但每天最多从构建时固定的官方 GitHub 仓库静默检查一次 Release，也允许手动检查；候选按完整 SemVer、发布时间、draft/prerelease 状态和五个平台资产完整性选择，不使用 `latest`，提醒只打开由固定仓库和验证后 tag 构造的官方 Release 页面。Runtime 独立更新默认采用“发现后提醒”，默认跟随构建时的 Runtime 仓库；用户只需替换仓库地址即可改用官方上游或自己的兼容 fork，二者不共用更新边界。
 - 未签名制品发布时一律标记 GitHub prerelease，不占据 Latest release 位置；该判断取自生成配置的 `release.signed`，与 SemVer 版本号形态无关，签名接入后自动恢复为正式发布。
 - 正式四平台发行统一由 GitHub Actions 官方托管 Runner 原生构建：Pull Request 与普通分支 push 不触发发布工作流，只有完整 SemVer Tag 才运行质量门禁并进入 macOS ARM64/x64、Windows x64、Linux x64 矩阵。
 - 四个平台复用唯一 `package:community` / `desktop:package` 构建事实；全部成功后才创建 Release，公开资产只包含 5 个安装包和 `SHA256SUMS`。
 - GitHub Release 正文根据当前 Tag 和已汇总的完整公开资产集合生成直接下载链接；站点自身的 `Assets` 折叠状态不作为用户下载入口前提。
 - 本机只执行源码验证、E2E、Runtime smoke 和当前 macOS 架构打包/启动测试；不以 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 作为正式发布前提。
 - 四平台统一使用工具链 lock 中的 Node `24.20.0` / ABI `137`，Runner 不得依赖全局版本漂移；内部 BUILD-INFO 用于矩阵汇总核验但不公开发布。
-- Runtime 更新只写入应用数据目录，执行签名与兼容校验、受限解压、启动 smoke、原子切换和自动回滚；安装包内置 Runtime 始终作为最终恢复基线。官方更新源由构建配置固化，用户可在设置层中选择自定义签名清单、仓库身份、发布者和公钥；四项组成不可拆分的信任档案，切换档案会使旧候选失效。
+- Runtime 更新只写入应用数据目录；仓库模式复用内置 Node/pnpm 拉取、构建并 smoke 候选，可选签名制品模式继续执行签名、兼容和受限解压校验，两者共用原子切换与自动回滚。安装包内置 Runtime 始终作为最终恢复基线。设置 schema 只保存可选仓库覆盖值，切换仓库会使旧候选失效，诊断导出不包含仓库地址。
 - 清单反回放在检查阶段只做校验，接受记录直到制品真正暂存成功才落盘；「恢复内置 Runtime」同时清除接受历史，使撤回后同版本换 commit 重新签发仍可安装。
 - 待安装 Runtime 的激活 smoke 与自动检查在后台线程串行执行，不占用驱动窗口的线程；激活期间对外发布 `applying` 状态。
 - 签名清单请求使用 30 秒预算，与制品下载的 20 分钟预算分离，避免更新服务停滞长时间占用更新操作锁。

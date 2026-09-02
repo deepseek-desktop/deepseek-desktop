@@ -6,9 +6,15 @@ import test from "node:test";
 import { applyPackageTextReplacements } from "../lib/package-text-replacement.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
+const temporaryRoot = join(root, "target");
+
+async function temporaryDirectory(prefix) {
+  await mkdir(temporaryRoot, { recursive: true });
+  return mkdtemp(join(temporaryRoot, prefix));
+}
 
 test("package text replacements are unique, repeatable, and confined to the package", async () => {
-  const directory = await mkdtemp(join(root, "target", "package-text-replacement-test-"));
+  const directory = await temporaryDirectory("package-text-replacement-test-");
   const packageRoot = join(directory, "package");
   const moduleFile = "lib/client.js";
   const target = join(packageRoot, moduleFile);
@@ -43,7 +49,7 @@ test("package text replacements are unique, repeatable, and confined to the pack
 });
 
 test("package text replacements can target stable CSS module suffixes across generated hashes", async () => {
-  const directory = await mkdtemp(join(root, "target", "package-text-replacement-hash-test-"));
+  const directory = await temporaryDirectory("package-text-replacement-hash-test-");
   const packageRoot = join(directory, "package");
   const moduleFile = "lib/client.js";
   const target = join(packageRoot, moduleFile);

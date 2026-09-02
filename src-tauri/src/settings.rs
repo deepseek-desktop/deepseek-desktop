@@ -3,7 +3,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
-use base64::Engine as _;
 use tauri::{AppHandle, Manager};
 use url::Url;
 
@@ -102,15 +101,17 @@ impl SettingsStore {
             .map_err(|_| DesktopError::Other("settings lock is poisoned".to_owned()))
     }
 
-    pub fn update(&self, mut settings: DesktopSettings) -> DesktopResult<DesktopSettings> {
+    pub(crate) fn validated(mut settings: DesktopSettings) -> DesktopResult<DesktopSettings> {
         settings.recovery_reason = None;
-        normalize_optional(&mut settings.runtime_update_manifest_url);
         normalize_optional(&mut settings.runtime_update_repository);
-        normalize_optional(&mut settings.runtime_update_publisher);
-        normalize_optional(&mut settings.runtime_update_public_key);
         normalize_optional(&mut settings.desktop_update_last_check_at);
         normalize_optional(&mut settings.desktop_update_ignored_version);
         validate(&settings)?;
+        Ok(settings)
+    }
+
+    pub fn update(&self, settings: DesktopSettings) -> DesktopResult<DesktopSettings> {
+        let settings = Self::validated(settings)?;
         let mut current = self
             .current
             .write()
@@ -266,6 +267,15 @@ fn migrate_settings(mut value: serde_json::Value) -> serde_json::Result<serde_js
             serde_json::Value::Null,
         );
     }
+    if schema <= 5 {
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?;
+        object.remove("runtimeUpdateSource");
+        object.remove("runtimeUpdateManifestUrl");
+        object.remove("runtimeUpdatePublisher");
+        object.remove("runtimeUpdatePublicKey");
+    }
     value
         .as_object_mut()
         .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?
@@ -325,44 +335,8 @@ fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
             settings.runtime_update_mode
         )));
     }
-    if !matches!(
-        settings.runtime_update_source.as_str(),
-        "official" | "custom"
-    ) {
-        return Err(DesktopError::InvalidConfiguration(format!(
-            "unsupported runtime update source {}",
-            settings.runtime_update_source
-        )));
-    }
-    if let Some(value) = settings.runtime_update_manifest_url.as_deref() {
-        validate_update_manifest_url(value)?;
-    }
     if let Some(value) = settings.runtime_update_repository.as_deref() {
         validate_runtime_repository(value)?;
-    }
-    if let Some(value) = settings.runtime_update_publisher.as_deref()
-        && (value.len() > 128
-            || !value
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character)))
-    {
-        return Err(DesktopError::InvalidConfiguration(
-            "Runtime update publisher is invalid".to_owned(),
-        ));
-    }
-    if let Some(value) = settings.runtime_update_public_key.as_deref() {
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(value)
-            .map_err(|_| {
-                DesktopError::InvalidConfiguration(
-                    "Runtime update public key must be Base64".to_owned(),
-                )
-            })?;
-        if bytes.len() != 32 {
-            return Err(DesktopError::InvalidConfiguration(
-                "Runtime update public key must contain 32 bytes".to_owned(),
-            ));
-        }
     }
     if settings
         .runtime_pinned_version
@@ -394,26 +368,6 @@ fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
     Ok(())
 }
 
-fn validate_update_manifest_url(value: &str) -> DesktopResult<()> {
-    let url = Url::parse(value).map_err(|error| {
-        DesktopError::InvalidConfiguration(format!(
-            "Runtime update manifest URL is invalid: {error}"
-        ))
-    })?;
-    if !matches!(url.scheme(), "https" | "http" | "file")
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(DesktopError::InvalidConfiguration(
-            "Runtime update manifest URL must use HTTPS, HTTP, or file without credentials, query, or fragment"
-                .to_owned(),
-        ));
-    }
-    Ok(())
-}
-
 fn validate_runtime_repository(value: &str) -> DesktopResult<()> {
     if value.starts_with("git@") {
         if value.contains(char::is_whitespace) || !value.contains(':') {
@@ -426,14 +380,14 @@ fn validate_runtime_repository(value: &str) -> DesktopResult<()> {
     let url = Url::parse(value).map_err(|error| {
         DesktopError::InvalidConfiguration(format!("Runtime repository URL is invalid: {error}"))
     })?;
-    if !matches!(url.scheme(), "https" | "http" | "ssh" | "git")
-        || !url.username().is_empty()
+    if !matches!(url.scheme(), "https" | "http" | "ssh" | "git" | "file")
+        || (matches!(url.scheme(), "https" | "http") && !url.username().is_empty())
         || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
     {
         return Err(DesktopError::InvalidConfiguration(
-            "Runtime repository URL must use HTTP(S), SSH, or Git without credentials, query, or fragment"
+            "Runtime repository URL must use HTTP(S), SSH, Git, or file without embedded credentials, query, or fragment"
                 .to_owned(),
         ));
     }
@@ -491,18 +445,10 @@ mod tests {
     }
 
     #[test]
-    fn accepts_a_complete_custom_runtime_update_source() {
+    fn accepts_a_custom_runtime_repository_without_update_service_fields() {
         let settings = DesktopSettings {
-            runtime_update_source: "custom".to_owned(),
-            runtime_update_manifest_url: Some(
-                "https://updates.example.com/runtime/stable/manifest.json".to_owned(),
-            ),
             runtime_update_repository: Some(
                 "https://git.example.com/runtime/deepseek-harness.git".to_owned(),
-            ),
-            runtime_update_publisher: Some("example-runtime".to_owned()),
-            runtime_update_public_key: Some(
-                base64::engine::general_purpose::STANDARD.encode([7_u8; 32]),
             ),
             ..DesktopSettings::default()
         };
@@ -511,20 +457,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsafe_custom_runtime_update_source_fields() {
-        let credentials_in_url = DesktopSettings {
-            runtime_update_manifest_url: Some(
-                "https://token@example.com/runtime/manifest.json".to_owned(),
-            ),
+    fn rejects_a_runtime_repository_with_embedded_credentials() {
+        let settings = DesktopSettings {
+            runtime_update_repository: Some("https://token@example.com/runtime.git".to_owned()),
             ..DesktopSettings::default()
         };
-        assert!(validate(&credentials_in_url).is_err());
-
-        let invalid_key = DesktopSettings {
-            runtime_update_public_key: Some("not-a-key".to_owned()),
-            ..DesktopSettings::default()
-        };
-        assert!(validate(&invalid_key).is_err());
+        assert!(validate(&settings).is_err());
     }
 
     #[test]
@@ -621,14 +559,13 @@ mod tests {
         assert_eq!(settings.schema_version, current_settings_schema_version());
         assert_eq!(settings.locale, "en-US");
         assert_eq!(settings.runtime_update_mode, "notify");
-        assert_eq!(settings.runtime_update_source, "official");
-        assert!(settings.runtime_update_manifest_url.is_none());
+        assert!(settings.runtime_update_repository.is_none());
         let serialized = serde_json::to_value(settings).unwrap();
         assert!(serialized.get("workspace").is_none());
     }
 
     #[test]
-    fn migrates_schema_three_to_the_official_runtime_update_source() {
+    fn migrates_schema_three_to_the_default_runtime_repository() {
         let mut value = serde_json::to_value(DesktopSettings::default()).unwrap();
         let object = value.as_object_mut().unwrap();
         object.insert("schemaVersion".to_owned(), serde_json::json!(3));
@@ -642,11 +579,48 @@ mod tests {
             serde_json::from_value(migrate_settings(value).unwrap()).unwrap();
 
         assert_eq!(settings.schema_version, current_settings_schema_version());
-        assert_eq!(settings.runtime_update_source, "official");
-        assert!(settings.runtime_update_manifest_url.is_none());
         assert!(settings.runtime_update_repository.is_none());
-        assert!(settings.runtime_update_publisher.is_none());
-        assert!(settings.runtime_update_public_key.is_none());
+    }
+
+    #[test]
+    fn migrates_schema_five_and_keeps_only_the_repository_override() {
+        let mut value = serde_json::to_value(DesktopSettings::default()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.insert("schemaVersion".to_owned(), serde_json::json!(5));
+        object.insert(
+            "runtimeUpdateSource".to_owned(),
+            serde_json::json!("custom"),
+        );
+        object.insert(
+            "runtimeUpdateRepository".to_owned(),
+            serde_json::json!("https://github.com/example/deepseek-harness.git"),
+        );
+        object.insert(
+            "runtimeUpdateManifestUrl".to_owned(),
+            serde_json::json!("https://updates.example/manifest.json"),
+        );
+        object.insert(
+            "runtimeUpdatePublisher".to_owned(),
+            serde_json::json!("legacy"),
+        );
+        object.insert(
+            "runtimeUpdatePublicKey".to_owned(),
+            serde_json::json!("legacy"),
+        );
+
+        let settings: DesktopSettings =
+            serde_json::from_value(migrate_settings(value).unwrap()).unwrap();
+        let serialized = serde_json::to_value(&settings).unwrap();
+
+        assert_eq!(settings.schema_version, current_settings_schema_version());
+        assert_eq!(
+            settings.runtime_update_repository.as_deref(),
+            Some("https://github.com/example/deepseek-harness.git")
+        );
+        assert!(serialized.get("runtimeUpdateSource").is_none());
+        assert!(serialized.get("runtimeUpdateManifestUrl").is_none());
+        assert!(serialized.get("runtimeUpdatePublisher").is_none());
+        assert!(serialized.get("runtimeUpdatePublicKey").is_none());
     }
 
     #[test]

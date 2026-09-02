@@ -6,9 +6,15 @@ import { join, resolve } from "node:path";
 import { applyPackagePatch } from "../lib/package-patch.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
+const temporaryRoot = join(root, "target");
+
+async function temporaryDirectory(prefix) {
+  await mkdir(temporaryRoot, { recursive: true });
+  return mkdtemp(join(temporaryRoot, prefix));
+}
 
 test("applies package-relative patches inside a parent Git worktree", async () => {
-  const directory = await mkdtemp(join(root, "target", "package-patch-test-"));
+  const directory = await temporaryDirectory("package-patch-test-");
   const packageRoot = join(directory, "node_modules", "example-package");
   const sourceFile = join(packageRoot, "lib", "client.js");
   const patchFile = join(directory, "client.patch");

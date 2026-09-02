@@ -11,7 +11,7 @@
 - 发行标签接受带或不带 `v` 前缀的完整 SemVer，例如 `1.0.0`、`v1.0.0` 和 `v0.1.0-community.13`；工作流入口必须执行严格 SemVer 校验。
 - GitHub Actions 的应用仓库地址必须来自工作流仓库上下文，不能使用 Windows 短路径副本或其他本地 clone 的文件型 `origin`。
 - 正式发布源码由 GitHub Actions 从不可变 Tag 对应 commit 检出；工作流不得接受可移动分支或含嵌入凭据的 Git URL 作为发行来源。
-- Runtime 独立更新清单和制品可由 filesystem 或普通 HTTP 服务承载，但必须使用配置公钥验证 Ed25519 签名；`RUNTIME_REF` 显式固定时默认关闭自动下载。
+- 普通用户只配置 Runtime 仓库覆盖值；留空时使用构建时的 `RUNTIME_REPOSITORY`。可选的预构建更新清单和制品可由 filesystem 或普通 HTTP 服务承载，并继续使用配置公钥验证 Ed25519 签名；`RUNTIME_REF` 显式固定时默认关闭自动准备。
 
 ## 实现
 
@@ -24,7 +24,7 @@
 - Pull Request 和普通分支 push 不触发发布工作流；只有带或不带 `v` 前缀的完整 SemVer Tag 才触发质量门禁与正式四平台构建。
 - macOS ARM64、macOS x64、Windows x64 和 Linux x64 必须分别由对应 GitHub 官方托管 Runner 原生打包，并统一复用 `package:community`。
 - 公开 Release 必须等待四个平台全部成功，只上传两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`；内部 BUILD-INFO 不作为公开资产。
-- Runtime 更新不得写应用安装目录，不得在用户机器拉源码或编译；Windows 的 smoke、替换和重启进程必须保持无控制台窗口。
+- Runtime 更新不得写应用安装目录。仓库模式只能在应用数据目录浅克隆、使用安装包内置 Node/pnpm 准备候选并完成真实 smoke；失败必须保留当前 Runtime。Windows 的 Git、构建、smoke、替换和重启进程必须保持无控制台窗口。
 
 ## 验证
 

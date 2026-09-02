@@ -40,6 +40,19 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+async function symlinkOrSkip(t, target, path) {
+  try {
+    await symlink(target, path);
+    return true;
+  } catch (error) {
+    if (process.platform === "win32" && ["EPERM", "EACCES"].includes(error?.code)) {
+      t.skip("creating symbolic links requires Windows Developer Mode or elevated privileges");
+      return false;
+    }
+    throw error;
+  }
+}
+
 function git(directory, args) {
   const result = spawnSync("git", args, { cwd: directory, encoding: "utf8" });
   if (result.error) throw result.error;
@@ -249,7 +262,7 @@ test("artifact scanner rejects environment files, local paths, and secrets", asy
   await rm(secret);
   await rm(environment);
   const internalLink = join(scanRoot, "internal-link");
-  await symlink("clean.bin", internalLink);
+  if (!await symlinkOrSkip(t, "clean.bin", internalLink)) return;
   assert.equal((await scanArtifactPaths([scanRoot])).fileCount, 1);
   const outside = join(directory, "outside.bin");
   await writeFile(outside, "outside root");
@@ -418,7 +431,7 @@ test("content-addressed release cache rejects corruption, target drift, and link
   await writeFile(join(directory, "runtime", "entry.js"), "corrupted\n");
   await assert.rejects(() => verifyContentCache(directory, identity), /file manifest/u);
   await rm(join(directory, "runtime", "entry.js"));
-  await symlink("../cache-manifest.json", join(directory, "runtime", "linked"));
+  if (!await symlinkOrSkip(t, "../cache-manifest.json", join(directory, "runtime", "linked"))) return;
   await assert.rejects(() => createContentCacheManifest(directory, identity), /symbolic links/u);
 });
 

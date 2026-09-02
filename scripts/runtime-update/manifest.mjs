@@ -159,5 +159,6 @@ const output = resolve(args.get("output") || join(directory, "runtime-update-man
 await mkdir(dirname(output), { recursive: true });
 await writeFile(output, `${JSON.stringify(envelope, null, 2)}\n`);
 const publicDer = createPublicKey(privateKey).export({ format: "der", type: "spki" });
+const publicKey = Buffer.from(publicDer).subarray(-32).toString("base64");
 console.log(`Runtime update manifest: ${output}`);
-console.log(`RUNTIME_UPDATE_PUBLIC_KEY=${Buffer.from(publicDer).subarray(-32).toString("base64")}`);
+console.log(`RUNTIME_UPDATE_PUBLIC_KEY=${publicKey}`);

@@ -40,7 +40,7 @@ DESKTOP_APP_ICON=src-tauri/icons/icon.png
 RUNTIME_REPOSITORY=https://github.com/deepseek-desktop/deepseek-harness.git
 RUNTIME_REF=
 
-# Runtime 独立更新；未配置地址和公钥时完全禁用
+# 可选预构建签名制品通道；留空时按 Runtime 仓库准备源码候选
 RUNTIME_UPDATE_MANIFEST_URL=
 RUNTIME_UPDATE_CHANNEL=stable
 RUNTIME_AUTO_UPDATE=false

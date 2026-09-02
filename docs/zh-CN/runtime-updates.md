@@ -1,31 +1,36 @@
 # Runtime 独立更新指南
 
-DeepSeek Desktop 把桌面外壳与 Harness Runtime 分开发布。模型适配、插件集成或 Runtime 修复可以只发布 Runtime；只有 Tauri、原生菜单、凭据协议或桌面管理器发生变化时，才需要重新发布完整桌面安装包。
+DeepSeek Desktop 把稳定桌面外壳与 Harness Runtime 分开。用户只需更换一个 Git 仓库地址，就能改变 Desktop 下次运行的 Runtime；Tauri、原生菜单、凭据边界和桌面设置仍由原来的 Desktop 外壳提供。
 
 ## 普通用户
 
-发行版未配置可信更新服务时，Runtime 更新页显示“未配置”，应用不会连接任何更新地址。启用后可选择：
+Runtime 更新页始终显示当前桌面包的默认仓库。社区版默认使用：
 
-- **自动下载，下次启动安装**：后台发现新版本后下载并校验，退出应用前不替换正在运行的 Runtime。
+```text
+https://github.com/deepseek-desktop/deepseek-harness.git
+```
+
+用户可以直接替换成官方上游仓库：
+
+```text
+https://github.com/deepseek-ai/deepseek-harness.git
+```
+
+也可以填写自己维护的兼容 fork。设置中只有一个“Runtime 仓库”输入框，不需要另外填写更新清单、发布者或公钥。可用行为包括：
+
+- **自动下载，下次启动安装**：后台发现新 commit 后准备并验证，退出应用前不替换正在运行的 Runtime。
 - **发现后提醒（默认）**：只提示版本，由用户决定是否下载。
 - **仅手动检查**：只有点击“检查 Runtime”时访问更新服务。
 - **固定当前 Runtime**：停止检查、下载和待安装切换，直到取消固定。
 - **恢复内置 Runtime**：停止当前 Runtime，并把下次启动恢复到安装包内置版本。
 
-“Runtime 更新源”默认选择**官方更新源**，使用安装包内置的清单地址、Runtime 仓库身份、发布者和 Ed25519 公钥。需要使用镜像、自建服务或独立 Runtime 发行时，可以选择**自定义更新源**并填写四项信息：
+点击“检查 Runtime”后，Desktop 用 Git 读取所选仓库默认分支的 `HEAD`。发现 commit 变化后，用户确认准备，Desktop 会在应用数据目录中浅克隆仓库，复用安装包内置的 Node `24.20.0` 和 pnpm 安装锁定依赖、执行仓库的 `build`，再补齐桌面凭据代理和市场组件。用户不需要单独安装 Node 或 pnpm，但系统需要能够执行 Git；私有仓库的访问权限由用户自己的 Git 环境负责。
 
-1. 更新清单地址，例如 `https://updates.example.com/runtime/stable/manifest.json`。
-2. Runtime 仓库身份，必须与签名清单中的 `runtimeRepository` 完全一致。
-3. 清单中的发布者名称。
-4. 对应 Ed25519 原始 32 字节公钥的 Base64。
+填写仓库地址表示信任该仓库中的代码和依赖安装脚本在本机运行。建议只使用自己确认过的仓库，不要使用聊天消息或身份不明页面临时提供的地址。Desktop 不把仓库地址、Git 凭据、模型密钥或构建输出写入诊断包，也不会把一个仓库的凭据转发给另一个仓库。
 
-四项信息必须来自同一个受信任的 Runtime 发布维护者。选择自定义源表示允许该发布者向本机交付可执行 Runtime；不要使用聊天消息、临时网盘或身份不明页面提供的地址和公钥。配置不完整时更新保持禁用，且不会偷偷回退到官方源。切换源、仓库身份、发布者或公钥后，已检查但尚未下载的候选会立即作废，必须重新检查。
+更新失败不会覆盖当前可用版本。源码候选只有在依赖安装、构建、Node/ABI 检查、Runtime CLI 检查、桌面辅助包检查和真实本地服务 readiness smoke 全部通过后，才写入待切换指针。下次启动再次 smoke 后原子切换 `current`；新版本启动失败或连续恢复失败时自动回滚上一版，上一版也不可用时使用安装包内置 Runtime。Desktop 不调用 Runtime 私有工作区接口，项目目录仍由工作台自行管理。更新器只保留 `current`、`previous` 和 `pending` 引用的版本，启动和失败清理会移除 staging 与孤立目录。
 
-这里配置的是**生产制品更新源**，不是客户端源码目录。`RUNTIME_REPOSITORY` 仍是维护者在构建期使用的源码来源和清单身份；桌面客户端不会克隆仓库、安装构建工具或现场编译。自定义清单地址、仓库地址、发布者和公钥不会进入诊断包。
-
-更新失败不会覆盖当前可用版本。应用先下载到 staging，校验签名、有效期、发布历史、发布者、仓库、平台、协议、兼容版本、大小和 SHA-256，再解压到版本化目录。下次启动先检查 Node 和 Runtime CLI，再在隔离临时目录真实启动本地 Runtime，完成 readiness 与认证 HTTP 探活后才原子切换 `current` 指针。Desktop 不调用 Runtime 私有工作区接口，项目目录仍由工作台自行管理。新版本启动失败或连续恢复失败时，会自动回滚上一版；上一版也不可用时使用安装包内置 Runtime。更新器只保留 `current`、`previous` 和 `pending` 指针引用的版本，启动和失败清理都会移除遗留 staging 与孤立版本目录。
-
-离线环境可以长期使用当前或内置 Runtime。断网、服务器错误、下载中断、哈希不符或签名错误只会记录脱敏状态，不会影响当前 Runtime。诊断包包含当前版本、commit、来源和更新阶段，但不包含清单地址、令牌、公钥私钥或模型密钥。
+离线环境可以长期使用当前或内置 Runtime。断网、Git 不可用、依赖下载失败、构建失败或启动验证失败只会记录脱敏状态，不会影响当前 Runtime。诊断包包含当前版本、commit、来源和更新阶段，但不包含仓库地址、Git 凭据、令牌或模型密钥。
 
 ## 构建配置
 
@@ -37,7 +42,9 @@ RUNTIME_UPDATE_PUBLISHER=deepseek-desktop
 RUNTIME_UPDATE_PUBLIC_KEY=<Ed25519 原始 32 字节公钥的 Base64>
 ```
 
-配置优先级仍为“环境变量 > `.env` > 内置默认值”。这些构建变量组成桌面安装包的官方更新源档案。清单地址和公钥必须同时存在，否则构建直接失败；两者都留空则官方源禁用，但用户仍可在同窗口“设置 → 更新”中显式配置完整的自定义档案。`RUNTIME_REF` 非空表示开发者明确固定构建期 Runtime，此时默认关闭自动下载，避免联调版本被服务端替换。用户仍可在设置页切换提醒或手动模式。
+配置优先级仍为“环境变量 > `.env` > 内置默认值”。`RUNTIME_REPOSITORY` 同时决定打包时使用的 Runtime 来源和设置页显示的默认仓库；普通用户填写其他仓库时只保存这一项覆盖值。`RUNTIME_REF` 非空表示开发者明确固定构建期 Runtime，此时默认关闭自动准备，避免联调版本被仓库默认分支替换。用户仍可在设置页切换提醒或手动模式。
+
+`RUNTIME_UPDATE_MANIFEST_URL`、`RUNTIME_UPDATE_PUBLIC_KEY` 和 `RUNTIME_UPDATE_PUBLISHER` 是发行维护者可选的预构建签名制品通道，不出现在普通用户设置中。三项未配置时直接使用仓库源码准备；三项完整时，未覆盖仓库的用户继续使用签名制品通道，填写其他仓库后则切换为本机源码准备。
 
 生产发行建议使用 HTTPS。`file://` 适合内网 NAS 和离线验收；HTTP 制品仍会经过签名与 SHA-256 验证，但传输元数据不受 TLS 保护。客户端不跟随 HTTP 重定向，跨 Origin 下载必须由已签名清单明确列入 `allowedOrigins`，清单 URL 不得包含凭据、query 或 fragment。
 
@@ -58,7 +65,7 @@ corepack pnpm@11.24.0 runtime:update:package -- \
   --output /shared/releases/runtime/1.0.0
 ```
 
-Worker 自动识别 macOS arm64、macOS x64、Windows x64 或 Linux x64，只生成本机原生目标。该命令复用 `app:sync`、`runtime:sync` 和 `runtime:stage`，输出生产 Runtime、Node sidecar、`runtime-package.json`、目标描述和 SHA-256；用户机器不执行这些构建步骤。共享目录可位于本地 filesystem 或 NAS。
+Worker 自动识别 macOS arm64、macOS x64、Windows x64 或 Linux x64，只生成本机原生目标。该命令复用 `app:sync`、`runtime:sync` 和 `runtime:stage`，输出生产 Runtime、Node sidecar、`runtime-package.json`、目标描述和 SHA-256。使用这一可选签名制品通道的用户机器不执行源码构建；直接配置 Git 仓库的用户则按“普通用户”一节在本机准备 Runtime。共享目录可位于本地 filesystem 或 NAS。
 
 四个平台描述和制品齐全后，发布维护者签名统一清单：
 
@@ -117,6 +124,7 @@ corepack pnpm@11.24.0 runtime:update:manifest -- \
 ## 故障恢复
 
 - **下载或验签失败**：保留当前 Runtime，删除不完整 `.part` 文件后重试。
+- **仓库拉取、依赖安装或构建失败**：删除源码 staging，继续使用当前 Runtime；修复网络、Git 权限或仓库构建后重新检查。
 - **启动 smoke 失败**：删除待安装指针和孤立版本目录，继续使用当前 Runtime。
 - **切换后启动失败**：原子切回上一版并重新启动。
 - **上一版不可用**：删除外部 current 指针，恢复安装包内置 Runtime。

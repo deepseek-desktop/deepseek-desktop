@@ -11,6 +11,9 @@ const appConfig = JSON.parse(
     channel: "local" | "community" | "stable";
     signed: boolean;
   };
+  harness: {
+    repository: string;
+  };
 };
 
 const releaseChannelLabel = {
@@ -42,14 +45,16 @@ test("automatic Runtime startup, language switching, and status views fully load
   await expect(page.getByRole("heading", { name: "Updates", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Desktop update" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Independent Runtime update" })).toBeVisible();
-  const runtimeUpdateSource = page.getByRole("combobox", { name: "Runtime update source" });
-  await expect(runtimeUpdateSource).toHaveValue("official");
-  await runtimeUpdateSource.selectOption("custom");
-  await expect(page.getByRole("textbox", { name: "Manifest URL" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Runtime repository" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Publisher" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Ed25519 public key" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save update source" })).toBeDisabled();
+  await expect(page.getByRole("textbox", { name: "Manifest URL" })).toHaveCount(0);
+  const runtimeRepository = page.getByRole("textbox", { name: "Runtime repository" });
+  await expect(runtimeRepository).toBeVisible();
+  await expect(runtimeRepository).toHaveValue(appConfig.harness.repository);
+  await expect(page.getByRole("textbox", { name: "Publisher" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Ed25519 public key" })).toHaveCount(0);
+  const saveUpdateSource = page.getByRole("button", { name: "Save repository" });
+  await expect(saveUpdateSource).toBeDisabled();
+  await runtimeRepository.fill("https://github.com/example/runtime.git");
+  await expect(saveUpdateSource).toBeEnabled();
   await expect(page.getByRole("combobox", { name: "Update behavior" })).toHaveValue("notify");
   await expect(page.getByRole("combobox", { name: "Runtime channel" })).toHaveValue("stable");
   await expect(page.getByRole("button", { name: "Restore bundled Runtime" })).toBeVisible();

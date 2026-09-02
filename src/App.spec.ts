@@ -1,5 +1,5 @@
-import { flushPromises, mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import { appConfig } from "./app-config";
 import type { DesktopSettings, RuntimeStatus } from "./contracts";
@@ -7,18 +7,14 @@ import { checkForUpdates, checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagn
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   locale: "zh-CN",
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
   runtimeUpdateChannel: "stable",
   runtimeUpdateMode: "automatic",
-  runtimeUpdateSource: "official",
-  runtimeUpdateManifestUrl: null,
   runtimeUpdateRepository: null,
-  runtimeUpdatePublisher: null,
-  runtimeUpdatePublicKey: null,
   runtimePinnedVersion: null,
   desktopUpdateLastCheckAt: null,
   desktopUpdateIgnoredVersion: null,
@@ -101,21 +97,19 @@ vi.mock("./desktop", () => ({
   stopRuntime: vi.fn(async () => ({ ...runtime }))
 }));
 
+enableAutoUnmount(afterEach);
+
 describe(`${appConfig.productName} shell`, () => {
   beforeEach(() => {
     Object.assign(settings, {
-      schemaVersion: 5,
+      schemaVersion: 6,
       locale: "zh-CN",
       onboardingCompleted: false,
       updateChannel: "community",
       updateEnabled: false,
       runtimeUpdateChannel: "stable",
       runtimeUpdateMode: "automatic",
-      runtimeUpdateSource: "official",
-      runtimeUpdateManifestUrl: null,
       runtimeUpdateRepository: null,
-      runtimeUpdatePublisher: null,
-      runtimeUpdatePublicKey: null,
       runtimePinnedVersion: null,
       desktopUpdateLastCheckAt: null,
       desktopUpdateIgnoredVersion: null,
@@ -236,6 +230,28 @@ describe(`${appConfig.productName} shell`, () => {
     expect(openWorkbench).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    ["Cmd+W", { metaKey: true }],
+    ["Ctrl+W", { ctrlKey: true }]
+  ])("closes settings with %s without stopping the Runtime", async (_label, modifiers) => {
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+
+    listeners.surface?.("settings");
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "w",
+      bubbles: true,
+      cancelable: true,
+      ...modifiers
+    }));
+    await flushPromises();
+
+    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(openWorkbench).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
+
   it("starts a manual Desktop update check from the native menu event", async () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
@@ -350,34 +366,34 @@ describe(`${appConfig.productName} shell`, () => {
     await flushPromises();
     expect(checkRuntimeUpdate).toHaveBeenCalledOnce();
     expect(wrapper.text()).toContain("发现 Runtime 1.1.0");
-    await wrapper.findAll("button").find(button => button.text().includes("下载并等待"))?.trigger("click");
+    await wrapper.findAll("button").find(button => button.text().includes("准备并等待"))?.trigger("click");
     await flushPromises();
     expect(downloadRuntimeUpdate).toHaveBeenCalledOnce();
-    expect(wrapper.text()).toContain("下次启动安装");
+    expect(wrapper.text()).toContain("下次启动切换");
   });
 
-  it("saves a complete custom Runtime update trust profile", async () => {
+  it("replaces the Runtime repository without exposing update service fields", async () => {
     settings.onboardingCompleted = true;
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
     await wrapper.findAll("button").find(button => button.text().includes("更新"))?.trigger("click");
 
-    await wrapper.get("#runtime-update-source").setValue("custom");
-    await wrapper.get("#runtime-update-manifest-url").setValue("https://updates.example.com/runtime/manifest.json");
+    expect((wrapper.get("#runtime-update-repository").element as HTMLInputElement).value)
+      .toBe(appConfig.harness.repository);
+    expect(wrapper.get("#runtime-update-repository").attributes("type")).toBe("text");
+    expect(wrapper.get("#runtime-update-repository").attributes("inputmode")).toBe("url");
     await wrapper.get("#runtime-update-repository").setValue("https://git.example.com/runtime/runtime.git");
-    await wrapper.get("#runtime-update-publisher").setValue("example-runtime");
-    await wrapper.get("#runtime-update-public-key").setValue("BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
-    await wrapper.findAll("button").find(button => button.text() === "保存更新源")?.trigger("click");
+    expect(wrapper.find("#runtime-update-manifest-url").exists()).toBe(false);
+    expect(wrapper.find("#runtime-update-publisher").exists()).toBe(false);
+    expect(wrapper.find("#runtime-update-public-key").exists()).toBe(false);
+    await wrapper.findAll("button").find(button => button.text() === "保存仓库")?.trigger("click");
     await flushPromises();
 
     expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({
-      runtimeUpdateSource: "custom",
-      runtimeUpdateManifestUrl: "https://updates.example.com/runtime/manifest.json",
-      runtimeUpdateRepository: "https://git.example.com/runtime/runtime.git",
-      runtimeUpdatePublisher: "example-runtime",
-      runtimeUpdatePublicKey: "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="
+      schemaVersion: 6,
+      runtimeUpdateRepository: "https://git.example.com/runtime/runtime.git"
     }));
-    expect(wrapper.text()).toContain("Runtime 更新源已保存");
+    expect(wrapper.text()).toContain("Runtime 仓库已保存");
   });
 
   it("shows a Desktop release reminder and can ignore that exact version", async () => {

@@ -1,17 +1,23 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { downloadVerified } from "../lib/download-verified.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
+const temporaryRoot = join(root, "target");
 const content = Buffer.from("verified download\n");
 const checksum = createHash("sha256").update(content).digest("hex");
 
+async function temporaryDirectory(prefix) {
+  await mkdir(temporaryRoot, { recursive: true });
+  return mkdtemp(join(temporaryRoot, prefix));
+}
+
 test("verified downloads retry transient failures without changing integrity checks", async () => {
-  const directory = await mkdtemp(join(root, "target", "download-verified-test-"));
+  const directory = await temporaryDirectory("download-verified-test-");
   const destination = join(directory, "node.tar.gz");
   let requests = 0;
   const retries = [];
@@ -38,7 +44,7 @@ test("verified downloads retry transient failures without changing integrity che
 });
 
 test("verified downloads do not retry permanent HTTP or checksum failures", async () => {
-  const directory = await mkdtemp(join(root, "target", "download-verified-reject-test-"));
+  const directory = await temporaryDirectory("download-verified-reject-test-");
   const destination = join(directory, "node.tar.gz");
   let requests = 0;
 
@@ -74,7 +80,7 @@ test("verified downloads do not retry permanent HTTP or checksum failures", asyn
 });
 
 test("verified downloads reuse a valid cached file", async () => {
-  const directory = await mkdtemp(join(root, "target", "download-verified-cache-test-"));
+  const directory = await temporaryDirectory("download-verified-cache-test-");
   const destination = join(directory, "node.tar.gz");
 
   try {

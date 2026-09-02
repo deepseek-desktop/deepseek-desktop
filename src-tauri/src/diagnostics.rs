@@ -65,10 +65,7 @@ impl Diagnostics {
         let mut redacted_status = status.clone();
         redacted_status.url = status.url.as_ref().map(|url| redact(url));
         let mut redacted_settings = settings.clone();
-        redacted_settings.runtime_update_manifest_url = None;
         redacted_settings.runtime_update_repository = None;
-        redacted_settings.runtime_update_publisher = None;
-        redacted_settings.runtime_update_public_key = None;
         let document = DiagnosticDocument {
             generated_at: Utc::now().to_rfc3339(),
             desktop_version: env!("DEEPSEEK_DESKTOP_APP_VERSION"),
@@ -504,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn omits_custom_runtime_update_trust_details_from_diagnostics() {
+    fn omits_the_custom_runtime_repository_from_diagnostics() {
         let root = std::env::temp_dir().join(format!(
             "deepseek-desktop-update-source-diagnostics-{}",
             std::process::id()
@@ -521,15 +518,9 @@ mod tests {
         fs::create_dir_all(&paths.logs_dir).unwrap();
         let diagnostics = Diagnostics::new(paths);
         let settings = DesktopSettings {
-            runtime_update_source: "custom".to_owned(),
-            runtime_update_manifest_url: Some(
-                "https://private.example/runtime/manifest.json".to_owned(),
-            ),
             runtime_update_repository: Some(
                 "https://private.example/runtime/runtime.git".to_owned(),
             ),
-            runtime_update_publisher: Some("private-publisher".to_owned()),
-            runtime_update_public_key: Some("private-public-key".to_owned()),
             ..DesktopSettings::default()
         };
 
@@ -542,10 +533,7 @@ mod tests {
             .unwrap();
         let document = fs::read_to_string(exported).unwrap();
 
-        assert!(document.contains("\"runtimeUpdateSource\": \"custom\""));
         assert!(!document.contains("private.example"));
-        assert!(!document.contains("private-publisher"));
-        assert!(!document.contains("private-public-key"));
         fs::remove_dir_all(root).unwrap();
     }
 

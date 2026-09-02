@@ -6,6 +6,7 @@ mod native_menu;
 mod runtime;
 mod runtime_update;
 mod settings;
+#[cfg(target_os = "macos")]
 mod tao_view_guard;
 mod updater;
 
@@ -163,7 +164,7 @@ fn settings_update(
     state: State<'_, AppState>,
     settings: DesktopSettings,
 ) -> DesktopResult<DesktopSettings> {
-    let settings = state.settings.update(settings)?;
+    let settings = state.runtime_updates.save_settings(settings)?;
     native_menu::install(&app, &settings.locale)?;
     let _ = app.emit("desktop://locale", settings.locale.clone());
     Ok(settings)

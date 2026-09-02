@@ -18,11 +18,7 @@ export interface DesktopSettings {
   updateEnabled: boolean;
   runtimeUpdateChannel: "stable" | "preview";
   runtimeUpdateMode: "automatic" | "notify" | "manual";
-  runtimeUpdateSource: "official" | "custom";
-  runtimeUpdateManifestUrl: string | null;
   runtimeUpdateRepository: string | null;
-  runtimeUpdatePublisher: string | null;
-  runtimeUpdatePublicKey: string | null;
   runtimePinnedVersion: string | null;
   desktopUpdateLastCheckAt: string | null;
   desktopUpdateIgnoredVersion: string | null;

@@ -2,7 +2,7 @@
 
 - Harness 工作台成为单窗口唯一主界面；运行状态、诊断、Desktop 更新、Runtime 更新和关于改为同窗口设置层。打开设置只隐藏工作台子 WebView，关闭时复用同一页面与 Runtime，不重新导航、不丢失会话状态；Runtime 仍不获得 Tauri IPC。
 - macOS、Windows、Linux 的唯一完整功能菜单固定显示在窗口内容区顶部左侧，统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；Vue Shell 渲染三语标题，Tauri 弹出系统原生菜单项。Runtime 子 WebView 从菜单栏下方开始且不注入脚本，macOS 仅保留最小应用菜单，Windows/Linux 不挂载重复的完整原生窗口菜单。
-- macOS 窗口菜单采用系统当前光标位置弹出，并在 Desktop 初始化时为锁定的 Tao `0.35.3` 安装空 `NSEvent` 防护；macOS 26 在原生菜单收起后偶发传入空 `mouseMoved:` 事件时只丢弃该无效事件，正常鼠标事件继续调用 Tao 原实现。Windows/Linux 仍保留窗口内坐标定位且不应用该平台补丁。
+- macOS 窗口菜单采用系统当前光标位置弹出，并在 Desktop 初始化时为锁定的 Tao `0.35.3` 安装视图状态防护；macOS 26 在 `TaoView.taoState` 已脱离后继续投递输入事件时只丢弃这些失去状态的事件，状态存在时继续调用 Tao 原实现。防护只覆盖纯事件投递处理器，不拦截生命周期、布局或 tracking rect 回调；Windows/Linux 仍保留窗口内坐标定位且不应用该平台补丁。
 - Runtime Supervisor 支持独立运行目录、随机端口、浏览器令牌换取会话 Cookie、带认证的 readiness、有限恢复、主动停止和进程树清理；旧版无令牌 Runtime 保持兼容，仅 Runtime 制品、进程退出或启动健康失败触发回滚，配置、凭据和权限错误保持原版本并给出明确诊断。
 - Desktop 启动后自动拉起空闲 Runtime，并在 readiness 通过后直接进入工作台；已就绪实例不重复启动，失败时保留管理、重试和诊断入口。用户无需点击启动或选择目录，项目目录、会话和文件边界由 Runtime 工作台自行管理。
 - 使用跨平台本地加密凭据库，具备短期会话授权、记录枚举、失败回滚和旧明文索引迁移。
@@ -15,7 +15,7 @@
 - 原生窗口标题读取构建注入的真实桌面版本，并统一使用单个 `v` 前缀，方便问题反馈定位。
 - 窗口恢复会先验证保存坐标是否仍落在已连接显示器；外接屏仍在线时保留原位置，断开后自动回到主显示器，避免应用运行但窗口位于屏幕外。
 - Runtime 模型设置页的内容列和滚动区具备明确的 flex 高度约束，Windows 小窗口中的长自定义 Provider 表单可以滚动到最后一项；锁定 Runtime 使用可重复、路径受限且要求唯一命中的文本替换，避免压缩产物整行 patch 漂移。
-- 点击原生窗口关闭按钮会按当前语言显示确认框；取消后窗口和 Runtime 保持运行，确认后退出整个 Desktop 并由既有退出清理链停止 Runtime，避免误关和无窗口后台残留。
+- 点击原生窗口关闭按钮或执行“退出”会按当前语言显示确认框；取消后窗口和 Runtime 保持运行，确认后退出整个 Desktop 并由既有退出清理链停止 Runtime。设置层中的“关闭设置”和 `Cmd/Ctrl+W` 只返回原工作台，不关闭原生窗口或停止 Runtime。
 - 正式发行统一由 GitHub Actions 官方托管 Runner 原生构建：完整 SemVer Tag 触发 macOS ARM64、macOS x64、Windows x64 和 Linux x64 矩阵，四目标全部成功后才创建 Release。
 - 四个平台复用唯一 `package:community` / `desktop:package` 构建事实来源；公开 Release 只保留两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和统一 `SHA256SUMS`。
 - Release 正文会在确认六个公开文件完整后，按当前 Tag 和版本生成五个平台安装包及 `SHA256SUMS` 的直达链接；GitHub 自带 `Assets` 是否展开不再影响用户下载。
@@ -26,7 +26,8 @@
 - 工具链锁统一要求四个平台使用 Node `24.20.0` / ABI `137`；各官方 Runner 在打包前验证实际版本，缓存与内部 BUILD-INFO 同时绑定目标 triple 和工具链身份。
 - `.ai/skills/release-workflow.md` 是 Agent 唯一发布运行手册，固化本地前置门禁、不可变 SemVer Tag、四平台 job 诊断、新 Tag 恢复以及 Release 资产与 SHA-256 验收。
 - 已建立 Runtime 独立更新协议：四平台原生生产闭包、Ed25519 签名清单、清单有效期与反回放、流式下载、兼容性与包版本验证、受限解压、真实服务启动 smoke、原子切换、上一版回滚、内置基线恢复和无引用旧版本清理。反回放接受记录在暂存成功后写入、随内置基线恢复清除；启动激活在后台线程执行并对外发布 `applying`；启动失败回滚等待更新操作锁，不会因自动检查占锁而跳过。
-- Runtime 更新页支持官方与自定义更新源档案。自定义源同时绑定签名清单 URL、Runtime 仓库身份、发布者和 Ed25519 公钥；配置不完整时关闭更新而不跨源回退，检查结果绑定来源指纹，诊断导出剔除完整来源档案。
+- Runtime 更新页只显示一个仓库地址：默认使用构建时的社区 Runtime 仓库，用户可替换为官方上游或自己的兼容 fork。仓库模式读取默认分支 HEAD，在应用数据目录复用内置 Node/pnpm 构建并 smoke 候选；设置 schema 会迁移并清除旧清单、发布者和公钥字段，诊断导出剔除仓库地址。可选预构建签名制品通道继续保留为维护者能力。
+- 当前功能簇已在 macOS ARM64 安装版和 Windows 11 ARM64 虚拟机的 x64 应用模拟环境完成真实窗口验收：工作台自动进入、五组窗口菜单可打开且不退出、长设置表单可滚动、关闭确认可取消并可确认清理 Desktop 与 Runtime。Windows x64 Rust 测试、Clippy、E2E、Runtime smoke 和 release 应用编译通过；NSIS 仅因 ARM64 虚拟机无法启动其 x86 子进程而未在该环境生成安装器，正式 Windows x64 与 Linux x64 安装包仍由 GitHub 官方原生 Runner 验收。
 - 本地打包和 CI 原生矩阵均扫描实际交付闭包，拒绝 `.env`、密钥、本机绝对路径及符号链接泄漏；CI 第三方 Action 使用不可变 commit。
 - Runtime staging 在生成 manifest 前移除依赖包中的 `test`、`tests`、`__tests__` 及 `*.spec.*` / `*.test.*` 开发源码，闭包策略进入内容寻址缓存键；校验器会拒绝测试文件回流，避免上游测试凭据样本进入安装包。
 - CI 的 `NO_STRIP` 仅允许出现在 Linux AppImage 打包步骤；macOS 与 Windows 不继承该变量。制品扫描协议 v2 允许 AppImage 根目录内的可移植相对链接，同时拒绝绝对链接、根外逃逸和循环；CI 使用项目工作区与 Runner 临时目录等精确根路径。PEM 私钥检查覆盖 UTF-8/UTF-16 文本，不误判 `libgnutls` 等系统库内置的公开自检向量；二进制仍扫描令牌和本机路径。

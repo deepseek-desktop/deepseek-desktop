@@ -34,6 +34,7 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 /// update operation lock — and block the user's own actions — for twenty minutes.
 const MANIFEST_TIMEOUT: Duration = Duration::from_secs(30);
 const SMOKE_TIMEOUT: Duration = Duration::from_secs(30);
+const REPOSITORY_COMMAND_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const MANIFEST_CLOCK_SKEW: chrono::TimeDelta = chrono::TimeDelta::minutes(15);
 
 #[derive(Clone, Debug)]
@@ -153,6 +154,49 @@ struct VerifiedRelease {
 }
 
 #[derive(Clone, Debug)]
+struct RepositoryRelease {
+    source_fingerprint: [u8; 32],
+    repository: String,
+    commit: String,
+}
+
+#[derive(Clone, Debug)]
+enum AvailableRuntime {
+    Manifest(Box<VerifiedRelease>),
+    Repository(RepositoryRelease),
+}
+
+impl AvailableRuntime {
+    fn source_fingerprint(&self) -> [u8; 32] {
+        match self {
+            Self::Manifest(release) => release.source_fingerprint,
+            Self::Repository(release) => release.source_fingerprint,
+        }
+    }
+
+    fn available_version(&self) -> String {
+        match self {
+            Self::Manifest(release) => release.payload.runtime_version.clone(),
+            Self::Repository(release) => format!("commit {}", &release.commit[..12]),
+        }
+    }
+
+    fn matches_channel(&self, channel: &str) -> bool {
+        match self {
+            Self::Manifest(release) => release.payload.channel == channel,
+            Self::Repository(_) => true,
+        }
+    }
+
+    fn total_bytes(&self) -> Option<u64> {
+        match self {
+            Self::Manifest(release) => Some(release.artifact.size),
+            Self::Repository(_) => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 struct RuntimeUpdateConfig {
     manifest_url: Option<Url>,
     publisher: String,
@@ -172,7 +216,7 @@ pub struct RuntimeUpdateManager {
     store: Arc<RuntimeStore>,
     config: RuntimeUpdateConfig,
     status: Mutex<RuntimeUpdateStatus>,
-    available: Mutex<Option<VerifiedRelease>>,
+    available: Mutex<Option<AvailableRuntime>>,
     operation: Mutex<()>,
 }
 
@@ -277,6 +321,13 @@ impl RuntimeStore {
         }
         self.prune_versions()?;
         Ok(())
+    }
+
+    fn discard_pending(&self) -> DesktopResult<()> {
+        if self.pending.exists() {
+            fs::remove_file(&self.pending)?;
+        }
+        self.prune_versions()
     }
 
     fn cleanup_staging(&self) -> DesktopResult<()> {
@@ -447,8 +498,8 @@ impl RuntimeUpdateManager {
         let stale_available = {
             let mut available = self.lock_available()?;
             let stale = available.as_ref().is_some_and(|release| {
-                release.payload.channel != settings.runtime_update_channel
-                    || release.source_fingerprint != source_fingerprint
+                !release.matches_channel(&settings.runtime_update_channel)
+                    || release.source_fingerprint() != source_fingerprint
                     || settings.runtime_pinned_version.is_some()
             });
             if stale {
@@ -482,6 +533,24 @@ impl RuntimeUpdateManager {
             status.available_version = None;
         }
         Ok(status)
+    }
+
+    pub fn save_settings(&self, settings: DesktopSettings) -> DesktopResult<DesktopSettings> {
+        let settings = SettingsStore::validated(settings)?;
+        let previous = self.settings.get()?;
+        if previous.runtime_update_repository == settings.runtime_update_repository {
+            return self.settings.update(settings);
+        }
+
+        let _operation = self.lock_operation()?;
+        self.store.discard_pending()?;
+        *self.lock_available()? = None;
+        let settings = self.settings.update(settings)?;
+        let status = self.status()?;
+        self.set_status(status)?;
+        self.diagnostics
+            .append("runtime-update", "Runtime repository selection changed");
+        Ok(settings)
     }
 
     fn apply_pending_on_startup(&self) -> DesktopResult<RuntimeUpdateStatus> {
@@ -547,6 +616,33 @@ impl RuntimeUpdateManager {
         }
         let config = self.config.resolved_for(&settings)?;
         self.publish(RuntimeUpdatePhase::Checking, "checking")?;
+        if config.uses_repository() {
+            let repository = config.runtime_repository.clone();
+            let commit = match repository_head(&repository) {
+                Ok(commit) => commit,
+                Err(error) => {
+                    self.diagnostics.append(
+                        "runtime-update",
+                        &format!("repository update check failed: {error}"),
+                    );
+                    self.publish(RuntimeUpdatePhase::Failed, "check-failed")?;
+                    return Err(error);
+                }
+            };
+            if commit == self.status()?.current_commit {
+                return self.publish(RuntimeUpdatePhase::Idle, "up-to-date");
+            }
+            let release = AvailableRuntime::Repository(RepositoryRelease {
+                source_fingerprint: config.source_fingerprint(),
+                repository,
+                commit,
+            });
+            let version = release.available_version();
+            *self.lock_available()? = Some(release);
+            let mut status = self.publish(RuntimeUpdatePhase::Available, "available")?;
+            status.available_version = Some(version);
+            return self.set_status(status);
+        }
         let release = match self.fetch_release(&settings.runtime_update_channel, &config) {
             Ok(release) => release,
             Err(error) => {
@@ -571,7 +667,7 @@ impl RuntimeUpdateManager {
             return self.publish(RuntimeUpdatePhase::Idle, "up-to-date");
         }
         let version = release.payload.runtime_version.clone();
-        *self.lock_available()? = Some(release);
+        *self.lock_available()? = Some(AvailableRuntime::Manifest(Box::new(release)));
         let mut status = self.publish(RuntimeUpdatePhase::Available, "available")?;
         status.available_version = Some(version);
         self.set_status(status)
@@ -587,38 +683,51 @@ impl RuntimeUpdateManager {
         let release = self.lock_available()?.clone().ok_or_else(|| {
             DesktopError::InvalidConfiguration("check for a Runtime update first".to_owned())
         })?;
-        if release.payload.channel != settings.runtime_update_channel {
+        if !release.matches_channel(&settings.runtime_update_channel) {
             *self.lock_available()? = None;
             return Err(DesktopError::InvalidConfiguration(
                 "Runtime update channel changed; check for updates again".to_owned(),
             ));
         }
-        if release.source_fingerprint != config.source_fingerprint() {
+        if release.source_fingerprint() != config.source_fingerprint() {
             *self.lock_available()? = None;
             return Err(DesktopError::InvalidConfiguration(
                 "Runtime update source changed; check for updates again".to_owned(),
             ));
         }
-        let mut status = self.publish(RuntimeUpdatePhase::Downloading, "downloading")?;
-        status.available_version = Some(release.payload.runtime_version.clone());
-        status.total_bytes = Some(release.artifact.size);
+        let mut status = self.publish(
+            RuntimeUpdatePhase::Downloading,
+            match &release {
+                AvailableRuntime::Manifest(_) => "downloading",
+                AvailableRuntime::Repository(_) => "preparing-repository",
+            },
+        )?;
+        status.available_version = Some(release.available_version());
+        status.total_bytes = release.total_bytes();
         self.set_status(status)?;
-        let pointer = match self.download_release(&release) {
+        let prepared = match &release {
+            AvailableRuntime::Manifest(release) => self.download_release(release),
+            AvailableRuntime::Repository(release) => self.prepare_repository_runtime(release),
+        };
+        let pointer = match prepared {
             Ok(pointer) => pointer,
             Err(error) => {
                 self.diagnostics.append(
                     "runtime-update",
-                    &format!("Runtime download rejected: {error}"),
+                    &format!("Runtime preparation rejected: {error}"),
                 );
                 self.publish(RuntimeUpdatePhase::Failed, "download-failed")?;
                 return Err(error);
             }
         };
-        if let Err(error) = self
-            .store
-            .record_manifest_acceptance(&release.payload)
-            .and_then(|()| write_json_atomic(&self.store.pending, &pointer))
-        {
+        let stage = match &release {
+            AvailableRuntime::Manifest(release) => self
+                .store
+                .record_manifest_acceptance(&release.payload)
+                .and_then(|()| write_json_atomic(&self.store.pending, &pointer)),
+            AvailableRuntime::Repository(_) => write_json_atomic(&self.store.pending, &pointer),
+        };
+        if let Err(error) = stage {
             let _ = self.store.prune_versions();
             self.publish(RuntimeUpdatePhase::Failed, "download-failed")?;
             return Err(error);
@@ -627,8 +736,8 @@ impl RuntimeUpdateManager {
         let mut status = self.publish(RuntimeUpdatePhase::Staged, "restart-to-apply")?;
         status.available_version = Some(pointer.runtime_version.clone());
         status.pending_version = Some(pointer.runtime_version);
-        status.downloaded_bytes = release.artifact.size;
-        status.total_bytes = Some(release.artifact.size);
+        status.downloaded_bytes = release.total_bytes().unwrap_or_default();
+        status.total_bytes = release.total_bytes();
         self.set_status(status)
     }
 
@@ -809,6 +918,150 @@ impl RuntimeUpdateManager {
         result
     }
 
+    fn prepare_repository_runtime(
+        &self,
+        release: &RepositoryRelease,
+    ) -> DesktopResult<RuntimePointer> {
+        let staging = self
+            .store
+            .root
+            .join("staging")
+            .join(format!("repository-{}", Uuid::new_v4()));
+        let source = staging.join("source");
+        let candidate = staging.join("candidate");
+        fs::create_dir_all(&staging)?;
+        let result = (|| {
+            let source_path = source.to_string_lossy().into_owned();
+            run_repository_command(
+                Path::new("git"),
+                &["clone", "--depth", "1", &release.repository, &source_path],
+                None,
+                REPOSITORY_COMMAND_TIMEOUT,
+                None,
+                false,
+            )?;
+            let commit = run_repository_command(
+                Path::new("git"),
+                &["rev-parse", "HEAD"],
+                Some(&source),
+                SMOKE_TIMEOUT,
+                None,
+                true,
+            )?;
+            if commit.trim() != release.commit {
+                return Err(DesktopError::InvalidConfiguration(
+                    "Runtime repository changed; check for updates again".to_owned(),
+                ));
+            }
+
+            let current = self.store.location()?;
+            let pnpm_cli = current.runtime_dir.join("node_modules/pnpm/bin/pnpm.cjs");
+            if !pnpm_cli.is_file() {
+                return Err(DesktopError::RuntimeArtifactMissing(
+                    pnpm_cli.display().to_string(),
+                ));
+            }
+            let tools = staging.join("tools");
+            prepare_repository_tool_wrappers(&tools, &current.node, &pnpm_cli)?;
+            let node = current.node.to_string_lossy().into_owned();
+            let pnpm = pnpm_cli.to_string_lossy().into_owned();
+            run_repository_command(
+                &current.node,
+                &[&pnpm, "install", "--frozen-lockfile"],
+                Some(&source),
+                REPOSITORY_COMMAND_TIMEOUT,
+                Some(&tools),
+                false,
+            )?;
+            run_repository_command(
+                Path::new(&node),
+                &[&pnpm, "run", "build"],
+                Some(&source),
+                REPOSITORY_COMMAND_TIMEOUT,
+                Some(&tools),
+                false,
+            )?;
+
+            let runtime_version = read_package_version(&source.join("package.json"))?;
+            let runtime_dir = candidate.join("runtime");
+            fs::create_dir_all(&candidate)?;
+            fs::rename(&source, &runtime_dir)?;
+            let support_packages = [
+                "deepseek-desktop-bundle",
+                "deepseek-desktop-credentials-vault",
+                "dshmarket",
+                "pnpm",
+            ];
+            for package in support_packages {
+                let from = current.runtime_dir.join("node_modules").join(package);
+                let to = runtime_dir.join("node_modules").join(package);
+                replace_with_directory_copy(&from, &to)?;
+            }
+
+            let node_file = if cfg!(windows) { "node.exe" } else { "node" };
+            let staged_node = candidate.join(node_file);
+            fs::copy(&current.node, &staged_node)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&staged_node, fs::Permissions::from_mode(0o700))?;
+            }
+            let node_version = run_smoke_command(&staged_node, &["--version"], None)?
+                .trim()
+                .trim_start_matches('v')
+                .to_owned();
+            let node_module_abi =
+                run_smoke_command(&staged_node, &["-p", "process.versions.modules"], None)?
+                    .trim()
+                    .to_owned();
+            let credential_provider_version = read_package_version(
+                &runtime_dir.join("node_modules/deepseek-desktop-credentials-vault/package.json"),
+            )?;
+            let market_version =
+                read_package_version(&runtime_dir.join("node_modules/dshmarket/package.json"))?;
+            let directory = version_directory(&runtime_version, &release.commit)?;
+            let mut identity = Sha256::new();
+            identity.update(release.repository.as_bytes());
+            identity.update([0]);
+            identity.update(release.commit.as_bytes());
+            let pointer = RuntimePointer {
+                schema_version: 1,
+                directory: directory.clone(),
+                runtime_version,
+                runtime_commit: release.commit.clone(),
+                target: env!("DEEPSEEK_DESKTOP_TARGET").to_owned(),
+                entry: "apps/cli/lib/bin.js".to_owned(),
+                node_file: node_file.to_owned(),
+                node_version,
+                node_module_abi,
+                runtime_protocol_version: self.config.runtime_protocol_version,
+                credential_protocol_version: self.config.credential_protocol_version,
+                credential_provider_version,
+                market_version,
+                artifact_sha256: format!("{:x}", identity.finalize()),
+            };
+            let location = RuntimeLocation {
+                runtime_dir,
+                node: staged_node,
+                entry: pointer.entry.clone(),
+                version: pointer.runtime_version.clone(),
+                commit: pointer.runtime_commit.clone(),
+                source: "updated".to_owned(),
+            };
+            smoke_candidate(&location, &pointer)?;
+            let destination = self.store.versions.join(&directory);
+            if destination.exists() {
+                fs::remove_dir_all(&destination)?;
+            }
+            fs::rename(&candidate, destination)?;
+            Ok(pointer)
+        })();
+        if staging.exists() {
+            let _ = fs::remove_dir_all(staging);
+        }
+        result
+    }
+
     fn publish(
         &self,
         phase: RuntimeUpdatePhase,
@@ -822,7 +1075,7 @@ impl RuntimeUpdateManager {
         status.available_version = self
             .lock_available()?
             .as_ref()
-            .map(|release| release.payload.runtime_version.clone());
+            .map(AvailableRuntime::available_version);
         status.pending_version =
             read_pointer(&self.store.pending)?.map(|pointer| pointer.runtime_version);
         self.set_status(status)
@@ -840,7 +1093,7 @@ impl RuntimeUpdateManager {
             .map_err(|_| DesktopError::Other("Runtime update status lock is poisoned".to_owned()))
     }
 
-    fn lock_available(&self) -> DesktopResult<MutexGuard<'_, Option<VerifiedRelease>>> {
+    fn lock_available(&self) -> DesktopResult<MutexGuard<'_, Option<AvailableRuntime>>> {
         self.available
             .lock()
             .map_err(|_| DesktopError::Other("Runtime update release lock is poisoned".to_owned()))
@@ -895,40 +1148,26 @@ impl RuntimeUpdateConfig {
     }
 
     fn resolved_for(&self, settings: &DesktopSettings) -> DesktopResult<Self> {
-        if settings.runtime_update_source == "official" {
+        let Some(repository) = settings.runtime_update_repository.as_deref() else {
             return Ok(self.clone());
-        }
-        let (Some(manifest_url), Some(repository), Some(publisher), Some(public_key)) = (
-            settings.runtime_update_manifest_url.as_deref(),
-            settings.runtime_update_repository.as_deref(),
-            settings.runtime_update_publisher.as_deref(),
-            settings.runtime_update_public_key.as_deref(),
-        ) else {
-            let mut disabled = self.clone();
-            disabled.manifest_url = None;
-            disabled.publisher.clear();
-            disabled.public_key = None;
-            disabled.runtime_repository.clear();
-            return Ok(disabled);
         };
 
         let mut resolved = self.clone();
-        resolved.manifest_url = Some(Url::parse(manifest_url).map_err(|error| {
-            DesktopError::InvalidConfiguration(format!(
-                "Runtime update manifest URL is invalid: {error}"
-            ))
-        })?);
-        resolved.publisher = publisher.to_owned();
-        resolved.public_key = Some(parse_public_key(public_key)?);
+        resolved.manifest_url = None;
+        resolved.publisher.clear();
+        resolved.public_key = None;
         resolved.runtime_repository = repository.to_owned();
         Ok(resolved)
     }
 
     fn is_enabled(&self) -> bool {
-        self.manifest_url.is_some()
-            && self.public_key.is_some()
-            && !self.publisher.is_empty()
-            && !self.runtime_repository.is_empty()
+        !self.runtime_repository.is_empty()
+            && (self.manifest_url.is_none()
+                || (self.public_key.is_some() && !self.publisher.is_empty()))
+    }
+
+    fn uses_repository(&self) -> bool {
+        self.manifest_url.is_none() && !self.runtime_repository.is_empty()
     }
 
     fn source_fingerprint(&self) -> [u8; 32] {
@@ -1396,6 +1635,223 @@ fn read_url_limited(url: &Url, limit: u64, expected_size: Option<u64>) -> Deskto
     }
 }
 
+fn canonical_repository_identity(value: &str) -> DesktopResult<String> {
+    let value = value.trim();
+    if let Some((user_host, path)) = value.split_once(':')
+        && user_host.starts_with("git@")
+        && !path.is_empty()
+        && !value.contains(char::is_whitespace)
+    {
+        let path = path
+            .trim_end_matches('/')
+            .strip_suffix(".git")
+            .unwrap_or(path.trim_end_matches('/'));
+        return Ok(format!("{user_host}:{path}"));
+    }
+    let mut url = Url::parse(value.trim()).map_err(|error| {
+        DesktopError::InvalidConfiguration(format!("Runtime repository URL is invalid: {error}"))
+    })?;
+    if !matches!(url.scheme(), "https" | "http" | "ssh" | "git" | "file")
+        || (matches!(url.scheme(), "https" | "http") && !url.username().is_empty())
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime repository URL is invalid".to_owned(),
+        ));
+    }
+    let path = url.path().trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path).to_owned();
+    url.set_path(&path);
+    Ok(url.to_string().trim_end_matches('/').to_owned())
+}
+
+fn repository_head(repository: &str) -> DesktopResult<String> {
+    canonical_repository_identity(repository)?;
+    let output = run_repository_command(
+        Path::new("git"),
+        &["ls-remote", repository, "HEAD"],
+        None,
+        SMOKE_TIMEOUT,
+        None,
+        true,
+    )?;
+    let mut fields = output.split_whitespace();
+    let commit = fields.next().unwrap_or_default();
+    let reference = fields.next().unwrap_or_default();
+    if commit.len() != 40
+        || !commit.chars().all(|value| value.is_ascii_hexdigit())
+        || reference != "HEAD"
+        || fields.next().is_some()
+    {
+        return Err(DesktopError::InvalidConfiguration(
+            "Runtime repository did not return a valid HEAD commit".to_owned(),
+        ));
+    }
+    Ok(commit.to_ascii_lowercase())
+}
+
+fn run_repository_command(
+    command: &Path,
+    arguments: &[&str],
+    cwd: Option<&Path>,
+    timeout: Duration,
+    tools: Option<&Path>,
+    capture_output: bool,
+) -> DesktopResult<String> {
+    let mut process = Command::new(command);
+    process
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(if capture_output {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .env("CI", "1");
+    if let Some(cwd) = cwd {
+        process.current_dir(cwd);
+    }
+    if let Some(tools) = tools {
+        let mut paths = vec![tools.to_path_buf()];
+        if let Some(path) = std::env::var_os("PATH") {
+            paths.extend(std::env::split_paths(&path));
+        }
+        process.env(
+            "PATH",
+            std::env::join_paths(paths).map_err(|error| DesktopError::Other(error.to_string()))?,
+        );
+    }
+    configure_hidden_process(&mut process);
+    let mut child = process.spawn().map_err(|error| {
+        DesktopError::Other(format!(
+            "unable to run {}; install Git when using a source Runtime repository: {error}",
+            command.display()
+        ))
+    })?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            if !status.success() {
+                return Err(DesktopError::Other(format!(
+                    "Runtime repository command exited with {status}"
+                )));
+            }
+            let mut output = String::new();
+            if capture_output && let Some(mut stdout) = child.stdout.take() {
+                stdout.read_to_string(&mut output)?;
+            }
+            return Ok(output.trim().to_owned());
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(DesktopError::Other(
+                "Runtime repository command timed out".to_owned(),
+            ));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn prepare_repository_tool_wrappers(
+    tools: &Path,
+    node: &Path,
+    pnpm_cli: &Path,
+) -> DesktopResult<()> {
+    fs::create_dir_all(tools)?;
+    #[cfg(windows)]
+    {
+        let pnpm_wrapper = format!(
+            "@echo off\r\n\"{}\" \"{}\" %*\r\n",
+            node.display(),
+            pnpm_cli.display()
+        );
+        let node_wrapper = format!("@echo off\r\n\"{}\" %*\r\n", node.display());
+        fs::write(tools.join("node.cmd"), node_wrapper)?;
+        fs::write(tools.join("pnpm.cmd"), &pnpm_wrapper)?;
+        fs::write(tools.join("npm.cmd"), pnpm_wrapper)?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let pnpm_wrapper = format!(
+            "#!/bin/sh\nexec \"{}\" \"{}\" \"$@\"\n",
+            node.display(),
+            pnpm_cli.display()
+        );
+        let wrappers = [
+            (
+                "node",
+                format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", node.display()),
+            ),
+            ("pnpm", pnpm_wrapper.clone()),
+            ("npm", pnpm_wrapper),
+        ];
+        for (name, wrapper) in wrappers {
+            let path = tools.join(name);
+            fs::write(&path, &wrapper)?;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+        }
+    }
+    Ok(())
+}
+
+fn read_package_version(path: &Path) -> DesktopResult<String> {
+    let manifest: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
+    let version = manifest
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            DesktopError::InvalidConfiguration(format!(
+                "Runtime package has no version: {}",
+                path.display()
+            ))
+        })?;
+    Version::parse(version).map_err(|error| {
+        DesktopError::InvalidConfiguration(format!("Runtime package version is invalid: {error}"))
+    })?;
+    Ok(version.to_owned())
+}
+
+fn replace_with_directory_copy(source: &Path, destination: &Path) -> DesktopResult<()> {
+    if !source.is_dir() {
+        return Err(DesktopError::RuntimeArtifactMissing(
+            source.display().to_string(),
+        ));
+    }
+    if let Ok(metadata) = fs::symlink_metadata(destination) {
+        if metadata.file_type().is_symlink() || metadata.is_file() {
+            fs::remove_file(destination)?;
+        } else {
+            fs::remove_dir_all(destination)?;
+        }
+    }
+    copy_directory(source, destination)
+}
+
+fn copy_directory(source: &Path, destination: &Path) -> DesktopResult<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = destination.join(entry.file_name());
+        let metadata = fs::metadata(&from)?;
+        if metadata.is_dir() {
+            copy_directory(&from, &to)?;
+        } else if metadata.is_file() {
+            fs::copy(&from, &to)?;
+        } else {
+            return Err(DesktopError::InvalidConfiguration(
+                "Runtime support package contains an unsupported file".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn read_response_limited(
     mut response: Response,
     limit: u64,
@@ -1828,22 +2284,87 @@ mod tests {
     }
 
     #[test]
-    fn custom_update_source_overrides_the_bundled_profile_as_one_trust_unit() {
+    fn repository_identity_ignores_git_suffix_and_trailing_slash() {
+        assert_eq!(
+            canonical_repository_identity("https://github.com/example/runtime.git").unwrap(),
+            canonical_repository_identity("https://github.com/example/runtime/").unwrap()
+        );
+    }
+
+    #[test]
+    fn repository_build_tools_pin_node_and_pnpm_to_the_bundled_runtime() {
+        let directory = TempDir::new().unwrap();
+        let tools = directory.path().join("tools");
+        let node = directory
+            .path()
+            .join(if cfg!(windows) { "node.exe" } else { "node" });
+        let pnpm = directory.path().join("pnpm.cjs");
+
+        prepare_repository_tool_wrappers(&tools, &node, &pnpm).unwrap();
+
+        let suffix = if cfg!(windows) { ".cmd" } else { "" };
+        let node_wrapper = fs::read_to_string(tools.join(format!("node{suffix}"))).unwrap();
+        let pnpm_wrapper = fs::read_to_string(tools.join(format!("pnpm{suffix}"))).unwrap();
+        let npm_wrapper = fs::read_to_string(tools.join(format!("npm{suffix}"))).unwrap();
+        assert!(node_wrapper.contains(node.to_string_lossy().as_ref()));
+        assert!(pnpm_wrapper.contains(node.to_string_lossy().as_ref()));
+        assert!(pnpm_wrapper.contains(pnpm.to_string_lossy().as_ref()));
+        assert_eq!(pnpm_wrapper, npm_wrapper);
+    }
+
+    #[test]
+    fn repository_head_reads_the_selected_repository_default_branch() {
+        let directory = TempDir::new().unwrap();
+        let repository = directory.path().join("runtime");
+        let run = |arguments: &[&str]| {
+            let status = Command::new("git")
+                .args(arguments)
+                .current_dir(directory.path())
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        run(&["init", "runtime"]);
+        fs::write(repository.join("package.json"), "{\"version\":\"1.0.0\"}\n").unwrap();
+        let status = Command::new("git")
+            .args(["add", "package.json"])
+            .current_dir(&repository)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let status = Command::new("git")
+            .args([
+                "-c",
+                "user.name=Runtime Test",
+                "-c",
+                "user.email=runtime@example.invalid",
+                "commit",
+                "-m",
+                "test",
+            ])
+            .current_dir(&repository)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let expected = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&repository)
+            .output()
+            .unwrap();
+        let repository_url = Url::from_file_path(&repository).unwrap().to_string();
+        assert_eq!(
+            repository_head(&repository_url).unwrap(),
+            String::from_utf8(expected.stdout).unwrap().trim()
+        );
+    }
+
+    #[test]
+    fn repository_override_replaces_the_packaged_update_source() {
         let official_key = SigningKey::from_bytes(&[1_u8; 32]);
-        let custom_key = SigningKey::from_bytes(&[2_u8; 32]);
         let official = config(&official_key);
         let settings = DesktopSettings {
-            runtime_update_source: "custom".to_owned(),
-            runtime_update_manifest_url: Some(
-                "https://updates.example.com/runtime/manifest.json".to_owned(),
-            ),
             runtime_update_repository: Some(
                 "https://git.example.com/runtime/runtime.git".to_owned(),
-            ),
-            runtime_update_publisher: Some("custom-publisher".to_owned()),
-            runtime_update_public_key: Some(
-                base64::engine::general_purpose::STANDARD
-                    .encode(custom_key.verifying_key().as_bytes()),
             ),
             ..DesktopSettings::default()
         };
@@ -1851,12 +2372,9 @@ mod tests {
         let resolved = official.resolved_for(&settings).unwrap();
 
         assert!(resolved.is_enabled());
-        assert_eq!(
-            resolved.manifest_url.as_ref().map(Url::as_str),
-            Some("https://updates.example.com/runtime/manifest.json")
-        );
-        assert_eq!(resolved.publisher, "custom-publisher");
-        assert_eq!(resolved.public_key, Some(custom_key.verifying_key()));
+        assert!(resolved.uses_repository());
+        assert!(resolved.manifest_url.is_none());
+        assert!(resolved.public_key.is_none());
         assert_eq!(
             resolved.runtime_repository,
             "https://git.example.com/runtime/runtime.git"
@@ -1865,23 +2383,17 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_custom_update_source_is_disabled_without_falling_back() {
+    fn missing_repository_override_uses_the_packaged_default() {
         let key = SigningKey::from_bytes(&[3_u8; 32]);
         let mut official = config(&key);
         official.manifest_url = Some(Url::parse("https://official.example/manifest.json").unwrap());
-        let settings = DesktopSettings {
-            runtime_update_source: "custom".to_owned(),
-            runtime_update_manifest_url: Some(
-                "https://custom.example/runtime/manifest.json".to_owned(),
-            ),
-            ..DesktopSettings::default()
-        };
+        let settings = DesktopSettings::default();
 
         let resolved = official.resolved_for(&settings).unwrap();
 
-        assert!(!resolved.is_enabled());
-        assert!(resolved.manifest_url.is_none());
-        assert!(resolved.public_key.is_none());
+        assert!(resolved.is_enabled());
+        assert_eq!(resolved.manifest_url, official.manifest_url);
+        assert_eq!(resolved.runtime_repository, official.runtime_repository);
     }
 
     fn payload(channel: &str, version: &str) -> RuntimeReleaseManifest {
@@ -2177,5 +2689,51 @@ mod tests {
         assert!(!store.current.exists());
         assert!(!store.versions.join(&pointer.directory).exists());
         assert!(!store.rollback().unwrap());
+    }
+
+    #[test]
+    fn discarding_a_pending_runtime_removes_its_unreferenced_candidate() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("runtime");
+        let versions = root.join("versions");
+        fs::create_dir_all(&versions).unwrap();
+        let store = RuntimeStore {
+            current: root.join("current.json"),
+            previous: root.join("previous.json"),
+            pending: root.join("pending.json"),
+            bundled: RuntimeLocation {
+                runtime_dir: temp.path().join("bundled"),
+                node: temp.path().join("node"),
+                entry: "entry.js".to_owned(),
+                version: "1.0.0".to_owned(),
+                commit: "b".repeat(40),
+                source: "bundled".to_owned(),
+            },
+            versions,
+            root,
+        };
+        let pointer = RuntimePointer {
+            schema_version: 1,
+            directory: "1.1.0-aaaaaaaaaaaa".to_owned(),
+            runtime_version: "1.1.0".to_owned(),
+            runtime_commit: "a".repeat(40),
+            target: env!("DEEPSEEK_DESKTOP_TARGET").to_owned(),
+            entry: "entry.js".to_owned(),
+            node_file: "node".to_owned(),
+            node_version: "24.20.0".to_owned(),
+            node_module_abi: "137".to_owned(),
+            runtime_protocol_version: 1,
+            credential_protocol_version: 1,
+            credential_provider_version: "1.0.0".to_owned(),
+            market_version: "1.0.0".to_owned(),
+            artifact_sha256: "a".repeat(64),
+        };
+        fs::create_dir_all(store.versions.join(&pointer.directory)).unwrap();
+        write_json_atomic(&store.pending, &pointer).unwrap();
+
+        store.discard_pending().unwrap();
+
+        assert!(!store.pending.exists());
+        assert!(!store.versions.join(&pointer.directory).exists());
     }
 }

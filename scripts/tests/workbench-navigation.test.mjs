@@ -42,3 +42,15 @@ test("closing a view never shares the quit path", async () => {
   assert.match(menu, /if !workbench_visible \{[\s\S]*?CLOSE_MENU_ID/u);
   assert.match(menu, /close_settings/u);
 });
+
+test("the TaoView Objective-C guard is compiled only on macOS", async () => {
+  const lib = await readFile(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
+  assert.match(
+    lib,
+    /#\[cfg\(target_os = "macos"\)\]\s*mod tao_view_guard;/u
+  );
+  assert.match(
+    lib,
+    /#\[cfg\(target_os = "macos"\)\]\s*tao_view_guard::install\(\)\?/u
+  );
+});

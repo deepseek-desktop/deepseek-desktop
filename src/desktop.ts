@@ -8,18 +8,14 @@ const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 export type DesktopMenuName = "file" | "edit" | "view" | "window" | "help";
 
 const browserSettings: DesktopSettings = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   locale: "zh-CN",
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
   runtimeUpdateChannel: appConfig.runtimeUpdate.channel,
   runtimeUpdateMode: appConfig.runtimeUpdate.autoUpdate ? "automatic" : "notify",
-  runtimeUpdateSource: "official",
-  runtimeUpdateManifestUrl: null,
   runtimeUpdateRepository: null,
-  runtimeUpdatePublisher: null,
-  runtimeUpdatePublicKey: null,
   runtimePinnedVersion: null,
   desktopUpdateLastCheckAt: null,
   desktopUpdateIgnoredVersion: null,
@@ -129,8 +125,8 @@ export async function openDesktopRelease(tag: string): Promise<void> {
 
 function browserRuntimeUpdateStatus(): RuntimeUpdateStatus {
   return {
-    enabled: Boolean(appConfig.runtimeUpdate.manifestUrl && appConfig.runtimeUpdate.publicKey),
-    phase: appConfig.runtimeUpdate.manifestUrl ? "idle" : "disabled",
+    enabled: Boolean(appConfig.harness.repository),
+    phase: appConfig.harness.repository ? "idle" : "disabled",
     currentVersion: appConfig.harness.ref.replace(/^dsh-v/u, "") || "development",
     currentCommit: "development",
     currentSource: "bundled",
@@ -141,7 +137,7 @@ function browserRuntimeUpdateStatus(): RuntimeUpdateStatus {
     pinnedVersion: browserSettings.runtimePinnedVersion,
     downloadedBytes: 0,
     totalBytes: null,
-    message: appConfig.runtimeUpdate.manifestUrl ? "idle" : "not-configured"
+    message: appConfig.harness.repository ? "idle" : "not-configured"
   };
 }
 
