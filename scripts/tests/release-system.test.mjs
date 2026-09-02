@@ -286,6 +286,9 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   assert.match(workflow, /--notes-file release-assets\/RELEASE-NOTES\.md/u);
   assert.match(workflow, /release\/\*\*\/SHA256SUMS/u);
   assert.match(workflow, /node scripts\/ci-release-prerelease\.mjs/u);
+  // The release list truncates titles, so the tag must be the whole title.
+  assert.match(workflow, /--title "\$GITHUB_REF_NAME"/u);
+  assert.doesNotMatch(workflow, /--title "\$product_name/u);
   assert.doesNotMatch(workflow, /DESKTOP_RELEASE_PRERELEASE/u);
 });
 

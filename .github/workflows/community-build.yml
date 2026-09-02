@@ -132,16 +132,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          product_name="$(node -p "require('./target/generated/app-config.json').productName")"
           mapfile -d '' assets < <(find release-assets/publish -maxdepth 1 -type f -print0 | sort -z)
           test "${#assets[@]}" -eq 6
           release_flags=()
           if [[ "$(node scripts/ci-release-prerelease.mjs)" == "true" ]]; then
             release_flags+=(--prerelease)
           fi
+          # The release list only shows a truncated title, so repeating the product
+          # name on every entry hides the one thing that tells them apart.
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "$product_name ${GITHUB_REF_NAME#v}" \
+            --title "$GITHUB_REF_NAME" \
             --notes-file release-assets/RELEASE-NOTES.md \
             "${release_flags[@]}" \
             --verify-tag

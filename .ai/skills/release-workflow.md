@@ -72,6 +72,8 @@ macOS 本机至少检查：
 
 ## 公开资产
 
+Release 标题直接使用 Tag 本身，与 Tags 页面一致；不要再拼接产品名，否则 Release 列表侧栏只会显示被截断的同一串产品名，反而看不出版本。
+
 Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-INFO` 供汇总核验，但不得公开。GitHub 的 `Assets` 展开状态由站点界面控制，仓库不能强制默认展开；`prepare-ci-release-notes.mjs` 必须根据当前 Tag 和完整公开资产集合在正文顶部生成 5 个安装包及 `SHA256SUMS` 的直接下载链接，让用户无需展开 `Assets` 也能下载。
 
 汇总门禁必须检查：
