@@ -34,4 +34,5 @@
 - 汇总门禁的跨平台身份比对排除 `harness.sha256`：Runtime 生产闭包内的 native prebuild 由各构建主机编译，四平台必然得到不同摘要；四份实测 BUILD-INFO 确认这是唯一跨平台变化字段，其余字段仍精确比对。
 - 本机 macOS ARM64 验收包已按发布手册四项检查通过：DMG 校验和一致、包内应用启动且窗口标题为真实版本、Runtime sidecar 作为应用子进程启动并仅监听 127.0.0.1 随机端口、工作台在同一原生窗口加载、退出后无残留进程与监听。启动令牌在 `desktop.log` 中以 `<redacted>` 记录。
 - `v1.0.24` 已由 GitHub 官方 Runner 完成四平台原生矩阵并发布（未签名 prerelease），公开资产为五个安装包加 `SHA256SUMS`，正文直达下载链接与 Tag 一致。
+- `v1.0.26` 已由 GitHub 官方 Runner 完成四平台原生矩阵并发布（未签名 prerelease），公开资产为五个安装包加 `SHA256SUMS`；Release 标题统一改为 Tag 本身，历史 Release 标题一并改写。
 - 后续判断必须以当前 HEAD、生成锁和实际 diff 为准，不能用历史发行结果替代当前验证。

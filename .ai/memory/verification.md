@@ -35,6 +35,11 @@
 - `v1.0.24` 成品 DMG 本机验收：SHA256SUMS 校验通过，`codesign --verify --deep --strict` 通过，主二进制原生 `arm64`，窗口标题含版本号；LaunchServices 启动后自动拉起 Runtime sidecar，窗口内菜单栏正确渲染「文件 / 编辑 / 视图 / 窗口 / 帮助」；多轮菜单交互尝试期间 Desktop 与 Runtime PID 均未变化，`~/Library/Logs/DiagnosticReports` 中 DeepSeek 崩溃报告保持 5 份未增加；退出后 app 与 Runtime 进程均归零。
 - `v1.0.24` 发布前的菜单交互未触发延迟空事件，因而不能证明崩溃路径已清除；后续 `1.0.24-test.2` 标准启动崩溃推翻了此前只依赖弹出位置的修复结论。当前可信回归以 `1.0.24-test.3` 的空事件保护和上文成品压力测试为准。
 - `v1.0.24` GitHub Actions 原生矩阵成功，Run `33546669378` 绑定 commit `41d61a5`：`shell-quality` 与四个 `native-build`、`publish-release` 六个 Job 全部成功。Release 为未签名 prerelease，公开资产严格为两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`；正文六条直达下载链接与当前 Tag 一致；抽检下载托管的 Windows 安装包，实测 SHA-256 与清单逐字一致、大小 58335442 相符。
+- `v1.0.25` 的 macOS x64 目标在 `runtime:sync` 阶段失败：从本地镜像克隆缓存检出时 git 默认硬链接 `.git/objects`，与镜像自身的 commit-graph 维护竞争，报 `hardlink different from source`。该竞态与平台无关，其余三个平台成功、`publish-release` 正确跳过，未创建不完整 Release，旧 Tag 未移动。
+- 该克隆改用 `--no-hardlinks`（与工作流中 Windows 短路径克隆一致），并在本机删除缓存检出触发真实重新克隆后验证：`runtime:sync --check` 通过、检出重建成功；新增源码契约测试锁定该参数。
+- `v1.0.26` 发布前本机复核（`2bded62`）：`verify` 12 阶段（81 配置 / 155 键 × 3 locale / 16 Vue / 19 跟随模型搜索 / 74 Rust / Clippy `-D warnings`）、`test:e2e` 2 项、`runtime:smoke`、`desktop:package` 全部通过；BUILD-INFO 记录 commit `2bded62`、`dirty=false`、闭包扫描 77369 个文件。成品 DMG 校验和一致、`codesign --verify --deep --strict` 通过、主二进制原生 `arm64`、启动后自动拉起 Runtime sidecar、退出无残留、无新增崩溃报告。
+- `v1.0.26` GitHub Actions 原生矩阵成功，Run `33592751008` 绑定 commit `2bded62`：六个 Job 全部成功。Release 标题为 `v1.0.26`（改为直接使用 Tag），未签名 prerelease，公开资产严格为两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`；正文六条直达下载链接与当前 Tag 一致；抽检下载托管的 Windows 安装包，实测 SHA-256 与清单逐字一致、大小 58351737 相符。
+- macOS 视图菜单崩溃路径在本轮**未**由本会话独立复现清除：合成点击无法使 NSMenu 弹出保持到可采样（已在两块显示器上确认无弹出），F10 疑被系统媒体键拦截，WebView 内容未暴露在辅助功能树中。该结论仍以上文 `1.0.24-test.3` 的 150 次五组菜单开关压力测试为准。
 
 ## 能力边界
 
