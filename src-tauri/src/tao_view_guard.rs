@@ -17,8 +17,11 @@
 //!
 //! The guard replaces those handlers with trampolines that drop the callback when
 //! `taoState` is null and forward everything else to Tao untouched. It only
-//! covers selectors whose signature is `(id, SEL)` or `(id, SEL, id)`; `drawRect:`
-//! passes an `NSRect` by value and is left alone rather than risk an ABI mismatch.
+//! Only pure event-delivery handlers are guarded. Dropping a mouse event for a
+//! view that has no state is invisible, whereas `viewDidMoveToWindow` and
+//! `resetCursorRects` rebuild the tracking rect and cursor rects AppKit relies on
+//! — skipping those leaves stale tracking registrations behind and AppKit later
+//! aborts trying to weakly reference a deallocating view.
 
 use std::ffi::{c_char, c_void};
 use std::sync::OnceLock;
@@ -26,7 +29,6 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::error::{DesktopError, DesktopResult};
 
-type VoidHandler = unsafe extern "C" fn(*mut c_void, *const c_void);
 type ArgumentHandler = unsafe extern "C" fn(*mut c_void, *const c_void, *mut c_void);
 
 unsafe extern "C" {
@@ -79,19 +81,6 @@ guarded_handler!(ORIGINAL_MOUSE_ENTERED, guarded_mouse_entered, (event: *mut c_v
 guarded_handler!(ORIGINAL_MOUSE_EXITED, guarded_mouse_exited, (event: *mut c_void), ArgumentHandler);
 guarded_handler!(ORIGINAL_MOUSE_DRAGGED, guarded_mouse_dragged, (event: *mut c_void), ArgumentHandler);
 guarded_handler!(ORIGINAL_SCROLL_WHEEL, guarded_scroll_wheel, (event: *mut c_void), ArgumentHandler);
-guarded_handler!(ORIGINAL_FRAME_DID_CHANGE, guarded_frame_did_change, (notification: *mut c_void), ArgumentHandler);
-guarded_handler!(
-    ORIGINAL_VIEW_DID_MOVE_TO_WINDOW,
-    guarded_view_did_move_to_window,
-    (),
-    VoidHandler
-);
-guarded_handler!(
-    ORIGINAL_RESET_CURSOR_RECTS,
-    guarded_reset_cursor_rects,
-    (),
-    VoidHandler
-);
 
 struct GuardedSelector {
     name: &'static std::ffi::CStr,
@@ -127,21 +116,6 @@ static GUARDED_SELECTORS: &[GuardedSelector] = &[
         name: c"scrollWheel:",
         original: &ORIGINAL_SCROLL_WHEEL,
         trampoline: guarded_scroll_wheel as *const () as *const c_void,
-    },
-    GuardedSelector {
-        name: c"frameDidChange:",
-        original: &ORIGINAL_FRAME_DID_CHANGE,
-        trampoline: guarded_frame_did_change as *const () as *const c_void,
-    },
-    GuardedSelector {
-        name: c"viewDidMoveToWindow",
-        original: &ORIGINAL_VIEW_DID_MOVE_TO_WINDOW,
-        trampoline: guarded_view_did_move_to_window as *const () as *const c_void,
-    },
-    GuardedSelector {
-        name: c"resetCursorRects",
-        original: &ORIGINAL_RESET_CURSOR_RECTS,
-        trampoline: guarded_reset_cursor_rects as *const () as *const c_void,
     },
 ];
 
@@ -199,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn guards_the_tracking_and_layout_handlers_that_read_the_state_ivar() {
+    fn guards_only_pure_event_delivery_handlers() {
         let names: Vec<String> = GUARDED_SELECTORS
             .iter()
             .map(|guarded| guarded.name.to_string_lossy().into_owned())
@@ -210,11 +184,17 @@ mod tests {
             "mouseExited:",
             "mouseDragged:",
             "scrollWheel:",
-            "frameDidChange:",
-            "viewDidMoveToWindow",
-            "resetCursorRects",
         ] {
             assert!(names.iter().any(|name| name == expected), "{expected}");
+        }
+        // These rebuild the tracking rect and cursor rects AppKit depends on;
+        // dropping them strands stale registrations and AppKit later aborts on a
+        // weak reference to a deallocating view.
+        for bookkeeping in ["viewDidMoveToWindow", "resetCursorRects", "frameDidChange:"] {
+            assert!(
+                !names.iter().any(|name| name == bookkeeping),
+                "{bookkeeping} must keep running"
+            );
         }
         // drawRect: passes an NSRect by value and cannot share these trampolines.
         assert!(!names.iter().any(|name| name == "drawRect:"));
