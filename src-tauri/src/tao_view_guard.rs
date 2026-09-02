@@ -81,6 +81,12 @@ guarded_handler!(ORIGINAL_MOUSE_ENTERED, guarded_mouse_entered, (event: *mut c_v
 guarded_handler!(ORIGINAL_MOUSE_EXITED, guarded_mouse_exited, (event: *mut c_void), ArgumentHandler);
 guarded_handler!(ORIGINAL_MOUSE_DRAGGED, guarded_mouse_dragged, (event: *mut c_void), ArgumentHandler);
 guarded_handler!(ORIGINAL_SCROLL_WHEEL, guarded_scroll_wheel, (event: *mut c_void), ArgumentHandler);
+guarded_handler!(ORIGINAL_KEY_DOWN, guarded_key_down, (event: *mut c_void), ArgumentHandler);
+guarded_handler!(ORIGINAL_KEY_UP, guarded_key_up, (event: *mut c_void), ArgumentHandler);
+guarded_handler!(ORIGINAL_FLAGS_CHANGED, guarded_flags_changed, (event: *mut c_void), ArgumentHandler);
+guarded_handler!(ORIGINAL_OTHER_MOUSE_UP, guarded_other_mouse_up, (event: *mut c_void), ArgumentHandler);
+guarded_handler!(ORIGINAL_PRESSURE_CHANGE, guarded_pressure_change, (event: *mut c_void), ArgumentHandler);
+guarded_handler!(ORIGINAL_CANCEL_OPERATION, guarded_cancel_operation, (event: *mut c_void), ArgumentHandler);
 
 struct GuardedSelector {
     name: &'static std::ffi::CStr,
@@ -116,6 +122,36 @@ static GUARDED_SELECTORS: &[GuardedSelector] = &[
         name: c"scrollWheel:",
         original: &ORIGINAL_SCROLL_WHEEL,
         trampoline: guarded_scroll_wheel as *const () as *const c_void,
+    },
+    GuardedSelector {
+        name: c"keyDown:",
+        original: &ORIGINAL_KEY_DOWN,
+        trampoline: guarded_key_down as *const () as *const c_void,
+    },
+    GuardedSelector {
+        name: c"keyUp:",
+        original: &ORIGINAL_KEY_UP,
+        trampoline: guarded_key_up as *const () as *const c_void,
+    },
+    GuardedSelector {
+        name: c"flagsChanged:",
+        original: &ORIGINAL_FLAGS_CHANGED,
+        trampoline: guarded_flags_changed as *const () as *const c_void,
+    },
+    GuardedSelector {
+        name: c"otherMouseUp:",
+        original: &ORIGINAL_OTHER_MOUSE_UP,
+        trampoline: guarded_other_mouse_up as *const () as *const c_void,
+    },
+    GuardedSelector {
+        name: c"pressureChangeWithEvent:",
+        original: &ORIGINAL_PRESSURE_CHANGE,
+        trampoline: guarded_pressure_change as *const () as *const c_void,
+    },
+    GuardedSelector {
+        name: c"cancelOperation:",
+        original: &ORIGINAL_CANCEL_OPERATION,
+        trampoline: guarded_cancel_operation as *const () as *const c_void,
     },
 ];
 
@@ -184,6 +220,12 @@ mod tests {
             "mouseExited:",
             "mouseDragged:",
             "scrollWheel:",
+            "keyDown:",
+            "keyUp:",
+            "flagsChanged:",
+            "otherMouseUp:",
+            "pressureChangeWithEvent:",
+            "cancelOperation:",
         ] {
             assert!(names.iter().any(|name| name == expected), "{expected}");
         }
