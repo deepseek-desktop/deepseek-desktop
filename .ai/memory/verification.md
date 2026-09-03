@@ -77,3 +77,5 @@
 - 从 profile `dsh.profile.bundles` 移除 `dshmarket` 后 `rev` 变为 `7d4ed138d5fd`，旧 `rev` 返回 **HTTP 404 / 0 字节**，新 `rev` 返回 200。
 
 因此失效条件是「插件集合变化 + 上一代工作台页面仍在」，Runtime 更新和恢复内置基线都满足。修复按 Runtime 启动代次记账工作台页面，重启后回到工作台强制重新导航；仅比对 Origin 无法覆盖重启复用同端口的情况。
+
+另一路实机故障来自 WebKit 的 Cookie 作用域：Runtime 每次随机端口启动生成新的 `dsh-auth-*` Cookie 名称，但这些 Cookie 均属于 `127.0.0.1`，会被发送给后续端口。累计请求头接近 Node 16 KiB 默认上限时，短页面请求仍返回 200，约 3 KiB 的 `/plugins/??...` 请求先返回 **HTTP 431 / 0 字节**。Runtime smoke 现在预置 60 个旧会话 Cookie，验证令牌交换只保留当前 Cookie，并实际请求 HTML 引用的全部插件脚本；修复后的脚本请求均返回 2xx JavaScript。
