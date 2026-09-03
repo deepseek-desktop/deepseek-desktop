@@ -25,12 +25,14 @@
 //! skipping those leaves stale tracking registrations behind and AppKit later
 //! aborts trying to weakly reference a deallocating view.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::ffi::{c_char, c_void};
 use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicPtr, Ordering};
+
+use objc2::{msg_send, runtime::AnyObject};
 
 use crate::error::{DesktopError, DesktopResult};
 
@@ -52,37 +54,57 @@ unsafe extern "C" {
     ) -> *mut c_void;
 }
 
-static DEALLOCATING_VIEWS: LazyLock<Mutex<HashSet<usize>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
+static LIVE_VIEW_STATES: LazyLock<Mutex<HashMap<usize, usize>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 static ORIGINAL_DEALLOC: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 static ORIGINAL_INIT_WITH_TAO: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 
-fn with_deallocating_views<T>(action: impl FnOnce(&mut HashSet<usize>) -> T) -> T {
-    let mut views = DEALLOCATING_VIEWS
+fn with_live_view_states<T>(action: impl FnOnce(&mut HashMap<usize, usize>) -> T) -> T {
+    let mut views = LIVE_VIEW_STATES
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     action(&mut views)
 }
 
-fn view_is_deallocating(view: *mut c_void) -> bool {
-    with_deallocating_views(|views| views.contains(&(view as usize)))
+fn registered_view_state(view: *mut c_void) -> Option<*mut c_void> {
+    if view.is_null() {
+        return None;
+    }
+    with_live_view_states(|views| {
+        views
+            .get(&(view as usize))
+            .copied()
+            .map(|state| state as *mut c_void)
+    })
 }
 
-fn mark_view_deallocating(view: *mut c_void) {
-    with_deallocating_views(|views| {
-        views.insert(view as usize);
+fn register_view_state(view: *mut c_void, state: *mut c_void) {
+    if view.is_null() || state.is_null() {
+        return;
+    }
+    with_live_view_states(|views| {
+        views.insert(view as usize, state as usize);
     });
 }
 
-fn mark_view_initialized(view: *mut c_void) {
-    with_deallocating_views(|views| {
+fn unregister_view_state(view: *mut c_void) {
+    with_live_view_states(|views| {
         views.remove(&(view as usize));
     });
 }
 
+fn read_view_state(view: *mut c_void) -> Option<*mut c_void> {
+    if view.is_null() {
+        return None;
+    }
+    let mut state = std::ptr::null_mut();
+    let ivar = unsafe { object_getInstanceVariable(view, c"taoState".as_ptr(), &mut state) };
+    (!ivar.is_null() && !state.is_null()).then_some(state)
+}
+
 unsafe extern "C" fn guarded_dealloc(view: *mut c_void, selector: *const c_void) {
-    mark_view_deallocating(view);
+    unregister_view_state(view);
     let original = ORIGINAL_DEALLOC.load(Ordering::Acquire);
     if original.is_null() {
         return;
@@ -103,19 +125,30 @@ unsafe extern "C" fn guarded_init_with_tao(
     let original: InitWithTaoHandler = unsafe { std::mem::transmute(original) };
     let initialized = unsafe { original(view, selector, state) };
     if !initialized.is_null() {
-        mark_view_initialized(initialized);
+        register_view_state(initialized, state);
     }
     initialized
 }
 
 /// True only when Tao has a live `ViewState` attached to this view.
 fn view_state_is_attached(view: *mut c_void) -> bool {
-    if view.is_null() || view_is_deallocating(view) {
+    let Some(registered_state) = registered_view_state(view) else {
+        return false;
+    };
+    let Some(state) = read_view_state(view) else {
+        return false;
+    };
+    if state != registered_state {
         return false;
     }
-    let mut state = std::ptr::null_mut();
-    let ivar = unsafe { object_getInstanceVariable(view, c"taoState".as_ptr(), &mut state) };
-    !ivar.is_null() && !state.is_null()
+
+    // Tao keeps a weak NSWindow inside ViewState. On macOS 26, WebKit can send
+    // a completed key event or AppKit can send tracking events after NSView has
+    // already detached from that window. Calling Tao then dereferences the stale
+    // weak window before it can reject the event itself.
+    let view = unsafe { &*view.cast::<AnyObject>() };
+    let window: *mut AnyObject = unsafe { msg_send![view, window] };
+    !window.is_null()
 }
 
 macro_rules! guarded_handler {
@@ -224,7 +257,7 @@ static INSTALLED: OnceLock<Result<(), String>> = OnceLock::new();
 /// Installs the guard once. Tao registers `TaoView` while the first window is
 /// created, so this has to run after the window exists and before the event loop
 /// starts delivering tracking callbacks.
-pub fn install() -> DesktopResult<()> {
+pub fn install(window: &tauri::Window) -> DesktopResult<()> {
     INSTALLED
         .get_or_init(|| {
             let class = unsafe { objc_getClass(c"TaoView".as_ptr()) };
@@ -250,7 +283,19 @@ pub fn install() -> DesktopResult<()> {
         })
         .as_ref()
         .map(|_| ())
-        .map_err(|error| DesktopError::Other(error.clone()))
+        .map_err(|error| DesktopError::Other(error.clone()))?;
+
+    // Tauri creates the main TaoView before setup runs, so initWithTao: could
+    // not register it through the swizzle. Seed that one existing view after
+    // every handler has been replaced; later TaoViews register themselves.
+    let view = window
+        .ns_view()
+        .map_err(|error| DesktopError::Other(error.to_string()))?;
+    let state = read_view_state(view).ok_or_else(|| {
+        DesktopError::Other("main TaoView has no live state during initialization".to_owned())
+    })?;
+    register_view_state(view, state);
+    Ok(())
 }
 
 fn install_handler(
@@ -285,7 +330,8 @@ fn install_handler(
 #[cfg(test)]
 mod tests {
     use super::{
-        GUARDED_SELECTORS, mark_view_deallocating, mark_view_initialized, view_state_is_attached,
+        GUARDED_SELECTORS, register_view_state, registered_view_state, unregister_view_state,
+        view_state_is_attached,
     };
 
     #[test]
@@ -294,13 +340,20 @@ mod tests {
     }
 
     #[test]
-    fn a_deallocating_view_is_never_forwarded_and_reuse_is_cleared_on_init() {
+    fn only_the_exact_live_state_is_registered_for_a_view() {
         let view = 0x1000usize as *mut std::ffi::c_void;
-        mark_view_deallocating(view);
-        assert!(!view_state_is_attached(view));
+        let first_state = 0x2000usize as *mut std::ffi::c_void;
+        let replacement_state = 0x3000usize as *mut std::ffi::c_void;
 
-        mark_view_initialized(view);
-        assert!(!super::view_is_deallocating(view));
+        register_view_state(view, first_state);
+        assert_eq!(registered_view_state(view), Some(first_state));
+
+        register_view_state(view, replacement_state);
+        assert_eq!(registered_view_state(view), Some(replacement_state));
+
+        unregister_view_state(view);
+        assert_eq!(registered_view_state(view), None);
+        assert!(!view_state_is_attached(view));
     }
 
     #[test]

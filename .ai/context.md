@@ -12,8 +12,8 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - Desktop 是稳定原生外壳，不选择、保存或注册用户项目目录；Runtime 工作台自行管理项目目录。Runtime 从应用数据目录内的独立 `runtime-workdir` 启动，Desktop 只依赖公开启动、健康和凭据协议。
 - OpenAI Responses 兼容流的最终 `output_item.done` 事件是工具调用 ID、名称、参数和 namespace 的权威事实；不得沿用 `output_item.added` 中可能过期的工具身份，否则会把 `glob` 等调用误派发为 `read`。
 - Harness 工作台是唯一主界面；运行状态、诊断、Desktop 更新、Runtime 更新和关于按需显示为同一原生窗口中的设置层。设置打开时只隐藏工作台子 WebView，关闭时复用原页面和同一 Runtime，不重新导航或丢失会话状态。
-- 唯一完整功能菜单由 Desktop Shell 固定显示在窗口内容区顶部左侧，macOS、Windows、Linux 统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；标题由 Vue 三语渲染，展开项由 Tauri 弹出原生菜单。Runtime 子 WebView 从菜单栏下方开始，不注入菜单脚本也不获得 IPC；macOS 系统栏只保留最小应用菜单，Windows/Linux 不挂载重复的完整原生窗口菜单。
-- macOS 26 可能在 Tao `0.35.3` 已从 `TaoView` 移除 `taoState` 后继续投递输入事件；Tao 随后把空状态当作有效 `ViewState` 读取并在 `objc_loadWeakRetained` 崩溃。Desktop 只在 macOS 初始化时保护纯事件投递处理器：状态缺失时丢弃事件，状态存在时转发原实现；生命周期、布局和 tracking rect 回调不得拦截。Windows/Linux 不受影响，依赖升级后必须重新核对 `TaoView` 方法契约与该防护是否仍有必要。
+- 唯一完整功能菜单由 Desktop Shell 固定显示在窗口内容区顶部左侧，macOS、Windows、Linux 统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；标题由 Vue 三语渲染，展开项由 Tauri 弹出原生菜单。Runtime 子 WebView 从菜单栏下方开始，不注入菜单脚本也不获得 IPC；macOS 系统栏可见部分只保留最小应用菜单，但在应用菜单中注册并隐藏系统预定义的撤销、重做、剪切、复制、粘贴和全选 responder，使 `Cmd` 编辑快捷键可以原生路由到当前 WKWebView；Windows/Linux 不挂载重复的完整原生窗口菜单。
+- macOS 26 可能在 Tao `0.35.3` 的 `TaoView` 已脱离窗口或状态已替换后继续投递输入事件；Tao 随后从失效弱引用读取窗口并在 `objc_loadWeakRetained` 崩溃。Desktop 只在 macOS 初始化时保护纯事件投递处理器：视图必须仍登记同一个 `taoState` 且仍挂载 NSWindow 才转发原实现，否则丢弃事件；生命周期、布局和 tracking rect 回调不得拦截。菜单弹出和工作台/设置切换不主动调用 `set_focus()`，避免 AppKit 过渡期把正在释放的 responder 设为 first responder。Windows/Linux 不受影响，依赖升级后必须重新核对 `TaoView` 方法契约与该防护是否仍有必要。
 - Desktop 初始化后自动启动空闲 Runtime，并在 readiness 通过后直接打开工作台；已就绪 Runtime 不重复启动，启动失败时打开设置层中的重试、恢复和诊断入口。
 - 窗口状态按显示器恢复；保存位置仍能落在已连接显示器时保持不变，目标显示器断开时回到当前主显示器可见区域。
 - 工作台 WebView 不获得通用 Tauri Shell、文件系统或任意 IPC 权限。

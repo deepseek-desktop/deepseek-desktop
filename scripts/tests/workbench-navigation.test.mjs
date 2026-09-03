@@ -43,14 +43,35 @@ test("closing a view never shares the quit path", async () => {
   assert.match(menu, /close_settings/u);
 });
 
-test("the TaoView Objective-C guard is compiled only on macOS", async () => {
-  const lib = await readFile(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
+test("the TaoView Objective-C guard tracks the macOS window state", async () => {
+  const [lib, guard] = await Promise.all([
+    readFile(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8"),
+    readFile(new URL("../../src-tauri/src/tao_view_guard.rs", import.meta.url), "utf8")
+  ]);
   assert.match(
     lib,
     /#\[cfg\(target_os = "macos"\)\]\s*mod tao_view_guard;/u
   );
-  assert.match(
-    lib,
-    /#\[cfg\(target_os = "macos"\)\]\s*tao_view_guard::install\(\)\?/u
-  );
+  assert.match(lib, /tao_view_guard::install\(&window\)\?/u);
+  assert.match(guard, /LIVE_VIEW_STATES/u);
+  assert.match(guard, /state != registered_state/u);
+  assert.match(guard, /msg_send!\[view, window\]/u);
+});
+
+test("macOS keeps native editing shortcuts available to the focused webview", async () => {
+  const menu = await readFile(new URL("../../src-tauri/src/native_menu.rs", import.meta.url), "utf8");
+  for (const action of ["undo", "redo", "cut", "copy", "paste", "select_all"]) {
+    assert.match(menu, new RegExp(`PredefinedMenuItem::${action}\\(`, "u"));
+  }
+  assert.match(menu, /setAllowsKeyEquivalentWhenHidden\(true\)/u);
+  assert.match(menu, /setHidden\(true\)/u);
+});
+
+test("menus and surface switches do not force focus during AppKit transitions", async () => {
+  const [menu, runtime] = await Promise.all([
+    readFile(new URL("../../src-tauri/src/native_menu.rs", import.meta.url), "utf8"),
+    readFile(new URL("../../src-tauri/src/runtime.rs", import.meta.url), "utf8")
+  ]);
+  assert.doesNotMatch(menu, /set_focus\(\)/u);
+  assert.doesNotMatch(runtime, /set_focus\(\)/u);
 });

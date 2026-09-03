@@ -511,7 +511,13 @@ pub fn run() {
             });
             let locale = app.state::<AppState>().settings.get()?.locale;
             #[cfg(target_os = "macos")]
-            tao_view_guard::install()?;
+            if let Some(window) = app.get_window("main") {
+                tao_view_guard::install(&window)?;
+            } else {
+                return Err(
+                    DesktopError::Other("main desktop window is unavailable".to_owned()).into(),
+                );
+            }
             native_menu::install(app.handle(), &locale)?;
             runtime_updates.start_startup_maintenance();
             Ok(())

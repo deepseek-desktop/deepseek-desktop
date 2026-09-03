@@ -1,6 +1,8 @@
 #[cfg(any(target_os = "macos", test))]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "macos")]
+use tauri::menu::PredefinedMenuItem;
+#[cfg(target_os = "macos")]
 use tauri::menu::SubmenuBuilder;
 use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder};
 use tauri::{AppHandle, Manager};
@@ -65,6 +67,8 @@ pub(crate) fn content_top_inset(_window: &tauri::Window) -> DesktopResult<f64> {
 
 #[cfg(target_os = "macos")]
 const APP_NAME: &str = env!("DEEPSEEK_DESKTOP_APP_NAME");
+#[cfg(target_os = "macos")]
+const HIDDEN_EDIT_SHORTCUT_COUNT: isize = 6;
 
 #[derive(Clone, Copy)]
 struct MenuLabels {
@@ -100,6 +104,13 @@ pub(crate) struct CloseConfirmationLabels {
 pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
     let labels = labels(locale);
     let quit = item(app, QUIT_MENU_ID, labels.quit, Some("CmdOrCtrl+Q"))?;
+    let undo = PredefinedMenuItem::undo(app, Some(labels.undo)).map_err(desktop_error)?;
+    let redo = PredefinedMenuItem::redo(app, Some(labels.redo)).map_err(desktop_error)?;
+    let cut = PredefinedMenuItem::cut(app, Some(labels.cut)).map_err(desktop_error)?;
+    let copy = PredefinedMenuItem::copy(app, Some(labels.copy)).map_err(desktop_error)?;
+    let paste = PredefinedMenuItem::paste(app, Some(labels.paste)).map_err(desktop_error)?;
+    let select_all =
+        PredefinedMenuItem::select_all(app, Some(labels.select_all)).map_err(desktop_error)?;
     let application = SubmenuBuilder::new(app, APP_NAME)
         .services()
         .separator()
@@ -108,6 +119,16 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
         .show_all()
         .separator()
         .item(&quit)
+        // These native responder actions stay registered so AppKit can route
+        // standard editing shortcuts into the focused WKWebView. They are
+        // hidden below because the window already exposes the one visible Edit
+        // menu shared by every platform.
+        .item(&undo)
+        .item(&redo)
+        .item(&cut)
+        .item(&copy)
+        .item(&paste)
+        .item(&select_all)
         .build()
         .map_err(desktop_error)?;
     let menu = MenuBuilder::new(app)
@@ -115,6 +136,44 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
         .build()
         .map_err(desktop_error)?;
     app.set_menu(menu).map_err(desktop_error)?;
+    hide_app_menu_edit_shortcuts()?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn hide_app_menu_edit_shortcuts() -> DesktopResult<()> {
+    use objc2_app_kit::NSApplication;
+    use objc2_foundation::MainThreadMarker;
+
+    let mtm = MainThreadMarker::new().ok_or_else(|| {
+        DesktopError::Other(
+            "macOS application menu must be installed on the main thread".to_owned(),
+        )
+    })?;
+    let application = NSApplication::sharedApplication(mtm);
+    let menu = application
+        .mainMenu()
+        .ok_or_else(|| DesktopError::Other("macOS application menu is unavailable".to_owned()))?;
+    let application_item = menu.itemAtIndex(0).ok_or_else(|| {
+        DesktopError::Other("macOS application menu item is unavailable".to_owned())
+    })?;
+    let application_menu = application_item.submenu().ok_or_else(|| {
+        DesktopError::Other("macOS application submenu is unavailable".to_owned())
+    })?;
+    let item_count = application_menu.numberOfItems();
+    if item_count < HIDDEN_EDIT_SHORTCUT_COUNT {
+        return Err(DesktopError::Other(
+            "macOS application menu is missing edit shortcuts".to_owned(),
+        ));
+    }
+
+    for index in item_count - HIDDEN_EDIT_SHORTCUT_COUNT..item_count {
+        let shortcut = application_menu.itemAtIndex(index).ok_or_else(|| {
+            DesktopError::Other("macOS edit shortcut menu item is unavailable".to_owned())
+        })?;
+        shortcut.setAllowsKeyEquivalentWhenHidden(true);
+        shortcut.setHidden(true);
+    }
     Ok(())
 }
 
@@ -154,18 +213,6 @@ pub fn popup(
         Some(guard) => guard,
         None => return Ok(()),
     };
-
-    // Returning keyboard focus to the visible surface is a nicety, not a
-    // precondition for showing the menu. AppKit can also be mid-transition here —
-    // a focus change during a fullscreen swap has aborted the process on a weak
-    // reference to a deallocating responder — so never propagate the failure.
-    if workbench_visible {
-        if let Some(workbench) = app.get_webview("workbench") {
-            let _ = workbench.set_focus();
-        }
-    } else if let Some(main) = app.get_webview("main") {
-        let _ = main.set_focus();
-    }
 
     let labels = labels(locale);
     let menu = match menu_name {

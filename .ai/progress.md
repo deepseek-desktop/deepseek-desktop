@@ -1,8 +1,8 @@
 # 当前交付摘要
 
 - Harness 工作台成为单窗口唯一主界面；运行状态、诊断、Desktop 更新、Runtime 更新和关于改为同窗口设置层。打开设置只隐藏工作台子 WebView，关闭时复用同一页面与 Runtime，不重新导航、不丢失会话状态；Runtime 仍不获得 Tauri IPC。
-- macOS、Windows、Linux 的唯一完整功能菜单固定显示在窗口内容区顶部左侧，统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；Vue Shell 渲染三语标题，Tauri 弹出系统原生菜单项。Runtime 子 WebView 从菜单栏下方开始且不注入脚本，macOS 仅保留最小应用菜单，Windows/Linux 不挂载重复的完整原生窗口菜单。
-- macOS 窗口菜单采用系统当前光标位置弹出，并在 Desktop 初始化时为锁定的 Tao `0.35.3` 安装视图状态防护；macOS 26 在 `TaoView.taoState` 已脱离后继续投递输入事件时只丢弃这些失去状态的事件，状态存在时继续调用 Tao 原实现。防护只覆盖纯事件投递处理器，不拦截生命周期、布局或 tracking rect 回调；Windows/Linux 仍保留窗口内坐标定位且不应用该平台补丁。
+- macOS、Windows、Linux 的唯一完整功能菜单固定显示在窗口内容区顶部左侧，统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；Vue Shell 渲染三语标题，Tauri 弹出系统原生菜单项。Runtime 子 WebView 从菜单栏下方开始且不注入脚本；macOS 应用菜单可见部分保持最小化，同时隐藏注册系统预定义编辑 responder，使输入框和聊天记录继续使用 `Cmd+C/X/V/A/Z` 与 `Shift+Cmd+Z`；Windows/Linux 不挂载重复的完整原生窗口菜单。
+- macOS 窗口菜单采用系统当前光标位置弹出，并在 Desktop 初始化时为锁定的 Tao `0.35.3` 安装精确视图状态防护；macOS 26 只有在 `TaoView` 仍登记同一个 `taoState` 且仍挂载 NSWindow 时才向 Tao 转发输入事件。防护只覆盖纯事件投递处理器，不拦截生命周期、布局或 tracking rect 回调；菜单弹出和工作台/设置切换不再主动改变 first responder，Windows/Linux 仍保留窗口内坐标定位且不应用该平台补丁。
 - Runtime Supervisor 支持独立运行目录、随机端口、浏览器令牌换取会话 Cookie、带认证的 readiness、有限恢复、主动停止和进程树清理；旧版无令牌 Runtime 保持兼容，仅 Runtime 制品、进程退出或启动健康失败触发回滚，配置、凭据和权限错误保持原版本并给出明确诊断。
 - Desktop 启动后自动拉起空闲 Runtime，并在 readiness 通过后直接进入工作台；已就绪实例不重复启动，失败时保留管理、重试和诊断入口。用户无需点击启动或选择目录，项目目录、会话和文件边界由 Runtime 工作台自行管理。
 - 使用跨平台本地加密凭据库，具备短期会话授权、记录枚举、失败回滚和旧明文索引迁移。

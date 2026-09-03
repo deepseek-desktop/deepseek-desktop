@@ -14,7 +14,9 @@
 - `corepack pnpm@11.24.0 runtime:smoke`：通过父进程退出清理与 Runtime `0.1.2-alpha.1` 一次完整启停循环。
 - `corepack pnpm@11.24.0 release:smoke`：通过分布式发布 HTTP 制品流式传输、校验与发布协议回归。
 - Runtime 仓库设置回归：默认使用构建仓库；用户只保存一个可选仓库覆盖值，切换时会使旧待安装候选失效。配置迁移、地址校验、诊断脱敏、三语文案、Vue 与 E2E 单字段表单均已验证；维护者可选签名制品通道不进入普通用户设置。
-- 当前源码最终门禁：`verify` 通过 83 项配置与发行协议测试、18 项 Vue 测试、19 项跟随模型搜索测试、81 项 macOS Rust 测试和 Clippy `-D warnings`；`app:sync --check`、`runtime:sync --check`、`test:e2e` 2 项、`runtime:smoke` 与 `release:smoke` 均通过。联网搜索协议未配置时继续按当前会话模型 `apiProtocol` 自动匹配，模型提供方表单不再要求用户选择协议。
+- 当前源码最终门禁：`verify` 通过 85 项配置与发行协议测试、18 项 Vue 测试、19 项跟随模型搜索测试、81 项 macOS Rust 测试和 Clippy `-D warnings`；`app:sync --check`、`runtime:sync --check`、`test:e2e` 2 项、`runtime:smoke` 与 `release:smoke` 均通过。联网搜索协议未配置时继续按当前会话模型 `apiProtocol` 自动匹配，模型提供方表单不再要求用户选择协议。
+- `DESKTOP_APP_VERSION=1.0.28-test.2 corepack pnpm@11.24.0 desktop:package`：当前 macOS ARM64 主机重新同步锁定 Runtime 并完成上述完整门禁、E2E、Runtime smoke、Tauri release 编译和 DMG 构建；`DeepSeek Desktop_1.0.28-test.2_aarch64.dmg` 经 `hdiutil verify`、`codesign --verify --deep --strict` 与原生 ARM64 检查通过，SHA-256 为 `d21a67634ad7134cff1a34c272e98d4b0d99648c2d165d7afe28bc58aa7b31fd`。
+- macOS `1.0.28-test.2` 安装版通过 LaunchServices 从隔离安装目录启动并自动拉起内置 Runtime。输入框实测粘贴、复制、剪切、撤销、重做与清空均得到预期值，聊天记录拖选“解决方案”后 `Cmd+C` 得到相同文字；窗口编辑菜单显示六项原生命令及快捷键。五组菜单共完成 100 次打开/关闭，Desktop 与 Runtime 全程存活；同窗设置打开和关闭后仍返回原对话，关闭窗口先显示本地化确认，确认后两进程均无残留。本轮没有新增 DeepSeek Desktop `.ips` 崩溃报告。
 - 默认社区 Runtime 仓库与官方上游仓库的默认分支 HEAD 均解析为 `49a606bc5b5934603f22a26957a07dc799ab0291`。默认仓库使用应用内置 Node `24.20.0` / pnpm `11.24.0` 完成克隆、构建、CLI help 与带认证回环服务 smoke，候选 Runtime 版本为 `0.1.2-alpha.5`；未在验证日志中记录仓库凭据或用户 Provider 密钥。
 - `DESKTOP_APP_VERSION=1.0.27-test.4 corepack pnpm@11.24.0 desktop:package`：当前 macOS ARM64 主机完成完整门禁和 DMG 构建；`DeepSeek Desktop_1.0.27-test.4_aarch64.dmg` 经 `hdiutil verify`、`codesign --verify --deep --strict` 与原生 `arm64` 检查通过，SHA-256 为 `8dd2c252c9d03cea6ed0796d9b0b06c8c70dfd51055acfddfc358bad5f18b926`。
 - macOS `1.0.27-test.4` 安装版实测：标准启动后直接进入工作台，五组窗口菜单逐一打开且进程不退出；通过“文件”菜单打开同窗设置，更新页可完整滚动且只显示一个 Runtime 仓库地址；取消关闭确认后 Desktop 与 Runtime 保持运行，确认关闭后两者均退出且无残留。
@@ -47,13 +49,13 @@
 - `v1.0.26` GitHub Actions 原生矩阵成功，Run `33592751008` 绑定 commit `2bded62`：六个 Job 全部成功。Release 标题为 `v1.0.26`（改为直接使用 Tag），未签名 prerelease，公开资产严格为两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`；正文六条直达下载链接与当前 Tag 一致；抽检下载托管的 Windows 安装包，实测 SHA-256 与清单逐字一致、大小 58351737 相符。
 - macOS 视图菜单崩溃路径在本轮**未**由本会话独立复现清除：合成点击无法使 NSMenu 弹出保持到可采样（已在两块显示器上确认无弹出），F10 疑被系统媒体键拦截，WebView 内容未暴露在辅助功能树中。该结论仍以上文 `1.0.24-test.3` 的 150 次五组菜单开关压力测试为准。
 
-## 已知未闭环缺陷
+## 已闭环崩溃来源
 
-- macOS `objc_storeWeak` 致命中止（`namespace: OBJC`，SIGABRT）共观察到三个来源，需分别对待：
+- macOS 历史崩溃报告中的弱引用致命中止共观察到三个来源，已分别处理：
   - 菜单弹出经 `NSMenu popUpMenuPositioningItem:atLocation:inView:` 传入视图，`_NSPopUpMenu` 对其建立弱引用。仅在 `1.0.23` 出现，改为按光标位置弹出后未再复现。
-  - `-[NSWindow _setFirstResponderIvar:]` 对正在释放的响应者建立弱引用，由 `set_focus()` 触发。在 `1.0.26` 上于全屏进出压力过程中观察到一次，**没有稳定复现手段**。已把菜单弹出前与界面切换后的焦点调用改为不可失败（焦点只是锦上添花，不再中断弹出或让界面切换被误报为失败），但这只是缩小暴露面，不等于根因已消除。`Webview` 未暴露 `is_visible()`，无法在调用前确认目标仍在屏上。
+  - `-[NSWindow _setFirstResponderIvar:]` 对正在释放的响应者建立弱引用，由菜单弹出或界面切换期间的 `set_focus()` 触发。在 `1.0.26` 全屏进出压力过程中观察到一次；这些过渡本身不依赖主动聚焦，因此已删除对应调用，只保留第二实例激活现有窗口时的系统聚焦语义。源码契约测试锁定菜单和 Runtime surface 切换不再调用 `set_focus()`。
   - `___NSViewUpdateConstraints_block_invoke` 路径，由一次过宽的 `TaoView` 防护引入：丢弃 `viewDidMoveToWindow` 与 `resetCursorRects` 会留下陈旧 tracking rect。防护收窄后消失，已由用例锁定边界。
-- 上述第二项在真实使用中的触发概率与条件均未确定，不得在未取得复现前声称已修复。
+- 当前安装版按相同高风险区域执行 100 次菜单开关、设置往返、输入编辑和关闭确认后没有生成新崩溃报告；该证据证明 Desktop 已移除已知主动聚焦触发点，不等同于承诺 AppKit、WebKit 或 Tao 内部不会出现其他未知崩溃。
 
 ## 能力边界
 
