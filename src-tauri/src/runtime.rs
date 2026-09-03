@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -126,8 +126,16 @@ fn current_managed_origin(origin: &ManagedOrigin) -> Option<Url> {
         .clone()
 }
 
-fn should_navigate_workbench(current: Option<&Url>, next: &Url) -> bool {
-    !current.is_some_and(|current| is_managed_runtime_origin(current, next))
+/// A loaded workbench page is only valid for the Runtime instance that served it:
+/// the plugin bundle URLs it holds carry that instance's graph revision, and a
+/// stale revision is answered with 404, which the Harness surfaces as "Failed to
+/// load plugins". Matching on origin alone is not enough, because a restarted
+/// Runtime can bind the same loopback port again, so the page is also keyed on the
+/// generation counter that every successful start increments.
+fn should_navigate_workbench(current: Option<&(u64, Url)>, generation: u64, next: &Url) -> bool {
+    !current.is_some_and(|(loaded_generation, loaded)| {
+        *loaded_generation == generation && is_managed_runtime_origin(loaded, next)
+    })
 }
 
 pub struct RuntimeSupervisor {
@@ -140,7 +148,8 @@ pub struct RuntimeSupervisor {
     operation: Mutex<()>,
     inner: Mutex<RuntimeInner>,
     managed_origin: ManagedOrigin,
-    workbench_origin: Mutex<Option<Url>>,
+    workbench_page: Mutex<Option<(u64, Url)>>,
+    runtime_generation: AtomicU64,
     workbench_visible: AtomicBool,
 }
 
@@ -182,7 +191,8 @@ impl RuntimeSupervisor {
                 manual_stop: false,
             }),
             managed_origin: Arc::new(Mutex::new(None)),
-            workbench_origin: Mutex::new(None),
+            workbench_page: Mutex::new(None),
+            runtime_generation: AtomicU64::new(0),
             workbench_visible: AtomicBool::new(false),
         });
         Self::start_monitor(&supervisor);
@@ -242,19 +252,21 @@ impl RuntimeSupervisor {
             ));
         }
         if let Some(webview) = self.app.get_webview("workbench") {
+            let generation = self.runtime_generation.load(Ordering::Acquire);
             let current = self
-                .workbench_origin
+                .workbench_page
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
-            if should_navigate_workbench(current.as_ref(), &managed_url) {
+            if should_navigate_workbench(current.as_ref(), generation, &managed_url) {
                 webview
                     .navigate(url)
                     .map_err(|error| DesktopError::Other(error.to_string()))?;
                 *self
-                    .workbench_origin
+                    .workbench_page
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(managed_url.clone());
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    Some((generation, managed_url.clone()));
             }
             self.workbench_visible.store(true, Ordering::Release);
             webview
@@ -318,9 +330,10 @@ impl RuntimeSupervisor {
             }
         };
         *self
-            .workbench_origin
+            .workbench_page
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(managed_url);
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some((self.runtime_generation.load(Ordering::Acquire), managed_url));
         self.workbench_visible.store(true, Ordering::Release);
         self.layout_workbench()?;
         self.emit_surface("workbench");
@@ -739,6 +752,7 @@ impl RuntimeSupervisor {
             inner.browser_launch_url = Some(ready_url);
             inner.status = status.clone();
         }
+        self.runtime_generation.fetch_add(1, Ordering::AcqRel);
         self.set_managed_origin(Some(runtime_http));
         self.emit(&status);
         Ok(status)
@@ -1795,16 +1809,32 @@ mod tests {
 
     #[test]
     fn reuses_the_existing_workbench_for_the_same_runtime_origin() {
-        let managed = Url::parse("http://127.0.0.1:43127/").unwrap();
+        let loaded = (7, Url::parse("http://127.0.0.1:43127/").unwrap());
         let same_runtime = Url::parse("http://127.0.0.1:43127/?token=rotated").unwrap();
         let replacement_runtime = Url::parse("http://127.0.0.1:43128/?token=new").unwrap();
 
-        assert!(!should_navigate_workbench(Some(&managed), &same_runtime));
+        assert!(!should_navigate_workbench(Some(&loaded), 7, &same_runtime));
         assert!(should_navigate_workbench(
-            Some(&managed),
+            Some(&loaded),
+            7,
             &replacement_runtime
         ));
-        assert!(should_navigate_workbench(None, &same_runtime));
+        assert!(should_navigate_workbench(None, 7, &same_runtime));
+    }
+
+    #[test]
+    fn reloads_the_workbench_after_a_runtime_restart_reuses_the_same_port() {
+        // A restarted Runtime rebuilds its plugin graph, so the revision embedded in
+        // the loaded page's bundle URL no longer resolves and the Harness reports
+        // "Failed to load plugins". Reusing the page is only safe within one start.
+        let loaded = (7, Url::parse("http://127.0.0.1:43127/").unwrap());
+        let restarted_same_port = Url::parse("http://127.0.0.1:43127/?token=restarted").unwrap();
+
+        assert!(should_navigate_workbench(
+            Some(&loaded),
+            8,
+            &restarted_same_port
+        ));
     }
 
     #[test]
