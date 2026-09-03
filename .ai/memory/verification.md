@@ -2,7 +2,7 @@
 
 ## 最近可信验证
 
-日期：2026-09-03
+日期：2026-09-04
 
 正式发布收敛为 GitHub Actions 官方托管 Runner 原生矩阵后：
 
@@ -18,11 +18,12 @@
 - `DESKTOP_APP_VERSION=1.0.28-test.2 corepack pnpm@11.24.0 desktop:package`：当前 macOS ARM64 主机重新同步锁定 Runtime 并完成上述完整门禁、E2E、Runtime smoke、Tauri release 编译和 DMG 构建；`DeepSeek Desktop_1.0.28-test.2_aarch64.dmg` 经 `hdiutil verify`、`codesign --verify --deep --strict` 与原生 ARM64 检查通过，SHA-256 为 `d21a67634ad7134cff1a34c272e98d4b0d99648c2d165d7afe28bc58aa7b31fd`。
 - macOS `1.0.28-test.2` 安装版通过 LaunchServices 从隔离安装目录启动并自动拉起内置 Runtime。输入框实测粘贴、复制、剪切、撤销、重做与清空均得到预期值，聊天记录拖选“解决方案”后 `Cmd+C` 得到相同文字；窗口编辑菜单显示六项原生命令及快捷键。五组菜单共完成 100 次打开/关闭，Desktop 与 Runtime 全程存活；同窗设置打开和关闭后仍返回原对话，关闭窗口先显示本地化确认，确认后两进程均无残留。本轮没有新增 DeepSeek Desktop `.ips` 崩溃报告。
 - `v1.0.28` GitHub Actions 原生矩阵成功，Run `33732293678` 绑定 commit `471101c86de43cc5629c7ddc5a52e436b4538e6a`：质量门禁 10 分 01 秒、Linux x64 17 分 44 秒、macOS ARM64 19 分 43 秒、Windows x64 25 分 23 秒、macOS x64 44 分 44 秒、聚合发布 32 秒，工作流总墙钟 55 分 23 秒。Release 标题为 `v1.0.28`，保持未签名 prerelease；公开资产严格为两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`。清单中的五项 SHA-256 与 GitHub 服务端资产 digest 逐项一致，六个公开下载地址均返回 HTTP 200。
+- `v1.0.29` GitHub Actions 原生矩阵成功，Run `33787636785` 绑定 commit `de6f88abd61486b93666ee5f187a671ef6dcb8b2`：质量门禁 8 分 29 秒、macOS ARM64 17 分 01 秒、Linux x64 17 分 25 秒、Windows x64 24 分 55 秒、macOS x64 38 分 04 秒、聚合发布 45 秒，工作流总墙钟 47 分 27 秒。Release 保持未签名 prerelease；公开资产严格为两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`。重新下载全部资产后，五个安装包的 SHA-256 均与清单及 GitHub 服务端 digest 一致；最终 ARM64 DMG 通过 `hdiutil verify` 和 `codesign --verify --deep --strict`，应用版本为 `1.0.29`，主程序为原生 `arm64`。
 - 默认社区 Runtime 仓库与官方上游仓库的默认分支 HEAD 均解析为 `49a606bc5b5934603f22a26957a07dc799ab0291`。默认仓库使用应用内置 Node `24.20.0` / pnpm `11.24.0` 完成克隆、构建、CLI help 与带认证回环服务 smoke，候选 Runtime 版本为 `0.1.2-alpha.5`；未在验证日志中记录仓库凭据或用户 Provider 密钥。
 - `DESKTOP_APP_VERSION=1.0.27-test.4 corepack pnpm@11.24.0 desktop:package`：当前 macOS ARM64 主机完成完整门禁和 DMG 构建；`DeepSeek Desktop_1.0.27-test.4_aarch64.dmg` 经 `hdiutil verify`、`codesign --verify --deep --strict` 与原生 `arm64` 检查通过，SHA-256 为 `8dd2c252c9d03cea6ed0796d9b0b06c8c70dfd51055acfddfc358bad5f18b926`。
 - macOS `1.0.27-test.4` 安装版实测：标准启动后直接进入工作台，五组窗口菜单逐一打开且进程不退出；通过“文件”菜单打开同窗设置，更新页可完整滚动且只显示一个 Runtime 仓库地址；取消关闭确认后 Desktop 与 Runtime 保持运行，确认关闭后两者均退出且无残留。
-- Windows 验证环境为 Parallels Windows 11 ARM64，运行项目的 x64 Node、Rust 目标和应用二进制，因此属于 Windows 系统真实交互加 x64 模拟，不等同原生 x64 硬件。锁定 Node 为 `v24.20.0`、ABI `137`，Rust 为 `1.98.0 (x86_64-pc-windows-msvc)`；脚本测试 81 项通过、1 项因 Windows 符号链接权限跳过，Vue 18 项、跟随模型搜索 19 项、Runtime manifest、Rust 78 项、Clippy 与 Playwright E2E 2 项均通过。Runtime smoke 首次冷启动超过固定 20 秒，缓存就绪后的同命令在 6 秒内通过。
-- Windows x64 release 应用编译通过并包含 x64 `deepseek-desktop.exe`、Node sidecar 和 Runtime 闭包；NSIS 在 ARM64 虚拟机内无法启动其 x86 `makensis` 子进程，故没有把该环境冒充安装器验收。使用当前 Windows 用户会话启动 release 应用后，工作台与 Runtime 正常加载，五组菜单均可开关且 Desktop 保持存活；执行退出会显示本地化关闭确认，确认后 Desktop 与 Node Runtime 均无残留。
+- Windows 验证环境为 Parallels Windows 11 ARM64，运行项目的 x64 Node、Rust 目标和应用二进制，因此属于 Windows 系统真实交互加 x64 模拟，不等同原生 x64 硬件。当前提交使用锁定 Node `v24.20.0`、ABI `137` 和 Rust `1.98.0 (x86_64-pc-windows-msvc)` 验证：配置与发行协议测试共 85 项，其中 82 项通过、3 项因非提升权限无法创建符号链接而跳过；3 个 locale / 150 个 key、Vue 18 项、跟随模型搜索 19 项、26225 文件 Runtime manifest、Rust 79 项、Clippy `-D warnings` 与 Playwright E2E 2 项均通过。Runtime smoke 冷启动首次超过固定 20 秒，缓存就绪后 2 个连续启停循环在 8 秒内通过。
+- Windows x64 release 应用使用当前提交重新编译并包含 `deepseek-desktop.exe`、Node sidecar 和 Runtime 闭包；NSIS 安装包由 GitHub `windows-2022` 原生 Runner 构建并通过正式矩阵。使用 Windows 当前用户会话启动本机编译的 x64 release 应用后，工作台正常显示首次模型配置界面，没有空白页或 `Failed to load plugins`；通过 UI Automation 逐一展开“文件 / 编辑 / 视图 / 窗口 / 帮助”，Desktop 进程均保持存活。
 - `node scripts/with-rust.mjs tauri build --config target/generated/tauri.conf.json --bundles app`：通过，生成 macOS ARM64 `.app`，`codesign --verify --deep --strict` 通过。
 - `DESKTOP_APP_VERSION=1.0.23 corepack pnpm@11.24.0 desktop:package`：在当前 macOS ARM64 主机使用锁定 Node `24.20.0` 和 pnpm `11.24.0` 完成 Runtime 同步、完整 `verify`、E2E、Runtime smoke、Tauri 应用和 DMG 构建；产物 `DeepSeek Desktop_1.0.23_aarch64.dmg` 经 `hdiutil verify` 验证，SHA-256 为 `906bd2397d0349954fbfe0a15e6309c437f61892dab89c427f2957040bf31aab`。
 - 成品应用真实安装与启动：从 `1.0.23` macOS ARM64 DMG 挂载复制 `.app` 到独立临时安装目录，`codesign --verify --deep --strict` 通过，Mach-O 为原生 `arm64`，`CFBundleShortVersionString` 与 `CFBundleVersion` 均为 `1.0.23`，并通过标准 LaunchServices 启动。应用直接进入 Harness 工作台并自动拉起内置 Node `24.20.0` 与 Runtime `0.1.2-alpha.1`。
