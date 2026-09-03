@@ -1,0 +1,48 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -198,6 +198,7 @@
+ const SECRET_BYTES = 32;
+ const TOKEN_QUERY = "token";
+ const COOKIE_PREFIX = "dsh-auth-";
++const COOKIE_NAME_PATTERN = new RegExp(`^${COOKIE_PREFIX}[A-Za-z0-9_-]{43}$`, "u");
+ const COOKIE_PAYLOAD_VERSION = 1;
+ const STORED_SECRET_VERSION = 1;
+ const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/;
+@@ -264,7 +265,23 @@
+ 		return segment.slice(at + 1).trim();
+ 	}
+ }
++/** Expire one generated browser-session cookie without reflecting arbitrary cookie names. */
++function expiredSessionCookie(name) {
++	return `${name}=; Max-Age=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Strict`;
++}
++/** Remove browser-session cookies minted for earlier random loopback ports. */
++function staleSessionCookies(headerValue, currentName) {
++	if (headerValue === void 0) return [];
++	const stale = /* @__PURE__ */ new Set();
++	for (const segment of headerValue.split(";")) {
++		const at = segment.indexOf("=");
++		if (at === -1) continue;
++		const name = segment.slice(0, at).trim();
++		if (name !== currentName && COOKIE_NAME_PATTERN.test(name)) stale.add(name);
++	}
++	return [...stale].map(expiredSessionCookie);
++}
+ /** Serialize the fixed browser-session attributes; generated names and values are cookie-safe base64url. */
+ function sessionCookie(name, value, expiresAt, maxAgeSeconds) {
+ 	return `${name}=${value}; Max-Age=${String(maxAgeSeconds)}; Path=/; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; SameSite=Strict`;
+ }
+@@ -375,10 +392,11 @@
+ 					expiresAt
+ 				}, this.secret);
++				const name = cookieName(authority);
+ 				res.writeHead(303, {
+ 					"cache-control": "no-store",
+ 					"location": "/",
+ 					"referrer-policy": "no-referrer",
+-					"set-cookie": sessionCookie(cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1e3))
++					"set-cookie": [...staleSessionCookies(header(req.headers, "cookie"), name), sessionCookie(name, value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1e3))]
+ 				});
+ 				res.end();
+ 				return false;

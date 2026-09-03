@@ -111,6 +111,23 @@
       "id": "neutral-auth-failure-trajectory"
     },
     {
+      "packageName": "@deepseek-ai/dsh-client-connection",
+      "file": "@deepseek-ai__dsh-client-connection@0.1.2-alpha.1.patch",
+      "moduleFile": "lib/index.js",
+      "markers": [
+        "function staleSessionCookies(headerValue, currentName)",
+        "...staleSessionCookies(header(req.headers, \"cookie\"), name)"
+      ],
+      "id": "loopback-cookie-migration"
+    },
+    {
+      "packageName": "@deepseek-ai/dsh-client-modules",
+      "file": "@deepseek-ai__dsh-client-modules@0.1.2-alpha.1.patch",
+      "moduleFile": "lib/index.js",
+      "markers": ["const MAX_COMBO_URL_BYTES = 1024"],
+      "id": "loopback-combo-url-budget"
+    },
+    {
       "packageName": "@deepseek-ai/dsh-client-ui-settings-models",
       "file": "@deepseek-ai__dsh-client-ui-settings-models@0.1.2-alpha.1.patch",
       "moduleFile": "lib/client.js",

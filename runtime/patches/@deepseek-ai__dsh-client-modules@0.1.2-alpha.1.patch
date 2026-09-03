@@ -1,0 +1,14 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -120,8 +120,8 @@
+ };
+ /** Versioned code is immutable; mismatched revisions are rejected instead of serving newer bytes. */
+ const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
+-/** Generated request URLs stay below conservative browser and intermediary request-target limits. */
+-const MAX_COMBO_URL_BYTES = 3 * 1024;
++/** Leave ample request-header space for loopback browser cookies and platform-specific headers. */
++const MAX_COMBO_URL_BYTES = 1024;
+ const HASH_REVISION_LENGTH = 12;
+ const COMBO_REVISION_PLACEHOLDER = "0".repeat(HASH_REVISION_LENGTH);
+ /** Source-map trailer emitted by tsdown at the end of every client bundle. */

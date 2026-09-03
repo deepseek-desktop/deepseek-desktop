@@ -8,6 +8,43 @@ import { requestLoopback, waitForLoopback } from "./loopback-http.mjs";
 const runtimeRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(runtimeRoot, "..");
 const lock = JSON.parse(await readFile(join(desktopRoot, "target", "generated", "runtime-lock.json"), "utf8"));
+const LEGACY_COOKIE_COUNT = 60;
+
+function createLegacyCookieJar() {
+  const cookies = new Map();
+  for (let index = 0; index < LEGACY_COOKIE_COUNT; index += 1) {
+    const suffix = index.toString(36).padStart(43, "0");
+    cookies.set(`dsh-auth-${suffix}`, `v1.${"x".repeat(154)}.${"y".repeat(43)}`);
+  }
+  return cookies;
+}
+
+function serializeCookies(cookies) {
+  return [...cookies].map(([name, value]) => `${name}=${value}`).join("; ");
+}
+
+function applySetCookies(cookies, headerValue) {
+  const values = Array.isArray(headerValue) ? headerValue : headerValue ? [headerValue] : [];
+  for (const value of values) {
+    const [pair, ...attributes] = value.split(";");
+    const at = pair.indexOf("=");
+    if (at === -1) continue;
+    const name = pair.slice(0, at).trim();
+    const cookieValue = pair.slice(at + 1).trim();
+    if (attributes.some(attribute => /^\s*Max-Age=0\s*$/iu.test(attribute))) cookies.delete(name);
+    else cookies.set(name, cookieValue);
+  }
+}
+
+function pluginScriptUrls(html, baseUrl) {
+  const urls = new Set();
+  for (const match of html.matchAll(/\b(?:src|href)=["']([^"']+)["']/gu)) {
+    const value = match[1].replaceAll("&amp;", "&").replaceAll("&#38;", "&");
+    const url = new URL(value, baseUrl);
+    if (url.origin === baseUrl.origin && url.pathname === "/plugins/") urls.add(url.href);
+  }
+  return [...urls];
+}
 
 function diagnosticTail(value) {
   const safeLines = String(value)
@@ -271,24 +308,40 @@ async function runCycle(index) {
     const readyUrl = new URL(ready);
     if (readyUrl.hostname !== "127.0.0.1" || !readyUrl.port) throw new Error(`unexpected readiness origin ${ready}`);
     if (!readyUrl.searchParams.get("token")) throw new Error("runtime readiness URL is missing its browser session token");
+    const browserCookies = createLegacyCookieJar();
     let exchange;
     try {
-      exchange = await waitForLoopback(ready, { child });
+      exchange = await waitForLoopback(ready, {
+        child,
+        headers: { cookie: serializeCookies(browserCookies) }
+      });
     } catch (error) {
       throw withRuntimeDiagnostic(error, output, index);
     }
     const setCookie = exchange.headers["set-cookie"];
-    const cookieHeader = Array.isArray(setCookie) ? setCookie[0] : setCookie;
-    const cookie = cookieHeader?.split(";", 1)[0];
-    if (exchange.status !== 303 || exchange.headers.location !== "/" || !cookie) {
+    applySetCookies(browserCookies, setCookie);
+    if (exchange.status !== 303 || exchange.headers.location !== "/" || browserCookies.size !== 1) {
       throw new Error(`runtime browser token exchange failed with ${exchange.status}`);
     }
+    const cookie = serializeCookies(browserCookies);
     const cleanUrl = new URL("/", readyUrl);
     const response = await requestLoopback(cleanUrl, { headers: { cookie } });
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`runtime health check returned ${response.status}`);
     }
     if (!response.body.toLowerCase().includes("html")) throw new Error("runtime did not return an HTML shell");
+    const scripts = pluginScriptUrls(response.body, cleanUrl);
+    if (scripts.length === 0) throw new Error("runtime HTML shell does not reference plugin scripts");
+    for (const script of scripts) {
+      const scriptResponse = await requestLoopback(script, {
+        headers: { cookie },
+        bodyLimit: 4 * 1024 * 1024
+      });
+      const contentType = String(scriptResponse.headers["content-type"] || "");
+      if (scriptResponse.status < 200 || scriptResponse.status >= 300 || !contentType.includes("javascript")) {
+        throw new Error(`runtime plugin script failed with ${scriptResponse.status}: ${new URL(script).pathname}`);
+      }
+    }
     await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
     if (output.includes("dsh web: opening the default browser")) {
       throw new Error("desktop Runtime attempted to open the system browser");
