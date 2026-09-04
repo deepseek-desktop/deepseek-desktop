@@ -143,3 +143,28 @@ test("build path sanitization preserves binary offsets while shrinking text path
   assert.deepEqual([...sanitizedBinary.subarray(5 + replacement.length, 5 + source.length)], new Array(source.length - replacement.length).fill(0));
   assert.deepEqual(result, { rewrittenFiles: 2, replacementCount: 3, resignedFiles: 0 });
 });
+
+test("build path sanitization bounds longer replacements inside binaries", async t => {
+  const root = await fixture(t);
+  const source = "C:\\d";
+  const replacement = "/deepseek-desktop";
+  const textPath = join(root, "metadata.txt");
+  const binaryPath = join(root, "native.node");
+  await writeFile(textPath, `source=${source}\n`);
+  const binary = Buffer.concat([
+    Buffer.from([0x4d, 0x5a, 0]),
+    Buffer.from(source),
+    Buffer.from([0, 1, 2, 3, 4])
+  ]);
+  await writeFile(binaryPath, binary);
+
+  const result = await sanitizeBuildPaths(root, [[source, replacement]]);
+  const sanitizedText = await readFile(textPath, "utf8");
+  const sanitizedBinary = await readFile(binaryPath);
+  assert.equal(sanitizedText, `source=${replacement}\n`);
+  assert.equal(sanitizedBinary.length, binary.length);
+  assert.equal(sanitizedBinary.includes(Buffer.from(source)), false);
+  assert.equal(sanitizedBinary.subarray(3, 6).toString(), "/de");
+  assert.equal(sanitizedBinary[6], 0);
+  assert.deepEqual(result, { rewrittenFiles: 2, replacementCount: 2, resignedFiles: 0 });
+});

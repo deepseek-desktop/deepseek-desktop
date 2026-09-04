@@ -7,11 +7,11 @@ function packagePath(nodeModules, name) { return join(nodeModules, ...name.split
 
 function replaceBuffer(input, search, replacement, preserveSize) {
   if (search.length === 0 || !input.includes(search)) return { bytes: input, replacements: 0 };
-  if (preserveSize && replacement.length > search.length) {
-    throw new Error("binary build path replacement cannot be longer than its source");
-  }
+  const boundedReplacement = preserveSize && replacement.length > search.length
+    ? replacement.subarray(0, Math.max(0, search.length - 1))
+    : replacement;
   const effectiveReplacement = preserveSize
-    ? Buffer.concat([replacement, Buffer.alloc(search.length - replacement.length)])
+    ? Buffer.concat([boundedReplacement, Buffer.alloc(search.length - boundedReplacement.length)])
     : replacement;
   const chunks = [];
   let offset = 0;
