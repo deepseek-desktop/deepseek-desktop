@@ -199,7 +199,6 @@ pub fn popup(
         ));
     }
 
-    #[cfg(not(target_os = "macos"))]
     let anchor_x = {
         let scale_factor = window.scale_factor().map_err(desktop_error)?;
         let inner_size = window.inner_size().map_err(desktop_error)?;
@@ -296,9 +295,7 @@ pub fn popup(
 
     #[cfg(target_os = "macos")]
     {
-        // Passing a position binds NSMenu to Tao's root NSView. On macOS 26,
-        // AppKit can later deliver input to that view after Tao detached its state.
-        menu.popup(window).map_err(desktop_error)
+        popup_below_title(&menu, &window, anchor_x)
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -307,6 +304,32 @@ pub fn popup(
         menu.popup_at(window, tauri::LogicalPosition::new(anchor_x, popup_y))
             .map_err(desktop_error)
     }
+}
+
+#[cfg(target_os = "macos")]
+fn popup_below_title(
+    menu: &impl ContextMenu,
+    window: &tauri::Window,
+    anchor_x: f64,
+) -> DesktopResult<()> {
+    use objc2_app_kit::{NSMenu, NSWindow};
+    use objc2_foundation::{MainThreadMarker, NSPoint};
+
+    let _mtm = MainThreadMarker::new().ok_or_else(|| {
+        DesktopError::Other("macOS menus must open on the main thread".to_owned())
+    })?;
+    let ns_window: &NSWindow = unsafe { &*window.ns_window().map_err(desktop_error)?.cast() };
+    let content = ns_window.contentView().ok_or_else(|| {
+        DesktopError::Other("macOS window content view is unavailable".to_owned())
+    })?;
+    let y = content.frame().size.height - content_top_inset(window)? - WINDOW_MENU_HEIGHT_LOGICAL;
+    let point = content.convertPoint_toView(NSPoint::new(anchor_x, y), None);
+    let screen_point = ns_window.convertPointToScreen(point);
+    // Screen coordinates keep the popup under its title without attaching the
+    // blocking AppKit menu loop to Tao's root view (a macOS 26 crash path).
+    let native: &NSMenu = unsafe { &*menu.inner_context().ns_menu().cast() };
+    native.popUpMenuPositioningItem_atLocation_inView(None, screen_point, None);
+    Ok(())
 }
 
 fn item(

@@ -20,7 +20,7 @@ test("isolated workbench links reach the Rust navigation allowlist", async () =>
   assert.match(app, /DesktopMenuBar/u);
   assert.match(lib, /desktop_menu_popup/u);
   assert.match(menu, /WINDOW_MENU_HEIGHT_LOGICAL/u);
-  assert.match(menu, /#\[cfg\(target_os = "macos"\)\][\s\S]*?menu\.popup\(window\)/u);
+  assert.match(menu, /popup_below_title\(&menu, &window, anchor_x\)/u);
   assert.match(menu, /#\[cfg\(not\(target_os = "macos"\)\)\][\s\S]*?menu\.popup_at\(/u);
   assert.match(runtime, /DESKTOP_MENU_WEBVIEW_LABEL/u);
   assert.match(runtime, /__DEEPSEEK_DESKTOP_MENU_ONLY__/u);
@@ -29,6 +29,20 @@ test("isolated workbench links reach the Rust navigation allowlist", async () =>
   assert.match(runtime, /window_size\.to_logical::<f64>\(scale_factor\)/u);
   assert.match(runtime, /\.hide\(\)/u);
   assert.match(runtime, /should_navigate_workbench/u);
+});
+
+test("macOS anchors the native popup without moving the shared window menu", async () => {
+  const menu = await readFile(resolve(root, "src-tauri/src/native_menu.rs"), "utf8");
+  const app = await readFile(resolve(root, "src/App.vue"), "utf8");
+  assert.match(menu, /WINDOW_MENU_HEIGHT_LOGICAL: f64 = 38\.0/u);
+  assert.match(app, /<DesktopMenuBar @open="showDesktopMenu"/u);
+  assert.doesNotMatch(app, /usesWindowMenu|windowMenuVisible/u);
+  assert.match(menu, /anchor_x\.clamp\(0\.0, logical_width\)/u);
+  assert.match(menu, /convertPoint_toView\(NSPoint::new\(anchor_x, y\), None\)/u);
+  assert.match(menu, /convertPointToScreen\(point\)/u);
+  assert.match(menu, /popUpMenuPositioningItem_atLocation_inView\(None, screen_point, None\)/u);
+  assert.match(menu, /NativeMenuPopupGuard::try_acquire/u);
+  assert.doesNotMatch(menu, /menu\.popup\(window\)|set_as_windows_menu_for_nsapp/u);
 });
 
 test("closing a view never shares the quit path", async () => {
