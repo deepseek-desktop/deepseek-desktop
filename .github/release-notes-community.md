@@ -6,22 +6,14 @@
 
 ## 主要变化
 
-- Runtime 已同步至官方 `0.1.2-alpha.1`，锁定提交 `cd5ef8148158`，并适配新的 Python Runtime 部署根包名
-- 上游 `dsh-web-fetch-http` 已进入桌面 Runtime 闭包，为联网检索提供新版运行时实现
-- 联网搜索默认跟随当前会话模型 Provider，复用已保存的地址、模型和凭据；自定义 Provider 可按声明协议启用，不再固定索要官方搜索密钥
-- 工作台中的 HTTP/HTTPS 链接现在统一交给系统默认浏览器打开，正文点击与原生右键菜单操作保持一致
-- 原生窗口标题增加桌面版本号；版本缺少 `v` 时自动补齐，便于用户准确反馈问题版本
-- 桌面凭据、授权策略、模型保存回滚和会话展示补丁已迁移并重新校验到新版 Runtime 包结构
-- 修复 Windows 短路径构建副本的仓库地址自动解析，GitHub Actions 始终使用当前工作流仓库链接
-- 发行标签支持完整 SemVer 的带 `v` 和无 `v` 两种格式，并在构建入口严格校验
-- Runtime 来源和 Rust 工具链增加不可变提交与 SHA-256 校验，公开发行不会因移动 tag 或本机缓存发生漂移
-- Runtime 构建变量统一为 `RUNTIME_REPOSITORY` / `RUNTIME_REF`，本地开发可自动跟随最新 SemVer，社区发行保持审计锁定
-- 凭据记录索引改为加密存储，并安全迁移旧版明文索引；失败写入和删除具备回滚保护
-- Desktop 壳不再选择、保存或注册项目目录；Runtime 使用独立内部运行目录，项目目录完全由工作台管理
-- 外接屏仍连接时恢复原窗口位置，目标显示器断开时自动回到当前可见显示器
-- 修复损坏或未来版本设置恢复、诊断日志轮转、UTF-8 截断和桌面状态操作提示
-- 减少 Runtime profile 扩展的重复文件同步，并加强三语文案引用检查
-- 保留 DSH Market、脱敏日志导出、自定义 Provider、模型切换和跨平台本地加密凭据库能力
+- 修复 macOS 从 Finder 启动后 Runtime 仓库检查超时：仓库检查和拉取自动使用系统静态代理，并遵守绕过规则
+- 保留用户已有 Git 和环境代理设置，不修改全局网络配置，不要求重新填写仓库或模型凭据
+- 仓库连接超时改为明确的三语网络/代理提示，并清理仍在运行的 Git 辅助进程；失败不停止或替换当前 Runtime
+- 保留工作台插件加载、会话 Cookie 清理、菜单和编辑快捷键等既有修复
+
+本次修复位于 Desktop 外壳，需要安装新版桌面应用，仅更新 Runtime 不会生效。安装包内置 Runtime 仍固定为 `0.1.2-alpha.1`（`cd5ef8148158`），Node `24.20.0` / pnpm `11.24.0` 和 DSH Market `1.28.1` 保持不变。
+
+系统代理自动适配仅针对 macOS 的 HTTP(S) Git 请求；PAC 自动代理、Windows/Linux 和依赖下载继续使用各工具已有的网络配置。
 
 ## 下载选择
 
@@ -37,6 +29,8 @@
 
 # DeepSeek Desktop Community Edition
 
-This independent, unofficial community distribution bundles a locked local Runtime, DSH Market 1.28.1, and pnpm 11.24.0. This release updates the Runtime to upstream 0.1.2-alpha.1, includes its HTTP web-fetch implementation, decouples Desktop startup from Runtime project selection, keeps Runtime in an internal work directory, restores windows safely across changing monitor layouts, and shows the exact Desktop version in the native window title.
+This release fixes Runtime repository checks timing out when the macOS app is launched without terminal proxy variables. HTTP(S) Git checks and clones now use the system static proxy and bypass rules, while respecting explicit Git and environment proxy settings. Timeouts have clearer localized messages and clean up Git helpers without changing the current Runtime.
+
+Install the new Desktop app to receive this shell fix. The bundled Runtime remains pinned to 0.1.2-alpha.1, with Node 24.20.0, pnpm 11.24.0, and DSH Market 1.28.1. PAC, Windows/Linux, and dependency downloads retain their existing network configuration behavior.
 
 The macOS application has an ad-hoc integrity signature but is not signed or notarized with an Apple Developer ID. Windows and Linux community artifacts do not carry a trusted publisher signature. Automatic updates remain disabled.
