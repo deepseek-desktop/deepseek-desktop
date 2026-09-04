@@ -9,8 +9,16 @@
 - 安装版日志确认失败发生于 Git 仓库 HEAD 查询超时，尚未进入候选下载或构建。相同仓库在终端代理环境中约 0.95 秒成功，清除代理环境后 35 秒仍未返回；系统已配置静态代理，但 Finder 启动的 Git 未读取它。
 - 修复后的 opt-in 真实仓库测试清除全部代理环境变量，并限制 PATH 为系统目录，1.17 秒成功解析默认仓库 HEAD。环境代理优先级、系统绕过规则、超时分类和辅助进程清理均有回归覆盖。
 - `verify` 通过：85 项配置与发行协议测试、21 项 Vue 测试、19 项跟随模型搜索测试、87 项 Rust 测试（另 1 项真实联网测试默认忽略，已单独执行）、Clippy `-D warnings`、三语与 Runtime manifest 校验。`test:e2e` 2 项、`runtime:smoke`、`app:sync --check`、`runtime:sync --check` 与 `release:smoke` 均通过；测试后的生成配置已恢复默认应用标识与版本。
-- macOS ARM64 隔离 debug `.app` 通过 Tauri 构建和 `codesign --verify --deep --strict`。使用 LaunchServices、独立应用标识和仓库内测试数据目录启动，实测进程未携带代理环境变量；应用自动检查发现 Runtime commit `76fda729799f`，工作台正常加载，关闭确认后退出。未覆盖用户安装的 `1.0.29`，未下载或激活候选 Runtime，未发布新版本。
-- 本轮没有 Windows/Linux 真机复测，也没有生成发布用 DMG；macOS 静态代理适配不改变 Windows/Linux 既有 Git/环境代理行为。PAC 执行与 pnpm 依赖下载代理不在本轮变更范围。
+- macOS ARM64 隔离 debug `.app` 通过 Tauri 构建和 `codesign --verify --deep --strict`。使用 LaunchServices、独立应用标识和仓库内测试数据目录启动，实测进程未携带代理环境变量；应用自动检查发现 Runtime commit `76fda729799f`，工作台正常加载，关闭确认后退出。未覆盖用户安装的 `1.0.29`，未下载或激活候选 Runtime；后续发行验证见下节。
+- 修复阶段没有 Windows/Linux 人工复测；macOS 静态代理适配不改变 Windows/Linux 既有 Git/环境代理行为。PAC 执行与 pnpm 依赖下载代理不在本轮变更范围。
+
+## v1.0.30 发行验证
+
+- 本机 `DESKTOP_APP_VERSION=1.0.30 corepack pnpm@11.24.0 desktop:package` 完整链路通过，耗时 5 分 24 秒；重新执行依赖准备、同步、`verify`、E2E、Runtime smoke、Tauri release 构建和 77377 文件交付扫描，构建来源为 `197f9410abcf5301ff8e327b9ebd0f366aa6e20d`、`dirty=false`。两份生产依赖 lock 审计均无已知漏洞。
+- 本机构建的 ARM64 DMG 通过 `hdiutil verify` 和应用深度完整性签名检查，SHA-256 为 `4cc2e3c3acad8ac7a25181c89f0e26e24a57f6fbce547f2ad82fb58ccbe813bf`。使用 LaunchServices 启动构建目录中的 release `.app`，确认标题为 `v1.0.30`、进程无代理环境变量、工作台与既有会话正常加载；确认退出后 Desktop 与 Runtime 子进程均已结束。未覆盖本机安装的 `1.0.29`，未切换用户 Runtime。
+- GitHub Actions Run `33845496695` 绑定上述 commit，六个 Job 全部成功：质量门禁 9 分 32 秒、macOS ARM64 14 分 20 秒、Linux x64 18 分 01 秒、Windows x64 30 分 25 秒、macOS x64 37 分 59 秒、聚合发布 46 秒，总墙钟 48 分 27 秒。四个平台日志均确认 Node `v24.20.0`，各自 E2E 2 项和 Runtime smoke 通过；Rust 测试为两种 macOS 各 87 项、Windows 82 项、Linux 83 项，各另有 1 项真实联网测试默认忽略。
+- `v1.0.30` annotated Tag 精确指向上述 commit，Release 保持未签名 prerelease。重新下载全部六个公开资产，五个安装包均通过 `SHA256SUMS`，全部文件的大小、SHA-256 与 GitHub 服务端 digest 一致，正文直接下载链接与文件逐项匹配；没有公开 BUILD-INFO。下载的最终 ARM64 DMG 另经 `hdiutil verify` 通过，其摘要为 `81cd63e9ca2e77c8a1afbe3a339f6dba4277beae652478b3a39d91c181d60183`。
+- 本次 macOS release 实测覆盖启动、工作台加载和确认退出；未重新完成全部菜单与输入编辑压力测试。Windows/Linux 本次证据是官方原生 Runner 的构建、测试和 smoke，不是人工桌面交互或安装器全流程验收。
 
 ## 既有验证基线
 
