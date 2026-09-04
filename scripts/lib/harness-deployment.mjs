@@ -175,6 +175,11 @@ export async function mergeDesktopClosure(desktopDeployment, harnessDeployment, 
     }
     visited.add(name);
     const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
+    for (const peer of manifest.dsh?.desktop?.harnessPackages ?? []) {
+      if (!await pathExists(join(packagePath(destinationModules, peer), "package.json"))) {
+        throw new Error(`Candidate Harness extension dependency is missing: ${peer}`);
+      }
+    }
     // Peer services must come from the new Harness, never an older bundled core.
     for (const peer of Object.keys(manifest.peerDependencies || {})) {
       if (!await pathExists(packagePath(destinationModules, peer)) && !manifest.peerDependenciesMeta?.[peer]?.optional) {
@@ -183,6 +188,22 @@ export async function mergeDesktopClosure(desktopDeployment, harnessDeployment, 
     }
     await rm(destination, { recursive: true, force: true });
     await copyPackage(source, destination);
+    if (manifest.dsh?.client) {
+      const client = manifest.exports?.["./client"];
+      const entry = typeof client === "string" ? client : client?.default;
+      if (typeof entry !== "string" || !entry.startsWith("./") || entry.includes("..", 2)
+        || !await pathExists(join(destination, entry))) {
+        throw new Error(`Desktop client entry is missing: ${name}`);
+      }
+      // Only Desktop-owned extensions declare these as hard requirements;
+      // third-party manifests may also name optional, legacy client services.
+      for (const dependency of manifest.dsh.desktop ? manifest.dsh.client.inject ?? [] : []) {
+        const peer = packagePath(destinationModules, dependency);
+        if (!await pathExists(join(peer, "package.json"))) {
+          throw new Error(`Candidate Harness client dependency is missing: ${dependency}`);
+        }
+      }
+    }
     copied.push(name);
     for (const dependency of Object.keys(manifest.dependencies || {})) await visit(dependency);
     for (const dependency of Object.keys(manifest.optionalDependencies || {})) await visit(dependency, false);

@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采用。
+已采用；插件共存、公开接口接入与独立设置界面的现行实现以 [ADR-017](adr-017-independent-search-coexistence.md) 为准。
 
 ## 决策
 

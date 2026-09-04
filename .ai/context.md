@@ -8,6 +8,8 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
+- 跟随模型搜索现为 Desktop 独立 host/client 扩展，通过公开 Agent 异步上下文、模型目录、搜索 Provider 注册和设置插槽接入。官方搜索源码、设置和启用状态遵循上游及用户配置，Desktop 只选择 `web.searchProvider: follow-model`；不再补丁修改官方搜索卡片或 Harness 搜索核心。候选闭包验证扩展前后端及 Harness 依赖，详见 ADR-017。本功能簇仅开发验证，未发布。
+
 - `v1.0.31` 已通过 GitHub 原生四平台矩阵并发布，六个公开资产下载校验一致。用户授权备份后，本机安装版已更新至 `1.0.31` 并通过原生交互验收；本机 Harness 已升级至 `0.1.2-rc.1` / `76fda729799f`。安装包内置基线仍以工具链 lock 为准，平台与测试边界见验证基线。
 
 - Desktop 更新摘要的 API Markdown 使用锁定的 markdown-it 渲染；备用 Atom HTML 只重建排版白名单，不执行原始 HTML、不请求外部图片，也不允许非 HTTP(S) 链接。保留有界完整正文，不按字符截断 Markdown；网页链接走专用原生校验命令，同窗设置和原有官方下载入口不变。见 ADR-016。
@@ -26,7 +28,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 窗口状态按显示器恢复；保存位置仍能落在已连接显示器时保持不变，目标显示器断开时回到当前主显示器可见区域。
 - 工作台 WebView 不获得通用 Tauri Shell、文件系统或任意 IPC 权限。
 - 模型凭据保存在跨平台本地加密凭据库中，不使用系统钥匙串，也不降级为 `.env` 或明文文件。
-- 联网搜索默认跟随当前会话模型 Provider：显式 `capabilities.webSearch` 可作高级覆盖，否则根据当前模型 `apiProtocol` 自动映射标准搜索协议，并复用该 Provider 的 endpoint、model 和 `CredentialRef`；模型 Provider 表单不显示重复的搜索协议控件。Provider 请求使用 90 秒预算，外层工具使用 100 秒预算并区分取消与超时；核心路由不识别厂商、域名或 Provider ID，未知接口不盲试协议，也不跨 Provider 传递凭据。
+- 联网搜索默认跟随当前会话模型 Provider：显式 `capabilities.webSearch` 可作高级覆盖；已审计的 DeepSeek 与 Alibaba MaaS 精确端点可自动选择其标准搜索协议，其他提供方根据当前模型显式 `apiProtocol` 映射，并始终复用该会话的 endpoint、model 和 `CredentialRef`。模型 Provider 表单不显示重复协议控件。Provider 请求使用 90 秒预算，外层工具使用 100 秒预算并区分取消与超时；未知端点和接口不盲试协议，也不跨 Provider 传递凭据。
 - Desktop 仅承载并隔离 Harness 工作台，不改写页面交互：受管 loopback 页面在内嵌 WebView 中正常导航，外部 HTTP/HTTPS 链接优先交给系统默认浏览器，打开失败或其他原生导航行为由 WebView 继续处理。
 - 导航判定按当前受管 Origin 实时进行，不使用 WebView 创建时的快照；Harness 未就绪期间没有可信 Origin，HTTP/HTTPS 导航一律拒绝而不转交系统浏览器，避免把带令牌的 loopback 地址交给外部程序。
 - Harness 进程以 `--expose-internals` 启动：这是 Harness 插件加载器与 HMR 的硬性契约，同时意味着 Harness 内所有代码（含第三方市场插件）都能访问 Node 内部模块，属于已知且被接受的边界放宽。

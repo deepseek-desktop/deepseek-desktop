@@ -44,6 +44,27 @@ test("missing candidate peer fails instead of copying an old core", async t => {
   await assert.rejects(mergeDesktopClosure(join(root, "old"), join(root, "new"), ["desktop"]), /Candidate Harness peer is missing: core/);
 });
 
+test("desktop client and its Harness dependencies survive replacement and reject incomplete candidates", async t => {
+  const root = await fixture(t);
+  const old = join(root, "old");
+  const next = join(root, "next");
+  const extension = await packageAt(join(old, "node_modules"), "extension", {
+    exports: { "./client": "./client.js" },
+    dsh: { client: { inject: ["settings-ui"] }, desktop: { harnessPackages: ["agent"] } }
+  });
+  await assert.rejects(mergeDesktopClosure(old, next, ["extension"]), /extension dependency is missing: agent/);
+  await packageAt(join(next, "node_modules"), "agent");
+  await assert.rejects(mergeDesktopClosure(old, next, ["extension"]), /Desktop client entry is missing/);
+  await writeFile(join(extension, "client.js"), "independent-settings");
+  await assert.rejects(mergeDesktopClosure(old, next, ["extension"]), /client dependency is missing: settings-ui/);
+  await packageAt(join(next, "node_modules"), "settings-ui");
+  await mergeDesktopClosure(old, next, ["extension"]);
+  assert.equal(await readFile(join(next, "node_modules/extension/client.js"), "utf8"), "independent-settings");
+  await writeFile(join(next, "settings.yaml"), "user-choice");
+  await mergeDesktopClosure(old, next, ["extension"]);
+  assert.equal(await readFile(join(next, "settings.yaml"), "utf8"), "user-choice");
+});
+
 test("missing required desktop dependency fails preparation", async t => {
   const root = await fixture(t);
   await packageAt(join(root, "old/node_modules"), "desktop", { dependencies: { missing: "1" } });

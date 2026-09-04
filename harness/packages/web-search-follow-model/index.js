@@ -28,6 +28,8 @@ const messages = {
     requestTimedOut: "The current model Provider web search request timed out. Do not retry it automatically in this turn; normal chat remains available.",
     requestFailed: "The current model Provider web search request failed.",
     responseInvalid: "The current model Provider returned an invalid web search response.",
+    searchNotPerformed: "The Provider did not return evidence of web search. Its model answer is not a search result.",
+    unsupportedMode: "Select an independent search Provider through the Harness web.searchProvider configuration.",
     disabled: "Web search is disabled in Harness settings.",
     independentMissing: "Independent web search mode requires a configured search Provider.",
   },
@@ -40,6 +42,8 @@ const messages = {
     requestTimedOut: "当前模型提供方的联网搜索请求超时。本轮不要自动重试，正常对话仍可继续。",
     requestFailed: "当前模型提供方的联网搜索请求失败。",
     responseInvalid: "当前模型提供方返回了无法解析的联网搜索结果。",
+    searchNotPerformed: "提供方未返回联网搜索执行证据，不能将普通模型回答作为搜索结果。",
+    unsupportedMode: "请通过 Harness 的 web.searchProvider 配置选择独立搜索提供方。",
     disabled: "联网搜索已在 Harness 设置中禁用。",
     independentMissing: "独立搜索服务模式需要指定搜索提供方。",
   },
@@ -52,6 +56,8 @@ const messages = {
     requestTimedOut: "目前模型提供方的聯網搜尋請求逾時。本輪請勿自動重試，正常對話仍可繼續。",
     requestFailed: "目前模型提供方的聯網搜尋請求失敗。",
     responseInvalid: "目前模型提供方傳回了無法解析的聯網搜尋結果。",
+    searchNotPerformed: "提供方未傳回聯網搜尋執行證據，不能將一般模型回答作為搜尋結果。",
+    unsupportedMode: "請透過 Harness 的 web.searchProvider 設定選擇獨立搜尋提供方。",
     disabled: "聯網搜尋已在 Harness 設定中停用。",
     independentMissing: "獨立搜尋服務模式需要指定搜尋提供方。",
   },
@@ -256,6 +262,12 @@ function textContent(value) {
 function responseAnnotations(output) {
   const sources = [];
   for (const item of Array.isArray(output) ? output : []) {
+    if (item?.type === "web_search_call" && item.status === "completed") {
+      if (Array.isArray(item.action?.sources)) sources.push(...item.action.sources);
+      if (["open_page", "find_in_page"].includes(item.action?.type) && typeof item.action.url === "string") {
+        sources.push({ url: item.action.url });
+      }
+    }
     for (const block of Array.isArray(item?.content) ? item.content : []) {
       for (const annotation of Array.isArray(block?.annotations) ? block.annotations : []) {
         const citation = annotation?.url_citation ?? annotation;
@@ -313,6 +325,7 @@ function mcpHeaders(credential, sessionId) {
 function mcpResult(payload, maxResults) {
   if (payload?.error !== undefined) fail(copy("requestFailed"), "WEB_FOLLOW_MODEL_REQUEST_FAILED");
   const result = payload?.result;
+  if (result?.isError) fail(copy("requestFailed"), "WEB_FOLLOW_MODEL_REQUEST_FAILED");
   const structured = result?.structuredContent;
   const text = textContent(result?.content);
   let decoded;
@@ -330,11 +343,16 @@ function builtInProtocols(fetchImpl, timeoutMs) {
   return new Map([
     ["openai-responses-web-search", async ({ route, capability, credential, request, signal }) => {
       const payload = await requestJson(requestUrl(route.endpoint, "/responses"), {
-        ...constrainedFields(capability.requestFields, new Set(["model", "input", "tools"])),
+        ...constrainedFields(capability.requestFields, new Set(["model", "input", "tools", "tool_choice"])),
         model: route.model,
-        input: request.query,
-        tools: [{ type: "web_search_preview" }],
+        input: `Use the web search tool to search for the following query and cite the sources. Do not answer from memory.\n\n${request.query}`,
+        tools: [{ type: "web_search" }],
+        // Thinking models may reject forced tool choice; execution evidence below is mandatory.
+        tool_choice: "auto",
       }, bearerHeaders(credential), signal);
+      if (!payload.output?.some?.(item => item?.type === "web_search_call" && item.status === "completed")) {
+        fail(copy("searchNotPerformed"), "WEB_FOLLOW_MODEL_SEARCH_NOT_PERFORMED");
+      }
       const content = typeof payload.output_text === "string"
         ? payload.output_text
         : textContent(payload.output?.flatMap?.((item) => item?.content ?? []));
@@ -342,17 +360,20 @@ function builtInProtocols(fetchImpl, timeoutMs) {
     }],
     ["openai-chat-completions-search", async ({ route, capability, credential, request, signal }) => {
       const payload = await requestJson(requestUrl(route.endpoint, "/chat/completions"), {
-        ...constrainedFields(capability.requestFields, new Set(["model", "messages", "stream", "enable_search"])),
+        ...constrainedFields(capability.requestFields, new Set(["model", "messages", "stream", "web_search_options"])),
         model: route.model,
         messages: [{ role: "user", content: request.query }],
         stream: false,
-        enable_search: true,
+        web_search_options: {},
       }, bearerHeaders(credential), signal);
       const message = payload?.choices?.[0]?.message;
-      return normalizedResult(textContent(message?.content), [
+      const sources = [
+        ...responseAnnotations([{ content: [message] }]),
         ...genericSources(message),
         ...genericSources(payload),
-      ], request.maxResults);
+      ];
+      if (uniqueSources(sources).length === 0) fail(copy("searchNotPerformed"), "WEB_FOLLOW_MODEL_SEARCH_NOT_PERFORMED");
+      return normalizedResult(textContent(message?.content), sources, request.maxResults);
     }],
     ["anthropic-messages-web-search", async ({ route, capability, credential, request, signal }) => {
       const payload = await requestJson(requestUrl(route.endpoint, "/messages"), {
@@ -363,6 +384,9 @@ function builtInProtocols(fetchImpl, timeoutMs) {
         tools: [{ type: "web_search_20250305", name: "web_search" }],
       }, { "x-api-key": credential, "anthropic-version": "2023-06-01" }, signal);
       const blocks = Array.isArray(payload?.content) ? payload.content : [];
+      if (!blocks.some(block => block?.type === "web_search_tool_result" && Array.isArray(block.content))) {
+        fail(copy("searchNotPerformed"), "WEB_FOLLOW_MODEL_SEARCH_NOT_PERFORMED");
+      }
       const sources = [];
       for (const block of blocks) {
         if (block?.type === "web_search_tool_result" && Array.isArray(block.content)) sources.push(...block.content);
@@ -472,6 +496,7 @@ export class FollowModelSearchEngine {
       fail("The model adapter returned a web search route for a different Provider or model.", "WEB_FOLLOW_MODEL_ROUTE_MISMATCH");
     }
     const inferredProtocol = DEFAULT_PROTOCOL_BY_MODEL_API.get(route.apiProtocol);
+    if (route.webSearch === false) fail(copy("capabilityMissing"), "WEB_FOLLOW_MODEL_CAPABILITY_MISSING");
     const capability = route.webSearch ?? (inferredProtocol === undefined ? undefined : {
       protocol: inferredProtocol,
       credential: "inherit",
@@ -510,29 +535,72 @@ export class FollowModelSearchEngine {
   }
 }
 
+function endpointSearchCapability(endpoint) {
+  const url = endpointUrl(endpoint);
+  const path = url.pathname.replace(/\/+$/u, "");
+  // Search capability belongs to the endpoint, not the editable Provider id or its chat API.
+  if (url.origin === "https://api.deepseek.com" && (path === "" || path === "/v1")) {
+    return { protocol: "openai-responses-web-search", credential: "inherit" };
+  }
+  if (url.origin === "https://token-plan.cn-beijing.maas.aliyuncs.com" && path === "/compatible-mode/v1") {
+    return { protocol: "openai-responses-web-search", credential: "inherit" };
+  }
+  return undefined;
+}
+
 export function declaredSearchRoutes(sections, selection) {
   return sections.flatMap(section => {
     const provider = section.value?.providers?.[selection.provider];
     if (!provider || typeof provider.baseURL !== "string" || typeof provider.apiKeyEnv !== "string") return [];
-    const model = provider.models?.find(item => item.id === selection.model);
-    const apiProtocol = model?.api ?? provider.api;
-    if (typeof apiProtocol !== "string") return [];
+    const apiProtocol = provider.api;
+    const webSearch = provider.capabilities?.webSearch ?? provider.webSearch ?? endpointSearchCapability(provider.baseURL);
+    if (typeof apiProtocol !== "string" && webSearch === undefined) return [];
     return [{
       ...selection,
-      endpoint: model?.baseURL ?? provider.baseURL,
+      endpoint: provider.baseURL,
       credentialRef: provider.apiKeyEnv,
       apiProtocol,
-      webSearch: model?.capabilities?.webSearch ?? provider.capabilities?.webSearch,
+      webSearch,
     }];
   });
 }
 
+export async function resolveConfiguredRoutes(ctx, selection) {
+  const llm = ctx.get("llm");
+  if (!llm.listProviders().some(provider => provider.id === selection.provider)) return [];
+  const addresses = llm.listConfigurableProviders().filter(entry => entry.provider === selection.provider);
+  const sections = ctx.settings.describe();
+  const matches = [];
+  for (const address of addresses) {
+    const section = sections.find(item => item.ns === address.settingsNs);
+    if (!section) continue;
+    if (address.settingsNs === "llm-deepseek" && selection.provider === "deepseek-official") {
+      // Resolve the same launch snapshot as the model adapter, never the search plugin's credentials.
+      const { resolveAdapterOptions } = await import("@deepseek-ai/dsh-llm-deepseek");
+      const { launchEnvironmentOf } = await import("@deepseek-ai/dsh-launch-environment");
+      const connection = resolveAdapterOptions(section.value, launchEnvironmentOf(ctx));
+      const endpoint = endpointUrl(connection.baseURL);
+      if (endpoint.origin !== "https://api.deepseek.com" || !["", "/v1"].includes(endpoint.pathname.replace(/\/+$/u, ""))) continue;
+      matches.push({ ...selection, endpoint: connection.baseURL, credentialRef: connection.apiKeyEnv,
+        webSearch: { protocol: "anthropic-messages-web-search", credential: "inherit", endpointPath: "/anthropic/v1" } });
+    } else if (address.settingsNs === "llm-pi-ai") {
+      matches.push(...declaredSearchRoutes([section], selection));
+    }
+  }
+  return matches;
+}
+
 export default class FollowModelWebSearch extends Service {
   static Config = Config;
-  static inject = ["web"];
+  static inject = ["web", "agents", "settings", "credentials", "llm"];
 
   constructor(ctx, config = {}) {
     super(ctx, "webSearchProtocols");
+    for (const [service, method] of [["agents", "currentInitiator"], ["llm", "listConfigurableProviders"], ["web", "registerSearchProvider"]]) {
+      if (typeof ctx.get(service)?.[method] !== "function") {
+        fail(`Harness extension API is incompatible: ${service}.${method}`, "WEB_FOLLOW_MODEL_HARNESS_INCOMPATIBLE");
+      }
+    }
     let current = () => normalizedConfig(config);
     const hooks = {
       setSource: (source) => { current = () => normalizedConfig(source()); },
@@ -547,30 +615,20 @@ export default class FollowModelWebSearch extends Service {
     }
     this.engine = new FollowModelSearchEngine({
       resolveCredential: async (ref) => (await ctx.get("credentials")?.resolve(ref))?.value,
-      resolveDeclaredRoute: (selection) => {
-        const providers = ctx.get("llm")?.listProviders() ?? [];
-        if (!providers.some(provider => provider.id === selection.provider)) return [];
-        return declaredSearchRoutes(ctx.get("settings")?.describe() ?? [], selection);
-      },
+      resolveDeclaredRoute: selection => resolveConfiguredRoutes(ctx, selection),
     });
     ctx.web.registerSearchProvider({
       id: PROVIDER_ID,
       available: () => true,
-      search: async (request, signal, agent) => {
+      search: async (request, signal) => {
         const settings = current();
         if (settings.mode === "disabled") {
           fail(copy("disabled"), "WEB_FOLLOW_MODEL_DISABLED");
         }
         if (settings.mode === "independent") {
-          if (typeof settings.independentProvider !== "string" || settings.independentProvider.length === 0) {
-            fail(copy("independentMissing"), "WEB_FOLLOW_MODEL_INDEPENDENT_MISSING");
-          }
-          if (settings.independentProvider === PROVIDER_ID) {
-            fail(copy("independentMissing"), "WEB_FOLLOW_MODEL_INDEPENDENT_MISSING");
-          }
-          return ctx.web.searchWithProvider(settings.independentProvider, request, signal, agent);
+          fail(copy("unsupportedMode"), "WEB_FOLLOW_MODEL_INDEPENDENT_UNSUPPORTED");
         }
-        return this.engine.search(agent ?? ctx.get("agents")?.currentInitiator(), request, signal);
+        return this.engine.search(ctx.agents.currentInitiator(), request, signal);
       },
     });
   }

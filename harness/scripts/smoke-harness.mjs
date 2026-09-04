@@ -3,13 +3,14 @@ import { spawn, spawnSync } from "node:child_process";
 import { delimiter, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { parseArgs } from "node:util";
+import { createRequire } from "node:module";
 
 import { requestLoopback, waitForLoopback } from "./loopback-http.mjs";
 
 const harnessRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(harnessRoot, "..");
 const lock = JSON.parse(await readFile(join(desktopRoot, "target", "generated", "harness-lock.json"), "utf8"));
-const { values: options } = parseArgs({ options: { directory: { type: "string" }, entry: { type: "string" } } });
+const { values: options } = parseArgs({ options: { directory: { type: "string" }, entry: { type: "string" }, "settings-ui": { type: "boolean" } } });
 if (Boolean(options.directory) !== Boolean(options.entry)) throw new Error("Candidate smoke requires --directory and --entry together");
 const LEGACY_COOKIE_COUNT = 60;
 
@@ -259,9 +260,23 @@ if (!dump.stdout.includes("@deepseek-ai/dsh-web-search-follow-model")
   || !dump.stdout.includes("searchProvider: follow-model")) {
   throw new Error("follow-model web search is not the composed profile default");
 }
-if (!/id:\s+web-search-deepseek[\s\S]*?disabled:\s+true/u.test(dump.stdout)) {
-  throw new Error("the legacy fixed web search Provider is not disabled");
+const { parse: parseYaml } = createRequire(dsh)("yaml");
+function officialSearchRow(text) {
+  return parseYaml(text, { customTags: [{ tag: "tag:yaml.org,2002:js", resolve: value => value }] }).find(row => row.id === "web-search-deepseek");
 }
+const official = officialSearchRow(dump.stdout);
+if (official?.name !== "@deepseek-ai/dsh-web-search-deepseek" || official.disabled === true) {
+  throw new Error("the upstream search plugin must remain enabled in a fresh Desktop profile");
+}
+await writeFile(join(profile, "cordis.patch.yml"), "- id: web-search-deepseek\n  disabled: true\n");
+const userDisabledDump = spawnSync(node, harnessArguments("--profile", "desktop-web", "--dump-config"), {
+  cwd: smokeRoot, env: environment, input: "smoke-credential-session\n", encoding: "utf8", windowsHide: true
+});
+if (userDisabledDump.status !== 0 || officialSearchRow(userDisabledDump.stdout)?.disabled !== true
+  || !userDisabledDump.stdout.includes("searchProvider: follow-model")) {
+  throw new Error("Desktop must preserve the user's official-plugin disable choice without changing search routing");
+}
+await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
 if (!/locale:\s+preference: zh/u.test(await readFile(join(dshHome, "settings.yaml"), "utf8"))) {
   throw new Error("desktop locale bridge did not persist the mapped Harness locale");
 }
@@ -341,12 +356,17 @@ async function runCycle(index) {
     for (const script of scripts) {
       const scriptResponse = await requestLoopback(script, {
         headers: { cookie },
-        bodyLimit: 4 * 1024 * 1024
+        // Repository builds may coalesce the full plugin graph into one script.
+        bodyLimit: 16 * 1024 * 1024
       });
       const contentType = String(scriptResponse.headers["content-type"] || "");
       if (scriptResponse.status < 200 || scriptResponse.status >= 300 || !contentType.includes("javascript")) {
         throw new Error(`harness plugin script failed with ${scriptResponse.status}: ${new URL(script).pathname}`);
       }
+    }
+    if (options["settings-ui"]) {
+      const { verifySearchSettings } = await import("./verify-search-settings-ui.mjs");
+      await verifySearchSettings(cleanUrl, browserCookies, smokeRoot);
     }
     await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
     if (output.includes("dsh web: opening the default browser")) {

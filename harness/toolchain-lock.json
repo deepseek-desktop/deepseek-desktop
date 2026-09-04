@@ -179,45 +179,6 @@
       "id": "desktop-policy-context"
     },
     {
-      "packageName": "@deepseek-ai/dsh-web",
-      "file": "@deepseek-ai__dsh-web@0.1.2-alpha.1.patch",
-      "moduleFile": "lib/index.js",
-      "markers": ["searchWithProvider(providerId, request, signal, routeContext)", ".search(request, signal, routeContext)"],
-      "id": "follow-model-route-context"
-    },
-    {
-      "packageName": "@deepseek-ai/dsh-tool-web",
-      "file": "@deepseek-ai__dsh-tool-web@0.1.2-alpha.1.patch",
-      "moduleFile": "lib/index.js",
-      "markers": ["runSearchQueries(ctx, queries, maxResults, signal, agent)", "exec.signal, exec.agent"],
-      "id": "follow-model-agent-context"
-    },
-    {
-      "packageName": "@deepseek-ai/dsh-llm-pi-ai",
-      "file": "@deepseek-ai__dsh-llm-pi-ai@0.1.2-alpha.1.patch",
-      "moduleFile": "lib/index.js",
-      "markers": [
-        "webSearch: webSearchCapability",
-        "route === void 0 || route.webSearch === false",
-        "llm-pi-ai: follow-model web search route"
-      ],
-      "id": "generic-search-capability"
-    },
-    {
-      "packageName": "@deepseek-ai/dsh-llm-deepseek",
-      "file": "@deepseek-ai__dsh-llm-deepseek@0.1.2-alpha.1.patch",
-      "moduleFile": "lib/index.js",
-      "markers": ["endpointPath: \"/anthropic/v1\"", "llm-deepseek: follow-model web search route"],
-      "id": "native-search-capability"
-    },
-    {
-      "packageName": "@deepseek-ai/dsh-client-ui-settings-plugins",
-      "file": "@deepseek-ai__dsh-client-ui-settings-plugins@0.1.2-alpha.1.patch",
-      "moduleFile": "lib/client.js",
-      "markers": ["Follow current model", "跟随当前模型", "web-search-follow-model"],
-      "id": "follow-model-search-settings"
-    },
-    {
       "packageName": "@earendil-works/pi-ai",
       "file": "@earendil-works__pi-ai@0.84.x.patch",
       "moduleFile": "dist/api/openai-responses-shared.js",

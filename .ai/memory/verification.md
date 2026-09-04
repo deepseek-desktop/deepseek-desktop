@@ -1,5 +1,16 @@
 # 验证基线
 
+## 独立联网搜索插件共存验收
+
+日期：2026-09-05
+
+- Desktop 不再强制停用或补丁修改官方 `@deepseek-ai/dsh-web-search-deepseek`；官方 Provider 与独立 `@deepseek-ai/dsh-web-search-follow-model` 同时注册时，`web.searchProvider: follow-model` 只选择后者执行搜索，不重复注册工具。公共 Agent 上下文集成回归同时加载两者，并验证两个并发会话、切换模型、凭据隔离及用户主动停用官方插件后 follow-model 仍可用。
+- 固定内置 Harness `cd5ef8148158` 的完整 `desktop:package` 通过：98 项配置/发行测试、三语 152 个 key、30 项前端测试、26 项搜索测试、87 项 Rust 测试（另 1 项可选真实仓库测试默认忽略）、Clippy、5 项 E2E、真实 Harness smoke、设置页保存/重载/恢复默认与 `760x560` 布局，以及 macOS ARM64 应用和 DMG 构建。DMG、`SHA256SUMS` 与应用深度完整性签名校验通过。
+- 使用用户临时提供且未落盘、未进入日志或提交的供应商凭据完成真实外部测试。Alibaba MaaS 的两个模型通过 Responses 执行搜索，DeepSeek 的 Responses 与 Messages 路径均返回结构化搜索证据；官方插件和 follow-model 同时启用的公共注册表集成也成功。测试由精确端点识别已审计能力，仍复用当前会话模型、端点和凭据；未知端点、显式禁用、普通回答和失败的搜索工具结果均明确失败，不跨 Provider 降级。
+- 从本轮 DMG 提取应用并复用备份后的仓库内隔离数据完成 macOS 原生整链验收：应用沿用当前 `qwen3.8-max` 会话及其 Chat 配置，follow-model 自动选择该端点可用的 Responses 搜索；工作台实际出现 1 次网页搜索工具调用并渲染 4 个来源链接，应用和 Harness 持续运行。测试只新增一条验证会话，原有会话、设置和剪贴板均保留；最近 24 小时未发现新增 DeepSeek Desktop 崩溃报告。
+- 社区候选 `76fda729799f` 与官方候选 `d347e703908d` 均重新装配独立扩展并通过 26 项搜索测试；两者此前已通过真实服务与浏览器设置 smoke。未固定来源的最新官方 Harness 全量打包在进入发行构建前，被仓库既有的模型设置补丁 `@deepseek-ai/dsh-client-ui-settings-models` 兼容性错误拒绝；候选未切换、用户数据未改变，不能据此宣称任意未来 Harness 已兼容。
+- 当前只有 Windows 11 ARM64 虚拟机中的 x64 模拟环境，没有目标 Windows x64 原生安装和交互环境。本功能簇不能用模拟、Mock 或旧 CI 代替 Windows x64 真机验收，因此按发布门禁只创建本地功能提交，不推送、不创建 Tag、不发布；现有 `v1.0.31` 保持不变。
+
 ## 最近可信验证
 
 日期：2026-09-04

@@ -10,9 +10,6 @@
   config:
     searchTimeoutMs: 100000
 
-- id: web-search-deepseek
-  disabled: true
-
 - insert:
     - id: desktop-credentials-vault
       name: 'deepseek-desktop-credentials-vault'

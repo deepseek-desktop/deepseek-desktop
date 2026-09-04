@@ -32,7 +32,7 @@
     "harness:sync": "node scripts/harness-sync.mjs",
     "harness:stage": "node harness/scripts/stage-harness.mjs",
     "harness:verify": "node harness/scripts/verify-harness.mjs",
-    "harness:smoke": "node harness/scripts/smoke-harness.mjs",
+    "harness:smoke": "node harness/scripts/smoke-harness.mjs --settings-ui",
     "harness:update:keygen": "node scripts/harness-update/keygen.mjs",
     "harness:update:package": "node scripts/app-sync.mjs && node scripts/harness-sync.mjs && node harness/scripts/stage-harness.mjs && node scripts/harness-update/package-harness.mjs",
     "harness:update:manifest": "node scripts/harness-update/manifest.mjs",
