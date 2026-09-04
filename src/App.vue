@@ -4,31 +4,31 @@ import { useI18n } from "vue-i18n";
 import DesktopMenuBar from "./DesktopMenuBar.vue";
 import { appConfig } from "./app-config";
 import deepSeekDesktopLogo from "./assets/deepseek-desktop.svg";
-import type { DesktopAbout, DesktopSettings, DesktopSettingsView, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopSettings, DesktopSettingsView, HarnessStatus, HarnessUpdateStatus, UpdateStatus } from "./contracts";
 import {
-  checkRuntimeUpdate,
+  checkHarnessUpdate,
   checkForUpdates,
-  downloadRuntimeUpdate,
+  downloadHarnessUpdate,
   exportDiagnostics,
   exportLogs,
   getAbout,
-  getRuntimeStatus,
-  getRuntimeUpdateStatus,
+  getHarnessStatus,
+  getHarnessUpdateStatus,
   getSettings,
   ignoreDesktopUpdate,
   onDesktopLocale,
   onDesktopSettingsView,
   onDesktopSurface,
-  onRuntimeStatus,
-  onRuntimeUpdateStatus,
+  onHarnessStatus,
+  onHarnessUpdateStatus,
   openDesktopMenu,
   openDesktopRelease,
   openWorkbench,
   openRepository,
-  restoreBundledRuntime,
+  restoreBundledHarness,
   saveSettings,
-  startRuntime,
-  stopRuntime
+  startHarness,
+  stopHarness
 } from "./desktop";
 import type { DesktopMenuName } from "./desktop";
 import { normalizeLocale, type SupportedLocale } from "./i18n";
@@ -39,10 +39,10 @@ const { locale, t } = useI18n();
 const menuOnly = Boolean((window as Window & {
   __DEEPSEEK_DESKTOP_MENU_ONLY__?: boolean;
 }).__DEEPSEEK_DESKTOP_MENU_ONLY__);
-const view = ref<ViewName>("runtime");
+const view = ref<ViewName>("harness");
 const busy = ref(false);
 const notice = ref("");
-const runtime = ref<RuntimeStatus>({
+const harness = ref<HarnessStatus>({
   phase: "idle",
   url: null,
   restartCount: 0,
@@ -50,59 +50,59 @@ const runtime = ref<RuntimeStatus>({
   errorCode: null
 });
 const settings = ref<DesktopSettings>({
-  schemaVersion: 6,
+  schemaVersion: 7,
   locale: normalizeLocale(navigator.language),
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
-  runtimeUpdateChannel: "stable",
-  runtimeUpdateMode: "notify",
-  runtimeUpdateRepository: null,
-  runtimePinnedVersion: null,
+  harnessUpdateChannel: "stable",
+  harnessUpdateMode: "notify",
+  harnessUpdateRepository: null,
+  harnessPinnedVersion: null,
   desktopUpdateLastCheckAt: null,
   desktopUpdateIgnoredVersion: null,
   recoveryReason: null
 });
 const about = ref<DesktopAbout | null>(null);
 const update = ref<UpdateStatus | null>(null);
-const runtimeUpdate = ref<RuntimeUpdateStatus | null>(null);
+const harnessUpdate = ref<HarnessUpdateStatus | null>(null);
 let unlisten: (() => void) | undefined;
 let unlistenSurface: (() => void) | undefined;
 let unlistenSettingsView: (() => void) | undefined;
-let unlistenRuntimeUpdate: (() => void) | undefined;
+let unlistenHarnessUpdate: (() => void) | undefined;
 let unlistenLocale: (() => void) | undefined;
 const workbenchVisible = ref(false);
 const updatePromptVisible = ref(false);
 let workbenchOpening = false;
 let desktopMenuOpening = false;
 
-const phaseLabel = computed(() => t(`runtime.${runtime.value.phase}`));
-const runtimeStartLabel = computed(() => runtime.value.phase === "failed" ? t("common.retry") : t("common.start"));
-const runtimeErrorKeys: Record<string, string> = {
-  "runtime-artifact-missing": "runtime.errors.artifactMissing",
-  "runtime-workdir-unavailable": "runtime.errors.workdirUnavailable",
-  "runtime-profile-prepare-failed": "runtime.errors.profilePrepareFailed",
-  "runtime-helper-unavailable": "runtime.errors.helperUnavailable",
-  "runtime-credential-session-failed": "runtime.errors.credentialSessionFailed",
-  "runtime-environment-failed": "runtime.errors.environmentFailed",
-  "runtime-timeout": "runtime.errors.timeout",
-  "runtime-exited": "runtime.errors.exited",
-  "runtime-process-management-failed": "runtime.errors.processManagementFailed",
-  "runtime-output-unavailable": "runtime.errors.outputUnavailable",
-  "runtime-process-status-failed": "runtime.errors.processStatusFailed",
-  "runtime-output-closed": "runtime.errors.outputClosed",
-  "runtime-health-check-failed": "runtime.errors.healthCheckFailed",
-  "runtime-credential-channel-failed": "runtime.errors.credentialChannelFailed",
-  "runtime-task-failed": "runtime.errors.taskFailed",
-  "restart-limit-reached": "runtime.errors.restartLimitReached"
+const phaseLabel = computed(() => t(`harness.${harness.value.phase}`));
+const harnessStartLabel = computed(() => harness.value.phase === "failed" ? t("common.retry") : t("common.start"));
+const harnessErrorKeys: Record<string, string> = {
+  "harness-artifact-missing": "harness.errors.artifactMissing",
+  "harness-workdir-unavailable": "harness.errors.workdirUnavailable",
+  "harness-profile-prepare-failed": "harness.errors.profilePrepareFailed",
+  "harness-helper-unavailable": "harness.errors.helperUnavailable",
+  "harness-credential-session-failed": "harness.errors.credentialSessionFailed",
+  "harness-environment-failed": "harness.errors.environmentFailed",
+  "harness-timeout": "harness.errors.timeout",
+  "harness-exited": "harness.errors.exited",
+  "harness-process-management-failed": "harness.errors.processManagementFailed",
+  "harness-output-unavailable": "harness.errors.outputUnavailable",
+  "harness-process-status-failed": "harness.errors.processStatusFailed",
+  "harness-output-closed": "harness.errors.outputClosed",
+  "harness-health-check-failed": "harness.errors.healthCheckFailed",
+  "harness-credential-channel-failed": "harness.errors.credentialChannelFailed",
+  "harness-task-failed": "harness.errors.taskFailed",
+  "restart-limit-reached": "harness.errors.restartLimitReached"
 };
 const settingsRecoveryKeys = {
   corrupt: "settings.recovered.corrupt",
   future: "settings.recovered.future"
 } as const;
-const runtimeDescription = computed(() => {
-  if (!runtime.value.errorCode) return t("runtime.detail");
-  return `${runtime.value.errorCode}: ${t(runtimeErrorKeys[runtime.value.errorCode] || "error.unexpected")}`;
+const harnessDescription = computed(() => {
+  if (!harness.value.errorCode) return t("harness.detail");
+  return `${harness.value.errorCode}: ${t(harnessErrorKeys[harness.value.errorCode] || "error.unexpected")}`;
 });
 const aboutChannel = computed(() => {
   const key = {
@@ -125,27 +125,27 @@ const updateDescription = computed(() => {
   }[update.value.message] || "update.current";
   return t(messageKey, { version: update.value.availableVersion || "" });
 });
-const runtimeUpdateDescription = computed(() => {
-  if (!runtimeUpdate.value) return t("runtimeUpdate.messages.idle");
-  const key = `runtimeUpdate.messages.${runtimeUpdate.value.message.replaceAll("-", "_")}`;
+const harnessUpdateDescription = computed(() => {
+  if (!harnessUpdate.value) return t("harnessUpdate.messages.idle");
+  const key = `harnessUpdate.messages.${harnessUpdate.value.message.replaceAll("-", "_")}`;
   return t(key, {
-    version: runtimeUpdate.value.availableVersion || runtimeUpdate.value.pendingVersion || ""
+    version: harnessUpdate.value.availableVersion || harnessUpdate.value.pendingVersion || ""
   });
 });
-const canDownloadRuntime = computed(() => runtimeUpdate.value?.phase === "available" && !busy.value);
-const runtimeRepositoryDraft = ref({
+const canDownloadHarness = computed(() => harnessUpdate.value?.phase === "available" && !busy.value);
+const harnessRepositoryDraft = ref({
   repository: appConfig.harness.repository
 });
-const runtimeRepositoryComplete = computed(() => runtimeRepositoryDraft.value.repository.trim().length > 0);
-const runtimeRepositoryDirty = computed(() =>
-  runtimeRepositoryDraft.value.repository !== (
-    settings.value.runtimeUpdateRepository || appConfig.harness.repository
+const harnessRepositoryComplete = computed(() => harnessRepositoryDraft.value.repository.trim().length > 0);
+const harnessRepositoryDirty = computed(() =>
+  harnessRepositoryDraft.value.repository !== (
+    settings.value.harnessUpdateRepository || appConfig.harness.repository
   )
 );
 
-function syncRuntimeRepositoryDraft(): void {
-  runtimeRepositoryDraft.value = {
-    repository: settings.value.runtimeUpdateRepository || appConfig.harness.repository
+function syncHarnessRepositoryDraft(): void {
+  harnessRepositoryDraft.value = {
+    repository: settings.value.harnessUpdateRepository || appConfig.harness.repository
   };
 }
 
@@ -176,7 +176,7 @@ async function startFromStatus(clearNotice = true): Promise<void> {
   busy.value = true;
   if (clearNotice) notice.value = "";
   try {
-    runtime.value = await startRuntime();
+    harness.value = await startHarness();
     await showWorkbench();
   } catch {
     notice.value = t("error.unexpected");
@@ -186,7 +186,7 @@ async function startFromStatus(clearNotice = true): Promise<void> {
 }
 
 async function showWorkbench(): Promise<void> {
-  if (runtime.value.phase !== "ready" || workbenchVisible.value || workbenchOpening) return;
+  if (harness.value.phase !== "ready" || workbenchVisible.value || workbenchOpening) return;
   workbenchOpening = true;
   try {
     await openWorkbench();
@@ -198,7 +198,7 @@ async function showWorkbench(): Promise<void> {
 }
 
 async function closeSettings(): Promise<void> {
-  if (runtime.value.phase !== "ready") return;
+  if (harness.value.phase !== "ready") return;
   await showWorkbench();
 }
 
@@ -226,7 +226,7 @@ function handleSettingsKeydown(event: KeyboardEvent): void {
     && !event.shiftKey;
   if ((event.key === "Escape" || closeSettingsShortcut)
     && !workbenchVisible.value
-    && runtime.value.phase === "ready") {
+    && harness.value.phase === "ready") {
     event.preventDefault();
     void closeSettings();
   }
@@ -235,7 +235,7 @@ function handleSettingsKeydown(event: KeyboardEvent): void {
 async function stop(): Promise<void> {
   busy.value = true;
   try {
-    runtime.value = await stopRuntime();
+    harness.value = await stopHarness();
   } catch {
     notice.value = t("error.unexpected");
   } finally {
@@ -307,108 +307,108 @@ async function ignoreAvailableDesktopUpdate(): Promise<void> {
   }
 }
 
-async function checkRuntime(): Promise<void> {
+async function checkHarness(): Promise<void> {
   busy.value = true;
   try {
-    runtimeUpdate.value = await checkRuntimeUpdate();
-    notice.value = runtimeUpdateDescription.value;
+    harnessUpdate.value = await checkHarnessUpdate();
+    notice.value = harnessUpdateDescription.value;
   } catch {
-    notice.value = t("error.runtimeUpdateCheckFailed");
+    notice.value = t("error.harnessUpdateCheckFailed");
   } finally {
     busy.value = false;
   }
 }
 
-async function downloadRuntime(): Promise<void> {
+async function downloadHarness(): Promise<void> {
   busy.value = true;
   try {
-    runtimeUpdate.value = await downloadRuntimeUpdate();
-    notice.value = runtimeUpdateDescription.value;
+    harnessUpdate.value = await downloadHarnessUpdate();
+    notice.value = harnessUpdateDescription.value;
   } catch {
-    notice.value = t("error.runtimeUpdateDownloadFailed");
+    notice.value = t("error.harnessUpdateDownloadFailed");
   } finally {
     busy.value = false;
   }
 }
 
-async function restoreRuntime(): Promise<void> {
+async function restoreHarness(): Promise<void> {
   busy.value = true;
   try {
-    runtimeUpdate.value = await restoreBundledRuntime();
+    harnessUpdate.value = await restoreBundledHarness();
     about.value = await getAbout();
-    notice.value = runtimeUpdateDescription.value;
+    notice.value = harnessUpdateDescription.value;
   } catch {
-    notice.value = t("error.runtimeRestoreFailed");
+    notice.value = t("error.harnessRestoreFailed");
   } finally {
     busy.value = false;
   }
 }
 
-async function selectRuntimeUpdateMode(value: Event): Promise<void> {
+async function selectHarnessUpdateMode(value: Event): Promise<void> {
   if (busy.value) return;
   busy.value = true;
-  const previous = settings.value.runtimeUpdateMode;
-  settings.value.runtimeUpdateMode = (value.target as HTMLSelectElement).value as DesktopSettings["runtimeUpdateMode"];
+  const previous = settings.value.harnessUpdateMode;
+  settings.value.harnessUpdateMode = (value.target as HTMLSelectElement).value as DesktopSettings["harnessUpdateMode"];
   try {
     await persistSettings();
-    runtimeUpdate.value = await getRuntimeUpdateStatus();
+    harnessUpdate.value = await getHarnessUpdateStatus();
   } catch {
-    settings.value.runtimeUpdateMode = previous;
+    settings.value.harnessUpdateMode = previous;
     notice.value = t("error.settingsSaveFailed");
   } finally {
     busy.value = false;
   }
 }
 
-async function selectRuntimeUpdateChannel(value: Event): Promise<void> {
+async function selectHarnessUpdateChannel(value: Event): Promise<void> {
   if (busy.value) return;
   busy.value = true;
-  const previous = settings.value.runtimeUpdateChannel;
-  settings.value.runtimeUpdateChannel = (value.target as HTMLSelectElement).value as DesktopSettings["runtimeUpdateChannel"];
+  const previous = settings.value.harnessUpdateChannel;
+  settings.value.harnessUpdateChannel = (value.target as HTMLSelectElement).value as DesktopSettings["harnessUpdateChannel"];
   try {
     await persistSettings();
-    runtimeUpdate.value = await getRuntimeUpdateStatus();
+    harnessUpdate.value = await getHarnessUpdateStatus();
   } catch {
-    settings.value.runtimeUpdateChannel = previous;
+    settings.value.harnessUpdateChannel = previous;
     notice.value = t("error.settingsSaveFailed");
   } finally {
     busy.value = false;
   }
 }
 
-async function saveRuntimeRepository(): Promise<void> {
-  if (busy.value || !runtimeRepositoryComplete.value) return;
+async function saveHarnessRepository(): Promise<void> {
+  if (busy.value || !harnessRepositoryComplete.value) return;
   busy.value = true;
   const previous = { ...settings.value };
   try {
-    const repository = runtimeRepositoryDraft.value.repository.trim();
+    const repository = harnessRepositoryDraft.value.repository.trim();
     const official = repository === appConfig.harness.repository;
-    settings.value.runtimeUpdateRepository = official ? null : repository;
+    settings.value.harnessUpdateRepository = official ? null : repository;
     await persistSettings();
-    syncRuntimeRepositoryDraft();
-    runtimeUpdate.value = await getRuntimeUpdateStatus();
-    notice.value = t("runtimeUpdate.repositorySaved");
+    syncHarnessRepositoryDraft();
+    harnessUpdate.value = await getHarnessUpdateStatus();
+    notice.value = t("harnessUpdate.repositorySaved");
   } catch {
     settings.value = previous;
-    syncRuntimeRepositoryDraft();
-    notice.value = t("error.runtimeRepositoryFailed");
+    syncHarnessRepositoryDraft();
+    notice.value = t("error.harnessRepositoryFailed");
   } finally {
     busy.value = false;
   }
 }
 
-async function toggleRuntimePin(value: Event): Promise<void> {
+async function toggleHarnessPin(value: Event): Promise<void> {
   if (busy.value) return;
   busy.value = true;
-  const previous = settings.value.runtimePinnedVersion;
-  settings.value.runtimePinnedVersion = (value.target as HTMLInputElement).checked
-    ? runtimeUpdate.value?.currentVersion || about.value?.runtimeVersion || null
+  const previous = settings.value.harnessPinnedVersion;
+  settings.value.harnessPinnedVersion = (value.target as HTMLInputElement).checked
+    ? harnessUpdate.value?.currentVersion || about.value?.harnessVersion || null
     : null;
   try {
     await persistSettings();
-    runtimeUpdate.value = await getRuntimeUpdateStatus();
+    harnessUpdate.value = await getHarnessUpdateStatus();
   } catch {
-    settings.value.runtimePinnedVersion = previous;
+    settings.value.harnessPinnedVersion = previous;
     notice.value = t("error.settingsSaveFailed");
   } finally {
     busy.value = false;
@@ -437,14 +437,14 @@ onMounted(async () => {
   }
   window.addEventListener("keydown", handleSettingsKeydown);
   try {
-    [settings.value, runtime.value, about.value, runtimeUpdate.value] = await Promise.all([
+    [settings.value, harness.value, about.value, harnessUpdate.value] = await Promise.all([
       getSettings(),
-      getRuntimeStatus(),
+      getHarnessStatus(),
       getAbout(),
-      getRuntimeUpdateStatus()
+      getHarnessUpdateStatus()
     ]);
     locale.value = settings.value.locale;
-  syncRuntimeRepositoryDraft();
+  syncHarnessRepositoryDraft();
     if (settings.value.recoveryReason) {
       notice.value = t(settingsRecoveryKeys[settings.value.recoveryReason]);
     }
@@ -453,8 +453,8 @@ onMounted(async () => {
     return;
   }
   try {
-    unlisten = await onRuntimeStatus(status => {
-      runtime.value = status;
+    unlisten = await onHarnessStatus(status => {
+      harness.value = status;
       if (status.phase === "ready") void showWorkbench();
     });
     unlistenSurface = await onDesktopSurface(surface => {
@@ -468,15 +468,15 @@ onMounted(async () => {
         navigate(next);
       }
     });
-    unlistenRuntimeUpdate = await onRuntimeUpdateStatus(status => {
-      runtimeUpdate.value = status;
+    unlistenHarnessUpdate = await onHarnessUpdateStatus(status => {
+      harnessUpdate.value = status;
     });
   } catch {
     notice.value = t("error.eventChannelFailed");
   }
-  if (runtime.value.phase === "ready") {
+  if (harness.value.phase === "ready") {
     await showWorkbench();
-  } else if (runtime.value.phase === "idle") {
+  } else if (harness.value.phase === "idle") {
     await startFromStatus(false);
   }
   void checkUpdate(true);
@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
   unlisten?.();
   unlistenSurface?.();
   unlistenSettingsView?.();
-  unlistenRuntimeUpdate?.();
+  unlistenHarnessUpdate?.();
   unlistenLocale?.();
 });
 </script>
@@ -515,7 +515,7 @@ onBeforeUnmount(() => {
           <option value="en-US">English</option>
         </select>
         <button
-          v-if="runtime.phase === 'ready'"
+          v-if="harness.phase === 'ready'"
           class="icon-button"
           type="button"
           :aria-label="t('navigation.closeSettings')"
@@ -527,8 +527,8 @@ onBeforeUnmount(() => {
 
     <section class="workspace-layout">
       <nav class="side-nav" :aria-label="t('navigation.label')">
-        <button :class="{ active: view === 'runtime' }" @click="navigate('runtime')">
-          <span aria-hidden="true">01</span>{{ t("navigation.runtime") }}
+        <button :class="{ active: view === 'harness' }" @click="navigate('harness')">
+          <span aria-hidden="true">01</span>{{ t("navigation.harness") }}
         </button>
         <button :class="{ active: view === 'diagnostics' }" @click="navigate('diagnostics')">
           <span aria-hidden="true">02</span>{{ t("navigation.diagnostics") }}
@@ -542,25 +542,25 @@ onBeforeUnmount(() => {
       </nav>
 
       <section class="content" aria-live="polite">
-        <template v-if="view === 'runtime'">
+        <template v-if="view === 'harness'">
           <div class="section-heading">
-            <span class="eyebrow">{{ t("runtime.supervisor") }}</span>
+            <span class="eyebrow">{{ t("harness.supervisor") }}</span>
             <h1>{{ phaseLabel }}</h1>
-            <p>{{ runtimeDescription }}</p>
+            <p>{{ harnessDescription }}</p>
           </div>
-          <div class="runtime-panel" :data-phase="runtime.phase">
+          <div class="harness-panel" :data-phase="harness.phase">
             <div class="pulse" aria-hidden="true"></div>
             <dl>
-              <div><dt>{{ t("runtime.state") }}</dt><dd>{{ phaseLabel }}</dd></div>
-              <div><dt>{{ t("runtime.origin") }}</dt><dd>{{ runtime.url || "-" }}</dd></div>
-              <div><dt>{{ t("runtime.restarts") }}</dt><dd>{{ runtime.restartCount }}</dd></div>
-              <div v-if="runtime.diagnosticId"><dt>{{ t("runtime.diagnosticId") }}</dt><dd>{{ runtime.diagnosticId }}</dd></div>
+              <div><dt>{{ t("harness.state") }}</dt><dd>{{ phaseLabel }}</dd></div>
+              <div><dt>{{ t("harness.origin") }}</dt><dd>{{ harness.url || "-" }}</dd></div>
+              <div><dt>{{ t("harness.restarts") }}</dt><dd>{{ harness.restartCount }}</dd></div>
+              <div v-if="harness.diagnosticId"><dt>{{ t("harness.diagnosticId") }}</dt><dd>{{ harness.diagnosticId }}</dd></div>
             </dl>
           </div>
           <footer class="actions">
-            <button v-if="runtime.phase === 'ready'" class="button primary" @click="showWorkbench">{{ t("common.open") }}</button>
-            <button v-if="runtime.phase === 'ready'" class="button secondary" :disabled="busy" @click="stop">{{ t("common.stop") }}</button>
-            <button v-else-if="runtime.phase === 'failed' || runtime.phase === 'idle'" class="button primary" :disabled="busy" @click="startFromStatus()">{{ runtimeStartLabel }}</button>
+            <button v-if="harness.phase === 'ready'" class="button primary" @click="showWorkbench">{{ t("common.open") }}</button>
+            <button v-if="harness.phase === 'ready'" class="button secondary" :disabled="busy" @click="stop">{{ t("common.stop") }}</button>
+            <button v-else-if="harness.phase === 'failed' || harness.phase === 'idle'" class="button primary" :disabled="busy" @click="startFromStatus()">{{ harnessStartLabel }}</button>
             <button v-else class="button primary" disabled>{{ phaseLabel }}</button>
           </footer>
         </template>
@@ -572,8 +572,8 @@ onBeforeUnmount(() => {
             <p>{{ t("diagnostics.description") }}</p>
           </div>
           <div class="plain-list">
-            <div><span>{{ t("diagnostics.runtime") }}</span><strong>{{ phaseLabel }}</strong></div>
-            <div><span>{{ t("runtime.diagnosticId") }}</span><strong>{{ runtime.diagnosticId || "-" }}</strong></div>
+            <div><span>{{ t("diagnostics.harness") }}</span><strong>{{ phaseLabel }}</strong></div>
+            <div><span>{{ t("harness.diagnosticId") }}</span><strong>{{ harness.diagnosticId || "-" }}</strong></div>
           </div>
           <footer class="actions">
             <button class="button secondary" @click="exportLogFile">{{ t("diagnostics.exportLogs") }}</button>
@@ -596,44 +596,44 @@ onBeforeUnmount(() => {
           <footer class="actions">
             <button class="button secondary" @click="checkUpdate(false)">{{ t("update.check") }}</button>
           </footer>
-          <h2 class="subsection-title">{{ t("runtimeUpdate.title") }}</h2>
-          <div v-if="runtimeUpdate" class="plain-list compact-list">
-            <div><span>{{ t("runtimeUpdate.currentVersion") }}</span><strong>{{ runtimeUpdate.currentVersion }}</strong></div>
-            <div><span>{{ t("runtimeUpdate.source") }}</span><strong>{{ t(`runtimeUpdate.sources.${runtimeUpdate.currentSource}`) }}</strong></div>
-            <div><span>{{ t("runtimeUpdate.commit") }}</span><code>{{ runtimeUpdate.currentCommit.slice(0, 12) }}</code></div>
-            <div><span>{{ t("runtimeUpdate.status") }}</span><strong>{{ runtimeUpdateDescription }}</strong></div>
+          <h2 class="subsection-title">{{ t("harnessUpdate.title") }}</h2>
+          <div v-if="harnessUpdate" class="plain-list compact-list">
+            <div><span>{{ t("harnessUpdate.currentVersion") }}</span><strong>{{ harnessUpdate.currentVersion }}</strong></div>
+            <div><span>{{ t("harnessUpdate.source") }}</span><strong>{{ t(`harnessUpdate.sources.${harnessUpdate.currentSource}`) }}</strong></div>
+            <div><span>{{ t("harnessUpdate.commit") }}</span><code>{{ harnessUpdate.currentCommit.slice(0, 12) }}</code></div>
+            <div><span>{{ t("harnessUpdate.status") }}</span><strong>{{ harnessUpdateDescription }}</strong></div>
             <div>
-              <label for="runtime-update-repository">{{ t("runtimeUpdate.repository") }}</label>
-              <input id="runtime-update-repository" v-model="runtimeRepositoryDraft.repository" class="setting-input" type="text" inputmode="url" spellcheck="false" :disabled="busy" :placeholder="t('runtimeUpdate.repositoryPlaceholder')" />
+              <label for="harness-update-repository">{{ t("harnessUpdate.repository") }}</label>
+              <input id="harness-update-repository" v-model="harnessRepositoryDraft.repository" class="setting-input" type="text" inputmode="url" spellcheck="false" :disabled="busy" :placeholder="t('harnessUpdate.repositoryPlaceholder')" />
             </div>
-            <div class="runtime-source-save">
-              <span>{{ t("runtimeUpdate.repositoryHelp") }}</span>
-              <button class="button secondary" :disabled="busy || !runtimeRepositoryDirty || !runtimeRepositoryComplete" @click="saveRuntimeRepository">{{ t("runtimeUpdate.saveRepository") }}</button>
+            <div class="harness-source-save">
+              <span>{{ t("harnessUpdate.repositoryHelp") }}</span>
+              <button class="button secondary" :disabled="busy || !harnessRepositoryDirty || !harnessRepositoryComplete" @click="saveHarnessRepository">{{ t("harnessUpdate.saveRepository") }}</button>
             </div>
             <div>
-              <label for="runtime-update-mode">{{ t("runtimeUpdate.mode") }}</label>
-              <select id="runtime-update-mode" class="setting-select" :value="settings.runtimeUpdateMode" :disabled="busy" @change="selectRuntimeUpdateMode">
-                <option value="automatic">{{ t("runtimeUpdate.modes.automatic") }}</option>
-                <option value="notify">{{ t("runtimeUpdate.modes.notify") }}</option>
-                <option value="manual">{{ t("runtimeUpdate.modes.manual") }}</option>
+              <label for="harness-update-mode">{{ t("harnessUpdate.mode") }}</label>
+              <select id="harness-update-mode" class="setting-select" :value="settings.harnessUpdateMode" :disabled="busy" @change="selectHarnessUpdateMode">
+                <option value="automatic">{{ t("harnessUpdate.modes.automatic") }}</option>
+                <option value="notify">{{ t("harnessUpdate.modes.notify") }}</option>
+                <option value="manual">{{ t("harnessUpdate.modes.manual") }}</option>
               </select>
             </div>
             <div>
-              <label for="runtime-update-channel">{{ t("runtimeUpdate.channel") }}</label>
-              <select id="runtime-update-channel" class="setting-select" :value="settings.runtimeUpdateChannel" :disabled="busy" @change="selectRuntimeUpdateChannel">
-                <option value="stable">{{ t("runtimeUpdate.channels.stable") }}</option>
-                <option value="preview">{{ t("runtimeUpdate.channels.preview") }}</option>
+              <label for="harness-update-channel">{{ t("harnessUpdate.channel") }}</label>
+              <select id="harness-update-channel" class="setting-select" :value="settings.harnessUpdateChannel" :disabled="busy" @change="selectHarnessUpdateChannel">
+                <option value="stable">{{ t("harnessUpdate.channels.stable") }}</option>
+                <option value="preview">{{ t("harnessUpdate.channels.preview") }}</option>
               </select>
             </div>
             <div>
-              <span>{{ t("runtimeUpdate.pin") }}</span>
-              <label class="toggle-label"><input type="checkbox" :checked="Boolean(settings.runtimePinnedVersion)" :disabled="busy" @change="toggleRuntimePin" />{{ t("runtimeUpdate.pinCurrent") }}</label>
+              <span>{{ t("harnessUpdate.pin") }}</span>
+              <label class="toggle-label"><input type="checkbox" :checked="Boolean(settings.harnessPinnedVersion)" :disabled="busy" @change="toggleHarnessPin" />{{ t("harnessUpdate.pinCurrent") }}</label>
             </div>
           </div>
           <footer class="actions wrap-actions">
-            <button class="button secondary" :disabled="busy" @click="restoreRuntime">{{ t("runtimeUpdate.restoreBundled") }}</button>
-            <button class="button secondary" :disabled="busy || !runtimeUpdate?.enabled" @click="checkRuntime">{{ t("runtimeUpdate.check") }}</button>
-            <button class="button primary" :disabled="!canDownloadRuntime" @click="downloadRuntime">{{ t("runtimeUpdate.download") }}</button>
+            <button class="button secondary" :disabled="busy" @click="restoreHarness">{{ t("harnessUpdate.restoreBundled") }}</button>
+            <button class="button secondary" :disabled="busy || !harnessUpdate?.enabled" @click="checkHarness">{{ t("harnessUpdate.check") }}</button>
+            <button class="button primary" :disabled="!canDownloadHarness" @click="downloadHarness">{{ t("harnessUpdate.download") }}</button>
           </footer>
         </template>
 
@@ -645,7 +645,7 @@ onBeforeUnmount(() => {
           </div>
           <div v-if="about" class="plain-list">
             <div><span>{{ t("about.desktopVersion") }}</span><strong>{{ about.desktopVersion }}</strong></div>
-            <div><span>{{ t("about.runtimeVersion") }}</span><strong>{{ about.runtimeVersion }}</strong></div>
+            <div><span>{{ t("about.harnessVersion") }}</span><strong>{{ about.harnessVersion }}</strong></div>
             <div><span>{{ t("about.nodeVersion") }}</span><strong>{{ about.nodeVersion }}</strong></div>
             <div><span>{{ t("about.channel") }}</span><strong>{{ aboutChannel }}</strong></div>
             <div><span>{{ t("about.author") }}</span><strong>{{ about.authors }}</strong></div>

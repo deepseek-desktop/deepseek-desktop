@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use chrono::Utc;
 use serde::Serialize;
 
-use crate::contracts::{DesktopSettings, RuntimeStatus, RuntimeUpdateStatus};
+use crate::contracts::{DesktopSettings, HarnessStatus, HarnessUpdateStatus};
 use crate::error::{DesktopError, DesktopResult};
 use crate::settings::{AppPaths, write_json_atomic};
 
@@ -52,8 +52,8 @@ impl Diagnostics {
 
     pub fn export(
         &self,
-        status: &RuntimeStatus,
-        runtime_update: &RuntimeUpdateStatus,
+        status: &HarnessStatus,
+        harness_update: &HarnessUpdateStatus,
         settings: &DesktopSettings,
     ) -> DesktopResult<PathBuf> {
         let _guard = self.write_lock.lock()?;
@@ -65,14 +65,14 @@ impl Diagnostics {
         let mut redacted_status = status.clone();
         redacted_status.url = status.url.as_ref().map(|url| redact(url));
         let mut redacted_settings = settings.clone();
-        redacted_settings.runtime_update_repository = None;
+        redacted_settings.harness_update_repository = None;
         let document = DiagnosticDocument {
             generated_at: Utc::now().to_rfc3339(),
             desktop_version: env!("DEEPSEEK_DESKTOP_APP_VERSION"),
-            runtime_version: runtime_update.current_version.clone(),
+            harness_version: harness_update.current_version.clone(),
             target: env!("DEEPSEEK_DESKTOP_TARGET"),
             status: redacted_status,
-            runtime_update: runtime_update.clone(),
+            harness_update: harness_update.clone(),
             settings: redacted_settings,
             recent_log: self.read_tail(),
         };
@@ -232,10 +232,10 @@ fn home_directories_from(lookup: impl Fn(&str) -> Option<String>) -> Vec<String>
 struct DiagnosticDocument {
     generated_at: String,
     desktop_version: &'static str,
-    runtime_version: String,
+    harness_version: String,
     target: &'static str,
-    status: RuntimeStatus,
-    runtime_update: RuntimeUpdateStatus,
+    status: HarnessStatus,
+    harness_update: HarnessUpdateStatus,
     settings: DesktopSettings,
     recent_log: String,
 }
@@ -404,7 +404,7 @@ mod tests {
             ("HOMEPATH", "\\Users\\zhang"),
         ]));
         let redacted = redact_roots(
-            "runtime=C:\\Users\\zhang\\Documents\\work; cache=C:\\Users\\zhang\\AppData\\Local\\npm",
+            "harness=C:\\Users\\zhang\\Documents\\work; cache=C:\\Users\\zhang\\AppData\\Local\\npm",
             "C:\\Users\\zhang\\AppData\\Roaming\\deepseek.desktop",
             &homes,
         );
@@ -415,7 +415,7 @@ mod tests {
     fn redacts_windows_user_profile_paths() {
         let homes = ["C:\\Users\\zhang".to_owned()];
         let redacted = redact_roots(
-            "runtime=C:\\Users\\zhang\\AppData\\Roaming\\deepseek.desktop\\logs; project=C:\\Users\\zhang\\work",
+            "harness=C:\\Users\\zhang\\AppData\\Roaming\\deepseek.desktop\\logs; project=C:\\Users\\zhang\\work",
             "C:\\Users\\zhang\\AppData\\Roaming\\deepseek.desktop",
             &homes,
         );
@@ -428,7 +428,7 @@ mod tests {
     fn redacts_windows_paths_case_insensitively_with_either_separator() {
         let homes = ["C:\\Users\\Zhang".to_owned()];
         let redacted = redact_roots(
-            "runtime=c:/users/zhang/appdata/roaming/deepseek.desktop/logs; project=C:/USERS/ZHANG/work",
+            "harness=c:/users/zhang/appdata/roaming/deepseek.desktop/logs; project=C:/USERS/ZHANG/work",
             "C:\\Users\\Zhang\\AppData\\Roaming\\deepseek.desktop",
             &homes,
         );
@@ -460,7 +460,7 @@ mod tests {
 
         diagnostics.append(
             "test",
-            &format!("runtime={}", root.join("data/runtime-workdir").display()),
+            &format!("harness={}", root.join("data/harness-workdir").display()),
         );
 
         let log = fs::read_to_string(root.join("data/logs/desktop.log")).unwrap();
@@ -485,23 +485,23 @@ mod tests {
         };
         fs::create_dir_all(&paths.logs_dir).unwrap();
         let diagnostics = Diagnostics::new(paths);
-        diagnostics.append("runtime", "Authorization: Bearer unsafe");
+        diagnostics.append("harness", "Authorization: Bearer unsafe");
         diagnostics.append(
-            "runtime",
-            "dsh web: http://127.0.0.1:43127/?token=runtime_launch_token",
+            "harness",
+            "dsh web: http://127.0.0.1:43127/?token=harness_launch_token",
         );
 
         let exported = diagnostics.export_logs().unwrap();
         let log = fs::read_to_string(exported).unwrap();
         assert!(log.contains("desktop.log"));
         assert!(!log.contains("unsafe"));
-        assert!(!log.contains("runtime_launch_token"));
+        assert!(!log.contains("harness_launch_token"));
         assert!(log.contains("token=<redacted>"));
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn omits_the_custom_runtime_repository_from_diagnostics() {
+    fn omits_the_custom_harness_repository_from_diagnostics() {
         let root = std::env::temp_dir().join(format!(
             "deepseek-desktop-update-source-diagnostics-{}",
             std::process::id()
@@ -518,16 +518,16 @@ mod tests {
         fs::create_dir_all(&paths.logs_dir).unwrap();
         let diagnostics = Diagnostics::new(paths);
         let settings = DesktopSettings {
-            runtime_update_repository: Some(
-                "https://private.example/runtime/runtime.git".to_owned(),
+            harness_update_repository: Some(
+                "https://private.example/harness/harness.git".to_owned(),
             ),
             ..DesktopSettings::default()
         };
 
         let exported = diagnostics
             .export(
-                &RuntimeStatus::default(),
-                &RuntimeUpdateStatus::default(),
+                &HarnessStatus::default(),
+                &HarnessUpdateStatus::default(),
                 &settings,
             )
             .unwrap();

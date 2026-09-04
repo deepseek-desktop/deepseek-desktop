@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct RuntimeStatus {
-    pub phase: RuntimePhase,
+pub struct HarnessStatus {
+    pub phase: HarnessPhase,
     pub url: Option<String>,
     pub restart_count: u8,
     pub diagnostic_id: Option<String>,
@@ -12,7 +12,7 @@ pub struct RuntimeStatus {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum RuntimePhase {
+pub enum HarnessPhase {
     #[default]
     Idle,
     Starting,
@@ -23,7 +23,7 @@ pub enum RuntimePhase {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DesktopSettings {
     #[serde(default = "current_settings_schema_version")]
     pub schema_version: u8,
@@ -31,14 +31,14 @@ pub struct DesktopSettings {
     pub onboarding_completed: bool,
     pub update_channel: String,
     pub update_enabled: bool,
-    #[serde(default = "default_runtime_update_channel")]
-    pub runtime_update_channel: String,
-    #[serde(default = "default_runtime_update_mode")]
-    pub runtime_update_mode: String,
+    #[serde(default = "default_harness_update_channel")]
+    pub harness_update_channel: String,
+    #[serde(default = "default_harness_update_mode")]
+    pub harness_update_mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_update_repository: Option<String>,
+    pub harness_update_repository: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_pinned_version: Option<String>,
+    pub harness_pinned_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub desktop_update_last_check_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -55,10 +55,10 @@ impl Default for DesktopSettings {
             onboarding_completed: false,
             update_channel: "community".to_owned(),
             update_enabled: false,
-            runtime_update_channel: default_runtime_update_channel(),
-            runtime_update_mode: default_runtime_update_mode(),
-            runtime_update_repository: None,
-            runtime_pinned_version: None,
+            harness_update_channel: default_harness_update_channel(),
+            harness_update_mode: default_harness_update_mode(),
+            harness_update_repository: None,
+            harness_pinned_version: None,
             desktop_update_last_check_at: None,
             desktop_update_ignored_version: None,
             recovery_reason: None,
@@ -67,15 +67,15 @@ impl Default for DesktopSettings {
 }
 
 pub const fn current_settings_schema_version() -> u8 {
-    6
+    7
 }
 
-fn default_runtime_update_channel() -> String {
-    env!("DEEPSEEK_DESKTOP_RUNTIME_UPDATE_CHANNEL").to_owned()
+fn default_harness_update_channel() -> String {
+    env!("DEEPSEEK_DESKTOP_HARNESS_UPDATE_CHANNEL").to_owned()
 }
 
-fn default_runtime_update_mode() -> String {
-    if env!("DEEPSEEK_DESKTOP_RUNTIME_AUTO_UPDATE") == "true" {
+fn default_harness_update_mode() -> String {
+    if env!("DEEPSEEK_DESKTOP_HARNESS_AUTO_UPDATE") == "true" {
         "automatic".to_owned()
     } else {
         "notify".to_owned()
@@ -86,8 +86,8 @@ fn default_runtime_update_mode() -> String {
 #[serde(rename_all = "camelCase")]
 pub struct DesktopAbout {
     pub desktop_version: String,
-    pub runtime_version: String,
-    pub runtime_commit: String,
+    pub harness_version: String,
+    pub harness_commit: String,
     pub node_version: String,
     pub authors: String,
     pub repository: String,
@@ -111,7 +111,7 @@ pub struct UpdateStatus {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub enum RuntimeUpdatePhase {
+pub enum HarnessUpdatePhase {
     Disabled,
     #[default]
     Idle,
@@ -128,9 +128,9 @@ pub enum RuntimeUpdatePhase {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct RuntimeUpdateStatus {
+pub struct HarnessUpdateStatus {
     pub enabled: bool,
-    pub phase: RuntimeUpdatePhase,
+    pub phase: HarnessUpdatePhase,
     pub current_version: String,
     pub current_commit: String,
     pub current_source: String,

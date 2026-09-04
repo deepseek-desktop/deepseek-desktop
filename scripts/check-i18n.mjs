@@ -55,7 +55,7 @@ for (const locale of locales) {
 }
 
 const appSource = await readFile(new URL("../src/App.vue", import.meta.url), "utf8");
-const runtimeSource = await readFile(new URL("../src-tauri/src/runtime.rs", import.meta.url), "utf8");
+const harnessSource = await readFile(new URL("../src-tauri/src/harness.rs", import.meta.url), "utf8");
 const script = appSource.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)?.[1] ?? "";
 const template = appSource.match(/<template>([\s\S]*?)<\/template>/)?.[1] ?? "";
 const referencedKeys = new Set();
@@ -72,22 +72,22 @@ for (const key of referencedKeys) {
   if (!baseline.has(key)) failures.push(`App.vue: referenced i18n key is missing: ${key}`);
 }
 
-const runtimeCodePattern = /"(runtime-[a-z-]+|restart-limit-reached)"/gu;
-const nonErrorRuntimeLiterals = new Set(["runtime-bin", "runtime-update"]);
-const emittedRuntimeCodes = new Set(
-  [...runtimeSource.matchAll(runtimeCodePattern)]
+const harnessCodePattern = /"(harness-[a-z-]+|restart-limit-reached)"/gu;
+const nonErrorHarnessLiterals = new Set(["harness-bin", "harness-update"]);
+const emittedHarnessCodes = new Set(
+  [...harnessSource.matchAll(harnessCodePattern)]
     .map(match => match[1])
-    .filter(code => !nonErrorRuntimeLiterals.has(code))
+    .filter(code => !nonErrorHarnessLiterals.has(code))
 );
-const mappedRuntimeCodes = new Set(
-  [...script.matchAll(/^\s*"(runtime-[a-z-]+|restart-limit-reached)":\s*"runtime\.errors\.[^"]+",?$/gmu)]
+const mappedHarnessCodes = new Set(
+  [...script.matchAll(/^\s*"(harness-[a-z-]+|restart-limit-reached)":\s*"harness\.errors\.[^"]+",?$/gmu)]
     .map(match => match[1])
 );
-for (const code of emittedRuntimeCodes) {
-  if (!mappedRuntimeCodes.has(code)) failures.push(`App.vue: Runtime error code is not mapped: ${code}`);
+for (const code of emittedHarnessCodes) {
+  if (!mappedHarnessCodes.has(code)) failures.push(`App.vue: Harness error code is not mapped: ${code}`);
 }
-for (const code of mappedRuntimeCodes) {
-  if (!emittedRuntimeCodes.has(code)) failures.push(`App.vue: stale Runtime error mapping: ${code}`);
+for (const code of mappedHarnessCodes) {
+  if (!emittedHarnessCodes.has(code)) failures.push(`App.vue: stale Harness error mapping: ${code}`);
 }
 const allowedText = new Set(["DSH", "简体中文", "繁體中文", "English"]);
 let textBuffer = "";

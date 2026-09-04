@@ -40,7 +40,7 @@ run([
   "--platform", platform,
   "--env", "CI=true",
   "--env", "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
-  ...(emulatedAmd64 ? ["--env", "DEEPSEEK_DESKTOP_SKIP_RUNTIME_SMOKE=true"] : []),
+  ...(emulatedAmd64 ? ["--env", "DEEPSEEK_DESKTOP_SKIP_HARNESS_SMOKE=true"] : []),
   "--volume", `${cachePrefix}-target:/workspace/target`,
   "--volume", `${cachePrefix}-rust-target:/workspace/src-tauri/target`,
   "--volume", `${cachePrefix}-pnpm:/root/.local/share/pnpm`,
@@ -48,7 +48,7 @@ run([
 ]);
 
 if (emulatedAmd64) {
-  console.log("\nDocker common CI passed under GitHub-compatible linux/amd64 emulation; Runtime smoke remains a native-host gate.");
+  console.log("\nDocker common CI passed under GitHub-compatible linux/amd64 emulation; Harness smoke remains a native-host gate.");
 }
 
 console.log("\nDocker CI preflight passed for GitHub-compatible linux/amd64");

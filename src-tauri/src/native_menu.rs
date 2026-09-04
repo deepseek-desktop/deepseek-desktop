@@ -12,7 +12,7 @@ use crate::error::{DesktopError, DesktopResult};
 pub const WORKBENCH_MENU_ID: &str = "desktop-workbench";
 pub const SETTINGS_MENU_ID: &str = "desktop-settings";
 pub const DIAGNOSTICS_MENU_ID: &str = "desktop-diagnostics";
-pub const RUNTIME_UPDATE_MENU_ID: &str = "desktop-runtime-update";
+pub const HARNESS_UPDATE_MENU_ID: &str = "desktop-harness-update";
 pub const DESKTOP_UPDATE_MENU_ID: &str = "desktop-update";
 pub const ABOUT_MENU_ID: &str = "desktop-about";
 pub const DOCUMENTATION_MENU_ID: &str = "desktop-documentation";
@@ -87,7 +87,7 @@ struct MenuLabels {
     minimize: &'static str,
     maximize: &'static str,
     desktop_update: &'static str,
-    runtime_update: &'static str,
+    harness_update: &'static str,
     diagnostics: &'static str,
     documentation: &'static str,
 }
@@ -266,7 +266,7 @@ pub fn popup(
         }
         "help" => {
             let desktop_update = item(app, DESKTOP_UPDATE_MENU_ID, labels.desktop_update, None)?;
-            let runtime_update = item(app, RUNTIME_UPDATE_MENU_ID, labels.runtime_update, None)?;
+            let harness_update = item(app, HARNESS_UPDATE_MENU_ID, labels.harness_update, None)?;
             let diagnostics = item(
                 app,
                 DIAGNOSTICS_MENU_ID,
@@ -277,7 +277,7 @@ pub fn popup(
             let about = item(app, ABOUT_MENU_ID, labels.about, None)?;
             MenuBuilder::new(app)
                 .item(&desktop_update)
-                .item(&runtime_update)
+                .item(&harness_update)
                 .item(&diagnostics)
                 .separator()
                 .item(&documentation)
@@ -363,7 +363,7 @@ fn labels(locale: &str) -> MenuLabels {
             minimize: "縮到最小",
             maximize: "放到最大",
             desktop_update: "檢查 Desktop 更新…",
-            runtime_update: "Runtime 更新…",
+            harness_update: "Harness 更新…",
             diagnostics: "診斷…",
             documentation: "使用說明",
         },
@@ -383,7 +383,7 @@ fn labels(locale: &str) -> MenuLabels {
             minimize: "Minimize",
             maximize: "Maximize",
             desktop_update: "Check Desktop Updates…",
-            runtime_update: "Runtime Updates…",
+            harness_update: "Harness Updates…",
             diagnostics: "Diagnostics…",
             documentation: "Documentation",
         },
@@ -403,7 +403,7 @@ fn labels(locale: &str) -> MenuLabels {
             minimize: "最小化",
             maximize: "最大化",
             desktop_update: "检查 Desktop 更新…",
-            runtime_update: "Runtime 更新…",
+            harness_update: "Harness 更新…",
             diagnostics: "诊断…",
             documentation: "使用文档",
         },

@@ -114,13 +114,13 @@ export class ReleaseControllerService {
     const desktopCommit = assertCommit(input.source?.commit || "", "desktop commit");
     const remoteCommit = await this.verifyRemoteTag(repository, tag);
     if (remoteCommit !== desktopCommit) throw new Error(`source tag ${tag} resolves to ${remoteCommit}, expected ${desktopCommit}`);
-    const runtimeRepository = assertSourceRepository(input.runtime?.repository || "");
-    const runtimeCommit = assertCommit(input.runtime?.commit || "", "runtime commit");
-    const runtimeRef = input.runtime?.ref?.trim();
-    if (!runtimeRef) throw new Error("runtime ref is required for a distributed release");
+    const harnessRepository = assertSourceRepository(input.harness?.repository || "");
+    const harnessCommit = assertCommit(input.harness?.commit || "", "harness commit");
+    const harnessRef = input.harness?.ref?.trim();
+    if (!harnessRef) throw new Error("harness ref is required for a distributed release");
     const toolchain = assertToolchain(input.toolchain);
     const prepared = input.prepared ? assertPreparedDescriptor(input.prepared) : null;
-    if (prepared && (prepared.desktopCommit !== desktopCommit || prepared.runtimeCommit !== runtimeCommit)) {
+    if (prepared && (prepared.desktopCommit !== desktopCommit || prepared.harnessCommit !== harnessCommit)) {
       throw new Error("prepared release descriptor does not match release source commits");
     }
     const version = assertVersion(input.version || "");
@@ -181,7 +181,7 @@ export class ReleaseControllerService {
       channel,
       signed,
       source: { repository, commit: desktopCommit },
-      runtime: { repository: runtimeRepository, ref: runtimeRef, commit: runtimeCommit },
+      harness: { repository: harnessRepository, ref: harnessRef, commit: harnessCommit },
       toolchain,
       ...(prepared ? { prepared } : {}),
       status: "waiting",
@@ -317,8 +317,8 @@ export class ReleaseControllerService {
       if (buildInfo.desktop?.commit !== release.source.commit || buildInfo.desktop?.dirty !== false) {
         throw new Error("BUILD-INFO desktop source is dirty or does not match release plan");
       }
-      if (buildInfo.harness?.repository !== release.runtime.repository || buildInfo.harness?.commit !== release.runtime.commit) {
-        throw new Error("BUILD-INFO Runtime source does not match release plan");
+      if (buildInfo.harness?.repository !== release.harness.repository || buildInfo.harness?.commit !== release.harness.commit) {
+        throw new Error("BUILD-INFO Harness source does not match release plan");
       }
       if (buildInfo.toolchain?.nodeVersion !== release.toolchain.nodeVersion
         || buildInfo.toolchain?.nodeModuleAbi !== release.toolchain.nodeModuleAbi

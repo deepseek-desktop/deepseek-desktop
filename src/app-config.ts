@@ -15,14 +15,14 @@ export interface AppConfig {
     repository: string;
     ref: string;
   };
-  runtimeUpdate: {
+  harnessUpdate: {
     manifestUrl: string;
     channel: "stable" | "preview";
     autoUpdate: boolean;
     publisher: string;
     publicKey: string;
     desktopProtocolVersion: number;
-    runtimeProtocolVersion: number;
+    harnessProtocolVersion: number;
     credentialProtocolVersion: number;
   };
   release: {

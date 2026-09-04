@@ -12,7 +12,7 @@ import { restorePreparedRelease } from "./release-system/prepared-release.mjs";
 const root = resolve(import.meta.dirname, "..");
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const pnpmVersion = packageJson.packageManager?.replace(/^pnpm@/u, "");
-const toolchainLock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
+const toolchainLock = JSON.parse(await readFile(join(root, "harness", "toolchain-lock.json"), "utf8"));
 const resolvedConfig = await loadBuildConfig(root);
 const channel = resolvedConfig.release.channel;
 if (!pnpmVersion) throw new Error("packageManager must declare a pinned pnpm version");
@@ -101,22 +101,22 @@ if (preparedMode) {
   timings.installMs = runPnpm(["install", "--frozen-lockfile"]);
   timings.appSyncCheckMs = runPnpm(["app:sync", "--check"]);
   timings.releaseGateMs = runPnpm(["release:check", channel]);
-  timings.runtimeStageMs = runPnpm(["runtime:stage"]);
-  timings.runtimeSmokeMs = runPnpm(["runtime:smoke"]);
+  timings.harnessStageMs = runPnpm(["harness:stage"]);
+  timings.harnessSmokeMs = runPnpm(["harness:smoke"]);
 } else {
   timings.installMs = runPnpm(["install", "--frozen-lockfile"]);
   timings.playwrightInstallMs = runPnpm(["playwright:install"]);
   timings.appSyncMs = runPnpm(["app:sync"]);
-  timings.runtimeSyncMs = runPnpm(["runtime:sync"]);
+  timings.harnessSyncMs = runPnpm(["harness:sync"]);
   timings.releaseGateMs = runPnpm(["release:check", channel]);
   timings.verifyMs = runPnpm(["verify"]);
   timings.e2eMs = runPnpm(["test:e2e"]);
-  timings.runtimeSmokeMs = runPnpm(["runtime:smoke"]);
+  timings.harnessSmokeMs = runPnpm(["harness:smoke"]);
 }
 
 const config = JSON.parse(await readFile(join(root, "target/generated/app-config.json"), "utf8"));
-const runtime = JSON.parse(await readFile(join(root, "target/generated/runtime-lock.json"), "utf8"));
-const runtimeSource = JSON.parse(await readFile(join(root, "target/generated/runtime-source.json"), "utf8"));
+const harness = JSON.parse(await readFile(join(root, "target/generated/harness-lock.json"), "utf8"));
+const harnessSource = JSON.parse(await readFile(join(root, "target/generated/harness-source.json"), "utf8"));
 const cargoCacheRoot = resolve(process.env.DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT?.trim() || join(root, "src-tauri", "target"));
 const cargoCacheKey = createHash("sha256").update(JSON.stringify({
   target: target.triple,
@@ -176,10 +176,10 @@ const scanRoots = [
   join(root, "dist"),
   join(root, "target", "generated", "app-config.json"),
   join(root, "target", "generated", "tauri.conf.json"),
-  join(root, "target", "generated", "runtime-source.json"),
-  join(root, "target", "generated", "runtime-lock.json"),
+  join(root, "target", "generated", "harness-source.json"),
+  join(root, "target", "generated", "harness-lock.json"),
   join(root, "target", "generated", "branding"),
-  join(root, "runtime", "staging", target.triple),
+  join(root, "harness", "staging", target.triple),
   bundleRoot,
   ...await stat(primaryBinary).then(() => [primaryBinary], () => [])
 ];
@@ -188,9 +188,9 @@ const artifactAudit = await scanArtifactPaths(scanRoots, {
 });
 
 const dirty = git(["status", "--porcelain", "--untracked-files=all"]).length > 0;
-let runtimeCache = { hit: false, key: "unknown" };
+let harnessCache = { hit: false, key: "unknown" };
 try {
-  runtimeCache = JSON.parse(await readFile(join(root, "target", "local-release", `runtime-cache-${target.triple}.json`), "utf8"));
+  harnessCache = JSON.parse(await readFile(join(root, "target", "local-release", `harness-cache-${target.triple}.json`), "utf8"));
 } catch {}
 timings.totalMs = Date.now() - packageStartedAt;
 const buildInfoPath = join(outputRoot, `BUILD-INFO.${target.triple}.json`);
@@ -214,13 +214,13 @@ await writeFile(buildInfoPath, `${JSON.stringify({
     tauriCliVersion: toolchainLock.toolchain?.tauriCli
   },
   harness: {
-    repository: runtimeSource.repository,
-    requestedRef: runtimeSource.requestedRef,
-    resolvedRef: runtimeSource.resolvedRef,
-    commit: runtimeSource.resolvedCommit,
-    packageName: runtimeSource.packageName,
-    version: runtime.runtime.version,
-    sha256: runtime.runtime.sha256
+    repository: harnessSource.repository,
+    requestedRef: harnessSource.requestedRef,
+    resolvedRef: harnessSource.resolvedRef,
+    commit: harnessSource.resolvedCommit,
+    packageName: harnessSource.packageName,
+    version: harness.harness.version,
+    sha256: harness.harness.sha256
   },
   target: target.triple,
   channel,
@@ -232,16 +232,16 @@ await writeFile(buildInfoPath, `${JSON.stringify({
   performance: {
     schemaVersion: 1,
     timings,
-    runtimeCache,
+    harnessCache,
     cargoCache: { key: cargoCacheKey, persistent: Boolean(process.env.DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT?.trim()) }
   },
-  runtimeUpdate: {
-    enabled: Boolean(config.runtimeUpdate.manifestUrl && config.runtimeUpdate.publicKey),
-    channel: config.runtimeUpdate.channel,
-    publisher: config.runtimeUpdate.publisher,
-    desktopProtocolVersion: config.runtimeUpdate.desktopProtocolVersion,
-    runtimeProtocolVersion: config.runtimeUpdate.runtimeProtocolVersion,
-    credentialProtocolVersion: config.runtimeUpdate.credentialProtocolVersion
+  harnessUpdate: {
+    enabled: Boolean(config.harnessUpdate.manifestUrl && config.harnessUpdate.publicKey),
+    channel: config.harnessUpdate.channel,
+    publisher: config.harnessUpdate.publisher,
+    desktopProtocolVersion: config.harnessUpdate.desktopProtocolVersion,
+    harnessProtocolVersion: config.harnessUpdate.harnessProtocolVersion,
+    credentialProtocolVersion: config.harnessUpdate.credentialProtocolVersion
   },
   artifactAudit
 }, null, 2)}\n`);

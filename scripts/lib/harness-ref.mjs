@@ -43,7 +43,7 @@ function compareVersions(left, right) {
 export function selectLatestHarnessTag(tags) {
   const versions = tags.map(parseVersionTag).filter(Boolean).sort(compareVersions);
   if (versions.length === 0) {
-    throw new Error("RUNTIME_REF is empty and the Runtime repository has no SemVer release tags");
+    throw new Error("HARNESS_REF is empty and the Harness repository has no SemVer release tags");
   }
   return versions.at(-1).tag;
 }

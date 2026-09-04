@@ -13,10 +13,10 @@ const rustupHome = join(toolchainRoot, "rustup");
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
 const rustup = join(cargoHome, "bin", `rustup${executableSuffix}`);
 const require = createRequire(import.meta.url);
-const toolchainLock = JSON.parse(await readFile(join(desktopRoot, "runtime", "toolchain-lock.json"), "utf8"));
+const toolchainLock = JSON.parse(await readFile(join(desktopRoot, "harness", "toolchain-lock.json"), "utf8"));
 const rustVersion = toolchainLock.toolchain?.rust;
 if (typeof rustVersion !== "string" || !/^\d+\.\d+\.\d+$/u.test(rustVersion)) {
-  throw new Error("runtime/toolchain-lock.json must declare toolchain.rust as a full semantic version");
+  throw new Error("harness/toolchain-lock.json must declare toolchain.rust as a full semantic version");
 }
 const triples = {
   "darwin-arm64": "aarch64-apple-darwin",

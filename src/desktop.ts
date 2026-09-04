@@ -1,28 +1,28 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { appConfig } from "./app-config";
-import type { DesktopAbout, DesktopSettings, DesktopSettingsView, DesktopSurface, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopSettings, DesktopSettingsView, DesktopSurface, HarnessStatus, HarnessUpdateStatus, UpdateStatus } from "./contracts";
 
 const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 
 export type DesktopMenuName = "file" | "edit" | "view" | "window" | "help";
 
 const browserSettings: DesktopSettings = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   locale: "zh-CN",
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
-  runtimeUpdateChannel: appConfig.runtimeUpdate.channel,
-  runtimeUpdateMode: appConfig.runtimeUpdate.autoUpdate ? "automatic" : "notify",
-  runtimeUpdateRepository: null,
-  runtimePinnedVersion: null,
+  harnessUpdateChannel: appConfig.harnessUpdate.channel,
+  harnessUpdateMode: appConfig.harnessUpdate.autoUpdate ? "automatic" : "notify",
+  harnessUpdateRepository: null,
+  harnessPinnedVersion: null,
   desktopUpdateLastCheckAt: null,
   desktopUpdateIgnoredVersion: null,
   recoveryReason: null
 };
 
-export async function getRuntimeStatus(): Promise<RuntimeStatus> {
+export async function getHarnessStatus(): Promise<HarnessStatus> {
   if (!inTauri()) {
     return {
       phase: "idle",
@@ -32,17 +32,17 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
       errorCode: null
     };
   }
-  return invoke<RuntimeStatus>("runtime_status");
+  return invoke<HarnessStatus>("harness_status");
 }
 
-export async function startRuntime(): Promise<RuntimeStatus> {
-  if (!inTauri()) return { ...(await getRuntimeStatus()), phase: "ready" };
-  return invoke<RuntimeStatus>("runtime_start");
+export async function startHarness(): Promise<HarnessStatus> {
+  if (!inTauri()) return { ...(await getHarnessStatus()), phase: "ready" };
+  return invoke<HarnessStatus>("harness_start");
 }
 
-export async function stopRuntime(): Promise<RuntimeStatus> {
-  if (!inTauri()) return getRuntimeStatus();
-  return invoke<RuntimeStatus>("runtime_stop");
+export async function stopHarness(): Promise<HarnessStatus> {
+  if (!inTauri()) return getHarnessStatus();
+  return invoke<HarnessStatus>("harness_stop");
 }
 
 export async function getSettings(): Promise<DesktopSettings> {
@@ -59,7 +59,7 @@ export async function saveSettings(settings: DesktopSettings): Promise<DesktopSe
 }
 
 export async function openWorkbench(): Promise<void> {
-  if (inTauri()) await invoke("runtime_open");
+  if (inTauri()) await invoke("harness_open");
 }
 
 export async function openDesktopMenu(menu: DesktopMenuName, anchorX: number): Promise<void> {
@@ -70,8 +70,8 @@ export async function getAbout(): Promise<DesktopAbout> {
   if (!inTauri()) {
     return {
       desktopVersion: appConfig.version,
-      runtimeVersion: appConfig.harness.ref.replace(/^dsh-v/u, "") || "auto",
-      runtimeCommit: "development",
+      harnessVersion: appConfig.harness.ref.replace(/^dsh-v/u, "") || "auto",
+      harnessCommit: "development",
       nodeVersion: appConfig.toolchain.nodeVersion,
       authors: appConfig.authors.join(", "),
       repository: appConfig.repository,
@@ -123,7 +123,7 @@ export async function openDesktopRelease(tag: string): Promise<void> {
   await invoke("desktop_update_open_release", { tag });
 }
 
-function browserRuntimeUpdateStatus(): RuntimeUpdateStatus {
+function browserHarnessUpdateStatus(): HarnessUpdateStatus {
   return {
     enabled: Boolean(appConfig.harness.repository),
     phase: appConfig.harness.repository ? "idle" : "disabled",
@@ -132,38 +132,38 @@ function browserRuntimeUpdateStatus(): RuntimeUpdateStatus {
     currentSource: "bundled",
     availableVersion: null,
     pendingVersion: null,
-    channel: browserSettings.runtimeUpdateChannel,
-    mode: browserSettings.runtimeUpdateMode,
-    pinnedVersion: browserSettings.runtimePinnedVersion,
+    channel: browserSettings.harnessUpdateChannel,
+    mode: browserSettings.harnessUpdateMode,
+    pinnedVersion: browserSettings.harnessPinnedVersion,
     downloadedBytes: 0,
     totalBytes: null,
     message: appConfig.harness.repository ? "idle" : "not-configured"
   };
 }
 
-export async function getRuntimeUpdateStatus(): Promise<RuntimeUpdateStatus> {
-  if (!inTauri()) return browserRuntimeUpdateStatus();
-  return invoke<RuntimeUpdateStatus>("runtime_update_status");
+export async function getHarnessUpdateStatus(): Promise<HarnessUpdateStatus> {
+  if (!inTauri()) return browserHarnessUpdateStatus();
+  return invoke<HarnessUpdateStatus>("harness_update_status");
 }
 
-export async function checkRuntimeUpdate(): Promise<RuntimeUpdateStatus> {
-  if (!inTauri()) return browserRuntimeUpdateStatus();
-  return invoke<RuntimeUpdateStatus>("runtime_update_check");
+export async function checkHarnessUpdate(): Promise<HarnessUpdateStatus> {
+  if (!inTauri()) return browserHarnessUpdateStatus();
+  return invoke<HarnessUpdateStatus>("harness_update_check");
 }
 
-export async function downloadRuntimeUpdate(): Promise<RuntimeUpdateStatus> {
-  if (!inTauri()) return browserRuntimeUpdateStatus();
-  return invoke<RuntimeUpdateStatus>("runtime_update_download");
+export async function downloadHarnessUpdate(): Promise<HarnessUpdateStatus> {
+  if (!inTauri()) return browserHarnessUpdateStatus();
+  return invoke<HarnessUpdateStatus>("harness_update_download");
 }
 
-export async function restoreBundledRuntime(): Promise<RuntimeUpdateStatus> {
-  if (!inTauri()) return browserRuntimeUpdateStatus();
-  return invoke<RuntimeUpdateStatus>("runtime_update_restore_bundled");
+export async function restoreBundledHarness(): Promise<HarnessUpdateStatus> {
+  if (!inTauri()) return browserHarnessUpdateStatus();
+  return invoke<HarnessUpdateStatus>("harness_update_restore_bundled");
 }
 
-export async function onRuntimeUpdateStatus(handler: (status: RuntimeUpdateStatus) => void): Promise<UnlistenFn> {
+export async function onHarnessUpdateStatus(handler: (status: HarnessUpdateStatus) => void): Promise<UnlistenFn> {
   if (!inTauri()) return () => undefined;
-  return listen<RuntimeUpdateStatus>("runtime-update://status", event => handler(event.payload));
+  return listen<HarnessUpdateStatus>("harness-update://status", event => handler(event.payload));
 }
 
 export async function exportDiagnostics(): Promise<string> {
@@ -176,9 +176,9 @@ export async function exportLogs(): Promise<string> {
   return invoke<string>("logs_export");
 }
 
-export async function onRuntimeStatus(handler: (status: RuntimeStatus) => void): Promise<UnlistenFn> {
+export async function onHarnessStatus(handler: (status: HarnessStatus) => void): Promise<UnlistenFn> {
   if (!inTauri()) return () => undefined;
-  return listen<RuntimeStatus>("runtime://status", event => handler(event.payload));
+  return listen<HarnessStatus>("harness://status", event => handler(event.payload));
 }
 
 export async function onDesktopSurface(handler: (surface: DesktopSurface) => void): Promise<UnlistenFn> {

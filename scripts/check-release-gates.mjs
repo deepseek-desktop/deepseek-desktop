@@ -19,12 +19,12 @@ if (!rustMain.includes(windowsGuiDeclaration)) {
   throw new Error("Windows release must use the GUI subsystem so it does not open a console window");
 }
 
-const rustRuntime = readFileSync(new URL("../src-tauri/src/runtime.rs", import.meta.url), "utf8");
-if (!rustRuntime.includes("command.creation_flags(CREATE_NO_WINDOW)")) {
-  throw new Error("Windows Runtime must start without a console window");
+const rustHarness = readFileSync(new URL("../src-tauri/src/harness.rs", import.meta.url), "utf8");
+if (!rustHarness.includes("command.creation_flags(CREATE_NO_WINDOW)")) {
+  throw new Error("Windows Harness must start without a console window");
 }
-if (!rustRuntime.includes('"--no-open"')) {
-  throw new Error("Desktop Runtime must not hand off to the system browser");
+if (!rustHarness.includes('"--no-open"')) {
+  throw new Error("Desktop Harness must not hand off to the system browser");
 }
 
 const channel = process.argv[2] || "local";

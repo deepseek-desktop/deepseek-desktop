@@ -1,42 +1,43 @@
 # 当前交付摘要
 
-- Harness 工作台成为单窗口唯一主界面；运行状态、诊断、Desktop 更新、Runtime 更新和关于改为同窗口设置层。打开设置只隐藏工作台子 WebView，关闭时复用同一页面与 Runtime，不重新导航、不丢失会话状态；Runtime 仍不获得 Tauri IPC。
-- macOS、Windows、Linux 的唯一完整功能菜单固定显示在窗口内容区顶部左侧，统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；Vue Shell 渲染三语标题，Tauri 弹出系统原生菜单项。Runtime 子 WebView 从菜单栏下方开始且不注入脚本；macOS 应用菜单可见部分保持最小化，同时隐藏注册系统预定义编辑 responder，使输入框和聊天记录继续使用 `Cmd+C/X/V/A/Z` 与 `Shift+Cmd+Z`；Windows/Linux 不挂载重复的完整原生窗口菜单。
+- 项目自有配置、命令、目录、IPC、状态、文案和更新元数据统一使用 Harness，按全新契约开发，不保留历史名称别名或迁移逻辑。第三方 API 与依赖名称不改；统一窗口菜单位置不变。
+- Harness 工作台成为单窗口唯一主界面；运行状态、诊断、Desktop 更新、Harness 更新和关于改为同窗口设置层。打开设置只隐藏工作台子 WebView，关闭时复用同一页面与 Harness，不重新导航、不丢失会话状态；Harness 仍不获得 Tauri IPC。
+- macOS、Windows、Linux 的唯一完整功能菜单固定显示在窗口内容区顶部左侧，统一为“文件 / 编辑 / 视图 / 窗口 / 帮助”；Vue Shell 渲染三语标题，Tauri 弹出系统原生菜单项。Harness 子 WebView 从菜单栏下方开始且不注入脚本；macOS 应用菜单可见部分保持最小化，同时隐藏注册系统预定义编辑 responder，使输入框和聊天记录继续使用 `Cmd+C/X/V/A/Z` 与 `Shift+Cmd+Z`；Windows/Linux 不挂载重复的完整原生窗口菜单。
 - macOS 子菜单以窗口内标题左下角为锚点转换成屏幕坐标，通过空 `inView` 的原生 NSMenu 展开，不随光标漂移、不改变统一菜单栏位置。Desktop 初始化时继续为锁定的 Tao `0.35.3` 安装精确视图状态防护；macOS 26 只有在 `TaoView` 仍登记同一个 `taoState` 且仍挂载 NSWindow 时才向 Tao 转发输入事件。防护只覆盖纯事件投递处理器，不拦截生命周期、布局或 tracking rect 回调；菜单弹出和工作台/设置切换不主动改变 first responder，Windows/Linux 保留原有定位实现且不应用该平台补丁。接口约束见 ADR-013。
-- 子菜单定位修复通过完整 `desktop:package` 链路（含 `verify`、2 项 E2E、Runtime smoke 和制品扫描），macOS ARM64 DMG 完整性与应用签名校验通过。macOS 26 实际成品在外接显示器完成五组菜单共 100 次展开、坐标核对和关闭，进程持续存活；设置与工作台切换保持同窗菜单。当前修复未进行 Windows/Linux 真机交互复测，未覆盖已安装版本，也未发布。
-- Runtime Supervisor 支持独立运行目录、随机端口、浏览器令牌换取会话 Cookie、带认证的 readiness、有限恢复、主动停止和进程树清理；旧版无令牌 Runtime 保持兼容，仅 Runtime 制品、进程退出或启动健康失败触发回滚，配置、凭据和权限错误保持原版本并给出明确诊断。
-- Desktop 启动后自动拉起空闲 Runtime，并在 readiness 通过后直接进入工作台；已就绪实例不重复启动，失败时保留管理、重试和诊断入口。用户无需点击启动或选择目录，项目目录、会话和文件边界由 Runtime 工作台自行管理。
+- 子菜单定位修复通过完整 `desktop:package` 链路（含 `verify`、2 项 E2E、Harness smoke 和制品扫描），macOS ARM64 DMG 完整性与应用签名校验通过。macOS 26 实际成品在外接显示器完成五组菜单共 100 次展开、坐标核对和关闭，进程持续存活；设置与工作台切换保持同窗菜单。当前修复未进行 Windows/Linux 真机交互复测，未覆盖已安装版本，也未发布。
+- Harness Supervisor 支持独立运行目录、随机端口、浏览器令牌换取会话 Cookie、带认证的 readiness、有限恢复、主动停止和进程树清理；旧版无令牌 Harness 保持兼容，仅 Harness 制品、进程退出或启动健康失败触发回滚，配置、凭据和权限错误保持原版本并给出明确诊断。
+- Desktop 启动后自动拉起空闲 Harness，并在 readiness 通过后直接进入工作台；已就绪实例不重复启动，失败时保留管理、重试和诊断入口。用户无需点击启动或选择目录，项目目录、会话和文件边界由 Harness 工作台自行管理。
 - 使用跨平台本地加密凭据库，具备短期会话授权、记录枚举、失败回滚和旧明文索引迁移。
-- 提供三语界面、诊断脱敏导出、设置恢复、关于页与两条独立更新边界；Runtime 启动令牌不会进入公开状态或导出日志，Runtime 更新默认采用“发现后提醒”。社区版 Desktop 每天最多从构建时固定的官方 GitHub 仓库检查一次 Release，也允许手动检查；只选择完整 SemVer 且五个平台公开资产齐全的候选，提醒可前往固定官方 Release、稍后处理或忽略该版本，不自动安装未签名制品。诊断脱敏同时覆盖 `HOME`、`USERPROFILE` 和 `HOMEDRIVE` + `HOMEPATH`，Windows 导出不再泄漏用户目录路径。
-- 建立统一应用配置、Runtime 来源同步、不可变发布 pin、工具链校验和一键平台打包链路。
-- Runtime 已同步到官方 `0.1.2-alpha.1`（`cd5ef8148158`），新版部署根包名、桌面补丁及 HTTP Web Fetch 运行时闭包均已适配。
+- 提供三语界面、诊断脱敏导出、设置恢复、关于页与两条独立更新边界；Harness 启动令牌不会进入公开状态或导出日志，Harness 更新默认采用“发现后提醒”。社区版 Desktop 每天最多从构建时固定的官方 GitHub 仓库检查一次 Release，也允许手动检查；只选择完整 SemVer 且五个平台公开资产齐全的候选，提醒可前往固定官方 Release、稍后处理或忽略该版本，不自动安装未签名制品。诊断脱敏同时覆盖 `HOME`、`USERPROFILE` 和 `HOMEDRIVE` + `HOMEPATH`，Windows 导出不再泄漏用户目录路径。
+- 建立统一应用配置、Harness 来源同步、不可变发布 pin、工具链校验和一键平台打包链路。
+- Harness 已同步到官方 `0.1.2-alpha.1`（`cd5ef8148158`），新版部署根包名、桌面补丁及 HTTP Web Fetch 运行时闭包均已适配。
 - OpenAI Responses 兼容流在最终事件中会覆盖暂态工具 ID、名称、参数和 namespace，避免第三方兼容接口把 `glob` 等调用错误派发为 `read` 并产生缺少 `file_path` 的假错误。
-- Runtime 内置并默认启用 `@deepseek-ai/dsh-web-search-follow-model`：联网搜索绑定当前会话实际模型路由，显式 Provider 能力可作高级覆盖，默认按模型 `apiProtocol` 自动选择标准搜索协议并安全复用 endpoint、model 和 `CredentialRef`；模型 Provider 表单不再显示重复协议控件。Provider 与外层工具分别使用 90 秒和 100 秒预算，模型切换与多会话不会串路由，未知协议不盲探测，搜索失败不改变正常对话能力。
-- 工作台不再注入会因 Tauri IPC 隔离而失败的 opener 点击脚本；普通链接和右键新窗口请求由 Rust 导航门禁转交系统默认浏览器。受管 Runtime 页面、同源 Blob、`mailto` 和 `tel` 保持可用，`file`、`javascript`、`data`、自定义 scheme 和跨源 Blob 均拒绝。macOS 成品已实测普通点击与右键新窗口分别打开 IBM 和 Microsoft Azure 来源页，Desktop 与 Runtime 不退出。
+- Harness 内置并默认启用 `@deepseek-ai/dsh-web-search-follow-model`：联网搜索绑定当前会话实际模型路由，显式 Provider 能力可作高级覆盖，默认按模型 `apiProtocol` 自动选择标准搜索协议并安全复用 endpoint、model 和 `CredentialRef`；模型 Provider 表单不再显示重复协议控件。Provider 与外层工具分别使用 90 秒和 100 秒预算，模型切换与多会话不会串路由，未知协议不盲探测，搜索失败不改变正常对话能力。
+- 工作台不再注入会因 Tauri IPC 隔离而失败的 opener 点击脚本；普通链接和右键新窗口请求由 Rust 导航门禁转交系统默认浏览器。受管 Harness 页面、同源 Blob、`mailto` 和 `tel` 保持可用，`file`、`javascript`、`data`、自定义 scheme 和跨源 Blob 均拒绝。macOS 成品已实测普通点击与右键新窗口分别打开 IBM 和 Microsoft Azure 来源页，Desktop 与 Harness 不退出。
 - 原生窗口标题读取构建注入的真实桌面版本，并统一使用单个 `v` 前缀，方便问题反馈定位。
 - 窗口恢复会先验证保存坐标是否仍落在已连接显示器；外接屏仍在线时保留原位置，断开后自动回到主显示器，避免应用运行但窗口位于屏幕外。
-- Runtime 模型设置页的内容列和滚动区具备明确的 flex 高度约束，Windows 小窗口中的长自定义 Provider 表单可以滚动到最后一项；锁定 Runtime 使用可重复、路径受限且要求唯一命中的文本替换，避免压缩产物整行 patch 漂移。
-- 点击原生窗口关闭按钮或执行“退出”会按当前语言显示确认框；取消后窗口和 Runtime 保持运行，确认后退出整个 Desktop 并由既有退出清理链停止 Runtime。设置层中的“关闭设置”和 `Cmd/Ctrl+W` 只返回原工作台，不关闭原生窗口或停止 Runtime。
+- Harness 模型设置页的内容列和滚动区具备明确的 flex 高度约束，Windows 小窗口中的长自定义 Provider 表单可以滚动到最后一项；锁定 Harness 使用可重复、路径受限且要求唯一命中的文本替换，避免压缩产物整行 patch 漂移。
+- 点击原生窗口关闭按钮或执行“退出”会按当前语言显示确认框；取消后窗口和 Harness 保持运行，确认后退出整个 Desktop 并由既有退出清理链停止 Harness。设置层中的“关闭设置”和 `Cmd/Ctrl+W` 只返回原工作台，不关闭原生窗口或停止 Harness。
 - 正式发行统一由 GitHub Actions 官方托管 Runner 原生构建：完整 SemVer Tag 触发 macOS ARM64、macOS x64、Windows x64 和 Linux x64 矩阵，四目标全部成功后才创建 Release。
 - 四个平台复用唯一 `package:community` / `desktop:package` 构建事实来源；公开 Release 只保留两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和统一 `SHA256SUMS`。
 - Release 正文会在确认六个公开文件完整后，按当前 Tag 和版本生成五个平台安装包及 `SHA256SUMS` 的直达链接；GitHub 自带 `Assets` 是否展开不再影响用户下载。
-- Pull Request 和普通分支 push 不触发发布工作流；完整 SemVer Tag 才运行质量门禁与四平台构建。本机仅执行 `verify`、`test:e2e`、`runtime:smoke` 和当前 macOS 架构打包/启动检查，不再把 Rosetta、Docker、Parallels 或本地 Controller/Worker 当作正式发行依赖。
+- Pull Request 和普通分支 push 不触发发布工作流；完整 SemVer Tag 才运行质量门禁与四平台构建。本机仅执行 `verify`、`test:e2e`、`harness:smoke` 和当前 macOS 架构打包/启动检查，不再把 Rosetta、Docker、Parallels 或本地 Controller/Worker 当作正式发行依赖。
 - 历史本地发布协议和缓存组件继续用于协议测试与实验，不进入 Agent 默认发布手册。
-- Runtime 平台 smoke 使用仅允许 `127.0.0.1` 的有界原生 HTTP 客户端，在 readiness 地址出现后等待端口真正接受请求并同时检查子进程存活，消除 Linux 启动竞态与 Rosetta Undici 套接字兼容失败。
-- Runtime 正式启动、候选更新 smoke 和打包 smoke 统一在加载实时配置 profile 前启用 Node 内部模块访问，避免新目标闭包因 HMR 启动契约不一致失败，同时保持原生 Runtime 的实时重载体验。
+- Harness 平台 smoke 使用仅允许 `127.0.0.1` 的有界原生 HTTP 客户端，在 readiness 地址出现后等待端口真正接受请求并同时检查子进程存活，消除 Linux 启动竞态与 Rosetta Undici 套接字兼容失败。
+- Harness 正式启动、候选更新 smoke 和打包 smoke 统一在加载实时配置 profile 前启用 Node 内部模块访问，避免新目标闭包因 HMR 启动契约不一致失败，同时保持原生 Harness 的实时重载体验。
 - 工具链锁统一要求四个平台使用 Node `24.20.0` / ABI `137`；各官方 Runner 在打包前验证实际版本，缓存与内部 BUILD-INFO 同时绑定目标 triple 和工具链身份。
 - `.ai/skills/release-workflow.md` 是 Agent 唯一发布运行手册，固化本地前置门禁、不可变 SemVer Tag、四平台 job 诊断、新 Tag 恢复以及 Release 资产与 SHA-256 验收。
-- 已建立 Runtime 独立更新协议：四平台原生生产闭包、Ed25519 签名清单、清单有效期与反回放、流式下载、兼容性与包版本验证、受限解压、真实服务启动 smoke、原子切换、上一版回滚、内置基线恢复和无引用旧版本清理。反回放接受记录在暂存成功后写入、随内置基线恢复清除；启动激活在后台线程执行并对外发布 `applying`；启动失败回滚等待更新操作锁，不会因自动检查占锁而跳过。
-- Runtime 更新页只显示一个仓库地址：默认使用构建时的社区 Runtime 仓库，用户可替换为官方上游或自己的兼容 fork。仓库模式读取默认分支 HEAD，在应用数据目录复用内置 Node/pnpm 构建并 smoke 候选；设置 schema 会迁移并清除旧清单、发布者和公钥字段，诊断导出剔除仓库地址。可选预构建签名制品通道继续保留为维护者能力。
-- macOS Runtime 仓库 HTTP(S) 检查和克隆在没有显式代理环境时读取系统静态代理及绕过规则，仅作用于 Git 子进程，不修改全局配置；检查超时有三语提示并清理辅助进程，保留当前 Runtime。无终端代理环境的真实查询和隔离 macOS 应用自动检查均已通过。
+- 已建立 Harness 独立更新协议：四平台原生生产闭包、Ed25519 签名清单、清单有效期与反回放、流式下载、兼容性与包版本验证、受限解压、真实服务启动 smoke、原子切换、上一版回滚、内置基线恢复和无引用旧版本清理。反回放接受记录在暂存成功后写入、随内置基线恢复清除；启动激活在后台线程执行并对外发布 `applying`；启动失败回滚等待更新操作锁，不会因自动检查占锁而跳过。
+- Harness 更新页只显示一个仓库地址：默认使用构建时的社区 Harness 仓库，用户可替换为官方上游或自己的兼容 fork。仓库模式读取默认分支 HEAD，在应用数据目录复用内置 Node/pnpm 构建并 smoke 候选；设置只使用 Harness 字段，不提供历史迁移。诊断导出剔除仓库地址。可选预构建签名制品通道继续保留为维护者能力。
+- macOS Harness 仓库 HTTP(S) 检查和克隆在没有显式代理环境时读取系统静态代理及绕过规则，仅作用于 Git 子进程，不修改全局配置；检查超时有三语提示并清理辅助进程，保留当前 Harness。无终端代理环境的真实查询和隔离 macOS 应用自动检查均已通过。
 - 上述代理修复已随 `v1.0.30` 发布（未签名 prerelease，commit `197f9410`）：本机 macOS release 工作台启动及退出检查通过，GitHub 四平台原生矩阵全部成功，六个公开资产下载后大小与摘要一致。用户本机 `1.0.29` 未被覆盖；本次 Windows/Linux 验证限于 CI 自动化，详细证据见 `.ai/memory/verification.md`。
-- 当前功能簇已在 macOS ARM64 安装版和 Windows 11 ARM64 虚拟机的 x64 应用模拟环境完成真实窗口验收：工作台自动进入、五组窗口菜单可打开且不退出、长设置表单可滚动、关闭确认可取消并可确认清理 Desktop 与 Runtime。Windows x64 Rust 测试、Clippy、E2E、Runtime smoke 和 release 应用编译通过；NSIS 仅因 ARM64 虚拟机无法启动其 x86 子进程而未在该环境生成安装器，正式 Windows x64 与 Linux x64 安装包仍由 GitHub 官方原生 Runner 验收。
+- 当前功能簇已在 macOS ARM64 安装版和 Windows 11 ARM64 虚拟机的 x64 应用模拟环境完成真实窗口验收：工作台自动进入、五组窗口菜单可打开且不退出、长设置表单可滚动、关闭确认可取消并可确认清理 Desktop 与 Harness。Windows x64 Rust 测试、Clippy、E2E、Harness smoke 和 release 应用编译通过；NSIS 仅因 ARM64 虚拟机无法启动其 x86 子进程而未在该环境生成安装器，正式 Windows x64 与 Linux x64 安装包仍由 GitHub 官方原生 Runner 验收。
 - 本地打包和 CI 原生矩阵均扫描实际交付闭包，拒绝 `.env`、密钥、本机绝对路径及符号链接泄漏；CI 第三方 Action 使用不可变 commit。
-- Runtime staging 在生成 manifest 前移除依赖包中的 `test`、`tests`、`__tests__` 及 `*.spec.*` / `*.test.*` 开发源码，闭包策略进入内容寻址缓存键；校验器会拒绝测试文件回流，避免上游测试凭据样本进入安装包。
+- Harness staging 在生成 manifest 前移除依赖包中的 `test`、`tests`、`__tests__` 及 `*.spec.*` / `*.test.*` 开发源码，闭包策略进入内容寻址缓存键；校验器会拒绝测试文件回流，避免上游测试凭据样本进入安装包。
 - CI 的 `NO_STRIP` 仅允许出现在 Linux AppImage 打包步骤；macOS 与 Windows 不继承该变量。制品扫描协议 v2 允许 AppImage 根目录内的可移植相对链接，同时拒绝绝对链接、根外逃逸和循环；CI 使用项目工作区与 Runner 临时目录等精确根路径。PEM 私钥检查覆盖 UTF-8/UTF-16 文本，不误判 `libgnutls` 等系统库内置的公开自检向量；二进制仍扫描令牌和本机路径。
 - `v1.0.20` 已由 GitHub 官方 Runner 完成 macOS ARM64、macOS x64、Windows x64、Linux x64 原生矩阵并发布，Release 恰好包含五个安装制品和一份 `SHA256SUMS`，五个安装包下载后均通过统一清单校验，六个正文直达链接返回 HTTP 200，tag 指向 `d41fca2`。`v1.0.18` 与 `v1.0.19` 均在发布前门禁安全失败且未产生不完整 Release，恢复时使用新 Tag，没有移动旧 Tag。
-- 汇总门禁的跨平台身份比对排除 `harness.sha256`：Runtime 生产闭包内的 native prebuild 由各构建主机编译，四平台必然得到不同摘要；四份实测 BUILD-INFO 确认这是唯一跨平台变化字段，其余字段仍精确比对。
-- 本机 macOS ARM64 验收包已按发布手册四项检查通过：DMG 校验和一致、包内应用启动且窗口标题为真实版本、Runtime sidecar 作为应用子进程启动并仅监听 127.0.0.1 随机端口、工作台在同一原生窗口加载、退出后无残留进程与监听。启动令牌在 `desktop.log` 中以 `<redacted>` 记录。
+- 汇总门禁的跨平台身份比对排除 `harness.sha256`：Harness 生产闭包内的 native prebuild 由各构建主机编译，四平台必然得到不同摘要；四份实测 BUILD-INFO 确认这是唯一跨平台变化字段，其余字段仍精确比对。
+- 本机 macOS ARM64 验收包已按发布手册四项检查通过：DMG 校验和一致、包内应用启动且窗口标题为真实版本、Harness sidecar 作为应用子进程启动并仅监听 127.0.0.1 随机端口、工作台在同一原生窗口加载、退出后无残留进程与监听。启动令牌在 `desktop.log` 中以 `<redacted>` 记录。
 - `v1.0.24` 已由 GitHub 官方 Runner 完成四平台原生矩阵并发布（未签名 prerelease），公开资产为五个安装包加 `SHA256SUMS`，正文直达下载链接与 Tag 一致。
 - `v1.0.26` 已由 GitHub 官方 Runner 完成四平台原生矩阵并发布（未签名 prerelease），公开资产为五个安装包加 `SHA256SUMS`；Release 标题统一改为 Tag 本身，历史 Release 标题一并改写。
 - 后续判断必须以当前 HEAD、生成锁和实际 diff 为准，不能用历史发行结果替代当前验证。

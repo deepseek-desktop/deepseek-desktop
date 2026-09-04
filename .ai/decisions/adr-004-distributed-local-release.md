@@ -6,7 +6,7 @@
 
 ## 决策
 
-Desktop 在 `scripts/release-system/` 内维护代码托管平台无关的 Controller、Worker、目标配置和发布 Provider。Controller 通过通用 Git URL 锁定 tag、Desktop commit、Runtime commit 和原生目标；受信任 Worker 使用一次性票据领取与本机平台一致的任务，调用现有 `app:sync`、`runtime:sync`、`verify` 和 `desktop:package` 链路，并把带哈希的制品流式回传。
+Desktop 在 `scripts/release-system/` 内维护代码托管平台无关的 Controller、Worker、目标配置和发布 Provider。Controller 通过通用 Git URL 锁定 tag、Desktop commit、Harness commit 和原生目标；受信任 Worker 使用一次性票据领取与本机平台一致的任务，调用现有 `app:sync`、`harness:sync`、`verify` 和 `desktop:package` 链路，并把带哈希的制品流式回传。
 
 filesystem 是默认发布 Provider。GitHub 是可选适配器，不参与构建；未来 GitLab、Gitee 或 Gitea 适配器遵循相同的“只发布已验证制品”接口。GitHub Actions 可以作为兼容构建入口继续存在，但不是分布式发布系统的运行依赖。
 
@@ -22,7 +22,7 @@ filesystem 是默认发布 Provider。GitHub 是可选适配器，不参与构�
 - community 和 stable 任务必须绑定受信任节点 ID，并通过私下分发的短期一次性票据领取。
 - Controller 非回环监听必须启用 TLS；管理员令牌、Worker 票据和 Provider 令牌不得进入 Git、日志或发布附件。
 - 公开 Pull Request 和外部 Webhook 不自动签发票据或触发本地 Worker。
-- 任务绑定完整 Desktop/Runtime commit、tag、目标 triple、channel、signed 和制品哈希；脏来源、来源漂移、错误目标和本机路径泄漏直接失败。
+- 任务绑定完整 Desktop/Harness commit、tag、目标 triple、channel、signed 和制品哈希；脏来源、来源漂移、错误目标和本机路径泄漏直接失败。
 - Linux 旧基线容器只作为显式可选能力，不成为普通开发者或其他平台的依赖。
 
 ## 单机便捷编排

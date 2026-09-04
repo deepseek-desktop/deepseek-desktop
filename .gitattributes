@@ -15,4 +15,4 @@
 *.wasm binary
 
 # Unified diff context lines intentionally use a leading marker before source indentation.
-runtime/patches/*.patch -whitespace
+harness/patches/*.patch -whitespace

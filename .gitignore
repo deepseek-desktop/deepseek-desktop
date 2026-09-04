@@ -5,7 +5,7 @@ node_modules/
 # Build and generated output
 dist/
 target/
-runtime/staging/
+harness/staging/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
 src-tauri/gen/schemas/
@@ -36,5 +36,5 @@ test-results/
 Thumbs.db
 
 # Optional upstream audit checkout
-upstream-runtime/
+upstream-harness/
 vendor/

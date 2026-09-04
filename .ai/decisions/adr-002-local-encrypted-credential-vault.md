@@ -13,7 +13,7 @@ macOS、Windows 和 Linux 统一使用 Desktop 自有的本地加密凭据库，
 ## 理由
 
 - 避免 macOS 钥匙串反复授权弹窗和跨平台行为差异。
-- 保持 Runtime、WebView、日志和诊断包无法直接读取长期明文凭据。
+- 保持 Harness、WebView、日志和诊断包无法直接读取长期明文凭据。
 - 用统一协议降低 Provider 与桌面原生实现的耦合。
 
 ## 安全边界

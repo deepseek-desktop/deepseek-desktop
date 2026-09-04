@@ -6,29 +6,29 @@ import { test } from "node:test";
 const root = resolve(import.meta.dirname, "../..");
 
 test("isolated workbench links reach the Rust navigation allowlist", async () => {
-  const [app, lib, menu, runtime] = await Promise.all([
+  const [app, lib, menu, harness] = await Promise.all([
     readFile(resolve(root, "src/App.vue"), "utf8"),
     readFile(resolve(root, "src-tauri/src/lib.rs"), "utf8"),
     readFile(resolve(root, "src-tauri/src/native_menu.rs"), "utf8"),
-    readFile(resolve(root, "src-tauri/src/runtime.rs"), "utf8")
+    readFile(resolve(root, "src-tauri/src/harness.rs"), "utf8")
   ]);
   assert.match(lib, /open_js_links_on_click\(false\)/u);
-  assert.match(runtime, /\.on_navigation\(/u);
-  assert.match(runtime, /\.on_new_window\(/u);
-  assert.match(runtime, /\.opener\(\)\s*\.open_url\(/u);
-  assert.doesNotMatch(runtime, /WORKBENCH_MENU_SCRIPT|__deepseek_desktop_menu__/u);
+  assert.match(harness, /\.on_navigation\(/u);
+  assert.match(harness, /\.on_new_window\(/u);
+  assert.match(harness, /\.opener\(\)\s*\.open_url\(/u);
+  assert.doesNotMatch(harness, /WORKBENCH_MENU_SCRIPT|__deepseek_desktop_menu__/u);
   assert.match(app, /DesktopMenuBar/u);
   assert.match(lib, /desktop_menu_popup/u);
   assert.match(menu, /WINDOW_MENU_HEIGHT_LOGICAL/u);
   assert.match(menu, /popup_below_title\(&menu, &window, anchor_x\)/u);
   assert.match(menu, /#\[cfg\(not\(target_os = "macos"\)\)\][\s\S]*?menu\.popup_at\(/u);
-  assert.match(runtime, /DESKTOP_MENU_WEBVIEW_LABEL/u);
-  assert.match(runtime, /__DEEPSEEK_DESKTOP_MENU_ONLY__/u);
-  assert.match(runtime, /WebviewUrl::App\("index\.html"\.into\(\)\)/u);
-  assert.match(runtime, /Position::Logical/u);
-  assert.match(runtime, /window_size\.to_logical::<f64>\(scale_factor\)/u);
-  assert.match(runtime, /\.hide\(\)/u);
-  assert.match(runtime, /should_navigate_workbench/u);
+  assert.match(harness, /DESKTOP_MENU_WEBVIEW_LABEL/u);
+  assert.match(harness, /__DEEPSEEK_DESKTOP_MENU_ONLY__/u);
+  assert.match(harness, /WebviewUrl::App\("index\.html"\.into\(\)\)/u);
+  assert.match(harness, /Position::Logical/u);
+  assert.match(harness, /window_size\.to_logical::<f64>\(scale_factor\)/u);
+  assert.match(harness, /\.hide\(\)/u);
+  assert.match(harness, /should_navigate_workbench/u);
 });
 
 test("macOS anchors the native popup without moving the shared window menu", async () => {
@@ -50,7 +50,7 @@ test("closing a view never shares the quit path", async () => {
   const menu = await readFile(new URL("../../src-tauri/src/native_menu.rs", import.meta.url), "utf8");
   // One window means window.close() quits, so the close item must not reach it.
   assert.doesNotMatch(lib, /CLOSE_MENU_ID \| native_menu::QUIT_MENU_ID/u);
-  assert.match(lib, /CLOSE_MENU_ID => \{[\s\S]*?open_runtime\(\)/u);
+  assert.match(lib, /CLOSE_MENU_ID => \{[\s\S]*?open_harness\(\)/u);
   assert.match(lib, /QUIT_MENU_ID => \{[\s\S]*?window\.close\(\)/u);
   // The close item only exists while the settings layer is the closable surface.
   assert.match(menu, /if !workbench_visible \{[\s\S]*?CLOSE_MENU_ID/u);
@@ -82,10 +82,10 @@ test("macOS keeps native editing shortcuts available to the focused webview", as
 });
 
 test("menus and surface switches do not force focus during AppKit transitions", async () => {
-  const [menu, runtime] = await Promise.all([
+  const [menu, harness] = await Promise.all([
     readFile(new URL("../../src-tauri/src/native_menu.rs", import.meta.url), "utf8"),
-    readFile(new URL("../../src-tauri/src/runtime.rs", import.meta.url), "utf8")
+    readFile(new URL("../../src-tauri/src/harness.rs", import.meta.url), "utf8")
   ]);
   assert.doesNotMatch(menu, /set_focus\(\)/u);
-  assert.doesNotMatch(runtime, /set_focus\(\)/u);
+  assert.doesNotMatch(harness, /set_focus\(\)/u);
 });

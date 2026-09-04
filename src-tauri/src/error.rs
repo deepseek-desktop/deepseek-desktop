@@ -3,19 +3,19 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum DesktopError {
-    #[error("runtime is already changing state")]
-    RuntimeBusy,
-    #[error("runtime artifact is missing: {0}")]
-    RuntimeArtifactMissing(String),
-    #[error("runtime exited before readiness: {0}")]
-    RuntimeExited(String),
-    #[error("runtime failed its startup checks: {0}")]
-    RuntimeBootFailed(String),
-    #[error("runtime startup was rejected by the desktop environment: {0}")]
-    RuntimeStartRejected(String),
-    #[error("runtime is not ready")]
-    RuntimeNotReady,
-    #[error("Runtime repository command timed out")]
+    #[error("harness is already changing state")]
+    HarnessBusy,
+    #[error("harness artifact is missing: {0}")]
+    HarnessArtifactMissing(String),
+    #[error("harness exited before readiness: {0}")]
+    HarnessExited(String),
+    #[error("harness failed its startup checks: {0}")]
+    HarnessBootFailed(String),
+    #[error("harness startup was rejected by the desktop environment: {0}")]
+    HarnessStartRejected(String),
+    #[error("harness is not ready")]
+    HarnessNotReady,
+    #[error("Harness repository command timed out")]
     RepositoryCommandTimedOut,
     #[error("configuration is invalid: {0}")]
     InvalidConfiguration(String),
@@ -30,10 +30,10 @@ pub enum DesktopError {
 }
 
 impl DesktopError {
-    pub fn permits_runtime_rollback(&self) -> bool {
+    pub fn permits_harness_rollback(&self) -> bool {
         matches!(
             self,
-            Self::RuntimeArtifactMissing(_) | Self::RuntimeExited(_) | Self::RuntimeBootFailed(_)
+            Self::HarnessArtifactMissing(_) | Self::HarnessExited(_) | Self::HarnessBootFailed(_)
         )
     }
 }

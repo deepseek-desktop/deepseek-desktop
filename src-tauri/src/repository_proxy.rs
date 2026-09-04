@@ -156,15 +156,15 @@ mod macos {
             ])
             .to_untyped();
             assert_eq!(
-                resolve_with_settings("https://example.test/runtime.git", &settings).as_deref(),
+                resolve_with_settings("https://example.test/harness.git", &settings).as_deref(),
                 Some("http://127.0.0.1:18080/")
             );
             assert_eq!(
-                resolve_with_settings("https://git.internal/runtime.git", &settings),
+                resolve_with_settings("https://git.internal/harness.git", &settings),
                 None
             );
             assert_eq!(
-                resolve_with_settings("http://example.test/runtime.git", &settings),
+                resolve_with_settings("http://example.test/harness.git", &settings),
                 None
             );
         }
@@ -180,7 +180,7 @@ mod tests {
         let mut command = Command::new("git");
         configure_with(
             &mut command,
-            "https://example.test/runtime.git",
+            "https://example.test/harness.git",
             |_| false,
             |_| Some("http://localhost:18080".to_owned()),
         );
@@ -192,9 +192,9 @@ mod tests {
             )]
         );
         for repository in [
-            "file:///tmp/runtime",
-            "git@example.test:runtime.git",
-            "ssh://example.test/runtime.git",
+            "file:///tmp/harness",
+            "git@example.test:harness.git",
+            "ssh://example.test/harness.git",
         ] {
             configure_with(
                 &mut command,
@@ -211,7 +211,7 @@ mod tests {
             let mut command = Command::new("git");
             configure_with(
                 &mut command,
-                "https://example.test/runtime.git",
+                "https://example.test/harness.git",
                 |key| key == name,
                 |_| panic!("must preserve explicit proxy configuration"),
             );

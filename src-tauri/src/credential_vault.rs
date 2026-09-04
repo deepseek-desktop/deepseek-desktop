@@ -29,13 +29,13 @@ const INDEX_KEY: &str = "credential-record-index";
 const VAULT_KEY_LEN: usize = 32;
 const VAULT_NONCE_LEN: usize = 24;
 
-pub struct RuntimeSession {
+pub struct HarnessSession {
     token: String,
     path: PathBuf,
     digest: String,
 }
 
-impl RuntimeSession {
+impl HarnessSession {
     pub fn create(data_dir: &Path) -> DesktopResult<Self> {
         let token = Uuid::new_v4().to_string();
         let digest = session_digest(&token);
@@ -60,7 +60,7 @@ impl RuntimeSession {
     }
 }
 
-impl Drop for RuntimeSession {
+impl Drop for HarnessSession {
     fn drop(&mut self) {
         let current = read_session_authorization(&self.path).ok().flatten();
         if current.as_ref().is_some_and(|authorization| {
@@ -749,9 +749,9 @@ mod tests {
     }
 
     #[test]
-    fn authorizes_only_the_current_runtime_session_without_storing_its_token() {
-        let data_dir = temporary_data_dir("runtime-session");
-        let session = RuntimeSession::create(&data_dir).unwrap();
+    fn authorizes_only_the_current_harness_session_without_storing_its_token() {
+        let data_dir = temporary_data_dir("harness-session");
+        let session = HarnessSession::create(&data_dir).unwrap();
         let authorization = fs::read_to_string(data_dir.join(SESSION_FILE)).unwrap();
         assert!(!authorization.contains(session.token()));
 
@@ -778,10 +778,10 @@ mod tests {
     }
 
     #[test]
-    fn dropping_an_old_runtime_session_preserves_the_new_session() {
-        let data_dir = temporary_data_dir("runtime-session-restart");
-        let first = RuntimeSession::create(&data_dir).unwrap();
-        let second = RuntimeSession::create(&data_dir).unwrap();
+    fn dropping_an_old_harness_session_preserves_the_new_session() {
+        let data_dir = temporary_data_dir("harness-session-restart");
+        let first = HarnessSession::create(&data_dir).unwrap();
+        let second = HarnessSession::create(&data_dir).unwrap();
         let mut request = request(Operation::DescribeRef, "DEEPSEEK_API_KEY", None);
         request.session = Some(second.token().to_owned());
 

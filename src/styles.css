@@ -164,17 +164,17 @@ button { cursor: pointer; }
 .section-heading h1 { margin: 12px 0 10px; font-size: 34px; line-height: 1.2; letter-spacing: 0; }
 .section-heading p { margin: 0; color: #697984; font-size: 16px; line-height: 1.7; }
 
-.runtime-panel, .plain-list {
+.harness-panel, .plain-list {
   background: #fff;
   border: 1px solid #dbe4e7;
   border-radius: 8px;
 }
 
-.runtime-panel { margin-top: 40px; padding: 28px; display: grid; grid-template-columns: 76px 1fr; gap: 28px; align-items: center; }
+.harness-panel { margin-top: 40px; padding: 28px; display: grid; grid-template-columns: 76px 1fr; gap: 28px; align-items: center; }
 .pulse { width: 68px; height: 68px; border: 2px solid #21a88e; border-radius: 50%; box-shadow: inset 0 0 0 18px #e5f5f1; }
-.runtime-panel[data-phase="failed"] .pulse { border-color: #d55f4a; box-shadow: inset 0 0 0 18px #faece9; }
-.runtime-panel dl { margin: 0; display: grid; gap: 12px; }
-.runtime-panel dl div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 16px; }
+.harness-panel[data-phase="failed"] .pulse { border-color: #d55f4a; box-shadow: inset 0 0 0 18px #faece9; }
+.harness-panel dl { margin: 0; display: grid; gap: 12px; }
+.harness-panel dl div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 16px; }
 dt { color: #829099; }
 dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
 
@@ -186,7 +186,7 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
 .compact-list { margin-top: 32px; }
 .setting-select, .setting-input { width: min(520px, 100%); height: 36px; padding: 0 10px; border: 1px solid #ccd6da; border-radius: 5px; background: #fff; color: inherit; }
 .setting-select { width: min(320px, 100%); }
-.runtime-source-save span { font-size: 13px; line-height: 1.5; }
+.harness-source-save span { font-size: 13px; line-height: 1.5; }
 .toggle-label { display: inline-flex; align-items: center; gap: 8px; }
 .toggle-label input { width: 16px; height: 16px; accent-color: #137f70; }
 .wrap-actions { flex-wrap: wrap; }
@@ -249,7 +249,7 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
   .settings-window, .topbar, .side-nav { background: rgba(18, 27, 30, 0.97); border-color: #2b373b; }
   .icon-button { color: #e4ebee; }
   .icon-button:hover, .icon-button:focus-visible { background: #263236; }
-  .runtime-panel, .plain-list { background: #182226; border-color: #2c3a3e; }
+  .harness-panel, .plain-list { background: #182226; border-color: #2c3a3e; }
   .desktop-update-prompt { background: #182226; border-color: #3a484d; }
   .community-update-notice { color: #e8d8b5; background: #2f2a20; }
   .locale-select, .button.secondary, .setting-select, .setting-input { color: #e4ebee; background: #182226; border-color: #3a484d; }

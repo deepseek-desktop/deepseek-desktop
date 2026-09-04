@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -27,16 +27,16 @@ test("uses built-in defaults without an env file", async () => {
   assert.equal(config.displayVersion, `v${DEFAULT_CONFIG.DESKTOP_APP_VERSION}`);
   assert.equal(config.windowTitle, `${DEFAULT_CONFIG.DESKTOP_APP_NAME} v${DEFAULT_CONFIG.DESKTOP_APP_VERSION}`);
   assert.equal(config.repository, "https://github.com/deepseek-desktop/deepseek-desktop");
-  assert.equal(config.harness.repository, DEFAULT_CONFIG.RUNTIME_REPOSITORY);
+  assert.equal(config.harness.repository, DEFAULT_CONFIG.HARNESS_REPOSITORY);
   assert.equal(config.harness.ref, "");
-  assert.deepEqual(config.runtimeUpdate, {
+  assert.deepEqual(config.harnessUpdate, {
     manifestUrl: "",
     channel: "stable",
     autoUpdate: false,
     publisher: "deepseek-desktop",
     publicKey: "",
     desktopProtocolVersion: 1,
-    runtimeProtocolVersion: 1,
+    harnessProtocolVersion: 1,
     credentialProtocolVersion: 1
   });
   assert.deepEqual(config.release, { channel: "local", signed: false });
@@ -46,11 +46,11 @@ test("uses built-in defaults without an env file", async () => {
 
 test("environment values override env file values", () => {
   const values = resolveBuildValues({
-    fileValues: { DESKTOP_APP_NAME: "File Name", RUNTIME_REF: "file-ref" },
+    fileValues: { DESKTOP_APP_NAME: "File Name", HARNESS_REF: "file-ref" },
     environment: { DESKTOP_APP_NAME: "Environment Name" }
   });
   assert.equal(values.DESKTOP_APP_NAME, "Environment Name");
-  assert.equal(values.RUNTIME_REF, "file-ref");
+  assert.equal(values.HARNESS_REF, "file-ref");
 });
 
 test("loads every declared value from an env file before applying environment overrides", async () => {
@@ -65,13 +65,13 @@ test("loads every declared value from an env file before applying environment ov
     "DESKTOP_APP_AUTHORS=Alice, Bob",
     "DESKTOP_APP_REPOSITORY=https://git.example.com/team/desktop.git",
     "DESKTOP_APP_ICON=src-tauri/icons/icon.png",
-    "RUNTIME_REPOSITORY=git@github.com:example/deepseek-harness.git",
-    "RUNTIME_REF=release-candidate",
-    "RUNTIME_UPDATE_MANIFEST_URL=https://updates.example.com/runtime/manifest.json",
-    "RUNTIME_UPDATE_CHANNEL=preview",
-    "RUNTIME_AUTO_UPDATE=true",
-    "RUNTIME_UPDATE_PUBLISHER=example-desktop",
-    `RUNTIME_UPDATE_PUBLIC_KEY=${Buffer.alloc(32, 7).toString("base64")}`,
+    "HARNESS_REPOSITORY=git@github.com:example/deepseek-harness.git",
+    "HARNESS_REF=release-candidate",
+    "HARNESS_UPDATE_MANIFEST_URL=https://updates.example.com/harness/manifest.json",
+    "HARNESS_UPDATE_CHANNEL=preview",
+    "HARNESS_AUTO_UPDATE=true",
+    "HARNESS_UPDATE_PUBLISHER=example-desktop",
+    `HARNESS_UPDATE_PUBLIC_KEY=${Buffer.alloc(32, 7).toString("base64")}`,
     "RELEASE_CHANNEL=community",
     "RELEASE_SIGNED=true"
   ].join("\n"));
@@ -90,10 +90,10 @@ test("loads every declared value from an env file before applying environment ov
     assert.equal(config.repository, "https://git.example.com/team/desktop");
     assert.equal(config.harness.repository, "git@github.com:example/deepseek-harness.git");
     assert.equal(config.harness.ref, "release-candidate");
-    assert.equal(config.runtimeUpdate.manifestUrl, "https://updates.example.com/runtime/manifest.json");
-    assert.equal(config.runtimeUpdate.channel, "preview");
-    assert.equal(config.runtimeUpdate.autoUpdate, false);
-    assert.equal(config.runtimeUpdate.publisher, "example-desktop");
+    assert.equal(config.harnessUpdate.manifestUrl, "https://updates.example.com/harness/manifest.json");
+    assert.equal(config.harnessUpdate.channel, "preview");
+    assert.equal(config.harnessUpdate.autoUpdate, false);
+    assert.equal(config.harnessUpdate.publisher, "example-desktop");
     assert.deepEqual(config.release, { channel: "community", signed: true });
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -104,6 +104,19 @@ test("rejects unknown and required empty declared values", () => {
   assert.throws(() => resolveBuildValues({ fileValues: { DESKTOP_APP_NANE: "typo" } }), /unsupported build configuration/u);
   assert.throws(() => resolveBuildValues({ environment: { DESKTOP_APP_NAME: " " } }), /must not be empty/u);
   assert.throws(() => resolveBuildValues({ environment: { RELEASE_CHANEL: "stable" } }), /unsupported build configuration/u);
+});
+
+test("uses Harness throughout the public shell contracts, copy, and package commands", async () => {
+  for (const path of ["src/contracts.ts", "src/desktop.ts", "src/i18n/messages.ts", "src/app-config.ts"]) {
+    assert.doesNotMatch(await readFile(join(root, path), "utf8"), /runtime/iu, path);
+  }
+  const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+  assert.ok(manifest.scripts["harness:sync"]);
+  assert.ok(manifest.scripts["harness:smoke"]);
+  assert.doesNotMatch(JSON.stringify(manifest.scripts), /runtime/iu);
+  const tauri = JSON.parse(await readFile(join(root, "src-tauri/tauri.conf.json"), "utf8"));
+  assert.equal(tauri.bundle.macOS.hardenedRuntime, false);
+  assert.equal(tauri.bundle.macOS.hardenedHarness, undefined);
 });
 
 test("validates explicit release metadata", async () => {
@@ -117,46 +130,46 @@ test("validates explicit release metadata", async () => {
   }), /true or false/u);
 });
 
-test("validates Runtime update configuration and disables automatic updates for a fixed ref", async () => {
+test("validates Harness update configuration and disables automatic updates for a fixed ref", async () => {
   const publicKey = Buffer.alloc(32, 3).toString("base64");
   const config = await loadBuildConfig(root, {
     environment: {
-      RUNTIME_REF: "dsh-v1.0.0",
-      RUNTIME_UPDATE_MANIFEST_URL: "file:///tmp/runtime-manifest.json",
-      RUNTIME_UPDATE_PUBLIC_KEY: publicKey,
-      RUNTIME_AUTO_UPDATE: "true"
+      HARNESS_REF: "dsh-v1.0.0",
+      HARNESS_UPDATE_MANIFEST_URL: "file:///tmp/harness-manifest.json",
+      HARNESS_UPDATE_PUBLIC_KEY: publicKey,
+      HARNESS_AUTO_UPDATE: "true"
     },
     envFile: resolve(root, "target/missing.env")
   });
-  assert.equal(config.runtimeUpdate.autoUpdate, false);
+  assert.equal(config.harnessUpdate.autoUpdate, false);
   await assert.rejects(loadBuildConfig(root, {
-    environment: { RUNTIME_UPDATE_CHANNEL: "nightly" },
+    environment: { HARNESS_UPDATE_CHANNEL: "nightly" },
     envFile: resolve(root, "target/missing.env")
   }), /stable or preview/u);
   await assert.rejects(loadBuildConfig(root, {
-    environment: { RUNTIME_AUTO_UPDATE: "yes" },
+    environment: { HARNESS_AUTO_UPDATE: "yes" },
     envFile: resolve(root, "target/missing.env")
   }), /true or false/u);
   await assert.rejects(loadBuildConfig(root, {
-    environment: { RUNTIME_UPDATE_MANIFEST_URL: "https://updates.example.com/runtime.json" },
+    environment: { HARNESS_UPDATE_MANIFEST_URL: "https://updates.example.com/harness.json" },
     envFile: resolve(root, "target/missing.env")
   }), /must be configured together/u);
   await assert.rejects(loadBuildConfig(root, {
-    environment: { RUNTIME_UPDATE_PUBLIC_KEY: publicKey },
+    environment: { HARNESS_UPDATE_PUBLIC_KEY: publicKey },
     envFile: resolve(root, "target/missing.env")
   }), /must be configured together/u);
   await assert.rejects(loadBuildConfig(root, {
-    environment: { RUNTIME_UPDATE_PUBLISHER: "\n" },
+    environment: { HARNESS_UPDATE_PUBLISHER: "\n" },
     envFile: resolve(root, "target/missing.env")
   }), /must not be empty/u);
   await assert.rejects(loadBuildConfig(root, {
-    environment: { RUNTIME_UPDATE_PUBLIC_KEY: "not-a-key" },
+    environment: { HARNESS_UPDATE_PUBLIC_KEY: "not-a-key" },
     envFile: resolve(root, "target/missing.env")
   }), /32 Ed25519/u);
   await assert.rejects(loadBuildConfig(root, {
     environment: {
-      RUNTIME_UPDATE_MANIFEST_URL: "https://updates.example.com/runtime.json?token=secret",
-      RUNTIME_UPDATE_PUBLIC_KEY: publicKey
+      HARNESS_UPDATE_MANIFEST_URL: "https://updates.example.com/harness.json?token=secret",
+      HARNESS_UPDATE_PUBLIC_KEY: publicKey
     },
     envFile: resolve(root, "target/missing.env")
   }), /query/u);
@@ -164,9 +177,9 @@ test("validates Runtime update configuration and disables automatic updates for 
 
 test("accepts empty Harness ref and Desktop repository for automatic resolution", () => {
   const values = resolveBuildValues({
-    environment: { RUNTIME_REF: " ", DESKTOP_APP_REPOSITORY: "" }
+    environment: { HARNESS_REF: " ", DESKTOP_APP_REPOSITORY: "" }
   });
-  assert.equal(values.RUNTIME_REF, "");
+  assert.equal(values.HARNESS_REF, "");
   assert.equal(values.DESKTOP_APP_REPOSITORY, "");
 });
 
@@ -248,7 +261,7 @@ test("accepts spaces, Chinese text, and Windows separators in relative paths", a
 
 test("rejects repository URLs containing embedded credentials", async () => {
   await assert.rejects(loadBuildConfig(root, {
-    environment: { RUNTIME_REPOSITORY: "https://token@example.com/deepseek-harness.git" },
+    environment: { HARNESS_REPOSITORY: "https://token@example.com/deepseek-harness.git" },
     envFile: resolve(root, "target/missing.env")
   }), /must not contain embedded credentials/u);
   assert.throws(

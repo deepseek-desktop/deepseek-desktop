@@ -25,9 +25,9 @@ import { portableRustFlags } from "../lib/rust-flags.mjs";
 import { cloneLockedSource, createLockedSourceBundle, resolveBundledTag } from "../release-system/git-source.mjs";
 
 const desktopCommit = "a".repeat(40);
-const runtimeCommit = "b".repeat(40);
+const harnessCommit = "b".repeat(40);
 const sourceRepository = "https://example.invalid/deepseek-desktop.git";
-const runtimeRepository = "https://example.invalid/deepseek-harness.git";
+const harnessRepository = "https://example.invalid/deepseek-harness.git";
 const releaseToolchain = Object.freeze({
   nodeVersion: "24.20.0",
   nodeModuleAbi: "137",
@@ -104,7 +104,7 @@ function releaseInput({ channel = "local", targetId = "macos-arm64", trustedNode
     channel,
     signed: false,
     source: { repository: sourceRepository, tag: "v1.0.0", commit: desktopCommit },
-    runtime: { repository: runtimeRepository, ref: "v1.0.0", commit: runtimeCommit },
+    harness: { repository: harnessRepository, ref: "v1.0.0", commit: harnessCommit },
     toolchain: releaseToolchain,
     targets: [{ id: targetId, trustedNodeId }]
   };
@@ -367,26 +367,26 @@ test("Windows local worker uses the exact Node toolchain declared by the lock", 
 test("release preparation signs immutable inputs, reuses valid cache, and rejects drift", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deepseek-release-prepare-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  await mkdir(join(directory, "runtime"), { recursive: true });
+  await mkdir(join(directory, "harness"), { recursive: true });
   await mkdir(join(directory, "target", "generated", "branding"), { recursive: true });
-  await mkdir(join(directory, "target", "generated", "runtime", "prepared"), { recursive: true });
+  await mkdir(join(directory, "target", "generated", "harness", "prepared"), { recursive: true });
   await writeFile(join(directory, ".gitignore"), "target/\n");
   await writeFile(join(directory, "source.txt"), "trusted source\n");
-  await writeFile(join(directory, "runtime", "toolchain-lock.json"), `${JSON.stringify({
+  await writeFile(join(directory, "harness", "toolchain-lock.json"), `${JSON.stringify({
     node: { version: process.versions.node, moduleAbi: process.versions.modules },
-    runtimeSource: { repository: runtimeRepository, ref: "v1.0.0", commit: runtimeCommit },
+    harnessSource: { repository: harnessRepository, ref: "v1.0.0", commit: harnessCommit },
     toolchain: { rust: "1.98.0", pnpm: "11.24.0" }
   })}\n`);
   await writeFile(join(directory, "target", "generated", "app-config.json"), "{}\n");
   await writeFile(join(directory, "target", "generated", "tauri.conf.json"), "{}\n");
   await writeFile(join(directory, "target", "generated", "branding", "icon.txt"), "icon\n");
-  await writeFile(join(directory, "target", "generated", "runtime-source.json"), `${JSON.stringify({ resolvedCommit: runtimeCommit })}\n`);
-  await writeFile(join(directory, "target", "generated", "runtime-lock.json"), `${JSON.stringify({ runtime: { commit: runtimeCommit, sha256: sha256("runtime") } })}\n`);
-  await writeFile(join(directory, "target", "generated", "runtime", "prepared", "entry.js"), "export {};\n");
+  await writeFile(join(directory, "target", "generated", "harness-source.json"), `${JSON.stringify({ resolvedCommit: harnessCommit })}\n`);
+  await writeFile(join(directory, "target", "generated", "harness-lock.json"), `${JSON.stringify({ harness: { commit: harnessCommit, sha256: sha256("harness") } })}\n`);
+  await writeFile(join(directory, "target", "generated", "harness", "prepared", "entry.js"), "export {};\n");
   git(directory, ["init"]);
   git(directory, ["config", "user.email", "tests@example.invalid"]);
   git(directory, ["config", "user.name", "Release Tests"]);
-  git(directory, ["add", ".gitignore", "source.txt", "runtime/toolchain-lock.json"]);
+  git(directory, ["add", ".gitignore", "source.txt", "harness/toolchain-lock.json"]);
   git(directory, ["commit", "-m", "fixture"]);
   git(directory, ["tag", "v1.0.0"]);
   const cacheRoot = join(directory, "target", "prepared-cache");
@@ -403,7 +403,7 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
     channel: "community",
     signed: false,
     source: { commit: git(directory, ["rev-parse", "HEAD"]) },
-    runtime: { commit: runtimeCommit },
+    harness: { commit: harnessCommit },
     tasks: ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"].map(targetId => ({ targetId }))
   };
   assert.deepEqual(preparedPlanIdentity(plan).targetIds, ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"]);
@@ -420,30 +420,30 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
 test("content-addressed release cache rejects corruption, target drift, and links", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deepseek-content-cache-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  await mkdir(join(directory, "runtime"), { recursive: true });
-  await writeFile(join(directory, "runtime", "entry.js"), "runtime\n");
-  const identity = { target: "aarch64-apple-darwin", runtimeCommit, nodeVersion: "24.20.0", nodeAbi: "137" };
+  await mkdir(join(directory, "harness"), { recursive: true });
+  await writeFile(join(directory, "harness", "entry.js"), "harness\n");
+  const identity = { target: "aarch64-apple-darwin", harnessCommit, nodeVersion: "24.20.0", nodeAbi: "137" };
   const manifest = await createContentCacheManifest(directory, identity);
   await writeFile(join(directory, "cache-manifest.json"), `${JSON.stringify(manifest)}\n`);
   assert.match(contentCacheKey(identity), /^[0-9a-f]{64}$/u);
   await verifyContentCache(directory, identity);
   await assert.rejects(() => verifyContentCache(directory, { ...identity, target: "x86_64-apple-darwin" }), /identity/u);
-  await writeFile(join(directory, "runtime", "entry.js"), "corrupted\n");
+  await writeFile(join(directory, "harness", "entry.js"), "corrupted\n");
   await assert.rejects(() => verifyContentCache(directory, identity), /file manifest/u);
-  await rm(join(directory, "runtime", "entry.js"));
-  if (!await symlinkOrSkip(t, "../cache-manifest.json", join(directory, "runtime", "linked"))) return;
+  await rm(join(directory, "harness", "entry.js"));
+  if (!await symlinkOrSkip(t, "../cache-manifest.json", join(directory, "harness", "linked"))) return;
   await assert.rejects(() => createContentCacheManifest(directory, identity), /symbolic links/u);
 });
 
-test("restored cache working trees make read-only Runtime files writable", async t => {
+test("restored cache working trees make read-only Harness files writable", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deepseek-content-cache-writable-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const runtime = join(directory, "runtime");
-  const file = join(runtime, "hatch_build.py");
-  await mkdir(runtime, { recursive: true });
+  const harness = join(directory, "harness");
+  const file = join(harness, "hatch_build.py");
+  await mkdir(harness, { recursive: true });
   await writeFile(file, "original\n");
   await chmod(file, 0o444);
-  await makeContentTreeWritable(runtime);
+  await makeContentTreeWritable(harness);
   assert.notEqual((await stat(file)).mode & 0o200, 0);
   await writeFile(file, "restaged\n");
   assert.equal(await readFile(file, "utf8"), "restaged\n");
@@ -504,7 +504,7 @@ test("official tasks require a trusted node and reject ticket misuse", async t =
     nodeId: "trusted.mac.arm64"
   });
   assert.equal(claimed.plan.source.commit, desktopCommit);
-  assert.equal(claimed.plan.runtime.commit, runtimeCommit);
+  assert.equal(claimed.plan.harness.commit, harnessCommit);
   await assert.rejects(() => service.claimTask({
     ticket: created.tickets["macos-arm64"],
     targetId: "macos-arm64",
@@ -552,7 +552,7 @@ test("distributed release HTTP smoke streams, validates, and publishes artifacts
     schemaVersion: 1,
     application: { version: "1.0.0" },
     desktop: { commit: desktopCommit, dirty: false },
-    harness: { repository: runtimeRepository, commit: runtimeCommit },
+    harness: { repository: harnessRepository, commit: harnessCommit },
     toolchain: releaseToolchain,
     target: "aarch64-apple-darwin",
     channel: "local",
@@ -633,7 +633,7 @@ test("completion rejects source facts and local path leakage", async t => {
     [buildInfoName, Buffer.from(`${JSON.stringify({
       application: { version: "1.0.0" },
       desktop: { commit: desktopCommit, dirty: false },
-      harness: { repository: runtimeRepository, commit: runtimeCommit },
+      harness: { repository: harnessRepository, commit: harnessCommit },
       toolchain: releaseToolchain,
       target: "aarch64-apple-darwin",
       channel: "local",
@@ -661,7 +661,7 @@ test("completion rejects a worker that did not use the bound prepared receipt", 
     trackedSourceSha256: "3".repeat(64),
     generatedPayloadSha256: "4".repeat(64),
     desktopCommit,
-    runtimeCommit,
+    harnessCommit,
     targetIds: ["macos-arm64"],
     preparedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 60_000).toISOString()
@@ -680,7 +680,7 @@ test("completion rejects a worker that did not use the bound prepared receipt", 
   const buildInfo = Buffer.from(`${JSON.stringify({
     application: { version: "1.0.0" },
     desktop: { commit: desktopCommit, dirty: false },
-    harness: { repository: runtimeRepository, commit: runtimeCommit },
+    harness: { repository: harnessRepository, commit: harnessCommit },
     toolchain: releaseToolchain,
     target: "aarch64-apple-darwin",
     channel: "local",
@@ -712,7 +712,7 @@ test("release preparation and artifacts remain bound to targets and the exact No
     trackedSourceSha256: "3".repeat(64),
     generatedPayloadSha256: "4".repeat(64),
     desktopCommit,
-    runtimeCommit,
+    harnessCommit,
     targetIds: ["macos-arm64"],
     preparedAt: new Date(now).toISOString(),
     expiresAt: new Date(now + 60_000).toISOString()
@@ -736,7 +736,7 @@ test("release preparation and artifacts remain bound to targets and the exact No
   const buildInfo = Buffer.from(`${JSON.stringify({
     application: { version: "1.0.0" },
     desktop: { commit: desktopCommit, dirty: false },
-    harness: { repository: runtimeRepository, commit: runtimeCommit },
+    harness: { repository: harnessRepository, commit: harnessCommit },
     toolchain: { ...releaseToolchain, nodeVersion: "0.0.0" },
     target: "aarch64-apple-darwin",
     channel: "local",

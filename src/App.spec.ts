@@ -2,25 +2,25 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import { appConfig } from "./app-config";
-import type { DesktopSettings, RuntimeStatus, RuntimeUpdateStatus } from "./contracts";
-import { checkForUpdates, checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, ignoreDesktopUpdate, openDesktopMenu, openDesktopRelease, openRepository, openWorkbench, saveSettings, startRuntime } from "./desktop";
+import type { DesktopSettings, HarnessStatus, HarnessUpdateStatus } from "./contracts";
+import { checkForUpdates, checkHarnessUpdate, downloadHarnessUpdate, exportDiagnostics, exportLogs, ignoreDesktopUpdate, openDesktopMenu, openDesktopRelease, openRepository, openWorkbench, saveSettings, startHarness } from "./desktop";
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   locale: "zh-CN",
   onboardingCompleted: false,
   updateChannel: "community",
   updateEnabled: false,
-  runtimeUpdateChannel: "stable",
-  runtimeUpdateMode: "automatic",
-  runtimeUpdateRepository: null,
-  runtimePinnedVersion: null,
+  harnessUpdateChannel: "stable",
+  harnessUpdateMode: "automatic",
+  harnessUpdateRepository: null,
+  harnessPinnedVersion: null,
   desktopUpdateLastCheckAt: null,
   desktopUpdateIgnoredVersion: null,
   recoveryReason: null
 };
-const runtime: RuntimeStatus = {
+const harness: HarnessStatus = {
   phase: "idle",
   url: null,
   restartCount: 0,
@@ -29,9 +29,9 @@ const runtime: RuntimeStatus = {
 };
 
 const listeners = vi.hoisted(() => ({
-  runtimeUpdate: undefined as ((status: RuntimeUpdateStatus) => void) | undefined,
+  harnessUpdate: undefined as ((status: HarnessUpdateStatus) => void) | undefined,
   locale: undefined as ((locale: "zh-CN" | "zh-TW" | "en-US") => void) | undefined,
-  settingsView: undefined as ((view: "runtime" | "diagnostics" | "update" | "desktop-update" | "about") => void) | undefined,
+  settingsView: undefined as ((view: "harness" | "diagnostics" | "update" | "desktop-update" | "about") => void) | undefined,
   surface: undefined as ((surface: "settings" | "workbench") => void) | undefined
 }));
 
@@ -40,7 +40,7 @@ vi.mock("./desktop", () => ({
     enabled: false, channel: "community", currentVersion: "1.0.0", availableVersion: null,
     releaseTag: null, publishedAt: null, releaseNotes: null, prerelease: false, message: "up-to-date"
   })),
-  checkRuntimeUpdate: vi.fn(async () => ({
+  checkHarnessUpdate: vi.fn(async () => ({
     enabled: true, phase: "available", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
     availableVersion: "1.1.0", pendingVersion: null, channel: "stable", mode: "automatic", pinnedVersion: null,
     downloadedBytes: 0, totalBytes: 1024, message: "available"
@@ -49,24 +49,24 @@ vi.mock("./desktop", () => ({
   exportLogs: vi.fn(async () => ""),
   getAbout: vi.fn(async () => ({
     desktopVersion: appConfig.version,
-    runtimeVersion: "0.1.2-alpha.1",
-    runtimeCommit: "cd5ef8148158c3a752a658978873241fdf8e2bbc",
+    harnessVersion: "0.1.2-alpha.1",
+    harnessCommit: "cd5ef8148158c3a752a658978873241fdf8e2bbc",
     nodeVersion: "24.20.0",
     authors: appConfig.authors.join(", "),
     repository: appConfig.repository,
     channel: "community",
     signedRelease: false
   })),
-  getRuntimeStatus: vi.fn(async () => ({ ...runtime })),
-  getRuntimeUpdateStatus: vi.fn(async () => ({
+  getHarnessStatus: vi.fn(async () => ({ ...harness })),
+  getHarnessUpdateStatus: vi.fn(async () => ({
     enabled: true, phase: "idle", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
     availableVersion: null, pendingVersion: null, channel: "stable", mode: "automatic", pinnedVersion: null,
     downloadedBytes: 0, totalBytes: null, message: "idle"
   })),
   getSettings: vi.fn(async () => ({ ...settings })),
-  onRuntimeStatus: vi.fn(async () => () => undefined),
-  onRuntimeUpdateStatus: vi.fn(async (handler) => {
-    listeners.runtimeUpdate = handler;
+  onHarnessStatus: vi.fn(async () => () => undefined),
+  onHarnessUpdateStatus: vi.fn(async (handler) => {
+    listeners.harnessUpdate = handler;
     return () => undefined;
   }),
   onDesktopLocale: vi.fn(async (handler) => {
@@ -87,18 +87,18 @@ vi.mock("./desktop", () => ({
   openRepository: vi.fn(),
   openWorkbench: vi.fn(),
   saveSettings: vi.fn(async value => value),
-  downloadRuntimeUpdate: vi.fn(async () => ({
+  downloadHarnessUpdate: vi.fn(async () => ({
     enabled: true, phase: "staged", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
     availableVersion: "1.1.0", pendingVersion: "1.1.0", channel: "stable", mode: "automatic", pinnedVersion: null,
     downloadedBytes: 1024, totalBytes: 1024, message: "restart-to-apply"
   })),
-  restoreBundledRuntime: vi.fn(async () => ({
+  restoreBundledHarness: vi.fn(async () => ({
     enabled: true, phase: "rolled-back", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
     availableVersion: null, pendingVersion: null, channel: "stable", mode: "automatic", pinnedVersion: null,
     downloadedBytes: 0, totalBytes: null, message: "bundled-restored"
   })),
-  startRuntime: vi.fn(),
-  stopRuntime: vi.fn(async () => ({ ...runtime }))
+  startHarness: vi.fn(),
+  stopHarness: vi.fn(async () => ({ ...harness }))
 }));
 
 enableAutoUnmount(afterEach);
@@ -106,20 +106,20 @@ enableAutoUnmount(afterEach);
 describe(`${appConfig.productName} shell`, () => {
   beforeEach(() => {
     Object.assign(settings, {
-      schemaVersion: 6,
+      schemaVersion: 7,
       locale: "zh-CN",
       onboardingCompleted: false,
       updateChannel: "community",
       updateEnabled: false,
-      runtimeUpdateChannel: "stable",
-      runtimeUpdateMode: "automatic",
-      runtimeUpdateRepository: null,
-      runtimePinnedVersion: null,
+      harnessUpdateChannel: "stable",
+      harnessUpdateMode: "automatic",
+      harnessUpdateRepository: null,
+      harnessPinnedVersion: null,
       desktopUpdateLastCheckAt: null,
       desktopUpdateIgnoredVersion: null,
       recoveryReason: null
     });
-    Object.assign(runtime, {
+    Object.assign(harness, {
       phase: "idle",
       url: null,
       restartCount: 0,
@@ -130,7 +130,7 @@ describe(`${appConfig.productName} shell`, () => {
     listeners.settingsView = undefined;
     listeners.surface = undefined;
     listeners.locale = undefined;
-    listeners.runtimeUpdate = undefined;
+    listeners.harnessUpdate = undefined;
     delete (window as Window & { __DEEPSEEK_DESKTOP_MENU_ONLY__?: boolean }).__DEEPSEEK_DESKTOP_MENU_ONLY__;
     vi.mocked(checkForUpdates).mockResolvedValue({
       enabled: false,
@@ -143,48 +143,48 @@ describe(`${appConfig.productName} shell`, () => {
       prerelease: false,
       message: "up-to-date"
     });
-    vi.mocked(startRuntime).mockResolvedValue({
-      ...runtime,
+    vi.mocked(startHarness).mockResolvedValue({
+      ...harness,
       phase: "ready",
       url: "http://127.0.0.1:49152"
     });
     i18n.global.locale.value = "zh-CN";
   });
 
-  it("starts the Runtime automatically and switches visible navigation to English", async () => {
+  it("starts the Harness automatically and switches visible navigation to English", async () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
 
-    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(startHarness).toHaveBeenCalledOnce();
     expect(openWorkbench).toHaveBeenCalledOnce();
-    expect(wrapper.text()).toContain("Runtime 已就绪");
+    expect(wrapper.text()).toContain("Harness 已就绪");
     expect(wrapper.text()).not.toContain("开始使用");
 
     await wrapper.get("select").setValue("en-US");
     await flushPromises();
-    expect(wrapper.text()).toContain("Runtime ready");
-    expect(wrapper.text()).toContain("Runtime");
+    expect(wrapper.text()).toContain("Harness ready");
+    expect(wrapper.text()).toContain("Harness");
     expect(wrapper.text()).toContain("Diagnostics");
     expect(wrapper.get('[role="menubar"]').text()).toContain("FileEditViewWindowHelp");
   });
 
   it.each([
-    ["zh-CN", "Runtime 仓库连接超时，请检查网络或代理后重试。当前版本未受影响。"],
-    ["zh-TW", "Runtime 倉庫連線逾時，請檢查網路或代理後重試。目前版本未受影響。"],
-    ["en-US", "The Runtime repository connection timed out. Check your network or proxy and retry. The current version was not changed."]
-  ] as const)("explains a repository timeout in %s without restarting Runtime", async (locale, message) => {
+    ["zh-CN", "Harness 仓库连接超时，请检查网络或代理后重试。当前版本未受影响。"],
+    ["zh-TW", "Harness 倉庫連線逾時，請檢查網路或代理後重試。目前版本未受影響。"],
+    ["en-US", "The Harness repository connection timed out. Check your network or proxy and retry. The current version was not changed."]
+  ] as const)("explains a repository timeout in %s without restarting Harness", async (locale, message) => {
     settings.locale = locale;
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
     listeners.settingsView?.("update");
-    listeners.runtimeUpdate?.({
+    listeners.harnessUpdate?.({
       enabled: true, phase: "failed", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
       availableVersion: null, pendingVersion: null, channel: "stable", mode: "notify", pinnedVersion: null,
       downloadedBytes: 0, totalBytes: null, message: "repository-timeout"
     });
     await flushPromises();
     expect(wrapper.text()).toContain(message);
-    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(startHarness).toHaveBeenCalledOnce();
   });
 
   it("keeps one keyboard-accessible menu bar in the Desktop Shell", async () => {
@@ -228,7 +228,7 @@ describe(`${appConfig.productName} shell`, () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
 
-    expect(startRuntime).not.toHaveBeenCalled();
+    expect(startHarness).not.toHaveBeenCalled();
     expect(wrapper.get('[role="menubar"]').text()).toBe("檔案編輯顯示方式視窗輔助說明");
 
     listeners.locale?.("en-US");
@@ -250,14 +250,14 @@ describe(`${appConfig.productName} shell`, () => {
     await wrapper.get('button[aria-label="关闭设置并返回工作台"]').trigger("click");
     await flushPromises();
 
-    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(startHarness).toHaveBeenCalledOnce();
     expect(openWorkbench).toHaveBeenCalledTimes(2);
   });
 
   it.each([
     ["Cmd+W", { metaKey: true }],
     ["Ctrl+W", { ctrlKey: true }]
-  ])("closes settings with %s without stopping the Runtime", async (_label, modifiers) => {
+  ])("closes settings with %s without stopping the Harness", async (_label, modifiers) => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
 
@@ -271,7 +271,7 @@ describe(`${appConfig.productName} shell`, () => {
     }));
     await flushPromises();
 
-    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(startHarness).toHaveBeenCalledOnce();
     expect(openWorkbench).toHaveBeenCalledTimes(2);
     wrapper.unmount();
   });
@@ -288,8 +288,8 @@ describe(`${appConfig.productName} shell`, () => {
     expect(checkForUpdates).toHaveBeenLastCalledWith(false);
   });
 
-  it("opens an already running Runtime without starting a second process", async () => {
-    Object.assign(runtime, {
+  it("opens an already running Harness without starting a second process", async () => {
+    Object.assign(harness, {
       phase: "ready",
       url: "http://127.0.0.1:49152"
     });
@@ -297,17 +297,17 @@ describe(`${appConfig.productName} shell`, () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
 
-    expect(startRuntime).not.toHaveBeenCalled();
+    expect(startHarness).not.toHaveBeenCalled();
     expect(openWorkbench).toHaveBeenCalledOnce();
-    expect(wrapper.text()).toContain("Runtime 已就绪");
+    expect(wrapper.text()).toContain("Harness 已就绪");
   });
 
   it("retries an early failure without a Desktop workspace", async () => {
     settings.onboardingCompleted = true;
-    runtime.phase = "failed";
-    runtime.errorCode = "runtime-task-failed";
-    vi.mocked(startRuntime).mockResolvedValue({
-      ...runtime,
+    harness.phase = "failed";
+    harness.errorCode = "harness-task-failed";
+    vi.mocked(startHarness).mockResolvedValue({
+      ...harness,
       phase: "ready",
       url: "http://127.0.0.1:49152",
       errorCode: null
@@ -318,15 +318,15 @@ describe(`${appConfig.productName} shell`, () => {
     await wrapper.findAll("button").find(button => button.text() === "重试")?.trigger("click");
     await flushPromises();
 
-    expect(startRuntime).toHaveBeenCalledWith();
-    expect(wrapper.text()).toContain("Runtime 已就绪");
+    expect(startHarness).toHaveBeenCalledWith();
+    expect(wrapper.text()).toContain("Harness 已就绪");
   });
 
-  it("starts an idle Runtime without requiring a Desktop workspace", async () => {
+  it("starts an idle Harness without requiring a Desktop workspace", async () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
 
-    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(startHarness).toHaveBeenCalledOnce();
     expect(openWorkbench).toHaveBeenCalledOnce();
     expect(wrapper.text()).toContain("运行状态");
     expect(wrapper.text()).not.toContain("选择工作区");
@@ -334,12 +334,12 @@ describe(`${appConfig.productName} shell`, () => {
   });
 
   it("keeps the management view available when automatic startup fails", async () => {
-    vi.mocked(startRuntime).mockRejectedValue(new Error("startup failed"));
+    vi.mocked(startHarness).mockRejectedValue(new Error("startup failed"));
 
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
 
-    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(startHarness).toHaveBeenCalledOnce();
     expect(openWorkbench).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("运行状态");
     expect(wrapper.text()).toContain("操作失败，请查看诊断信息");
@@ -381,43 +381,43 @@ describe(`${appConfig.productName} shell`, () => {
     expect(openRepository).toHaveBeenCalledOnce();
   });
 
-  it("checks and stages an independent Runtime update", async () => {
+  it("checks and stages an independent Harness update", async () => {
     settings.onboardingCompleted = true;
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
     await wrapper.findAll("button").find(button => button.text().includes("更新"))?.trigger("click");
-    await wrapper.findAll("button").find(button => button.text() === "检查 Runtime")?.trigger("click");
+    await wrapper.findAll("button").find(button => button.text() === "检查 Harness")?.trigger("click");
     await flushPromises();
-    expect(checkRuntimeUpdate).toHaveBeenCalledOnce();
-    expect(wrapper.text()).toContain("发现 Runtime 1.1.0");
+    expect(checkHarnessUpdate).toHaveBeenCalledOnce();
+    expect(wrapper.text()).toContain("发现 Harness 1.1.0");
     await wrapper.findAll("button").find(button => button.text().includes("准备并等待"))?.trigger("click");
     await flushPromises();
-    expect(downloadRuntimeUpdate).toHaveBeenCalledOnce();
+    expect(downloadHarnessUpdate).toHaveBeenCalledOnce();
     expect(wrapper.text()).toContain("下次启动切换");
   });
 
-  it("replaces the Runtime repository without exposing update service fields", async () => {
+  it("replaces the Harness repository without exposing update service fields", async () => {
     settings.onboardingCompleted = true;
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
     await wrapper.findAll("button").find(button => button.text().includes("更新"))?.trigger("click");
 
-    expect((wrapper.get("#runtime-update-repository").element as HTMLInputElement).value)
+    expect((wrapper.get("#harness-update-repository").element as HTMLInputElement).value)
       .toBe(appConfig.harness.repository);
-    expect(wrapper.get("#runtime-update-repository").attributes("type")).toBe("text");
-    expect(wrapper.get("#runtime-update-repository").attributes("inputmode")).toBe("url");
-    await wrapper.get("#runtime-update-repository").setValue("https://git.example.com/runtime/runtime.git");
-    expect(wrapper.find("#runtime-update-manifest-url").exists()).toBe(false);
-    expect(wrapper.find("#runtime-update-publisher").exists()).toBe(false);
-    expect(wrapper.find("#runtime-update-public-key").exists()).toBe(false);
+    expect(wrapper.get("#harness-update-repository").attributes("type")).toBe("text");
+    expect(wrapper.get("#harness-update-repository").attributes("inputmode")).toBe("url");
+    await wrapper.get("#harness-update-repository").setValue("https://git.example.com/harness/harness.git");
+    expect(wrapper.find("#harness-update-manifest-url").exists()).toBe(false);
+    expect(wrapper.find("#harness-update-publisher").exists()).toBe(false);
+    expect(wrapper.find("#harness-update-public-key").exists()).toBe(false);
     await wrapper.findAll("button").find(button => button.text() === "保存仓库")?.trigger("click");
     await flushPromises();
 
     expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({
-      schemaVersion: 6,
-      runtimeUpdateRepository: "https://git.example.com/runtime/runtime.git"
+      schemaVersion: 7,
+      harnessUpdateRepository: "https://git.example.com/harness/harness.git"
     }));
-    expect(wrapper.text()).toContain("Runtime 仓库已保存");
+    expect(wrapper.text()).toContain("Harness 仓库已保存");
   });
 
   it("shows a Desktop release reminder and can ignore that exact version", async () => {
@@ -450,7 +450,7 @@ describe(`${appConfig.productName} shell`, () => {
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();
 
-    expect(startRuntime).toHaveBeenCalledOnce();
+    expect(startHarness).toHaveBeenCalledOnce();
     expect(openWorkbench).toHaveBeenCalledOnce();
     expect(wrapper.text()).not.toContain("Desktop 更新检查失败");
   });

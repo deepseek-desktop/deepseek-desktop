@@ -1,9 +1,9 @@
-export type RuntimePhase = "idle" | "starting" | "ready" | "stopping" | "recovering" | "failed";
+export type HarnessPhase = "idle" | "starting" | "ready" | "stopping" | "recovering" | "failed";
 export type DesktopSurface = "settings" | "workbench";
-export type DesktopSettingsView = "runtime" | "diagnostics" | "update" | "desktop-update" | "about";
+export type DesktopSettingsView = "harness" | "diagnostics" | "update" | "desktop-update" | "about";
 
-export interface RuntimeStatus {
-  phase: RuntimePhase;
+export interface HarnessStatus {
+  phase: HarnessPhase;
   url: string | null;
   restartCount: number;
   diagnosticId: string | null;
@@ -16,20 +16,20 @@ export interface DesktopSettings {
   onboardingCompleted: boolean;
   updateChannel: "community" | "stable";
   updateEnabled: boolean;
-  runtimeUpdateChannel: "stable" | "preview";
-  runtimeUpdateMode: "automatic" | "notify" | "manual";
-  runtimeUpdateRepository: string | null;
-  runtimePinnedVersion: string | null;
+  harnessUpdateChannel: "stable" | "preview";
+  harnessUpdateMode: "automatic" | "notify" | "manual";
+  harnessUpdateRepository: string | null;
+  harnessPinnedVersion: string | null;
   desktopUpdateLastCheckAt: string | null;
   desktopUpdateIgnoredVersion: string | null;
   recoveryReason?: "corrupt" | "future" | null;
 }
 
-export type RuntimeUpdatePhase = "disabled" | "idle" | "checking" | "available" | "downloading" | "staged" | "applying" | "applied" | "failed" | "rolled-back" | "pinned";
+export type HarnessUpdatePhase = "disabled" | "idle" | "checking" | "available" | "downloading" | "staged" | "applying" | "applied" | "failed" | "rolled-back" | "pinned";
 
-export interface RuntimeUpdateStatus {
+export interface HarnessUpdateStatus {
   enabled: boolean;
-  phase: RuntimeUpdatePhase;
+  phase: HarnessUpdatePhase;
   currentVersion: string;
   currentCommit: string;
   currentSource: "bundled" | "updated";
@@ -45,8 +45,8 @@ export interface RuntimeUpdateStatus {
 
 export interface DesktopAbout {
   desktopVersion: string;
-  runtimeVersion: string;
-  runtimeCommit: string;
+  harnessVersion: string;
+  harnessCommit: string;
   nodeVersion: string;
   authors: string;
   repository: string;

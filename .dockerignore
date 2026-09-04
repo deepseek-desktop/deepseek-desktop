@@ -7,7 +7,7 @@ node_modules/
 dist/
 target/
 release/
-runtime/staging/
+harness/staging/
 src-tauri/target/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep

@@ -40,7 +40,7 @@
     "longDescription": "Self-contained community distribution of DeepSeek Desktop.",
     "externalBin": ["binaries/node"],
     "resources": {
-      "../runtime/staging/": "runtime/staging/"
+      "../harness/staging/": "harness/staging/"
     },
     "copyright": "Copyright 2026 DeepSeek Desktop Contributors",
     "macOS": {

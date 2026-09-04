@@ -56,22 +56,22 @@ try {
   };
   await writeJson(join(outputRoot, "app-config.json"), config);
   await writeJson(join(outputRoot, "tauri.conf.json"), tauriConfig);
-  let runtimeSource = {
+  let harnessSource = {
     schemaVersion: 1,
     repository: config.harness.repository,
     requestedRef: config.harness.ref || null
   };
   if (!check) {
     try {
-      const existing = JSON.parse(await readFile(join(outputRoot, "runtime-source.json"), "utf8"));
+      const existing = JSON.parse(await readFile(join(outputRoot, "harness-source.json"), "utf8"));
       if (existing.repository === config.harness.repository
         && existing.requestedRef === (config.harness.ref || null)
         && existing.resolvedCommit) {
-        runtimeSource = existing;
+        harnessSource = existing;
       }
     } catch {}
   }
-  await writeJson(join(outputRoot, "runtime-source.json"), runtimeSource);
+  await writeJson(join(outputRoot, "harness-source.json"), harnessSource);
   await writeJson(join(brandingRoot, "manifest.json"), {
     schemaVersion: 1,
     source: config.iconSource,

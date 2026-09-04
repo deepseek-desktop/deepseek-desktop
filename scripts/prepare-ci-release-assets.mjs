@@ -43,7 +43,7 @@ function parseChecksums(text) {
   return checksums;
 }
 
-// The Runtime closure digest is host-specific — native prebuilds are compiled by
+// The Harness closure digest is host-specific — native prebuilds are compiled by
 // the building platform — so the four targets legitimately report different
 // `harness.sha256`. Each BUILD-INFO still carries its own digest; it just cannot
 // be a cross-platform equality invariant. Everything else that proves "one release
@@ -85,12 +85,12 @@ function validateBuildIdentity(buildInfo, target, toolchainLock) {
     || !COMMIT.test(harness.commit || "") || !isText(harness.packageName)
     || !isText(harness.version) || !SHA256.test(harness.sha256 || "")
     || !(harness.requestedRef === null || isText(harness.requestedRef))) {
-    throw new Error(`release Runtime identity is invalid for ${target}`);
+    throw new Error(`release Harness identity is invalid for ${target}`);
   }
-  if (harness.repository !== toolchainLock.runtimeSource?.repository
-    || harness.resolvedRef !== toolchainLock.runtimeSource?.ref
-    || harness.commit !== toolchainLock.runtimeSource?.commit) {
-    throw new Error(`release Runtime source does not match the toolchain lock for ${target}`);
+  if (harness.repository !== toolchainLock.harnessSource?.repository
+    || harness.resolvedRef !== toolchainLock.harnessSource?.ref
+    || harness.commit !== toolchainLock.harnessSource?.commit) {
+    throw new Error(`release Harness source does not match the toolchain lock for ${target}`);
   }
   if (typeof buildInfo.signed !== "boolean") throw new Error(`release signature identity is invalid for ${target}`);
 }
@@ -207,7 +207,7 @@ export async function prepareCiReleaseAssets({ inputRoot, outputRoot, version, c
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
-  const toolchainLock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
+  const toolchainLock = JSON.parse(await readFile(join(root, "harness", "toolchain-lock.json"), "utf8"));
   const result = await prepareCiReleaseAssets({
     inputRoot: process.env.CI_RELEASE_ASSETS_INPUT || join(root, "release-assets"),
     outputRoot: process.env.CI_RELEASE_ASSETS_OUTPUT || join(root, "release-assets", "publish"),

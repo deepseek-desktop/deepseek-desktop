@@ -234,7 +234,7 @@ function validateArguments(parsed) {
 }
 
 async function ensureNodeArchive(target) {
-  const lock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
+  const lock = JSON.parse(await readFile(join(root, "harness", "toolchain-lock.json"), "utf8"));
   const artifact = lock.node?.artifacts?.[target];
   const version = lock.node?.version;
   if (!version || !artifact?.archive || !artifact?.sha256) throw new Error(`toolchain lock has no Node artifact for ${target}`);
@@ -325,7 +325,7 @@ async function ensureDockerImage(config, rebuild) {
   const docker = commandExists("docker");
   if (!docker) throw new Error("Docker is required for the Linux x64 local worker");
   runSync(docker, ["version", "--format", "{{.Server.Version}}"], { quiet: true });
-  const lock = JSON.parse(await readFile(join(root, "runtime", "toolchain-lock.json"), "utf8"));
+  const lock = JSON.parse(await readFile(join(root, "harness", "toolchain-lock.json"), "utf8"));
   const expectedIdentity = `${lock.node.version}|${lock.node.moduleAbi}|x64`;
   const dockerfileSha256 = await sha256File(join(root, "docker", "ci", "Dockerfile"));
   const expectedContract = dockerImageContract({
@@ -475,7 +475,7 @@ async function writeWindowsScripts(runRoot, settings) {
     `$env:DEEPSEEK_DESKTOP_TOOLCHAIN_DIR = ${powershellLiteral(`${settings.workRoot}\\toolchain`)}`,
     `$env:PLAYWRIGHT_BROWSERS_PATH = ${powershellLiteral(`${settings.workRoot}\\playwright`)}`,
     `$env:DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT = ${powershellLiteral(`${settings.workRoot}\\cargo`)}`,
-    `$env:DEEPSEEK_DESKTOP_RUNTIME_TARGET_CACHE_ROOT = ${powershellLiteral(`${settings.workRoot}\\runtime-target-cache`)}`,
+    `$env:DEEPSEEK_DESKTOP_HARNESS_TARGET_CACHE_ROOT = ${powershellLiteral(`${settings.workRoot}\\harness-target-cache`)}`,
     `$env:Path = ${powershellLiteral(`${nodeToolchain.installationRoot};`)} + $env:Path`,
     `$vswhere = ${powershellLiteral(vsWhere)}`,
     "$install = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()",
@@ -527,7 +527,7 @@ function workerEnvironment(caCert, targetId, nodeBin = "") {
     DEEPSEEK_DESKTOP_TOOLCHAIN_DIR: join(root, "target", "local-release", "toolchains", `rust-${targetId}`),
     PLAYWRIGHT_BROWSERS_PATH: join(root, "target", "local-release", "playwright"),
     DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT: join(root, "target", "local-release", "cargo"),
-    DEEPSEEK_DESKTOP_RUNTIME_TARGET_CACHE_ROOT: join(root, "target", "local-release", "runtime-target-cache"),
+    DEEPSEEK_DESKTOP_HARNESS_TARGET_CACHE_ROOT: join(root, "target", "local-release", "harness-target-cache"),
     ...(nodeBin ? { PATH: `${dirname(nodeBin)}:${process.env.PATH || ""}` } : {})
   };
 }
@@ -539,13 +539,13 @@ export function dockerBaseArgs(config, caCert) {
     "--env", "DEEPSEEK_DESKTOP_TOOLCHAIN_DIR=/local-release/toolchain",
     "--env", "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
     "--env", "DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT=/local-release/cargo",
-    "--env", "DEEPSEEK_DESKTOP_RUNTIME_TARGET_CACHE_ROOT=/local-release/runtime-target-cache",
+    "--env", "DEEPSEEK_DESKTOP_HARNESS_TARGET_CACHE_ROOT=/local-release/harness-target-cache",
     "--volume", `${root}:/orchestrator:ro`,
     "--volume", `${caCert}:/local-release/ca.crt:ro`,
     "--volume", "deepseek-desktop-local-release-toolchain:/local-release/toolchain",
     "--volume", "deepseek-desktop-local-release-pnpm:/root/.local/share/pnpm",
     "--volume", "deepseek-desktop-local-release-cargo:/local-release/cargo",
-    "--volume", "deepseek-desktop-local-release-runtime-target-cache:/local-release/runtime-target-cache",
+    "--volume", "deepseek-desktop-local-release-harness-target-cache:/local-release/harness-target-cache",
     config.image
   ];
 }

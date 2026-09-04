@@ -32,10 +32,10 @@ export async function createReleasePlan({
   const commit = git(workspace, ["rev-parse", `${tag}^{commit}`]);
   if (git(workspace, ["rev-parse", "HEAD"]) !== commit) throw new Error(`release tag ${tag} must point at current HEAD`);
   const repository = assertSourceRepository(sourceRepository || git(workspace, ["remote", "get-url", "origin"]));
-  const lock = JSON.parse(await readFile(join(workspace, "runtime", "toolchain-lock.json"), "utf8"));
-  const runtime = lock.runtimeSource;
-  if (!runtime?.repository || !runtime?.ref || !runtime?.commit) {
-    throw new Error("runtime/toolchain-lock.json has no immutable Runtime source");
+  const lock = JSON.parse(await readFile(join(workspace, "harness", "toolchain-lock.json"), "utf8"));
+  const harness = lock.harnessSource;
+  if (!harness?.repository || !harness?.ref || !harness?.commit) {
+    throw new Error("harness/toolchain-lock.json has no immutable Harness source");
   }
   const targetConfig = await loadTargets();
   const targetIds = requestedTargetIds.length > 0
@@ -47,7 +47,7 @@ export async function createReleasePlan({
     channel,
     signed,
     source: { repository, tag, commit },
-    runtime,
+    harness,
     toolchain: {
       nodeVersion: lock.node.version,
       nodeModuleAbi: lock.node.moduleAbi,

@@ -10,7 +10,7 @@ DeepSeek Desktop 的正式四平台发行统一使用 GitHub Actions 官方托�
 
 四个平台都调用现有 `package:community`，不复制打包逻辑。矩阵全部成功后，汇总任务严格验证两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和统一 SHA-256；公开 Release 只包含这 5 个安装包与 `SHA256SUMS`。内部 BUILD-INFO 只用于目标和来源核验。
 
-本机四平台调度、Parallels、Rosetta、Docker、Controller/Worker、多节点票据和自托管 Runner 不再作为正式发布主流程。本机只负责通用验证、Runtime smoke 和当前 macOS 架构构建/启动检查。
+本机四平台调度、Parallels、Rosetta、Docker、Controller/Worker、多节点票据和自托管 Runner 不再作为正式发布主流程。本机只负责通用验证、Harness smoke 和当前 macOS 架构构建/启动检查。
 
 ## 理由
 

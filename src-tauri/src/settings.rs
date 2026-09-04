@@ -73,9 +73,7 @@ impl SettingsStore {
                 {
                     quarantine_settings(paths, "future")?
                 }
-                Ok(value) => match migrate_settings(value)
-                    .and_then(serde_json::from_value::<DesktopSettings>)
-                {
+                Ok(value) => match serde_json::from_value::<DesktopSettings>(value) {
                     Ok(settings) if validate(&settings).is_ok() => settings,
                     Ok(_) | Err(_) => quarantine_settings(paths, "corrupt")?,
                 },
@@ -103,7 +101,7 @@ impl SettingsStore {
 
     pub(crate) fn validated(mut settings: DesktopSettings) -> DesktopResult<DesktopSettings> {
         settings.recovery_reason = None;
-        normalize_optional(&mut settings.runtime_update_repository);
+        normalize_optional(&mut settings.harness_update_repository);
         normalize_optional(&mut settings.desktop_update_last_check_at);
         normalize_optional(&mut settings.desktop_update_ignored_version);
         validate(&settings)?;
@@ -201,91 +199,6 @@ fn quarantine_settings(paths: &AppPaths, reason: &str) -> DesktopResult<DesktopS
     Ok(settings)
 }
 
-fn migrate_settings(mut value: serde_json::Value) -> serde_json::Result<serde_json::Value> {
-    let schema = value
-        .get("schemaVersion")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(1);
-    if schema > u64::from(current_settings_schema_version()) {
-        return Err(serde::de::Error::custom(
-            "settings schema is from a future version",
-        ));
-    }
-    if schema == 1 {
-        let object = value
-            .as_object_mut()
-            .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?;
-        object.insert(
-            "runtimeUpdateChannel".to_owned(),
-            serde_json::json!(env!("DEEPSEEK_DESKTOP_RUNTIME_UPDATE_CHANNEL")),
-        );
-        object.insert(
-            "runtimeUpdateMode".to_owned(),
-            serde_json::json!(if env!("DEEPSEEK_DESKTOP_RUNTIME_AUTO_UPDATE") == "true" {
-                "automatic"
-            } else {
-                "notify"
-            }),
-        );
-        object.insert("runtimePinnedVersion".to_owned(), serde_json::Value::Null);
-    }
-    if schema <= 2 {
-        let object = value
-            .as_object_mut()
-            .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?;
-        object.remove("workspace");
-    }
-    if schema <= 3 {
-        let object = value
-            .as_object_mut()
-            .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?;
-        object.insert(
-            "runtimeUpdateSource".to_owned(),
-            serde_json::json!("official"),
-        );
-        object.insert(
-            "runtimeUpdateManifestUrl".to_owned(),
-            serde_json::Value::Null,
-        );
-        object.insert(
-            "runtimeUpdateRepository".to_owned(),
-            serde_json::Value::Null,
-        );
-        object.insert("runtimeUpdatePublisher".to_owned(), serde_json::Value::Null);
-        object.insert("runtimeUpdatePublicKey".to_owned(), serde_json::Value::Null);
-    }
-    if schema <= 4 {
-        let object = value
-            .as_object_mut()
-            .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?;
-        object.insert(
-            "desktopUpdateLastCheckAt".to_owned(),
-            serde_json::Value::Null,
-        );
-        object.insert(
-            "desktopUpdateIgnoredVersion".to_owned(),
-            serde_json::Value::Null,
-        );
-    }
-    if schema <= 5 {
-        let object = value
-            .as_object_mut()
-            .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?;
-        object.remove("runtimeUpdateSource");
-        object.remove("runtimeUpdateManifestUrl");
-        object.remove("runtimeUpdatePublisher");
-        object.remove("runtimeUpdatePublicKey");
-    }
-    value
-        .as_object_mut()
-        .ok_or_else(|| serde::de::Error::custom("settings must be an object"))?
-        .insert(
-            "schemaVersion".to_owned(),
-            serde_json::json!(current_settings_schema_version()),
-        );
-    Ok(value)
-}
-
 fn normalize_optional(value: &mut Option<String>) {
     *value = value
         .take()
@@ -318,33 +231,33 @@ fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
         ));
     }
     if !matches!(
-        settings.runtime_update_channel.as_str(),
+        settings.harness_update_channel.as_str(),
         "stable" | "preview"
     ) {
         return Err(DesktopError::InvalidConfiguration(format!(
-            "unsupported runtime update channel {}",
-            settings.runtime_update_channel
+            "unsupported harness update channel {}",
+            settings.harness_update_channel
         )));
     }
     if !matches!(
-        settings.runtime_update_mode.as_str(),
+        settings.harness_update_mode.as_str(),
         "automatic" | "notify" | "manual"
     ) {
         return Err(DesktopError::InvalidConfiguration(format!(
-            "unsupported runtime update mode {}",
-            settings.runtime_update_mode
+            "unsupported harness update mode {}",
+            settings.harness_update_mode
         )));
     }
-    if let Some(value) = settings.runtime_update_repository.as_deref() {
-        validate_runtime_repository(value)?;
+    if let Some(value) = settings.harness_update_repository.as_deref() {
+        validate_harness_repository(value)?;
     }
     if settings
-        .runtime_pinned_version
+        .harness_pinned_version
         .as_deref()
         .is_some_and(|version| semver::Version::parse(version).is_err())
     {
         return Err(DesktopError::InvalidConfiguration(
-            "runtime pinned version must be valid SemVer".to_owned(),
+            "harness pinned version must be valid SemVer".to_owned(),
         ));
     }
     if settings
@@ -368,17 +281,17 @@ fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
     Ok(())
 }
 
-fn validate_runtime_repository(value: &str) -> DesktopResult<()> {
+fn validate_harness_repository(value: &str) -> DesktopResult<()> {
     if value.starts_with("git@") {
         if value.contains(char::is_whitespace) || !value.contains(':') {
             return Err(DesktopError::InvalidConfiguration(
-                "Runtime repository SSH URL is invalid".to_owned(),
+                "Harness repository SSH URL is invalid".to_owned(),
             ));
         }
         return Ok(());
     }
     let url = Url::parse(value).map_err(|error| {
-        DesktopError::InvalidConfiguration(format!("Runtime repository URL is invalid: {error}"))
+        DesktopError::InvalidConfiguration(format!("Harness repository URL is invalid: {error}"))
     })?;
     if !matches!(url.scheme(), "https" | "http" | "ssh" | "git" | "file")
         || (matches!(url.scheme(), "https" | "http") && !url.username().is_empty())
@@ -387,7 +300,7 @@ fn validate_runtime_repository(value: &str) -> DesktopResult<()> {
         || url.fragment().is_some()
     {
         return Err(DesktopError::InvalidConfiguration(
-            "Runtime repository URL must use HTTP(S), SSH, Git, or file without embedded credentials, query, or fragment"
+            "Harness repository URL must use HTTP(S), SSH, Git, or file without embedded credentials, query, or fragment"
                 .to_owned(),
         ));
     }
@@ -409,15 +322,15 @@ mod tests {
     }
 
     #[test]
-    fn accepts_only_semver_runtime_pins() {
+    fn accepts_only_semver_harness_pins() {
         let valid = DesktopSettings {
-            runtime_pinned_version: Some("1.0.0".to_owned()),
+            harness_pinned_version: Some("1.0.0".to_owned()),
             ..DesktopSettings::default()
         };
         assert!(validate(&valid).is_ok());
 
         let invalid = DesktopSettings {
-            runtime_pinned_version: Some("latest".to_owned()),
+            harness_pinned_version: Some("latest".to_owned()),
             ..DesktopSettings::default()
         };
         assert!(validate(&invalid).is_err());
@@ -445,10 +358,10 @@ mod tests {
     }
 
     #[test]
-    fn accepts_a_custom_runtime_repository_without_update_service_fields() {
+    fn accepts_a_custom_harness_repository_without_update_service_fields() {
         let settings = DesktopSettings {
-            runtime_update_repository: Some(
-                "https://git.example.com/runtime/deepseek-harness.git".to_owned(),
+            harness_update_repository: Some(
+                "https://git.example.com/harness/deepseek-harness.git".to_owned(),
             ),
             ..DesktopSettings::default()
         };
@@ -457,9 +370,9 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_runtime_repository_with_embedded_credentials() {
+    fn rejects_a_harness_repository_with_embedded_credentials() {
         let settings = DesktopSettings {
-            runtime_update_repository: Some("https://token@example.com/runtime.git".to_owned()),
+            harness_update_repository: Some("https://token@example.com/harness.git".to_owned()),
             ..DesktopSettings::default()
         };
         assert!(validate(&settings).is_err());
@@ -542,101 +455,6 @@ mod tests {
         );
         assert!(paths.backups_dir.join("settings.future.json").is_file());
         fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn migrates_legacy_settings_without_retaining_desktop_workspace_state() {
-        let value = serde_json::json!({
-            "schemaVersion": 1,
-            "locale": "en-US",
-            "workspace": "/workspace",
-            "onboardingCompleted": true,
-            "updateChannel": "community",
-            "updateEnabled": false
-        });
-        let settings: DesktopSettings =
-            serde_json::from_value(migrate_settings(value).unwrap()).unwrap();
-        assert_eq!(settings.schema_version, current_settings_schema_version());
-        assert_eq!(settings.locale, "en-US");
-        assert_eq!(settings.runtime_update_mode, "notify");
-        assert!(settings.runtime_update_repository.is_none());
-        let serialized = serde_json::to_value(settings).unwrap();
-        assert!(serialized.get("workspace").is_none());
-    }
-
-    #[test]
-    fn migrates_schema_three_to_the_default_runtime_repository() {
-        let mut value = serde_json::to_value(DesktopSettings::default()).unwrap();
-        let object = value.as_object_mut().unwrap();
-        object.insert("schemaVersion".to_owned(), serde_json::json!(3));
-        object.remove("runtimeUpdateSource");
-        object.remove("runtimeUpdateManifestUrl");
-        object.remove("runtimeUpdateRepository");
-        object.remove("runtimeUpdatePublisher");
-        object.remove("runtimeUpdatePublicKey");
-
-        let settings: DesktopSettings =
-            serde_json::from_value(migrate_settings(value).unwrap()).unwrap();
-
-        assert_eq!(settings.schema_version, current_settings_schema_version());
-        assert!(settings.runtime_update_repository.is_none());
-    }
-
-    #[test]
-    fn migrates_schema_five_and_keeps_only_the_repository_override() {
-        let mut value = serde_json::to_value(DesktopSettings::default()).unwrap();
-        let object = value.as_object_mut().unwrap();
-        object.insert("schemaVersion".to_owned(), serde_json::json!(5));
-        object.insert(
-            "runtimeUpdateSource".to_owned(),
-            serde_json::json!("custom"),
-        );
-        object.insert(
-            "runtimeUpdateRepository".to_owned(),
-            serde_json::json!("https://github.com/example/deepseek-harness.git"),
-        );
-        object.insert(
-            "runtimeUpdateManifestUrl".to_owned(),
-            serde_json::json!("https://updates.example/manifest.json"),
-        );
-        object.insert(
-            "runtimeUpdatePublisher".to_owned(),
-            serde_json::json!("legacy"),
-        );
-        object.insert(
-            "runtimeUpdatePublicKey".to_owned(),
-            serde_json::json!("legacy"),
-        );
-
-        let settings: DesktopSettings =
-            serde_json::from_value(migrate_settings(value).unwrap()).unwrap();
-        let serialized = serde_json::to_value(&settings).unwrap();
-
-        assert_eq!(settings.schema_version, current_settings_schema_version());
-        assert_eq!(
-            settings.runtime_update_repository.as_deref(),
-            Some("https://github.com/example/deepseek-harness.git")
-        );
-        assert!(serialized.get("runtimeUpdateSource").is_none());
-        assert!(serialized.get("runtimeUpdateManifestUrl").is_none());
-        assert!(serialized.get("runtimeUpdatePublisher").is_none());
-        assert!(serialized.get("runtimeUpdatePublicKey").is_none());
-    }
-
-    #[test]
-    fn migrates_schema_four_to_desktop_update_memory() {
-        let mut value = serde_json::to_value(DesktopSettings::default()).unwrap();
-        let object = value.as_object_mut().unwrap();
-        object.insert("schemaVersion".to_owned(), serde_json::json!(4));
-        object.remove("desktopUpdateLastCheckAt");
-        object.remove("desktopUpdateIgnoredVersion");
-
-        let settings: DesktopSettings =
-            serde_json::from_value(migrate_settings(value).unwrap()).unwrap();
-
-        assert_eq!(settings.schema_version, current_settings_schema_version());
-        assert!(settings.desktop_update_last_check_at.is_none());
-        assert!(settings.desktop_update_ignored_version.is_none());
     }
 
     #[test]

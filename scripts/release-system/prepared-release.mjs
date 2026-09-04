@@ -14,9 +14,9 @@ const payloadEntries = Object.freeze([
   "app-config.json",
   "tauri.conf.json",
   "branding",
-  "runtime-source.json",
-  "runtime-lock.json",
-  "runtime/prepared"
+  "harness-source.json",
+  "harness-lock.json",
+  "harness/prepared"
 ]);
 const receiptLifetimeMs = 24 * 60 * 60_000;
 
@@ -96,7 +96,7 @@ function assertPreparedDescriptor(value) {
   for (const key of ["receiptSha256", "cacheKey", "trackedSourceSha256", "generatedPayloadSha256"]) {
     if (!shaPattern.test(value[key] || "")) throw new Error(`prepared release ${key} must be SHA-256`);
   }
-  if (!commitPattern.test(value.desktopCommit || "") || !commitPattern.test(value.runtimeCommit || "")) {
+  if (!commitPattern.test(value.desktopCommit || "") || !commitPattern.test(value.harnessCommit || "")) {
     throw new Error("prepared release commits must be full Git commits");
   }
   if (!Array.isArray(value.targetIds) || value.targetIds.length === 0 || new Set(value.targetIds).size !== value.targetIds.length) {
@@ -138,7 +138,7 @@ async function restorePayload(payloadRoot, generatedRoot) {
   }
 }
 
-function preparationInput({ tag, version, channel, signed, desktopCommit, runtime, trackedSourceSha256, configSha256, lock, targetIds }) {
+function preparationInput({ tag, version, channel, signed, desktopCommit, harness, trackedSourceSha256, configSha256, lock, targetIds }) {
   return {
     schemaVersion: 1,
     tag,
@@ -146,7 +146,7 @@ function preparationInput({ tag, version, channel, signed, desktopCommit, runtim
     channel,
     signed,
     desktopCommit,
-    runtime: { repository: runtime.repository, ref: runtime.ref, commit: runtime.commit },
+    harness: { repository: harness.repository, ref: harness.ref, commit: harness.commit },
     targetIds,
     trackedSourceSha256,
     configSha256,
@@ -182,16 +182,16 @@ export function preparedPlanIdentity(plan) {
     channel: plan.channel,
     signed: plan.signed,
     source: { commit: plan.source?.commit },
-    runtime: { commit: plan.runtime?.commit },
+    harness: { commit: plan.harness?.commit },
     targetIds
   };
 }
 
-async function readPreparedRuntime(payloadRoot, expectedCommit) {
-  const generatedLock = JSON.parse(await readFile(join(payloadRoot, "runtime-lock.json"), "utf8"));
-  const generatedSource = JSON.parse(await readFile(join(payloadRoot, "runtime-source.json"), "utf8"));
-  if (generatedSource.resolvedCommit !== expectedCommit || generatedLock.runtime?.commit !== expectedCommit) {
-    throw new Error("prepared Runtime does not match runtime/toolchain-lock.json");
+async function readPreparedHarness(payloadRoot, expectedCommit) {
+  const generatedLock = JSON.parse(await readFile(join(payloadRoot, "harness-lock.json"), "utf8"));
+  const generatedSource = JSON.parse(await readFile(join(payloadRoot, "harness-source.json"), "utf8"));
+  if (generatedSource.resolvedCommit !== expectedCommit || generatedLock.harness?.commit !== expectedCommit) {
+    throw new Error("prepared Harness does not match harness/toolchain-lock.json");
   }
   return { generatedLock, generatedSource };
 }
@@ -214,13 +214,13 @@ export async function prepareRelease({
   if (git(workspace, ["rev-parse", `${tag}^{commit}`]) !== desktopCommit) {
     throw new Error(`release tag ${tag} must point at current HEAD before preparation`);
   }
-  const lock = JSON.parse(await readFile(join(workspace, "runtime", "toolchain-lock.json"), "utf8"));
+  const lock = JSON.parse(await readFile(join(workspace, "harness", "toolchain-lock.json"), "utf8"));
   if (process.versions.node !== lock.node?.version || process.versions.modules !== lock.node?.moduleAbi) {
     throw new Error(`release preparation requires Node ${lock.node?.version} ABI ${lock.node?.moduleAbi}; current Node is ${process.versions.node} ABI ${process.versions.modules}`);
   }
-  const runtime = lock.runtimeSource;
-  if (!runtime?.repository || !runtime?.ref || !commitPattern.test(runtime?.commit || "")) {
-    throw new Error("runtime/toolchain-lock.json has no immutable Runtime source");
+  const harness = lock.harnessSource;
+  if (!harness?.repository || !harness?.ref || !commitPattern.test(harness?.commit || "")) {
+    throw new Error("harness/toolchain-lock.json has no immutable Harness source");
   }
   const targetConfig = await loadTargets();
   const selectedTargetIds = (targetIds.length > 0 ? targetIds : targetConfig.targets.map(target => target.id)).slice().sort();
@@ -231,15 +231,15 @@ export async function prepareRelease({
   const environment = {
     ...process.env,
     DESKTOP_APP_VERSION: version,
-    RUNTIME_REPOSITORY: runtime.repository,
-    RUNTIME_REF: runtime.commit,
+    HARNESS_REPOSITORY: harness.repository,
+    HARNESS_REF: harness.commit,
     RELEASE_CHANNEL: channel,
     RELEASE_SIGNED: String(signed)
   };
   const trackedSourceSha256 = await trackedSourceHash(workspace);
   const resolvedConfig = runChecks
     ? await loadBuildConfig(workspace, { environment })
-    : { version, release: { channel, signed }, harness: { repository: runtime.repository, ref: runtime.commit } };
+    : { version, release: { channel, signed }, harness: { repository: harness.repository, ref: harness.commit } };
   const configSha256 = sha256Bytes(canonicalBytes(resolvedConfig));
   const cacheKeyInput = preparationInput({
     tag,
@@ -247,7 +247,7 @@ export async function prepareRelease({
     channel,
     signed,
     desktopCommit,
-    runtime,
+    harness,
     trackedSourceSha256,
     configSha256,
     lock,
@@ -267,7 +267,7 @@ export async function prepareRelease({
     }
     const payloadRoot = join(destination, "payload");
     await verifyPayload(payloadRoot, existingPayload.files, existingPayload.generatedPayloadSha256);
-    await readPreparedRuntime(payloadRoot, runtime.commit);
+    await readPreparedHarness(payloadRoot, harness.commit);
     const existingDescriptor = assertPreparedDescriptor({
       schemaVersion: 1,
       receiptSha256: await sha256File(existingReceiptPath),
@@ -275,7 +275,7 @@ export async function prepareRelease({
       trackedSourceSha256,
       generatedPayloadSha256: existingPayload.generatedPayloadSha256,
       desktopCommit,
-      runtimeCommit: runtime.commit,
+      harnessCommit: harness.commit,
       targetIds: existingPayload.targetIds,
       preparedAt: existingPayload.preparedAt,
       expiresAt: existingPayload.expiresAt
@@ -296,7 +296,7 @@ export async function prepareRelease({
     timings.installMs = await run(corepack, ["pnpm@11.24.0", "install", "--frozen-lockfile"], { cwd: workspace, env: environment });
     timings.playwrightInstallMs = await run(corepack, ["pnpm@11.24.0", "playwright:install"], { cwd: workspace, env: environment });
     timings.appSyncMs = await run(corepack, ["pnpm@11.24.0", "app:sync"], { cwd: workspace, env: environment });
-    timings.runtimeSyncMs = await run(corepack, ["pnpm@11.24.0", "runtime:sync"], { cwd: workspace, env: environment });
+    timings.harnessSyncMs = await run(corepack, ["pnpm@11.24.0", "harness:sync"], { cwd: workspace, env: environment });
     timings.releaseGateMs = await run(corepack, ["pnpm@11.24.0", "release:check", channel], { cwd: workspace, env: environment });
     timings.verifyMs = await run(corepack, ["pnpm@11.24.0", "verify"], { cwd: workspace, env: environment });
     timings.e2eMs = await run(corepack, ["pnpm@11.24.0", "test:e2e"], { cwd: workspace, env: environment });
@@ -309,10 +309,10 @@ export async function prepareRelease({
     || await trackedSourceHash(workspace) !== trackedSourceSha256) {
     throw new Error("release preparation source changed while checks were running");
   }
-  const generatedLock = JSON.parse(await readFile(join(generatedRoot, "runtime-lock.json"), "utf8"));
-  const generatedSource = JSON.parse(await readFile(join(generatedRoot, "runtime-source.json"), "utf8"));
-  if (generatedSource.resolvedCommit !== runtime.commit || generatedLock.runtime?.commit !== runtime.commit) {
-    throw new Error("prepared Runtime does not match runtime/toolchain-lock.json");
+  const generatedLock = JSON.parse(await readFile(join(generatedRoot, "harness-lock.json"), "utf8"));
+  const generatedSource = JSON.parse(await readFile(join(generatedRoot, "harness-source.json"), "utf8"));
+  if (generatedSource.resolvedCommit !== harness.commit || generatedLock.harness?.commit !== harness.commit) {
+    throw new Error("prepared Harness does not match harness/toolchain-lock.json");
   }
   const temporary = join(cacheRoot, `.prepare-${process.pid}-${Date.now()}`);
   const payloadRoot = join(temporary, "payload");
@@ -354,7 +354,7 @@ export async function prepareRelease({
     trackedSourceSha256,
     generatedPayloadSha256,
     desktopCommit,
-    runtimeCommit: runtime.commit,
+    harnessCommit: harness.commit,
     targetIds: payload.targetIds,
     preparedAt: payload.preparedAt,
     expiresAt: payload.expiresAt
@@ -377,8 +377,8 @@ export async function restorePreparedRelease({ root, preparedRoot, expectedDescr
   if (payload.desktopCommit !== planIdentity.source.commit || payload.desktopCommit !== descriptor.desktopCommit) {
     throw new Error("prepared release Desktop commit does not match controller plan");
   }
-  if (payload.runtime.commit !== planIdentity.runtime.commit || payload.runtime.commit !== descriptor.runtimeCommit) {
-    throw new Error("prepared release Runtime commit does not match controller plan");
+  if (payload.harness.commit !== planIdentity.harness.commit || payload.harness.commit !== descriptor.harnessCommit) {
+    throw new Error("prepared release Harness commit does not match controller plan");
   }
   if (payload.tag !== planIdentity.tag || payload.version !== planIdentity.version
     || payload.channel !== planIdentity.channel || payload.signed !== planIdentity.signed) {

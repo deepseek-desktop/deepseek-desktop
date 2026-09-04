@@ -4,16 +4,16 @@ import process from "node:process";
 const commands = [
   ["install", "--frozen-lockfile"],
   ["app:sync"],
-  ["runtime:sync"],
+  ["harness:sync"],
   ["verify"],
   ["playwright:install"],
   ["test:e2e"]
 ];
 
-if (process.env.DEEPSEEK_DESKTOP_SKIP_RUNTIME_SMOKE !== "true") {
-  commands.push(["runtime:smoke"]);
+if (process.env.DEEPSEEK_DESKTOP_SKIP_HARNESS_SMOKE !== "true") {
+  commands.push(["harness:smoke"]);
 } else {
-  console.log("Skipping Runtime smoke in an emulated Docker architecture; the native package preflight runs it next.");
+  console.log("Skipping Harness smoke in an emulated Docker architecture; the native package preflight runs it next.");
 }
 
 for (const args of commands) {

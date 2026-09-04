@@ -222,8 +222,8 @@ async function runNativePackage(checkout, plan, preparedRoot = "") {
   const env = {
     ...process.env,
     DESKTOP_APP_VERSION: plan.version,
-    RUNTIME_REPOSITORY: plan.runtime.repository,
-    RUNTIME_REF: plan.runtime.commit,
+    HARNESS_REPOSITORY: plan.harness.repository,
+    HARNESS_REF: plan.harness.commit,
     RELEASE_CHANNEL: plan.channel,
     RELEASE_SIGNED: String(plan.signed),
     ...preparedEnvironment(plan, preparedRoot)
@@ -239,8 +239,8 @@ async function runContainerPackage(checkout, plan, image, preparedRoot = "") {
   const script = plan.channel === "community" ? "package:community" : "desktop:package";
   const environment = [
     `DESKTOP_APP_VERSION=${plan.version}`,
-    `RUNTIME_REPOSITORY=${plan.runtime.repository}`,
-    `RUNTIME_REF=${plan.runtime.commit}`,
+    `HARNESS_REPOSITORY=${plan.harness.repository}`,
+    `HARNESS_REF=${plan.harness.commit}`,
     `RELEASE_CHANNEL=${plan.channel}`,
     `RELEASE_SIGNED=${String(plan.signed)}`,
     ...Object.entries(preparedEnvironment(plan, preparedRoot)).map(([key, value]) => `${key}=${value}`)
@@ -306,13 +306,13 @@ async function workerCommand(parsed) {
       commit: claim.plan.source.commit,
       destination: checkout
     });
-    const lock = JSON.parse(await readFile(join(checkout, "runtime", "toolchain-lock.json"), "utf8"));
+    const lock = JSON.parse(await readFile(join(checkout, "harness", "toolchain-lock.json"), "utf8"));
     if (
-      lock.runtimeSource?.repository !== claim.plan.runtime.repository
-      || lock.runtimeSource?.ref !== claim.plan.runtime.ref
-      || lock.runtimeSource?.commit !== claim.plan.runtime.commit
+      lock.harnessSource?.repository !== claim.plan.harness.repository
+      || lock.harnessSource?.ref !== claim.plan.harness.ref
+      || lock.harnessSource?.commit !== claim.plan.harness.commit
     ) {
-      throw new Error("worker source Runtime lock does not match release plan");
+      throw new Error("worker source Harness lock does not match release plan");
     }
     const expectedToolchain = {
       nodeVersion: lock.node?.version,

@@ -12,9 +12,9 @@ const commit = "0123456789abcdef0123456789abcdef01234567";
 const toolchainLock = {
   node: { version: "24.20.0", moduleAbi: "137" },
   toolchain: { rust: "1.98.0", pnpm: "11.24.0", tauriCli: "2.11.4" },
-  runtimeSource: {
-    repository: "https://example.invalid/runtime.git",
-    ref: "runtime-v1.0.0",
+  harnessSource: {
+    repository: "https://example.invalid/harness.git",
+    ref: "harness-v1.0.0",
     commit: "89abcdef0123456789abcdef0123456789abcdef"
   }
 };
@@ -54,13 +54,13 @@ async function fixture(root, mutate = value => value) {
         tauriCliVersion: toolchainLock.toolchain.tauriCli
       },
       harness: {
-        repository: toolchainLock.runtimeSource.repository,
+        repository: toolchainLock.harnessSource.repository,
         requestedRef: null,
-        resolvedRef: toolchainLock.runtimeSource.ref,
-        commit: toolchainLock.runtimeSource.commit,
+        resolvedRef: toolchainLock.harnessSource.ref,
+        commit: toolchainLock.harnessSource.commit,
         packageName: "@deepseek-ai/dsh",
         version: "1.0.0",
-        sha256: hash(`runtime-${target}`)
+        sha256: hash(`harness-${target}`)
       },
       target,
       channel: "community",
@@ -93,7 +93,7 @@ test("prepares exactly five public installers and one aggregate checksum file", 
   assert.doesNotMatch(await readFile(result.checksums, "utf8"), /BUILD-INFO/u);
 });
 
-test("accepts platform-specific Runtime closure digests", async t => {
+test("accepts platform-specific Harness closure digests", async t => {
   const root = await mkdtemp(join(tmpdir(), "deepseek-ci-release-closure-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await fixture(root, (buildInfo, target) => ({
@@ -110,19 +110,19 @@ test("accepts platform-specific Runtime closure digests", async t => {
   assert.equal(result.installers.length, 5);
 });
 
-test("rejects a target built from another Runtime commit", async t => {
-  const root = await mkdtemp(join(tmpdir(), "deepseek-ci-release-runtime-"));
+test("rejects a target built from another Harness commit", async t => {
+  const root = await mkdtemp(join(tmpdir(), "deepseek-ci-release-harness-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await fixture(root, (buildInfo, target) => target === "x86_64-apple-darwin"
     ? { ...buildInfo, harness: { ...buildInfo.harness, commit: "f".repeat(40) } }
     : buildInfo);
   await assert.rejects(
     prepareCiReleaseAssets({ inputRoot: root, outputRoot: join(root, "publish"), version, commit, toolchainLock }),
-    /Runtime source does not match the toolchain lock/u
+    /Harness source does not match the toolchain lock/u
   );
 });
 
-test("rejects missing Runtime and signature provenance even when every target omits it", async t => {
+test("rejects missing Harness and signature provenance even when every target omits it", async t => {
   for (const field of ["harness", "signed"]) {
     await t.test(field, async () => {
       const root = await mkdtemp(join(tmpdir(), `deepseek-ci-release-missing-${field}-`));
@@ -134,7 +134,7 @@ test("rejects missing Runtime and signature provenance even when every target om
       });
       await assert.rejects(
         prepareCiReleaseAssets({ inputRoot: root, outputRoot: join(root, "publish"), version, commit, toolchainLock }),
-        field === "harness" ? /Runtime identity is invalid/u : /signature identity is invalid/u
+        field === "harness" ? /Harness identity is invalid/u : /signature identity is invalid/u
       );
     });
   }

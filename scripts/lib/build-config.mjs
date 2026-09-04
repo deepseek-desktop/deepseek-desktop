@@ -12,13 +12,13 @@ export const CONFIG_KEYS = Object.freeze([
   "DESKTOP_APP_AUTHORS",
   "DESKTOP_APP_REPOSITORY",
   "DESKTOP_APP_ICON",
-  "RUNTIME_REPOSITORY",
-  "RUNTIME_REF",
-  "RUNTIME_UPDATE_MANIFEST_URL",
-  "RUNTIME_UPDATE_CHANNEL",
-  "RUNTIME_AUTO_UPDATE",
-  "RUNTIME_UPDATE_PUBLISHER",
-  "RUNTIME_UPDATE_PUBLIC_KEY",
+  "HARNESS_REPOSITORY",
+  "HARNESS_REF",
+  "HARNESS_UPDATE_MANIFEST_URL",
+  "HARNESS_UPDATE_CHANNEL",
+  "HARNESS_AUTO_UPDATE",
+  "HARNESS_UPDATE_PUBLISHER",
+  "HARNESS_UPDATE_PUBLIC_KEY",
   "RELEASE_CHANNEL",
   "RELEASE_SIGNED"
 ]);
@@ -32,22 +32,22 @@ export const DEFAULT_CONFIG = Object.freeze({
   DESKTOP_APP_AUTHORS: "DeepSeek Desktop Contributors",
   DESKTOP_APP_REPOSITORY: "",
   DESKTOP_APP_ICON: "src-tauri/icons/icon.png",
-  RUNTIME_REPOSITORY: "https://github.com/deepseek-desktop/deepseek-harness.git",
-  RUNTIME_REF: "",
-  RUNTIME_UPDATE_MANIFEST_URL: "",
-  RUNTIME_UPDATE_CHANNEL: "stable",
-  RUNTIME_AUTO_UPDATE: "false",
-  RUNTIME_UPDATE_PUBLISHER: "deepseek-desktop",
-  RUNTIME_UPDATE_PUBLIC_KEY: "",
+  HARNESS_REPOSITORY: "https://github.com/deepseek-desktop/deepseek-harness.git",
+  HARNESS_REF: "",
+  HARNESS_UPDATE_MANIFEST_URL: "",
+  HARNESS_UPDATE_CHANNEL: "stable",
+  HARNESS_AUTO_UPDATE: "false",
+  HARNESS_UPDATE_PUBLISHER: "deepseek-desktop",
+  HARNESS_UPDATE_PUBLIC_KEY: "",
   RELEASE_CHANNEL: "local",
   RELEASE_SIGNED: "false"
 });
 
 const OPTIONAL_EMPTY_KEYS = new Set([
   "DESKTOP_APP_REPOSITORY",
-  "RUNTIME_REF",
-  "RUNTIME_UPDATE_MANIFEST_URL",
-  "RUNTIME_UPDATE_PUBLIC_KEY"
+  "HARNESS_REF",
+  "HARNESS_UPDATE_MANIFEST_URL",
+  "HARNESS_UPDATE_PUBLIC_KEY"
 ]);
 
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
@@ -62,7 +62,7 @@ function assertKnownKeys(values, source) {
   const unknown = Object.keys(values)
     .filter(key => (
       key.startsWith("DESKTOP_APP_")
-      || key.startsWith("RUNTIME_")
+      || key.startsWith("HARNESS_")
       || key.startsWith("RELEASE_")
     ) && !CONFIG_KEYS.includes(key))
     .sort();
@@ -104,7 +104,7 @@ async function inspectPng(path) {
   return { width, height };
 }
 
-function normalizeRepository(value, name = "RUNTIME_REPOSITORY") {
+function normalizeRepository(value, name = "HARNESS_REPOSITORY") {
   const repository = value.trim();
   if (/^(?:https?|ssh|git):\/\//u.test(repository)) {
     const url = new URL(repository);
@@ -115,28 +115,28 @@ function normalizeRepository(value, name = "RUNTIME_REPOSITORY") {
   throw new Error(`${name} must be an HTTP(S), SSH, or Git repository URL`);
 }
 
-function normalizeRuntimeUpdateManifestUrl(value) {
+function normalizeHarnessUpdateManifestUrl(value) {
   if (!value) return "";
   const url = new URL(value);
   if (!["https:", "http:", "file:"].includes(url.protocol)) {
-    throw new Error("RUNTIME_UPDATE_MANIFEST_URL must use HTTPS, HTTP, or file");
+    throw new Error("HARNESS_UPDATE_MANIFEST_URL must use HTTPS, HTTP, or file");
   }
   if (url.username || url.password || url.search || url.hash) {
-    throw new Error("RUNTIME_UPDATE_MANIFEST_URL must not contain credentials, a query, or a fragment");
+    throw new Error("HARNESS_UPDATE_MANIFEST_URL must not contain credentials, a query, or a fragment");
   }
   return url.toString();
 }
 
-function validateRuntimeUpdatePublicKey(value) {
+function validateHarnessUpdatePublicKey(value) {
   if (!value) return;
   let decoded;
   try {
     decoded = Buffer.from(value, "base64");
   } catch {
-    throw new Error("RUNTIME_UPDATE_PUBLIC_KEY must be base64 encoded");
+    throw new Error("HARNESS_UPDATE_PUBLIC_KEY must be base64 encoded");
   }
   if (decoded.length !== 32 || decoded.toString("base64") !== value) {
-    throw new Error("RUNTIME_UPDATE_PUBLIC_KEY must encode exactly 32 Ed25519 public-key bytes");
+    throw new Error("HARNESS_UPDATE_PUBLIC_KEY must encode exactly 32 Ed25519 public-key bytes");
   }
 }
 
@@ -235,18 +235,18 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
   const desktopRepository = await resolveDesktopRepository(root, values.DESKTOP_APP_REPOSITORY, environment);
   const iconSource = normalizeRelativePath(values.DESKTOP_APP_ICON);
   const icon = await inspectPng(resolve(root, iconSource));
-  const repository = normalizeRepository(values.RUNTIME_REPOSITORY);
-  const runtimeUpdateManifestUrl = normalizeRuntimeUpdateManifestUrl(values.RUNTIME_UPDATE_MANIFEST_URL);
-  assertText("RUNTIME_UPDATE_PUBLISHER", values.RUNTIME_UPDATE_PUBLISHER);
-  validateRuntimeUpdatePublicKey(values.RUNTIME_UPDATE_PUBLIC_KEY);
-  if (!new Set(["stable", "preview"]).has(values.RUNTIME_UPDATE_CHANNEL)) {
-    throw new Error("RUNTIME_UPDATE_CHANNEL must be stable or preview");
+  const repository = normalizeRepository(values.HARNESS_REPOSITORY);
+  const harnessUpdateManifestUrl = normalizeHarnessUpdateManifestUrl(values.HARNESS_UPDATE_MANIFEST_URL);
+  assertText("HARNESS_UPDATE_PUBLISHER", values.HARNESS_UPDATE_PUBLISHER);
+  validateHarnessUpdatePublicKey(values.HARNESS_UPDATE_PUBLIC_KEY);
+  if (!new Set(["stable", "preview"]).has(values.HARNESS_UPDATE_CHANNEL)) {
+    throw new Error("HARNESS_UPDATE_CHANNEL must be stable or preview");
   }
-  if (!new Set(["true", "false"]).has(values.RUNTIME_AUTO_UPDATE)) {
-    throw new Error("RUNTIME_AUTO_UPDATE must be true or false");
+  if (!new Set(["true", "false"]).has(values.HARNESS_AUTO_UPDATE)) {
+    throw new Error("HARNESS_AUTO_UPDATE must be true or false");
   }
-  if (Boolean(runtimeUpdateManifestUrl) !== Boolean(values.RUNTIME_UPDATE_PUBLIC_KEY)) {
-    throw new Error("RUNTIME_UPDATE_MANIFEST_URL and RUNTIME_UPDATE_PUBLIC_KEY must be configured together");
+  if (Boolean(harnessUpdateManifestUrl) !== Boolean(values.HARNESS_UPDATE_PUBLIC_KEY)) {
+    throw new Error("HARNESS_UPDATE_MANIFEST_URL and HARNESS_UPDATE_PUBLIC_KEY must be configured together");
   }
   if (!new Set(["local", "community", "stable"]).has(values.RELEASE_CHANNEL)) {
     throw new Error("RELEASE_CHANNEL must be local, community, or stable");
@@ -254,10 +254,10 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
   if (!new Set(["true", "false"]).has(values.RELEASE_SIGNED)) {
     throw new Error("RELEASE_SIGNED must be true or false");
   }
-  const toolchainLock = JSON.parse(await readFile(resolve(root, "runtime/toolchain-lock.json"), "utf8"));
-  assertText("runtime/toolchain-lock.json node.version", toolchainLock.node?.version || "");
-  assertText("runtime/toolchain-lock.json node.moduleAbi", toolchainLock.node?.moduleAbi || "");
-  assertText("runtime/toolchain-lock.json toolchain.rust", toolchainLock.toolchain?.rust || "");
+  const toolchainLock = JSON.parse(await readFile(resolve(root, "harness/toolchain-lock.json"), "utf8"));
+  assertText("harness/toolchain-lock.json node.version", toolchainLock.node?.version || "");
+  assertText("harness/toolchain-lock.json node.moduleAbi", toolchainLock.node?.moduleAbi || "");
+  assertText("harness/toolchain-lock.json toolchain.rust", toolchainLock.toolchain?.rust || "");
   const year = new Date().getUTCFullYear();
   const displayVersion = formatDisplayVersion(values.DESKTOP_APP_VERSION);
   return Object.freeze({
@@ -276,16 +276,16 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
     icon,
     harness: {
       repository,
-      ref: values.RUNTIME_REF
+      ref: values.HARNESS_REF
     },
-    runtimeUpdate: {
-      manifestUrl: runtimeUpdateManifestUrl,
-      channel: values.RUNTIME_UPDATE_CHANNEL,
-      autoUpdate: values.RUNTIME_AUTO_UPDATE === "true" && !values.RUNTIME_REF,
-      publisher: values.RUNTIME_UPDATE_PUBLISHER,
-      publicKey: values.RUNTIME_UPDATE_PUBLIC_KEY,
+    harnessUpdate: {
+      manifestUrl: harnessUpdateManifestUrl,
+      channel: values.HARNESS_UPDATE_CHANNEL,
+      autoUpdate: values.HARNESS_AUTO_UPDATE === "true" && !values.HARNESS_REF,
+      publisher: values.HARNESS_UPDATE_PUBLISHER,
+      publicKey: values.HARNESS_UPDATE_PUBLIC_KEY,
       desktopProtocolVersion: 1,
-      runtimeProtocolVersion: 1,
+      harnessProtocolVersion: 1,
       credentialProtocolVersion: 1
     },
     release: {

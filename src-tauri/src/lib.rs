@@ -2,10 +2,10 @@ mod contracts;
 mod credential_vault;
 mod diagnostics;
 mod error;
+mod harness;
+mod harness_update;
 mod native_menu;
 mod repository_proxy;
-mod runtime;
-mod runtime_update;
 mod settings;
 #[cfg(target_os = "macos")]
 mod tao_view_guard;
@@ -15,11 +15,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{env, thread};
 
-use contracts::{DesktopAbout, DesktopSettings, RuntimeStatus, RuntimeUpdateStatus, UpdateStatus};
+use contracts::{DesktopAbout, DesktopSettings, HarnessStatus, HarnessUpdateStatus, UpdateStatus};
 use diagnostics::Diagnostics;
 use error::{DesktopError, DesktopResult};
-use runtime::RuntimeSupervisor;
-use runtime_update::{RuntimeStore, RuntimeUpdateManager};
+use harness::HarnessSupervisor;
+use harness_update::{HarnessStore, HarnessUpdateManager};
 use settings::{AppPaths, SettingsStore};
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
@@ -31,33 +31,33 @@ const MIN_REACHABLE_HEIGHT: i64 = 80;
 struct AppState {
     settings: Arc<SettingsStore>,
     diagnostics: Arc<Diagnostics>,
-    supervisor: Arc<RuntimeSupervisor>,
-    runtime_updates: Arc<RuntimeUpdateManager>,
+    supervisor: Arc<HarnessSupervisor>,
+    harness_updates: Arc<HarnessUpdateManager>,
     close_dialog_open: AtomicBool,
     close_approved: AtomicBool,
 }
 
 #[tauri::command]
-fn runtime_status(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus> {
+fn harness_status(state: State<'_, AppState>) -> DesktopResult<HarnessStatus> {
     state.supervisor.status()
 }
 
 #[tauri::command]
-async fn runtime_start(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus> {
+async fn harness_start(state: State<'_, AppState>) -> DesktopResult<HarnessStatus> {
     let supervisor = Arc::clone(&state.supervisor);
     let recovery = Arc::clone(&supervisor);
-    let updater = Arc::clone(&state.runtime_updates);
+    let updater = Arc::clone(&state.harness_updates);
     match tauri::async_runtime::spawn_blocking(move || {
         let mut first_failure = None;
         loop {
             match supervisor.start() {
                 Ok(status) => return Ok(status),
-                Err(error) if runtime_boot_failure(&error) => {
+                Err(error) if harness_boot_failure(&error) => {
                     if first_failure.is_none() {
                         first_failure = Some(error);
                     }
                     if !updater.rollback_after_start_failure() {
-                        return Err(first_failure.expect("Runtime failure was captured"));
+                        return Err(first_failure.expect("Harness failure was captured"));
                     }
                 }
                 Err(error) => return Err(first_failure.unwrap_or(error)),
@@ -71,8 +71,8 @@ async fn runtime_start(state: State<'_, AppState>) -> DesktopResult<RuntimeStatu
     }
 }
 
-fn runtime_boot_failure(error: &DesktopError) -> bool {
-    error.permits_runtime_rollback()
+fn harness_boot_failure(error: &DesktopError) -> bool {
+    error.permits_harness_rollback()
 }
 
 fn repaired_window_position(
@@ -137,7 +137,7 @@ fn keep_window_reachable(window: &tauri::Window) -> tauri::Result<()> {
 }
 
 #[tauri::command]
-async fn runtime_stop(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus> {
+async fn harness_stop(state: State<'_, AppState>) -> DesktopResult<HarnessStatus> {
     let supervisor = Arc::clone(&state.supervisor);
     let recovery = Arc::clone(&supervisor);
     match tauri::async_runtime::spawn_blocking(move || supervisor.stop()).await {
@@ -147,9 +147,9 @@ async fn runtime_stop(state: State<'_, AppState>) -> DesktopResult<RuntimeStatus
 }
 
 #[tauri::command]
-async fn runtime_open(state: State<'_, AppState>) -> DesktopResult<()> {
+async fn harness_open(state: State<'_, AppState>) -> DesktopResult<()> {
     let supervisor = Arc::clone(&state.supervisor);
-    tauri::async_runtime::spawn_blocking(move || supervisor.open_runtime())
+    tauri::async_runtime::spawn_blocking(move || supervisor.open_harness())
         .await
         .map_err(|error| DesktopError::Other(error.to_string()))?
 }
@@ -165,7 +165,7 @@ fn settings_update(
     state: State<'_, AppState>,
     settings: DesktopSettings,
 ) -> DesktopResult<DesktopSettings> {
-    let settings = state.runtime_updates.save_settings(settings)?;
+    let settings = state.harness_updates.save_settings(settings)?;
     native_menu::install(&app, &settings.locale)?;
     let _ = app.emit("desktop://locale", settings.locale.clone());
     Ok(settings)
@@ -190,11 +190,11 @@ fn desktop_menu_popup(
 
 #[tauri::command]
 fn desktop_about(state: State<'_, AppState>) -> DesktopResult<DesktopAbout> {
-    let runtime = state.runtime_updates.status()?;
+    let harness = state.harness_updates.status()?;
     Ok(DesktopAbout {
         desktop_version: env!("DEEPSEEK_DESKTOP_APP_VERSION").to_owned(),
-        runtime_version: runtime.current_version,
-        runtime_commit: runtime.current_commit,
+        harness_version: harness.current_version,
+        harness_commit: harness.current_commit,
         node_version: env!("DEEPSEEK_DESKTOP_NODE_VERSION").to_owned(),
         authors: env!("DEEPSEEK_DESKTOP_APP_AUTHORS").to_owned(),
         repository: env!("DEEPSEEK_DESKTOP_APP_REPOSITORY").to_owned(),
@@ -204,32 +204,32 @@ fn desktop_about(state: State<'_, AppState>) -> DesktopResult<DesktopAbout> {
 }
 
 #[tauri::command]
-fn runtime_update_status(state: State<'_, AppState>) -> DesktopResult<RuntimeUpdateStatus> {
-    state.runtime_updates.status()
+fn harness_update_status(state: State<'_, AppState>) -> DesktopResult<HarnessUpdateStatus> {
+    state.harness_updates.status()
 }
 
 #[tauri::command]
-async fn runtime_update_check(state: State<'_, AppState>) -> DesktopResult<RuntimeUpdateStatus> {
-    let updates = Arc::clone(&state.runtime_updates);
+async fn harness_update_check(state: State<'_, AppState>) -> DesktopResult<HarnessUpdateStatus> {
+    let updates = Arc::clone(&state.harness_updates);
     tauri::async_runtime::spawn_blocking(move || updates.check())
         .await
         .map_err(|error| DesktopError::Other(error.to_string()))?
 }
 
 #[tauri::command]
-async fn runtime_update_download(state: State<'_, AppState>) -> DesktopResult<RuntimeUpdateStatus> {
-    let updates = Arc::clone(&state.runtime_updates);
+async fn harness_update_download(state: State<'_, AppState>) -> DesktopResult<HarnessUpdateStatus> {
+    let updates = Arc::clone(&state.harness_updates);
     tauri::async_runtime::spawn_blocking(move || updates.download())
         .await
         .map_err(|error| DesktopError::Other(error.to_string()))?
 }
 
 #[tauri::command]
-async fn runtime_update_restore_bundled(
+async fn harness_update_restore_bundled(
     state: State<'_, AppState>,
-) -> DesktopResult<RuntimeUpdateStatus> {
+) -> DesktopResult<HarnessUpdateStatus> {
     let supervisor = Arc::clone(&state.supervisor);
-    let updates = Arc::clone(&state.runtime_updates);
+    let updates = Arc::clone(&state.harness_updates);
     tauri::async_runtime::spawn_blocking(move || {
         supervisor.stop()?;
         updates.restore_bundled()
@@ -292,7 +292,7 @@ fn desktop_update_open_release(app: tauri::AppHandle, tag: String) -> DesktopRes
 fn diagnostics_export(state: State<'_, AppState>) -> DesktopResult<String> {
     let path = state.diagnostics.export(
         &state.supervisor.status()?,
-        &state.runtime_updates.status()?,
+        &state.harness_updates.status()?,
         &state.settings.get()?,
     )?;
     Ok(path.to_string_lossy().into_owned())
@@ -309,7 +309,7 @@ pub fn run_credential_vault_helper() -> i32 {
 }
 
 pub fn run() {
-    runtime::install_crypto_provider().expect("failed to initialize the Rustls crypto provider");
+    harness::install_crypto_provider().expect("failed to initialize the Rustls crypto provider");
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
             |app, _arguments, _working_directory| {
@@ -390,8 +390,8 @@ pub fn run() {
                 if let Some(state) = app.try_state::<AppState>() {
                     let supervisor = Arc::clone(&state.supervisor);
                     thread::spawn(move || {
-                        if supervisor.open_runtime().is_err() {
-                            let _ = supervisor.show_settings("runtime");
+                        if supervisor.open_harness().is_err() {
+                            let _ = supervisor.show_settings("harness");
                         }
                     });
                 }
@@ -400,7 +400,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<AppState>() {
                     let supervisor = Arc::clone(&state.supervisor);
                     thread::spawn(move || {
-                        let _ = supervisor.show_settings("runtime");
+                        let _ = supervisor.show_settings("harness");
                     });
                 }
             }
@@ -409,7 +409,7 @@ pub fn run() {
                     let _ = state.supervisor.show_settings("diagnostics");
                 }
             }
-            native_menu::RUNTIME_UPDATE_MENU_ID => {
+            native_menu::HARNESS_UPDATE_MENU_ID => {
                 if let Some(state) = app.try_state::<AppState>() {
                     let _ = state.supervisor.show_settings("update");
                 }
@@ -434,7 +434,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<AppState>() {
                     let supervisor = Arc::clone(&state.supervisor);
                     thread::spawn(move || {
-                        let _ = supervisor.open_runtime();
+                        let _ = supervisor.open_harness();
                     });
                 }
             }
@@ -473,21 +473,21 @@ pub fn run() {
             let paths = AppPaths::resolve(&app_handle)?;
             let settings = Arc::new(SettingsStore::load(&paths)?);
             let diagnostics = Arc::new(Diagnostics::new(paths.clone()));
-            let runtime_store = RuntimeStore::resolve(&app_handle, &paths)?;
-            let runtime_updates = RuntimeUpdateManager::new(
+            let harness_store = HarnessStore::resolve(&app_handle, &paths)?;
+            let harness_updates = HarnessUpdateManager::new(
                 app_handle.clone(),
                 Arc::clone(&settings),
                 Arc::clone(&diagnostics),
-                Arc::clone(&runtime_store),
+                Arc::clone(&harness_store),
             )?;
-            runtime_updates.recover_invalid_current()?;
-            let supervisor = RuntimeSupervisor::new(
+            harness_updates.recover_invalid_current()?;
+            let supervisor = HarnessSupervisor::new(
                 app_handle,
                 paths,
                 Arc::clone(&settings),
                 Arc::clone(&diagnostics),
-                runtime_store,
-                Arc::clone(&runtime_updates),
+                harness_store,
+                Arc::clone(&harness_updates),
             );
             if let Some(window) = app.get_window("main") {
                 keep_window_reachable(&window)?;
@@ -506,7 +506,7 @@ pub fn run() {
                 settings,
                 diagnostics,
                 supervisor,
-                runtime_updates: Arc::clone(&runtime_updates),
+                harness_updates: Arc::clone(&harness_updates),
                 close_dialog_open: AtomicBool::new(false),
                 close_approved: AtomicBool::new(false),
             });
@@ -520,14 +520,14 @@ pub fn run() {
                 );
             }
             native_menu::install(app.handle(), &locale)?;
-            runtime_updates.start_startup_maintenance();
+            harness_updates.start_startup_maintenance();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            runtime_status,
-            runtime_start,
-            runtime_stop,
-            runtime_open,
+            harness_status,
+            harness_start,
+            harness_stop,
+            harness_open,
             settings_get,
             settings_update,
             desktop_menu_popup,
@@ -536,10 +536,10 @@ pub fn run() {
             update_check,
             desktop_update_ignore,
             desktop_update_open_release,
-            runtime_update_status,
-            runtime_update_check,
-            runtime_update_download,
-            runtime_update_restore_bundled,
+            harness_update_status,
+            harness_update_check,
+            harness_update_download,
+            harness_update_restore_bundled,
             diagnostics_export,
             logs_export
         ]);
@@ -558,27 +558,27 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{repaired_window_position, runtime_boot_failure};
+    use super::{harness_boot_failure, repaired_window_position};
     use crate::error::DesktopError;
 
     #[test]
-    fn rolls_back_only_for_runtime_boot_failures() {
-        assert!(runtime_boot_failure(&DesktopError::RuntimeArtifactMissing(
+    fn rolls_back_only_for_harness_boot_failures() {
+        assert!(harness_boot_failure(&DesktopError::HarnessArtifactMissing(
             "entry".to_owned()
         )));
-        assert!(runtime_boot_failure(&DesktopError::RuntimeExited(
+        assert!(harness_boot_failure(&DesktopError::HarnessExited(
             "exit 1".to_owned()
         )));
-        assert!(runtime_boot_failure(&DesktopError::RuntimeBootFailed(
+        assert!(harness_boot_failure(&DesktopError::HarnessBootFailed(
             "health check failed".to_owned()
         )));
-        assert!(!runtime_boot_failure(&DesktopError::RuntimeStartRejected(
+        assert!(!harness_boot_failure(&DesktopError::HarnessStartRejected(
             "configuration was rejected".to_owned()
         )));
-        assert!(!runtime_boot_failure(&DesktopError::InvalidConfiguration(
+        assert!(!harness_boot_failure(&DesktopError::InvalidConfiguration(
             "settings are invalid".to_owned()
         )));
-        assert!(!runtime_boot_failure(&DesktopError::Io(
+        assert!(!harness_boot_failure(&DesktopError::Io(
             std::io::Error::new(std::io::ErrorKind::PermissionDenied, "data directory")
         )));
     }

@@ -1,6 +1,6 @@
 # DeepSeek Desktop 发布工作流
 
-本文件是 AI Agent 和发布维护者的唯一发布运行手册。用户文档见 `docs/zh-CN/distributed-release.md`，工具链事实见 `runtime/toolchain-lock.json`。
+本文件是 AI Agent 和发布维护者的唯一发布运行手册。用户文档见 `docs/zh-CN/distributed-release.md`，工具链事实见 `harness/toolchain-lock.json`。
 
 ## 决策
 
@@ -8,7 +8,7 @@
 - Pull Request 和普通分支 push 不触发发布工作流。
 - 只有带或不带 `v` 的完整 SemVer Tag 才运行质量门禁、构建安装包和创建 Release。
 - 四个平台都调用现有 `package:community`，禁止复制第二套打包逻辑。
-- 本机只验证源码、E2E、Runtime smoke 和当前 macOS 架构安装包。
+- 本机只验证源码、E2E、Harness smoke 和当前 macOS 架构安装包。
 - 不把 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 当作正式发布前提。
 - 未收到用户明确“发布”命令时，只修复、验证和本地提交，不创建或推送 Tag。
 
@@ -37,10 +37,10 @@ git fetch --tags origin
 
 ```bash
 corepack pnpm@11.24.0 app:sync --check
-corepack pnpm@11.24.0 runtime:sync --check
+corepack pnpm@11.24.0 harness:sync --check
 corepack pnpm@11.24.0 verify
 corepack pnpm@11.24.0 test:e2e
-corepack pnpm@11.24.0 runtime:smoke
+corepack pnpm@11.24.0 harness:smoke
 corepack pnpm@11.24.0 desktop:package
 ```
 
@@ -50,8 +50,8 @@ macOS 本机至少检查：
 
 1. DMG 已生成，SHA-256 可读取。
 2. 包内应用能启动，标题包含真实版本。
-3. Runtime sidecar 启动且工作台在同一窗口加载。
-4. 应用退出后没有遗留 Runtime 进程。
+3. Harness sidecar 启动且工作台在同一窗口加载。
+4. 应用退出后没有遗留 Harness 进程。
 
 用户已取消“每次发布都必须挂载 DMG 并启动 5 秒”的固定门禁，不要自行恢复；遇到安装包相关改动时仍应按风险做对应验证。
 
@@ -107,10 +107,10 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 | 已签名版本仍被标为 prerelease | 检查生成配置的 `release.signed` 是否为布尔 `true`；`ci-release-prerelease.mjs` 对缺失或非布尔的签名声明一律按未签名处理 |
 | Release 多出 BUILD-INFO | 只从五类安装包生成公开目录，发布前检查文件总数为 6 |
 | Windows 路径过长 | 保持 Windows Job 在短路径 detached clone 中打包 |
-| Windows 重试报 Runtime 文件只读 | 恢复内容缓存后只把工作副本递归设为可写，缓存本体仍做哈希核验 |
+| Windows 重试报 Harness 文件只读 | 恢复内容缓存后只把工作副本递归设为可写，缓存本体仍做哈希核验 |
 | Linux AppImage strip 失败 | `NO_STRIP=1` 只能设置在 GitHub Linux 原生打包步骤，不传播到其他平台 |
 | 汇总报 `release identity mismatch` | 报错已带字段名。`harness.sha256` 因平台而异属正常（native prebuild 由各主机编译），不参与跨平台比对；其余字段不一致说明四个目标并非同一次发布，必须查明来源而不是放宽比对 |
-| `runtime:sync` 报 `hardlink different from source` | 本地 clone 默认硬链接 `.git/objects`，与镜像自身的 commit-graph 维护竞争。`runtime-sync.mjs` 的缓存检出必须带 `--no-hardlinks`；该失败与平台无关，不要当作单个 Runner 的抖动重试了事 |
+| `harness:sync` 报 `hardlink different from source` | 本地 clone 默认硬链接 `.git/objects`，与镜像自身的 commit-graph 维护竞争。`harness-sync.mjs` 的缓存检出必须带 `--no-hardlinks`；该失败与平台无关，不要当作单个 Runner 的抖动重试了事 |
 | 上传失败 | 不修改已有 Tag；确认权限和资产后用新版本重新闭环 |
 
 ## 报告模板
