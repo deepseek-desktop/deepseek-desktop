@@ -84,6 +84,7 @@ vi.mock("./desktop", () => ({
   ignoreDesktopUpdate: vi.fn(async version => ({ ...settings, desktopUpdateIgnoredVersion: version })),
   openDesktopMenu: vi.fn(),
   openDesktopRelease: vi.fn(),
+  openDesktopUpdateLink: vi.fn(),
   openRepository: vi.fn(),
   openWorkbench: vi.fn(),
   saveSettings: vi.fn(async value => value),
@@ -428,7 +429,7 @@ describe(`${appConfig.productName} shell`, () => {
       availableVersion: "1.1.0-beta.1",
       releaseTag: "v1.1.0-beta.1",
       publishedAt: "2026-08-30T10:00:00Z",
-      releaseNotes: "A tested community release.",
+      releaseNotes: "# Community release\n\nA **tested** community release.\n\n- Fixed update notes",
       prerelease: true,
       message: "update-available"
     });
@@ -438,11 +439,25 @@ describe(`${appConfig.productName} shell`, () => {
     expect(wrapper.text()).toContain("发现 Desktop 1.1.0-beta.1");
     expect(wrapper.text()).toContain("预发布版");
     expect(wrapper.text()).toContain("A tested community release.");
+    expect(wrapper.get(".update-notes h1").text()).toBe("Community release");
+    expect(wrapper.get(".update-notes strong").text()).toBe("tested");
+    expect(wrapper.get(".update-notes li").text()).toBe("Fixed update notes");
     await wrapper.findAll("button").find(button => button.text() === "忽略此版本")?.trigger("click");
     await flushPromises();
 
     expect(ignoreDesktopUpdate).toHaveBeenCalledWith("1.1.0-beta.1");
     expect(openDesktopRelease).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "   "])("keeps the empty-summary fallback for %s notes", async releaseNotes => {
+    vi.mocked(checkForUpdates).mockResolvedValue({
+      enabled: false, channel: "community", currentVersion: "1.0.0", availableVersion: "1.1.0",
+      releaseTag: "v1.1.0", publishedAt: null, releaseNotes, prerelease: true, message: "update-available"
+    });
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain(i18n.global.t("update.noSummary"));
+    expect(wrapper.find(".update-notes").exists()).toBe(false);
   });
 
   it("does not interrupt startup when the silent Desktop update check fails", async () => {

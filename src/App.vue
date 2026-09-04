@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import DesktopMenuBar from "./DesktopMenuBar.vue";
+import ReleaseNotes from "./ReleaseNotes.vue";
 import { appConfig } from "./app-config";
 import deepSeekDesktopLogo from "./assets/deepseek-desktop.svg";
 import type { DesktopAbout, DesktopSettings, DesktopSettingsView, HarnessStatus, HarnessUpdateStatus, UpdateStatus } from "./contracts";
@@ -670,7 +671,13 @@ onBeforeUnmount(() => {
           </div>
           <dl class="desktop-update-meta">
             <div><dt>{{ t("update.publishedAt") }}</dt><dd>{{ formatPublishedAt(update.publishedAt) }}</dd></div>
-            <div><dt>{{ t("update.summary") }}</dt><dd class="update-notes">{{ update.releaseNotes || t("update.noSummary") }}</dd></div>
+            <div>
+              <dt>{{ t("update.summary") }}</dt>
+              <dd>
+                <ReleaseNotes v-if="update.releaseNotes?.trim()" :notes="update.releaseNotes" :release-tag="update.releaseTag || ''" />
+                <span v-else>{{ t("update.noSummary") }}</span>
+              </dd>
+            </div>
           </dl>
           <p class="community-update-notice">{{ t("update.communityNotice") }}</p>
           <footer class="actions wrap-actions">

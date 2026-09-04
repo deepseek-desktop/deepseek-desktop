@@ -123,6 +123,14 @@ export async function openDesktopRelease(tag: string): Promise<void> {
   await invoke("desktop_update_open_release", { tag });
 }
 
+export async function openDesktopUpdateLink(url: string): Promise<void> {
+  if (!inTauri()) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  await invoke("desktop_update_open_link", { url });
+}
+
 function browserHarnessUpdateStatus(): HarnessUpdateStatus {
   return {
     enabled: Boolean(appConfig.harness.repository),

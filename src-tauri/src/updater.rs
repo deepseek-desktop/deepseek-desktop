@@ -103,6 +103,23 @@ pub fn official_release_page(tag: &str) -> DesktopResult<String> {
     ))
 }
 
+pub fn release_note_url(value: &str) -> DesktopResult<String> {
+    let invalid = || {
+        DesktopError::InvalidConfiguration(
+            "release note links must be credential-free HTTP(S) URLs".to_owned(),
+        )
+    };
+    let url = Url::parse(value).map_err(|_| invalid())?;
+    if !matches!(url.scheme(), "https" | "http")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(invalid());
+    }
+    Ok(url.into())
+}
+
 async fn check_signed_update(
     app: &AppHandle,
     settings: &DesktopSettings,
@@ -542,6 +559,26 @@ fn empty_status(settings: &DesktopSettings, message: &str) -> UpdateStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn release_note_links_only_open_web_pages() {
+        for valid in [
+            "https://example.com/download/app.dmg",
+            "http://example.com/notes#fixes",
+        ] {
+            assert_eq!(release_note_url(valid).unwrap(), valid);
+        }
+        for invalid in [
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "data:text/html,test",
+            "mailto:test@example.com",
+            "https://user:password@example.com",
+            "/relative",
+        ] {
+            assert!(release_note_url(invalid).is_err(), "{invalid}");
+        }
+    }
 
     fn release(tag: &str, prerelease: bool, published_at: &str) -> GithubRelease {
         GithubRelease {

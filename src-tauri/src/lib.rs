@@ -289,6 +289,14 @@ fn desktop_update_open_release(app: tauri::AppHandle, tag: String) -> DesktopRes
 }
 
 #[tauri::command]
+fn desktop_update_open_link(app: tauri::AppHandle, url: String) -> DesktopResult<()> {
+    let page = updater::release_note_url(&url)?;
+    app.opener()
+        .open_url(page, None::<&str>)
+        .map_err(|error| DesktopError::Other(error.to_string()))
+}
+
+#[tauri::command]
 fn diagnostics_export(state: State<'_, AppState>) -> DesktopResult<String> {
     let path = state.diagnostics.export(
         &state.supervisor.status()?,
@@ -536,6 +544,7 @@ pub fn run() {
             update_check,
             desktop_update_ignore,
             desktop_update_open_release,
+            desktop_update_open_link,
             harness_update_status,
             harness_update_check,
             harness_update_download,
