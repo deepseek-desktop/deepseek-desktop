@@ -163,6 +163,7 @@ DeepSeek Desktop 将稳定的桌面外壳与 Harness 分开。桌面版默认使
 - Pull Request 和普通分支 push 不触发发布工作流，也不创建安装包或 Release。
 - 只有带或不带 `v` 前缀的完整 SemVer Tag 才触发质量门禁和四平台矩阵，例如 `1.0.0`、`v1.0.0`、`v1.0.0-rc.1`。
 - macOS ARM64、macOS x64、Windows x64、Linux x64 分别在对应官方 Runner 上调用同一个 `package:community`。
+- Windows x64 在上传制品前实际静默安装 NSIS 包，验证 x64 PE、工作台与设置菜单、关闭确认、Harness 子进程清理和卸载。
 - 四个平台全部成功后才创建 GitHub Release；任何目标失败都不会发布不完整版本。
 - Release 只公开两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和统一 `SHA256SUMS`，内部 `BUILD-INFO` 不作为下载附件。
 

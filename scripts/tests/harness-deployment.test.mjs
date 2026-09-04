@@ -3,7 +3,13 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { deployHarnessClosure, findCliPackage, findWorkspacePackages, mergeDesktopClosure } from "../lib/harness-deployment.mjs";
+import {
+  deployHarnessClosure,
+  findCliPackage,
+  findWorkspacePackages,
+  mergeDesktopClosure,
+  sanitizeBuildPaths
+} from "../lib/harness-deployment.mjs";
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "harness-deployment-"));
@@ -106,4 +112,29 @@ test("production deployment restores workspace peers and original input files", 
   await assert.rejects(deployHarnessClosure(source, packages, cli, destination, () => { throw new Error("pnpm failed"); }), /pnpm failed/);
   assert.equal(await readFile(join(source, "python/sdk-runtime/package.json"), "utf8"), original);
   assert.equal(await readFile(lock, "utf8"), "original lock\n");
+});
+
+test("build path sanitization preserves binary offsets while shrinking text paths", async t => {
+  const root = await fixture(t);
+  const source = "/Users/example/a-long-build-root";
+  const replacement = "/build";
+  const textPath = join(root, "metadata.txt");
+  const binaryPath = join(root, "native.node");
+  await writeFile(textPath, `source=${source}\n`);
+  const binary = Buffer.concat([
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0]),
+    Buffer.from(source),
+    Buffer.from([0, 1, 2, 3, 4])
+  ]);
+  await writeFile(binaryPath, binary);
+
+  const result = await sanitizeBuildPaths(root, [[source, replacement]]);
+  const sanitizedText = await readFile(textPath, "utf8");
+  const sanitizedBinary = await readFile(binaryPath);
+  assert.equal(sanitizedText, `source=${replacement}\n`);
+  assert.equal(sanitizedBinary.length, binary.length);
+  assert.equal(sanitizedBinary.includes(Buffer.from(source)), false);
+  assert.equal(sanitizedBinary.subarray(5, 5 + replacement.length).toString(), replacement);
+  assert.deepEqual([...sanitizedBinary.subarray(5 + replacement.length, 5 + source.length)], new Array(source.length - replacement.length).fill(0));
+  assert.deepEqual(result, { rewrittenFiles: 2, replacementCount: 2, resignedFiles: 0 });
 });

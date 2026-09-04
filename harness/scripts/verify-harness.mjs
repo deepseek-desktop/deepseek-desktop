@@ -230,6 +230,24 @@ async function verifyFollowModelSearch(nodeModules) {
   throw new Error("follow-model search unexpectedly probed an undeclared Provider");
 }
 
+async function verifyPermissionPresetLocalization(nodeModules) {
+  const packageRoots = await findInstalledPackages([nodeModules], "@deepseek-ai/dsh-client-ui-permission-presets");
+  if (packageRoots.length !== 1) {
+    throw new Error(`expected one permission preset package, found ${packageRoots.length}`);
+  }
+  const client = await readFile(join(packageRoots[0], "lib", "client.js"), "utf8");
+  for (const marker of [
+    '"preset.readOnly": "仅可查看"',
+    '"preset.workspaceWrite": "工作区内修改"',
+    '"preset.fullAccess": "完全权限"',
+    "displayPermissionPreset(option.value, option.name, t)"
+  ]) {
+    if (!client.includes(marker)) {
+      throw new Error(`permission preset localization is incomplete: missing ${JSON.stringify(marker)}`);
+    }
+  }
+}
+
 for (const field of ["sourceDateEpoch", "desktopVersion", "release", "harness", "node", "toolchain", "bundledPackages", "nativeAssets", "targets"]) {
   if (lock[field] === undefined) throw new Error(`harness lock is missing ${field}`);
 }
@@ -266,6 +284,7 @@ if (await hashTree(prepared) !== lock.harness.sha256) {
 await verifyPatches(join(prepared, "node_modules"));
 await verifyFinalToolCallIdentity(join(prepared, "node_modules"));
 await verifyFollowModelSearch(join(prepared, "node_modules"));
+await verifyPermissionPresetLocalization(join(prepared, "node_modules"));
 
 const requested = process.argv[2] || hostTarget();
 if (requested) {

@@ -8,7 +8,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
-- 跟随模型搜索现为 Desktop 独立 host/client 扩展，通过公开 Agent 异步上下文、模型目录、搜索 Provider 注册和设置插槽接入。官方搜索源码、设置和启用状态遵循上游及用户配置，Desktop 只选择 `web.searchProvider: follow-model`；不再补丁修改官方搜索卡片或 Harness 搜索核心。候选闭包验证扩展前后端及 Harness 依赖，详见 ADR-017。本功能簇仅开发验证，未发布。
+- 跟随模型搜索现为 Desktop 独立 host/client 扩展，通过公开 Agent 异步上下文、模型目录、搜索 Provider 注册和设置插槽接入。官方搜索源码、设置和启用状态遵循上游及用户配置，Desktop 只选择 `web.searchProvider: follow-model`；不再补丁修改官方搜索卡片或 Harness 搜索核心。候选闭包验证扩展前后端及 Harness 依赖，详见 ADR-017。当前发布候选等待 macOS 安装验收与 Windows x64 原生 Tag 矩阵。
 
 - `v1.0.31` 已通过 GitHub 原生四平台矩阵并发布，六个公开资产下载校验一致。用户授权备份后，本机安装版已更新至 `1.0.31` 并通过原生交互验收；本机 Harness 已升级至 `0.1.2-rc.1` / `76fda729799f`。安装包内置基线仍以工具链 lock 为准，平台与测试边界见验证基线。
 
@@ -37,6 +37,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 未签名制品发布时一律标记 GitHub prerelease，不占据 Latest release 位置；该判断取自生成配置的 `release.signed`，与 SemVer 版本号形态无关，签名接入后自动恢复为正式发布。
 - 正式四平台发行统一由 GitHub Actions 官方托管 Runner 原生构建：Pull Request 与普通分支 push 不触发发布工作流，只有完整 SemVer Tag 才运行质量门禁并进入 macOS ARM64/x64、Windows x64、Linux x64 矩阵。
 - 四个平台复用唯一 `package:community` / `desktop:package` 构建事实；全部成功后才创建 Release，公开资产只包含 5 个安装包和 `SHA256SUMS`。
+- Windows x64 矩阵在上传制品前必须实际安装 NSIS 包并验证 x64 PE、工作台、设置菜单、关闭确认、Harness 子进程退出与卸载；只构建成功不能进入汇总发布。
 - GitHub Release 正文根据当前 Tag 和已汇总的完整公开资产集合生成直接下载链接；站点自身的 `Assets` 折叠状态不作为用户下载入口前提。
 - 本机只执行源码验证、E2E、Harness smoke 和当前 macOS 架构打包/启动测试；不以 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 作为正式发布前提。
 - 四平台统一使用工具链 lock 中的 Node `24.20.0` / ABI `137`，Runner 不得依赖全局版本漂移；内部 BUILD-INFO 用于矩阵汇总核验但不公开发布。

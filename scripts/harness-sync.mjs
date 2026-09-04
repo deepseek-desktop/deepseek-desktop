@@ -5,7 +5,13 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { tmpdir } from "node:os";
 import process from "node:process";
 
-import { findWorkspacePackages, findCliPackage, deployHarnessClosure, mergeDesktopPackages } from "./lib/harness-deployment.mjs";
+import {
+  deployHarnessClosure,
+  findCliPackage,
+  findWorkspacePackages,
+  mergeDesktopPackages,
+  sanitizeBuildPaths
+} from "./lib/harness-deployment.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
 import { selectLatestHarnessTag } from "./lib/harness-ref.mjs";
 import { findInstalledPackages } from "./lib/installed-packages.mjs";
@@ -133,53 +139,6 @@ async function hashTree(directory) {
   }
   await visit(directory);
   return hash.digest("hex");
-}
-
-function replaceBuffer(input, search, replacement) {
-  if (search.length === 0 || !input.includes(search)) return { bytes: input, replacements: 0 };
-  const chunks = [];
-  let offset = 0;
-  let replacements = 0;
-  for (;;) {
-    const index = input.indexOf(search, offset);
-    if (index < 0) break;
-    chunks.push(input.subarray(offset, index), replacement);
-    offset = index + search.length;
-    replacements += 1;
-  }
-  chunks.push(input.subarray(offset));
-  return { bytes: Buffer.concat(chunks), replacements };
-}
-
-async function sanitizeBuildPaths(directory, replacements) {
-  let rewrittenFiles = 0;
-  let replacementCount = 0;
-  async function visit(current) {
-    for (const entry of await readdir(current, { withFileTypes: true })) {
-      const path = join(current, entry.name);
-      if (entry.isDirectory()) {
-        await visit(path);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      let bytes = await readFile(path);
-      let changed = false;
-      for (const [from, to] of replacements) {
-        const result = replaceBuffer(bytes, Buffer.from(from), Buffer.from(to));
-        bytes = result.bytes;
-        if (result.replacements > 0) {
-          changed = true;
-          replacementCount += result.replacements;
-        }
-      }
-      if (changed) {
-        await writeFile(path, bytes);
-        rewrittenFiles += 1;
-      }
-    }
-  }
-  await visit(directory);
-  return { rewrittenFiles, replacementCount };
 }
 
 function buildPathReplacements(sourceRoot) {

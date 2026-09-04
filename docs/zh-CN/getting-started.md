@@ -14,7 +14,7 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 | --- | --- | --- |
 | macOS arm64 | `.dmg` | 本机完整构建与运行验收 |
 | macOS x64 | `.dmg` | CI 原生构建，等待对应机器安装验收 |
-| Windows x64 | NSIS `.exe` | CI 原生构建；已在 Windows 11 ARM64 的系统 x64 兼容层完成安装、启动、退出、卸载与重装验收 |
+| Windows x64 | NSIS `.exe` | CI 原生构建；每次发布必须完成安装、启动、工作台与设置交互、关闭确认、子进程清理和卸载验收 |
 | Linux x64 | AppImage / `.deb` | CI 原生构建，等待对应发行版安装验收 |
 
 当前社区版产物名称和发布说明必须明确带有 `community` / `unsigned`；其中 macOS 的 `unsigned` 表示没有 Apple Developer ID 身份签名和公证，不代表应用 Bundle 缺少本地 ad-hoc 完整性签名。社区版不能作为已认证 Stable 版本对外宣传。
@@ -109,4 +109,4 @@ corepack pnpm@11.24.0 package:community
 
 该命令会自动安装锁定依赖，执行应用配置与 Harness 同步、社区版发行门禁、单元测试、端到端测试、Harness 校验和真实 readiness smoke，再构建当前操作系统及 CPU 架构对应的安装包。结果统一输出到 `release/<版本>/<目标平台>/`，同时生成 `BUILD-INFO.<目标平台>.json` 和 `SHA256SUMS`。macOS 构建先由 Tauri 生成 `.app`，再通过不依赖 Finder 或 AppleScript 的 `hdiutil` 创建 DMG，避免无界面构建机因窗口美化流程阻塞。
 
-单台电脑只生成当前平台安装包。默认和示例版本始终使用 `1.0.0`。维护者推送符合 SemVer 的标签后，GitHub 工作流会从标签注入真实发行版本；标签可带或不带 `v` 前缀，例如 `1.0.0`、`v1.0.0`、`v0.1.0-community.13`。完整 SemVer 校验会在构建开始时执行，随后分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。
+单台电脑只生成当前平台安装包。默认和示例版本始终使用 `1.0.0`。维护者推送符合 SemVer 的标签后，GitHub 工作流会从标签注入真实发行版本；标签可带或不带 `v` 前缀，例如 `1.0.0`、`v1.0.0`、`v0.1.0-community.13`。完整 SemVer 校验会在构建开始时执行，随后分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；Windows x64 还会安装实际 NSIS 包并验证工作台、设置和关闭流程，只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。

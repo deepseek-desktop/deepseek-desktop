@@ -1,7 +1,83 @@
+import { spawnSync } from "node:child_process";
 import { cp, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, sep } from "node:path";
+import process from "node:process";
 
 function packagePath(nodeModules, name) { return join(nodeModules, ...name.split("/")); }
+
+function replaceBuffer(input, search, replacement, preserveSize) {
+  if (search.length === 0 || !input.includes(search)) return { bytes: input, replacements: 0 };
+  if (preserveSize && replacement.length > search.length) {
+    throw new Error("binary build path replacement cannot be longer than its source");
+  }
+  const effectiveReplacement = preserveSize
+    ? Buffer.concat([replacement, Buffer.alloc(search.length - replacement.length)])
+    : replacement;
+  const chunks = [];
+  let offset = 0;
+  let replacements = 0;
+  for (;;) {
+    const index = input.indexOf(search, offset);
+    if (index < 0) break;
+    chunks.push(input.subarray(offset, index), effectiveReplacement);
+    offset = index + search.length;
+    replacements += 1;
+  }
+  chunks.push(input.subarray(offset));
+  return { bytes: Buffer.concat(chunks), replacements };
+}
+
+function isMachO(bytes) {
+  if (bytes.length < 4) return false;
+  return new Set([0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca])
+    .has(bytes.readUInt32BE(0));
+}
+
+function signMachO(path) {
+  const result = spawnSync("codesign", ["--force", "--sign", "-", path], { encoding: "utf8" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`codesign failed for sanitized Mach-O ${path}: ${result.stderr || result.stdout}`);
+  }
+}
+
+export async function sanitizeBuildPaths(directory, replacements) {
+  let rewrittenFiles = 0;
+  let replacementCount = 0;
+  let resignedFiles = 0;
+  async function visit(current) {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      let bytes = await readFile(path);
+      const binary = bytes.includes(0);
+      const machO = binary && process.platform === "darwin" && isMachO(bytes);
+      let changed = false;
+      for (const [from, to] of replacements) {
+        const result = replaceBuffer(bytes, Buffer.from(from), Buffer.from(to), binary);
+        bytes = result.bytes;
+        if (result.replacements > 0) {
+          changed = true;
+          replacementCount += result.replacements;
+        }
+      }
+      if (changed) {
+        await writeFile(path, bytes);
+        if (machO) {
+          signMachO(path);
+          resignedFiles += 1;
+        }
+        rewrittenFiles += 1;
+      }
+    }
+  }
+  await visit(directory);
+  return { rewrittenFiles, replacementCount, resignedFiles };
+}
 
 export async function findWorkspacePackages(sourceRoot) {
   const found = [];

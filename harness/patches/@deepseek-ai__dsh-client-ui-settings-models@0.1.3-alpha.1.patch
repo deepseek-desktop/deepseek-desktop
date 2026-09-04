@@ -1,11 +1,7 @@
 diff --git a/lib/client.js b/lib/client.js
 --- a/lib/client.js
 +++ b/lib/client.js
-@@ -1136,15 +1136,11 @@ window.__ModuleLoader__.load({
- 			const [displayName, setDisplayName] = (0, react.useState)("");
- 			const [baseURL, setBaseURL] = (0, react.useState)("");
- 			const [protocol, setProtocol] = (0, react.useState)(protocols[0] ?? "");
- 			const [keyDraft, setKeyDraft] = (0, react.useState)("");
+@@ -1159,11 +1159,7 @@ window.__ModuleLoader__.load({
  			const [models, setModels] = (0, react.useState)([]);
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
@@ -18,7 +14,7 @@ diff --git a/lib/client.js b/lib/client.js
  			const [committed, setCommitted] = (0, react.useState)(false);
  			const disabled = props.readOnly || busy;
  			/** Everything but the key stops being editable once the provider exists. */
-@@ -1160,12 +1156,13 @@ window.__ModuleLoader__.load({
+@@ -1178,6 +1174,7 @@ window.__ModuleLoader__.load({
  			const createOnce = async () => {
  				const keyRef = deriveKeyRef(route);
  				const storesKey = keyValue.length > 0;
@@ -26,42 +22,35 @@ diff --git a/lib/client.js b/lib/client.js
  				if (!committed) {
  					const profile = {
  						...displayName.length === 0 ? {} : { displayName },
- 						...storesKey ? { apiKeyEnv: keyRef } : {},
- 						api: protocol,
- 						baseURL,
- 						models: models.map((model) => ({ ...model }))
- 					};
- 					const response = await api.settings.mutate(NS$1, [{
-@@ -1174,11 +1171,30 @@ window.__ModuleLoader__.load({
+@@ -1195,11 +1192,29 @@ window.__ModuleLoader__.load({
  						value: profile
  					}], openedAt);
- 					if (!response.ok) return response.error.message;
+ 					if (written.kind !== "written") return written.kind === "conflict" ? t("conflict") : written.message;
 -					setCommitted(true);
-+					profileRevision = response.value.revision;
++					profileRevision = written.view.revision;
  				}
  				if (storesKey) {
--					const stored = await api.credentials.set(keyRef, keyValue);
--					if (!stored.ok) return stored.error.message;
-+					let failure;
+-					const stored = await operations.storeCredential(keyRef, keyValue);
+-					if (stored !== void 0) return stored;
++					let stored;
 +					try {
-+						const stored = await api.credentials.set(keyRef, keyValue);
-+						if (!stored.ok) failure = stored.error.message;
++						stored = await operations.storeCredential(keyRef, keyValue);
 +					} catch (error) {
-+						failure = messageOf(error);
++						stored = error instanceof Error ? error.message : String(error);
 +					}
-+					if (failure !== void 0) {
++					if (stored !== void 0) {
 +						if (profileRevision !== void 0) {
 +							try {
-+								const rollback = await api.settings.mutate(NS$1, [{
++								const rollback = await operations.writeSettings(NS$1, [{
 +									op: "unset",
 +									path: ["providers", route]
 +								}], profileRevision);
-+								if (!rollback.ok) setCommitted(true);
++								if (rollback.kind !== "written") setCommitted(true);
 +							} catch {
 +								setCommitted(true);
 +							}
 +						}
-+						return failure;
++						return stored;
 +					}
  				}
  			};

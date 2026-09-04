@@ -1,7 +1,7 @@
 diff --git a/lib/index.js b/lib/index.js
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -35,8 +35,8 @@
+@@ -39,8 +39,8 @@
  /** Every {@link ApprovalPolicy}, for option advertisement and runtime validation of untrusted policy strings. */
  const APPROVAL_POLICIES = ["ask", "never"];
  /** Model-facing statement for the deterministic `'never'` policy. */
@@ -11,11 +11,11 @@ diff --git a/lib/index.js b/lib/index.js
 -const ASK_SENTENCE = "Approval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.";
 +const ASK_SENTENCE = "Approval policy: ask. Operations permitted by the current sandbox run directly. Requests for broader access are sent to the active client for confirmation; without an interactive client, they fail closed.";
  /**
- * The session's approval-policy override: the last `approval/policy` event in
+ * Whether the log currently sits inside an open turn (a `turn/start` not yet
 diff --git a/lib/invariant.js b/lib/invariant.js
 --- a/lib/invariant.js
 +++ b/lib/invariant.js
-@@ -35,8 +35,8 @@
+@@ -39,8 +39,8 @@
  /** Every {@link ApprovalPolicy}, for option advertisement and runtime validation of untrusted policy strings. */
  const APPROVAL_POLICIES = ["ask", "never"];
  /** Model-facing statement for the deterministic `'never'` policy. */
@@ -25,11 +25,11 @@ diff --git a/lib/invariant.js b/lib/invariant.js
 -const ASK_SENTENCE = "Approval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.";
 +const ASK_SENTENCE = "Approval policy: ask. Operations permitted by the current sandbox run directly. Requests for broader access are sent to the active client for confirmation; without an interactive client, they fail closed.";
  /**
- * The session's approval-policy override: the last `approval/policy` event in
+ * Whether the log currently sits inside an open turn (a `turn/start` not yet
 diff --git a/lib/types/index.js b/lib/types/index.js
 --- a/lib/types/index.js
 +++ b/lib/types/index.js
-@@ -15,8 +15,8 @@
+@@ -19,8 +19,8 @@
  /** Every {@link ApprovalPolicy}, for option advertisement and runtime validation of untrusted policy strings. */
  export const APPROVAL_POLICIES = ['ask', 'never'];
  /** Model-facing statement for the deterministic `'never'` policy. */
@@ -39,4 +39,4 @@ diff --git a/lib/types/index.js b/lib/types/index.js
 -const ASK_SENTENCE = 'Approval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.';
 +const ASK_SENTENCE = 'Approval policy: ask. Operations permitted by the current sandbox run directly. Requests for broader access are sent to the active client for confirmation; without an interactive client, they fail closed.';
  /**
-  * The session's approval-policy override: the last `approval/policy` event in
+  * Whether the log currently sits inside an open turn (a `turn/start` not yet

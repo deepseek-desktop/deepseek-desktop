@@ -277,6 +277,7 @@ test("artifact scanner rejects environment files, local paths, and secrets", asy
 
 test("GitHub workflow pins first-party actions to immutable commits", async () => {
   const workflow = await readFile(resolve(import.meta.dirname, "../../.github/workflows/community-build.yml"), "utf8");
+  const windowsAcceptance = await readFile(resolve(import.meta.dirname, "../verify-windows-install.ps1"), "utf8");
   const actions = [...workflow.matchAll(/uses:\s+(actions\/[^@\s]+)@([^\s#]+)/gu)];
   assert.ok(actions.length > 0);
   for (const [, name, revision] of actions) {
@@ -299,6 +300,20 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   assert.match(workflow, /--notes-file release-assets\/RELEASE-NOTES\.md/u);
   assert.match(workflow, /release\/\*\*\/SHA256SUMS/u);
   assert.match(workflow, /node scripts\/ci-release-prerelease\.mjs/u);
+  assert.match(workflow, /verify-windows-install\.ps1/u);
+  assert.match(workflow, /-ExpectedVersion \$env:DESKTOP_APP_VERSION/u);
+  assert.match(windowsAcceptance, /Is64BitOperatingSystem/u);
+  assert.match(windowsAcceptance, /Get-CimInstance Win32_Processor/u);
+  assert.match(windowsAcceptance, /\$processorArchitectures\[0\] -ne 9/u);
+  assert.match(windowsAcceptance, /expected x64 PE machine 0x8664/u);
+  assert.match(windowsAcceptance, /Wait-AppUiElement -Names @\("新会话", "新增對話", "New Session"\)/u);
+  assert.match(windowsAcceptance, /Get-DescendantProcessIds -RootProcessId \$RootProcessId/u);
+  assert.match(windowsAcceptance, /ProcessName -like "node\*"/u);
+  assert.match(windowsAcceptance, /"设置…", "设置\.\.\."/u);
+  assert.match(windowsAcceptance, /Harness Node child process was not running/u);
+  assert.match(windowsAcceptance, /canceling the close confirmation unexpectedly exited/u);
+  assert.match(windowsAcceptance, /orphan child processes remained after exit/u);
+  assert.match(windowsAcceptance, /DeepSeek Desktop remained installed after acceptance cleanup/u);
   // The release list truncates titles, so the tag must be the whole title.
   assert.match(workflow, /--title "\$GITHUB_REF_NAME"/u);
   assert.doesNotMatch(workflow, /--title "\$product_name/u);

@@ -260,7 +260,7 @@ const binarySuffix = process.platform === "win32" ? ".exe" : "";
 const sidecar = join(desktopRoot, "src-tauri", "binaries", `node-${target}${binarySuffix}`);
 const cacheIdentity = {
   schemaVersion: 2,
-  closurePolicy: "production-without-development-tests-v1",
+  closurePolicy: "production-without-development-tests-v2",
   target,
   harness: lock.harness,
   patches: lock.patches,
