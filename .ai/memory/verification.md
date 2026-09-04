@@ -4,9 +4,29 @@
 
 日期：2026-09-04
 
+## v1.0.31 发布与安装验收
+
+- 用户明确授权发布及备份后替换本机应用。annotated Tag `v1.0.31` 固定到 `43dd57f3d02edcf47b16842139878ed45781c202`，GitHub Actions Run `33874503545` 的公共质量门禁、四平台原生构建及汇总发布全部成功。Release 为未签名 prerelease，未移动旧 Tag，也没有公开 BUILD-INFO。
+- 重新下载全部六个公开文件，逐项校验名称、字节数、GitHub 服务端 digest、统一 `SHA256SUMS`、正文下载链接和 Tag/commit；全部一致。Release：<https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.0.31>。
+- 四平台日志实际 Node 均为 `v24.20.0`，打包入口校验 ABI `137`。共同通过 30 项前端、21 项搜索协议、三语 152 个 key、Clippy、5 项 E2E、Harness smoke 与交付扫描。macOS 两架构各 87 项 Rust，Linux 83 项，Windows 82 项；各有 1 项显式真实仓库测试默认忽略。配置/发行测试在 macOS/Linux 为 92 项通过，Windows 为 91 项通过、1 项因符号链接权限按既有规则跳过。
+- 本机发布前完整 `desktop:package` 通过，实际耗时 377172 ms；macOS 本地发行构建经真实设置页将用户数据目录中的 Harness 从内置 `cd5ef8148158` 准备并重启切换至 `0.1.2-rc.1` / `76fda729799fe9b3848dbe2c211d4b231032b81e`。不是只验证指针：日志先记录激活再记录 readiness，工作台与插件可用，原生编辑测试通过。
+- 旧 `1.0.30` 应用与数据备份后，数据的 645 个文件/链接逐项校验一致。下载的 ARM64 DMG 通过挂载 CRC 校验，应用通过 `codesign --verify --deep --strict` 后替换 macOS Applications 中的应用。安装版实际为 `1.0.31`，Node `v24.20.0` / ABI `137`，继续运行已升级的 Harness；其子进程路径属于 `0.1.2-rc.1-76fda729799f` 候选目录。
+- GitHub 发布安装版通过 100 次五组菜单展开/关闭及锚点检查、Cmd+A/C/X/V、760×560 设置滚动到底、设置往返草稿保持。设置往返前后 Harness PID 不变；取消关闭后两进程存活，确认后均退出，随后正常重新打开。测试草稿清空，剪贴板恢复，没有发送聊天消息。本轮崩溃报告数量 19 份前后不变，9 月 4 日无新增。
+- GitHub 提示的旧 `runtime/pnpm-lock.yaml` 中 `qs` 告警另行核对：当前实际生产闭包为已修复的 `qs 6.16.0`；未修改或关闭远程告警以掩盖问题。
+- Windows/Linux 本轮证据是官方原生 Runner 构建和自动测试，不等同图形安装器、窗口、系统浏览器或仓库更新的人工真机验收。真实模型对话、联网搜索和文件工具调用未使用用户凭据执行；不宣称所有场景均已实测。
+
+| 公开文件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `DeepSeek.Desktop_1.0.31_aarch64.dmg` | 286993780 | `d0f0fb25442c3df12fab2386ad9655f6eb329de069762fc226f0ba71d1c03688` |
+| `DeepSeek.Desktop_1.0.31_x64.dmg` | 223472278 | `8257dad38cc6f363053a72035054f0f54405b89779b12beebbb3a7c74fa518f8` |
+| `DeepSeek.Desktop_1.0.31_x64-setup.exe` | 58411752 | `9725a534399bf2af44f414b9262b3d619a1a4aab5301d70aed57fd966e2e1119` |
+| `DeepSeek.Desktop_1.0.31_amd64.AppImage` | 188451320 | `b0e9c80e8c6957c4e5fab40363458efe9bb249808d324cd0e4f8fbb23fd4747e` |
+| `DeepSeek.Desktop_1.0.31_amd64.deb` | 119337444 | `04acfd707e5676dc35a7cb0af5f892a5b27e567cca3c28d21ace31843e6a165a` |
+| `SHA256SUMS` | 509 | `3e42067c5e03d90a49c1653fbb9441ef1052af254e6c2de28e1b229a75fd3f8f` |
+
 ## 最近两日反馈复核
 
-范围为本对话中 9 月 3 日至 4 日的反馈，并回归关联的菜单、工作台和发布触发约束。以下是当前源码证据，不等同于用户安装的 `1.0.30` 已包含修复。
+范围为本对话中 9 月 3 日至 4 日的反馈，并回归关联的菜单、工作台和发布触发约束。以下保留发布前的源码与隔离验证证据；随后完成的发布和安装版验收以上一节为准。
 
 | 问题 | 当前结果与证据 |
 | --- | --- |
