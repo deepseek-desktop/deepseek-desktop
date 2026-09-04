@@ -1,11 +1,11 @@
 import { Service } from "@deepseek-ai/cordis";
 import { credentialRef } from "@deepseek-ai/dsh-credentials";
-import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
+import * as settingsApi from "@deepseek-ai/dsh-settings";
 import z from "@deepseek-ai/schemastery";
 import { WebError } from "@deepseek-ai/dsh-web";
 
 const PROVIDER_ID = "follow-model";
-const SETTINGS_NS = settingsNamespace("web-search-follow-model");
+const SETTINGS_NS = "web-search-follow-model";
 const DEFAULT_TIMEOUT_MS = 90_000;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_REQUEST_FIELDS = 16;
@@ -432,6 +432,7 @@ export class FollowModelSearchEngine {
     this.fetch = options.fetch ?? fetch;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.resolveCredential = options.resolveCredential;
+    this.resolveDeclaredRoute = options.resolveDeclaredRoute;
     this.protocols = builtInProtocols(this.fetch, this.timeoutMs);
     this.routeResolvers = new Set();
   }
@@ -456,6 +457,9 @@ export class FollowModelSearchEngine {
     for (const resolver of this.routeResolvers) {
       const match = await resolver(selection);
       if (match !== undefined && match !== null) matches.push(match);
+    }
+    if (matches.length === 0 && this.resolveDeclaredRoute) {
+      matches.push(...await this.resolveDeclaredRoute(selection));
     }
     if (matches.length === 0) {
       fail(copy("capabilityMissing"), "WEB_FOLLOW_MODEL_CAPABILITY_MISSING");
@@ -506,6 +510,23 @@ export class FollowModelSearchEngine {
   }
 }
 
+export function declaredSearchRoutes(sections, selection) {
+  return sections.flatMap(section => {
+    const provider = section.value?.providers?.[selection.provider];
+    if (!provider || typeof provider.baseURL !== "string" || typeof provider.apiKeyEnv !== "string") return [];
+    const model = provider.models?.find(item => item.id === selection.model);
+    const apiProtocol = model?.api ?? provider.api;
+    if (typeof apiProtocol !== "string") return [];
+    return [{
+      ...selection,
+      endpoint: model?.baseURL ?? provider.baseURL,
+      credentialRef: provider.apiKeyEnv,
+      apiProtocol,
+      webSearch: model?.capabilities?.webSearch ?? provider.capabilities?.webSearch,
+    }];
+  });
+}
+
 export default class FollowModelWebSearch extends Service {
   static Config = Config;
   static inject = ["web"];
@@ -513,12 +534,24 @@ export default class FollowModelWebSearch extends Service {
   constructor(ctx, config = {}) {
     super(ctx, "webSearchProtocols");
     let current = () => normalizedConfig(config);
-    installSettingsSection(ctx, SETTINGS_NS, Config, config, {
+    const hooks = {
       setSource: (source) => { current = () => normalizedConfig(source()); },
       onChange: () => {},
-    });
+    };
+    if (typeof settingsApi.installSettingsSection === "function") {
+      settingsApi.installSettingsSection(ctx, SETTINGS_NS, Config, config, hooks);
+    } else {
+      ctx.inject(["settings"], (scope) => {
+        scope.settings.installSection(ctx, SETTINGS_NS, Config, config, hooks);
+      });
+    }
     this.engine = new FollowModelSearchEngine({
       resolveCredential: async (ref) => (await ctx.get("credentials")?.resolve(ref))?.value,
+      resolveDeclaredRoute: (selection) => {
+        const providers = ctx.get("llm")?.listProviders() ?? [];
+        if (!providers.some(provider => provider.id === selection.provider)) return [];
+        return declaredSearchRoutes(ctx.get("settings")?.describe() ?? [], selection);
+      },
     });
     ctx.web.registerSearchProvider({
       id: PROVIDER_ID,
@@ -537,7 +570,7 @@ export default class FollowModelWebSearch extends Service {
           }
           return ctx.web.searchWithProvider(settings.independentProvider, request, signal, agent);
         }
-        return this.engine.search(agent, request, signal);
+        return this.engine.search(agent ?? ctx.get("agents")?.currentInitiator(), request, signal);
       },
     });
   }

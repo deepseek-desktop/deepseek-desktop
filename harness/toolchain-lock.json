@@ -84,6 +84,19 @@
   ],
   "desktopPatches": [
     {
+      "packageName": "dshmarket",
+      "operation": "replace-text",
+      "moduleFile": "lib/settings.js",
+      "replacements": [
+        {
+          "before": "import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings';",
+          "after": "import * as settingsApi from '@deepseek-ai/dsh-settings';\nconst settingsNamespace = value => value;\nfunction installSettingsSection(ctx, ...args) {\n    if (typeof settingsApi.installSettingsSection === 'function') return settingsApi.installSettingsSection(ctx, ...args);\n    return ctx.inject(['settings'], scope => scope.settings.installSection(ctx, ...args));\n}"
+        }
+      ],
+      "markers": ["scope.settings.installSection(ctx, ...args)"],
+      "id": "market-settings-service-api"
+    },
+    {
       "packageName": "@deepseek-ai/dsh",
       "operation": "add-dependency",
       "dependency": "dshmarket",

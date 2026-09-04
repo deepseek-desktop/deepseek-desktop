@@ -2,12 +2,15 @@ import { chmod, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promise
 import { spawn, spawnSync } from "node:child_process";
 import { delimiter, dirname, join, resolve } from "node:path";
 import process from "node:process";
+import { parseArgs } from "node:util";
 
 import { requestLoopback, waitForLoopback } from "./loopback-http.mjs";
 
 const harnessRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(harnessRoot, "..");
 const lock = JSON.parse(await readFile(join(desktopRoot, "target", "generated", "harness-lock.json"), "utf8"));
+const { values: options } = parseArgs({ options: { directory: { type: "string" }, entry: { type: "string" } } });
+if (Boolean(options.directory) !== Boolean(options.entry)) throw new Error("Candidate smoke requires --directory and --entry together");
 const LEGACY_COOKIE_COUNT = 60;
 
 function createLegacyCookieJar() {
@@ -122,10 +125,10 @@ async function terminateTree(child) {
 }
 
 const target = hostTarget();
-const staging = join(harnessRoot, "staging", target);
+const staging = options.directory ? resolve(options.directory) : join(harnessRoot, "staging", target);
 const nodeSuffix = process.platform === "win32" ? ".exe" : "";
 const node = join(desktopRoot, "src-tauri", "binaries", `node-${target}${nodeSuffix}`);
-const dsh = join(staging, lock.harness.entry);
+const dsh = join(staging, options.entry ?? lock.harness.entry);
 const parentWatch = join(staging, "node_modules", "deepseek-desktop-bundle", "parent-watch.cjs");
 const localeSync = join(staging, "node_modules", "deepseek-desktop-bundle", "locale-sync.cjs");
 const pnpmCli = join(staging, "node_modules", "pnpm", "bin", "pnpm.cjs");
@@ -165,6 +168,7 @@ await writeFile(join(profile, "pnpm-workspace.yaml"), "packages:\n  - .\n\nnodeL
 for (const name of [
   "deepseek-desktop-bundle",
   "deepseek-desktop-credentials-vault",
+  "dshmarket",
   "@deepseek-ai/dsh-web-search-follow-model"
 ]) {
   await mkdir(dirname(join(desktopModules, name)), { recursive: true });
@@ -308,7 +312,9 @@ async function runCycle(index) {
     const readyUrl = new URL(ready);
     if (readyUrl.hostname !== "127.0.0.1" || !readyUrl.port) throw new Error(`unexpected readiness origin ${ready}`);
     if (!readyUrl.searchParams.get("token")) throw new Error("harness readiness URL is missing its browser session token");
-    const browserCookies = createLegacyCookieJar();
+    // Bundled builds also verify their cookie cleanup patch. Repository candidates
+    // start a fresh browser session; Desktop resets service cookies at navigation.
+    const browserCookies = options.directory ? new Map() : createLegacyCookieJar();
     let exchange;
     try {
       exchange = await waitForLoopback(ready, {
@@ -420,4 +426,4 @@ for (const plaintext of [".credentials.yaml", ".env"]) {
     if (error?.code !== "ENOENT") throw error;
   }
 }
-console.log(`harness smoke passed: Harness ${lock.harness.version}, ${cycles} cycle(s)`);
+console.log(`harness smoke passed: Harness ${options.directory ? "candidate" : lock.harness.version}, ${cycles} cycle(s)`);

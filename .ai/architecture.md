@@ -22,7 +22,8 @@ HARNESS_REPOSITORY / HARNESS_REF
 Harness 仓库地址（默认构建仓库或用户覆盖）
   -> Git 默认分支 HEAD -> 应用数据目录浅克隆
   -> 内置 Node / pnpm 安装锁定依赖并构建
-  -> 补齐 Desktop 辅助包与 Node sidecar
+  -> 共用生产 deploy helper 收集 workspace / peer 依赖
+  -> 补齐 Desktop 扩展根包的传递依赖与 Node sidecar
   -> CLI / Node ABI / 包版本 / 真实服务 smoke
   -> 原子 current 指针 -> 失败回滚 previous / bundled
   -> 只保留 current / previous / pending 引用版本
@@ -66,6 +67,7 @@ Pull Request 和普通分支 push 不触发发布工作流。正式发布以 `.g
 - `harness/packages/web-search-follow-model/`：Provider 无关的联网搜索路由、标准协议执行器和受控第三方协议注册服务。
 - `harness/patches/`：针对锁定 Harness 的最小桌面集成补丁，必须有 marker 和验证。
 - `scripts/`：配置同步、Harness 构建、发行门禁、平台打包和工具链引导。
+- `scripts/lib/harness-deployment.mjs`：打包和仓库更新共用的生产部署、CLI 识别与扩展依赖收集；更新优先保留候选核心服务，缺少必需 peer 时停止准备，详见 ADR-015。
 - `scripts/release-system/`：实验性的本地发布协议、目标校验和 filesystem Provider，不作为正式发布主路径。
 - `scripts/harness-update/`：原生 Harness 更新制品、四平台描述汇总和 Ed25519 清单签名。
 - `.github/workflows/community-build.yml`：正式四平台原生构建与统一 Release 入口。

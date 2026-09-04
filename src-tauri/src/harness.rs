@@ -204,6 +204,7 @@ impl HarnessSupervisor {
     }
 
     pub fn start(&self) -> DesktopResult<HarnessStatus> {
+        self.harness_updates.ensure_startup_activation();
         let _operation = self.lock_operation()?;
         let current = self.status()?;
         if is_active_harness(&current) {
@@ -259,6 +260,7 @@ impl HarnessSupervisor {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
             if should_navigate_workbench(current.as_ref(), generation, &managed_url) {
+                clear_harness_session_cookies(&webview, &managed_url)?;
                 webview
                     .navigate(url)
                     .map_err(|error| DesktopError::Other(error.to_string()))?;
@@ -285,6 +287,9 @@ impl HarnessSupervisor {
             .get_window("main")
             .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
         let (position, size) = self.workbench_bounds(&main_window)?;
+        if let Some(shell) = self.app.get_webview("main") {
+            clear_harness_session_cookies(&shell, &managed_url)?;
+        }
         let builder =
             tauri::webview::WebviewBuilder::new("workbench", tauri::WebviewUrl::External(url))
                 .initialization_script(DISABLE_TEXT_ASSISTANCE_SCRIPT)
@@ -1233,6 +1238,7 @@ fn prepare_harness_profile(paths: &AppPaths, harness_dir: &Path, node: &Path) ->
     for package in [
         "deepseek-desktop-bundle",
         "deepseek-desktop-credentials-vault",
+        "dshmarket",
     ] {
         sync_profile_package(
             &harness_dir.join("node_modules").join(package),
@@ -1409,6 +1415,32 @@ fn workbench_geometry(
             (logical_size.height - top_inset - menu_height).max(0.0),
         ),
     )
+}
+
+fn is_harness_session_cookie(name: &str, domain: Option<&str>) -> bool {
+    domain == Some("127.0.0.1")
+        && name.strip_prefix("dsh-auth-").is_some_and(|suffix| {
+            suffix.len() == 43
+                && suffix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        })
+}
+
+fn clear_harness_session_cookies(webview: &tauri::Webview, url: &Url) -> DesktopResult<()> {
+    // Cookies are host-scoped, while each Harness generation uses a new port.
+    // Re-authenticate only this service's cookies; preserve all other page data.
+    for cookie in webview
+        .cookies_for_url(url.clone())
+        .map_err(|error| DesktopError::Other(error.to_string()))?
+    {
+        if is_harness_session_cookie(cookie.name(), cookie.domain()) {
+            webview
+                .delete_cookie(cookie)
+                .map_err(|error| DesktopError::Other(error.to_string()))?;
+        }
+    }
+    Ok(())
 }
 
 fn authenticate_harness(url: &str) -> DesktopResult<Url> {
@@ -1749,6 +1781,23 @@ impl Drop for WindowsJob {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_managed_browser_session_cookies_are_reset_between_harness_generations() {
+        let name = format!("dsh-auth-{}", "a".repeat(43));
+        assert!(super::is_harness_session_cookie(&name, Some("127.0.0.1")));
+        assert!(!super::is_harness_session_cookie(
+            &name,
+            Some("example.com")
+        ));
+        assert!(!super::is_harness_session_cookie(
+            "settings",
+            Some("127.0.0.1")
+        ));
+        assert!(!super::is_harness_session_cookie(
+            "dsh-auth-other",
+            Some("127.0.0.1")
+        ));
+    }
     use super::*;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};

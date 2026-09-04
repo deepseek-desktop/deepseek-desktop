@@ -1,0 +1,221 @@
+import { cp, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, join, relative, sep } from "node:path";
+
+function packagePath(nodeModules, name) { return join(nodeModules, ...name.split("/")); }
+
+export async function findWorkspacePackages(sourceRoot) {
+  const found = [];
+  async function visit(directory) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === ".git" || entry.name === "target" || entry.name === "dist") continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+      } else if (entry.isFile() && entry.name === "package.json") {
+        const manifest = JSON.parse(await readFile(path, "utf8"));
+        if (manifest.name) found.push({ directory, manifest });
+      }
+    }
+  }
+  await visit(sourceRoot);
+  return new Map(found.map(item => [item.manifest.name, item]));
+}
+
+export function findCliPackage(workspacePackages) {
+  const candidates = [];
+  for (const item of workspacePackages.values()) {
+    const dshEntry = typeof item.manifest.bin === "object" && typeof item.manifest.bin?.dsh === "string"
+      ? item.manifest.bin.dsh
+      : typeof item.manifest.bin === "string" && basename(item.manifest.bin) === "dsh"
+        ? item.manifest.bin
+        : null;
+    if (dshEntry) candidates.push({ ...item, entry: dshEntry.replace(/^\.\//u, "") });
+  }
+  if (candidates.length !== 1) {
+    throw new Error(`Harness must expose exactly one workspace package with bin.dsh, found ${candidates.map(item => item.manifest.name).join(", ") || "none"}`);
+  }
+  return candidates[0];
+}
+
+async function pathExists(path) {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function copyPackage(source, destination) {
+  const nestedNodeModules = join(source, "node_modules");
+  await mkdir(dirname(destination), { recursive: true });
+  await cp(source, destination, {
+    recursive: true,
+    dereference: true,
+    filter: path => path !== nestedNodeModules && !path.startsWith(`${nestedNodeModules}${sep}`)
+  });
+}
+
+function harnessDependencies(manifest) {
+  return new Set([
+    ...Object.keys(manifest.dependencies || {}),
+    ...Object.keys(manifest.optionalDependencies || {}),
+    ...Object.keys(manifest.peerDependencies || {})
+  ]);
+}
+
+async function restoreWorkspaceClosure(deploymentRoot, workspacePackages) {
+  const nodeModules = join(deploymentRoot, "node_modules");
+  const restored = [];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const manifests = [join(deploymentRoot, "package.json")];
+    for (const item of await packageDirectories(nodeModules)) {
+      const manifest = join(item.path, "package.json");
+      if (await pathExists(manifest)) manifests.push(manifest);
+    }
+    const dependencies = new Set();
+    for (const manifestPath of manifests) {
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      for (const dependency of harnessDependencies(manifest)) dependencies.add(dependency);
+    }
+    for (const dependency of [...dependencies].sort()) {
+      const workspacePackage = workspacePackages.get(dependency);
+      if (!workspacePackage) continue;
+      const destination = packagePath(nodeModules, dependency);
+      if (await pathExists(destination)) continue;
+      await copyPackage(workspacePackage.directory, destination);
+      restored.push(dependency);
+      changed = true;
+    }
+  }
+  return restored;
+}
+
+async function findSymlink(directory) {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    const metadata = await lstat(path);
+    if (metadata.isSymbolicLink()) return path;
+    if (metadata.isDirectory()) {
+      const nested = await findSymlink(path);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+async function materializePackageLinks(nodeModules) {
+  let link = await findSymlink(nodeModules);
+  while (link) {
+    const segments = relative(nodeModules, link).split(sep);
+    const binIndex = segments.lastIndexOf(".bin");
+    if (binIndex >= 0) {
+      await rm(join(nodeModules, ...segments.slice(0, binIndex + 1)), { recursive: true, force: true });
+    } else {
+      const source = await realpath(link);
+      await rm(link, { recursive: true, force: true });
+      await copyPackage(source, link);
+    }
+    link = await findSymlink(nodeModules);
+  }
+}
+
+async function packageDirectories(nodeModules) {
+  const packages = [];
+  for (const entry of await readdir(nodeModules, { withFileTypes: true })) {
+    if (entry.name === ".bin" || entry.name === ".pnpm" || entry.name === ".modules.yaml") continue;
+    const path = join(nodeModules, entry.name);
+    if (entry.name.startsWith("@") && entry.isDirectory()) {
+      for (const child of await readdir(path, { withFileTypes: true })) {
+        if (child.isDirectory() || child.isSymbolicLink()) {
+          packages.push({ name: `${entry.name}/${child.name}`, path: join(path, child.name) });
+        }
+      }
+    } else if (entry.isDirectory() || entry.isSymbolicLink()) {
+      packages.push({ name: entry.name, path });
+    }
+  }
+  return packages.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export async function mergeDesktopPackages(desktopDeployment, harnessDeployment) {
+  const sourceModules = join(desktopDeployment, "node_modules");
+  const destinationModules = join(harnessDeployment, "node_modules");
+  const merged = [];
+  for (const item of await packageDirectories(sourceModules)) {
+    const destination = packagePath(destinationModules, item.name);
+    if (await pathExists(destination)) continue;
+    await copyPackage(item.path, destination);
+    merged.push(item.name);
+  }
+  return merged;
+}
+
+export async function mergeDesktopClosure(desktopDeployment, harnessDeployment, roots) {
+  const sourceModules = join(desktopDeployment, "node_modules");
+  const destinationModules = join(harnessDeployment, "node_modules");
+  const visited = new Set();
+  const copied = [];
+  async function visit(name, required = true) {
+    if (visited.has(name)) return;
+    const destination = packagePath(destinationModules, name);
+    if (!roots.includes(name) && await pathExists(destination)) return;
+    const source = packagePath(sourceModules, name);
+    if (!await pathExists(join(source, "package.json"))) {
+      if (required) throw new Error(`Desktop dependency is missing: ${name}`);
+      return;
+    }
+    visited.add(name);
+    const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
+    // Peer services must come from the new Harness, never an older bundled core.
+    for (const peer of Object.keys(manifest.peerDependencies || {})) {
+      if (!await pathExists(packagePath(destinationModules, peer)) && !manifest.peerDependenciesMeta?.[peer]?.optional) {
+        throw new Error(`Candidate Harness peer is missing: ${peer}`);
+      }
+    }
+    await rm(destination, { recursive: true, force: true });
+    await copyPackage(source, destination);
+    copied.push(name);
+    for (const dependency of Object.keys(manifest.dependencies || {})) await visit(dependency);
+    for (const dependency of Object.keys(manifest.optionalDependencies || {})) await visit(dependency, false);
+  }
+  for (const name of roots) await visit(name);
+  return copied;
+}
+
+export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, destination, runHarnessPnpm) {
+  const manifestPath = join(sourceRoot, "python", "sdk-runtime", "package.json");
+  const lockPath = join(sourceRoot, "pnpm-lock.yaml");
+  const originalManifest = await readFile(manifestPath);
+  const originalLock = await readFile(lockPath);
+  try {
+    const manifest = JSON.parse(originalManifest.toString("utf8"));
+    if (typeof manifest.name !== "string" || manifest.name.trim() === "") {
+      throw new Error("Python SDK deployment manifest must declare a package name");
+    }
+    manifest.dependencies = { ...manifest.dependencies, [cli.manifest.name]: "workspace:^" };
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    runHarnessPnpm(["install", "--lockfile-only", "--ignore-scripts", "--config.auto-install-peers=false"], sourceRoot);
+    runHarnessPnpm(["install", "--frozen-lockfile", "--ignore-scripts", "--config.auto-install-peers=false"], sourceRoot);
+    await rm(destination, { recursive: true, force: true });
+    runHarnessPnpm([
+      "--filter", manifest.name, "deploy", "--legacy", "--prod",
+      "--config.node-linker=hoisted", "--config.auto-install-peers=false",
+      "--config.link-workspace-packages=true", destination
+    ], sourceRoot);
+    const restored = await restoreWorkspaceClosure(destination, workspacePackages);
+    await materializePackageLinks(join(destination, "node_modules"));
+    return restored;
+  } finally {
+    await writeFile(manifestPath, originalManifest);
+    await writeFile(lockPath, originalLock);
+  }
+}

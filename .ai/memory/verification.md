@@ -8,13 +8,17 @@
 
 - `desktop:package` 全链通过：87 项配置/发行协议测试、21 项 Vue 测试、19 项搜索协议测试、83 项 Rust 测试（另 1 项真实联网用例默认忽略）、Clippy、151 个三语 key、2 项 E2E、Harness smoke、macOS ARM64 应用与 DMG 构建及制品扫描。
 - `app:sync --check`、`harness:sync --check`、`release:smoke`、DMG `hdiutil verify` 和应用 `codesign --verify --deep --strict` 通过。源码只保留第三方 API、上游依赖/补丁标识及负向回归检查中的历史单词；项目自有配置按全新 Harness 契约实现，不包含旧配置检测、专项提示或迁移测试。
-- 本轮未替换本机安装的应用，也未运行 Windows/Linux 原生交互测试；此验证不代表候选内核升级成功，升级故障见下一节。
+- 命名改造未替换本机安装的应用，也未运行 Windows/Linux 原生交互测试；候选更新的独立修复验证见下一节。
 
-## Harness 仓库候选更新失败
+## Harness 仓库候选更新修复
 
-- 已在本机安装的 `v1.0.30` 实际执行准备操作：默认仓库候选 `76fda729799f` 下载、依赖安装和构建完成，但 smoke 在 readiness 前退出；未生成待切换版本，当前内置 `cd5ef8148158` 保持不变。
-- 保持统一窗口菜单的本地 `1.0.0` 成品重新通过真实设置按钮执行同一候选准备，仍在 smoke 阶段报 `Harness smoke closed stdout before readiness`。应用明确显示准备失败，暂存目录自动清理，版本目录为空，未创建 current/pending 指针；运行状态保持已就绪，并可返回原工作台。此次没有强行激活候选或替换已安装应用。
-- 仓库内隔离复现发现桌面扩展复制未形成完整依赖闭包，先缺少 `yaml`，补入后又暴露上游 peer 依赖与 profile 中插件解析缺失。尚未修复或完成最新内核激活，不把构建成功当作热更新验收。
+- 原故障发生于 `v1.0.30` 候选准备 smoke：源码构建后直接搬运目录、只复制顶层扩展，缺失 `yaml` 与上游 peer；后续还发现新版设置服务接口和 profile 插件注册变化。当前修复复用正式打包的生产部署 helper，解析真实 CLI 入口、补齐桌面传递依赖、保留候选自身核心服务，并适配公共设置服务。
+- macOS ARM64 隔离原生 debug `.app` 经 LaunchServices 启动，在真实设置页完成默认仓库检查与候选准备，生成 `0.1.2-rc.1` / `76fda729799fe9b3848dbe2c211d4b231032b81e` 待激活记录；全过程使用内置 Node `24.20.0` / ABI `137` 和 pnpm `11.24.0`。
+- 实测重启发现旧服务可能先于 pending 激活启动，故加入共享一次性门闩。修复后在应用关闭时将同一界面准备的 current 测试记录移回 pending，复测启动激活：日志顺序为先激活新版、后服务 readiness，实际子进程 Node 与 CLI 路径均来自新版候选目录。工作台正常加载，设置页显示 `0.1.2-rc.1`、`76fda729799f` 和已是最新版本；不以指针变化代替运行结果。
+- 通过设置页“恢复内置 Harness”并重新启动，实际返回 `0.1.2-alpha.1` / `cd5ef8148158`，工作台正常，current/pending 清除；关闭确认后应用退出。上述升级数据仅位于仓库内隔离目录，未切换用户当前内核。
+- 最终 `desktop:package` 全链通过：92 项配置/发行协议测试、21 项 Vue 测试、21 项搜索协议测试、84 项 Rust 测试（另 1 项真实联网测试默认忽略）、Clippy、151 个三语 key、2 项 E2E、Harness smoke、macOS ARM64 应用与 DMG 构建和交付扫描。DMG 经 `hdiutil verify`、`SHA256SUMS` 校验通过，应用经 `codesign --verify --deep --strict` 通过。
+- 最终 release 成品经复制后由 LaunchServices 启动，菜单、设置与关闭确认正常；成品不接受 debug 数据目录覆盖，因此及时退出，未在用户数据目录执行候选准备或切换。不把这次成品启动验证写成成品升级验收；完整升级/恢复证据来自上述隔离原生 debug 构建。未替换已安装应用，未发布。
+- 目标候选额外通过真实 HTML 与全部插件脚本 smoke；匿名回归覆盖桌面依赖闭包、缺失依赖与 peer、输入文件恢复、模型切换、路由歧义与凭据隔离。菜单统一位置未改动，没有使用真实 Provider 密钥发起对话或搜索。Windows/Linux 仓库更新交互本轮未实测。
 
 ## macOS Harness 仓库代理修复
 

@@ -5,6 +5,15 @@ import { test } from "node:test";
 
 const root = resolve(import.meta.dirname, "../..");
 
+test("workbench startup waits for one candidate activation before starting a process", async () => {
+  const harness = await readFile(resolve(root, "src-tauri/src/harness.rs"), "utf8");
+  const updater = await readFile(resolve(root, "src-tauri/src/harness_update.rs"), "utf8");
+  assert.match(harness, /pub fn start\(&self\)[^{]*\{\s*self\.harness_updates\.ensure_startup_activation\(\);\s*let _operation/u);
+  assert.match(updater, /startup_activation: Once/u);
+  assert.match(updater, /startup_activation\.call_once\(\|\| \{[\s\S]*?apply_pending_on_startup\(\)/u);
+  assert.match(updater, /thread::spawn\(move \|\| \{\s*manager\.ensure_startup_activation\(\);\s*manager\.check_automatically\(\)/u);
+});
+
 test("isolated workbench links reach the Rust navigation allowlist", async () => {
   const [app, lib, menu, harness] = await Promise.all([
     readFile(resolve(root, "src/App.vue"), "utf8"),

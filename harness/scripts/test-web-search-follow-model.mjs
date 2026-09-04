@@ -10,7 +10,7 @@ const moduleUrl = pathToFileURL(resolve(
   preparedRoot,
   "node_modules/@deepseek-ai/dsh-web-search-follow-model/index.js"
 )).href;
-const { FollowModelSearchEngine } = await import(moduleUrl);
+const { FollowModelSearchEngine, declaredSearchRoutes } = await import(moduleUrl);
 const secretA = "secret-a-for-test";
 const secretB = "secret-b-for-test";
 
@@ -38,6 +38,43 @@ function createEngine({ routes, fetchImpl, credentials = { PROVIDER_A_KEY: secre
   engine.registerRouteResolver(({ provider, model }) => routes[`${provider}/${model}`]);
   return { engine, resolvedRefs };
 }
+
+test("new Harness settings resolve explicit provider routes without overriding registered adapters", async () => {
+  const sections = [{ value: { providers: {
+    "provider-a": { baseURL: "https://provider-a.test/v1", apiKeyEnv: "PROVIDER_A_KEY", api: "openai-completions", models: [
+      { id: "model-a", api: "openai-responses", baseURL: "https://provider-a.test/alternate" }
+    ] },
+    "provider-b": { baseURL: "https://provider-b.test/v1", apiKeyEnv: "PROVIDER_B_KEY", api: "openai-completions" }
+  } } }];
+  const observed = [];
+  const engine = new FollowModelSearchEngine({
+    resolveDeclaredRoute: selection => declaredSearchRoutes(sections, selection),
+    resolveCredential: ref => ({ PROVIDER_A_KEY: secretA, PROVIDER_B_KEY: secretB })[ref],
+    fetch: async (url, options) => {
+      observed.push([String(url), options.headers.authorization]);
+      return jsonResponse({ output_text: "answer", choices: [{ message: { content: "answer" } }] });
+    }
+  });
+  await engine.search(agent(), { query: "first" });
+  await engine.search(agent("provider-b", "model-b"), { query: "second" });
+  assert.deepEqual(observed, [
+    ["https://provider-a.test/alternate/responses", `Bearer ${secretA}`],
+    ["https://provider-b.test/v1/chat/completions", `Bearer ${secretB}`]
+  ]);
+  await assert.rejects(engine.search(agent("unknown", "unknown"), { query: "no probe" }), { code: "WEB_FOLLOW_MODEL_CAPABILITY_MISSING" });
+  assert.equal(observed.length, 2);
+  engine.registerRouteResolver(selection => ({ ...selection, endpoint: "https://adapter.test/v1", apiProtocol: "openai-completions", credentialRef: "PROVIDER_A_KEY" }));
+  await engine.search(agent(), { query: "adapter wins" });
+  assert.equal(observed.at(-1)[0], "https://adapter.test/v1/chat/completions");
+});
+
+test("declared routes reject ambiguity and incomplete connection metadata", async () => {
+  const selection = { provider: "provider-a", model: "model-a" };
+  assert.deepEqual(declaredSearchRoutes([{ value: { providers: { "provider-a": { baseURL: "https://provider-a.test" } } } }], selection), []);
+  const section = { value: { providers: { "provider-a": { baseURL: "https://provider-a.test", apiKeyEnv: "PROVIDER_A_KEY", api: "openai-responses" } } } };
+  const engine = new FollowModelSearchEngine({ resolveDeclaredRoute: route => declaredSearchRoutes([section, section], route) });
+  await assert.rejects(engine.resolveRoute(agent()), { code: "WEB_FOLLOW_MODEL_ROUTE_AMBIGUOUS" });
+});
 
 test("prepared Harness carries the extended outer budget without a duplicate Provider search control", async () => {
   const [bundle, modelsSettingsUi, pluginsSettingsUi] = await Promise.all([

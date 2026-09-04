@@ -3,7 +3,7 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, Once};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -219,6 +219,7 @@ pub struct HarnessUpdateManager {
     status: Mutex<HarnessUpdateStatus>,
     available: Mutex<Option<AvailableHarness>>,
     operation: Mutex<()>,
+    startup_activation: Once,
 }
 
 impl HarnessStore {
@@ -482,6 +483,7 @@ impl HarnessUpdateManager {
             }),
             available: Mutex::new(None),
             operation: Mutex::new(()),
+            startup_activation: Once::new(),
             config,
         }))
     }
@@ -791,13 +793,21 @@ impl HarnessUpdateManager {
     pub fn start_startup_maintenance(self: &Arc<Self>) {
         let manager = Arc::clone(self);
         thread::spawn(move || {
-            if let Err(error) = manager.apply_pending_on_startup() {
-                manager.diagnostics.append(
+            manager.ensure_startup_activation();
+            manager.check_automatically();
+        });
+    }
+
+    pub fn ensure_startup_activation(&self) {
+        // Both startup paths may arrive first. Neither may spawn an old core
+        // while the pending candidate is still being verified and activated.
+        self.startup_activation.call_once(|| {
+            if let Err(error) = self.apply_pending_on_startup() {
+                self.diagnostics.append(
                     "harness-update",
                     &format!("startup Harness activation failed: {error}"),
                 );
             }
-            manager.check_automatically();
         });
     }
 
@@ -966,42 +976,11 @@ impl HarnessUpdateManager {
             }
             let tools = staging.join("tools");
             prepare_repository_tool_wrappers(&tools, &current.node, &pnpm_cli)?;
-            let node = current.node.to_string_lossy().into_owned();
-            let pnpm = pnpm_cli.to_string_lossy().into_owned();
-            run_repository_command(
-                &current.node,
-                &[&pnpm, "install", "--frozen-lockfile"],
-                Some(&source),
-                REPOSITORY_COMMAND_TIMEOUT,
-                Some(&tools),
-                false,
-                None,
-            )?;
-            run_repository_command(
-                Path::new(&node),
-                &[&pnpm, "run", "build"],
-                Some(&source),
-                REPOSITORY_COMMAND_TIMEOUT,
-                Some(&tools),
-                false,
-                None,
-            )?;
-
-            let harness_version = read_package_version(&source.join("package.json"))?;
             let harness_dir = candidate.join("harness");
             fs::create_dir_all(&candidate)?;
-            fs::rename(&source, &harness_dir)?;
-            let support_packages = [
-                "deepseek-desktop-bundle",
-                "deepseek-desktop-credentials-vault",
-                "dshmarket",
-                "pnpm",
-            ];
-            for package in support_packages {
-                let from = current.harness_dir.join("node_modules").join(package);
-                let to = harness_dir.join("node_modules").join(package);
-                replace_with_directory_copy(&from, &to)?;
-            }
+            let prepared =
+                deploy_repository_harness(&staging, &source, &harness_dir, &current, &tools)?;
+            let harness_version = prepared.version;
 
             let node_file = if cfg!(windows) { "node.exe" } else { "node" };
             let staged_node = candidate.join(node_file);
@@ -1035,7 +1014,7 @@ impl HarnessUpdateManager {
                 harness_version,
                 harness_commit: release.commit.clone(),
                 target: env!("DEEPSEEK_DESKTOP_TARGET").to_owned(),
-                entry: "apps/cli/lib/bin.js".to_owned(),
+                entry: prepared.entry,
                 node_file: node_file.to_owned(),
                 node_version,
                 node_module_abi,
@@ -1848,40 +1827,52 @@ fn read_package_version(path: &Path) -> DesktopResult<String> {
     Ok(version.to_owned())
 }
 
-fn replace_with_directory_copy(source: &Path, destination: &Path) -> DesktopResult<()> {
-    if !source.is_dir() {
-        return Err(DesktopError::HarnessArtifactMissing(
-            source.display().to_string(),
-        ));
-    }
-    if let Ok(metadata) = fs::symlink_metadata(destination) {
-        if metadata.file_type().is_symlink() || metadata.is_file() {
-            fs::remove_file(destination)?;
-        } else {
-            fs::remove_dir_all(destination)?;
-        }
-    }
-    copy_directory(source, destination)
+#[derive(Deserialize)]
+struct RepositoryDeployment {
+    version: String,
+    entry: String,
 }
 
-fn copy_directory(source: &Path, destination: &Path) -> DesktopResult<()> {
-    fs::create_dir_all(destination)?;
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = destination.join(entry.file_name());
-        let metadata = fs::metadata(&from)?;
-        if metadata.is_dir() {
-            copy_directory(&from, &to)?;
-        } else if metadata.is_file() {
-            fs::copy(&from, &to)?;
-        } else {
-            return Err(DesktopError::InvalidConfiguration(
-                "Harness support package contains an unsupported file".to_owned(),
-            ));
-        }
-    }
-    Ok(())
+fn deploy_repository_harness(
+    staging: &Path,
+    source: &Path,
+    destination: &Path,
+    current: &HarnessLocation,
+    tools: &Path,
+) -> DesktopResult<RepositoryDeployment> {
+    let scripts = staging.join("scripts");
+    fs::create_dir_all(scripts.join("lib"))?;
+    fs::create_dir_all(scripts.join("harness-update"))?;
+    let entry = scripts.join("harness-update/prepare-repository.mjs");
+    fs::write(
+        &entry,
+        include_str!("../../scripts/harness-update/prepare-repository.mjs"),
+    )?;
+    fs::write(
+        scripts.join("lib/harness-deployment.mjs"),
+        include_str!("../../scripts/lib/harness-deployment.mjs"),
+    )?;
+    let result = staging.join("deployment.json");
+    run_repository_command(
+        &current.node,
+        &[
+            &entry.to_string_lossy(),
+            &source.to_string_lossy(),
+            &destination.to_string_lossy(),
+            &current.harness_dir.to_string_lossy(),
+            &result.to_string_lossy(),
+        ],
+        Some(source),
+        REPOSITORY_COMMAND_TIMEOUT,
+        Some(tools),
+        false,
+        None,
+    )?;
+    let deployment: RepositoryDeployment = serde_json::from_slice(&fs::read(result)?)?;
+    Version::parse(&deployment.version)
+        .map_err(|error| DesktopError::InvalidConfiguration(error.to_string()))?;
+    validate_relative_file(&deployment.entry)?;
+    Ok(deployment)
 }
 
 fn read_response_limited(
