@@ -8,7 +8,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
-- Desktop 更新摘要使用锁定的 markdown-it 渲染，关闭原始 HTML、外部图片请求及非 HTTP(S) 链接；点击网页链接走专用原生校验命令，保留同窗设置和原有官方 Release 下载入口。长表格/代码块在摘要内滚动，不向 Harness 开放 IPC。见 ADR-016。
+- Desktop 更新摘要的 API Markdown 使用锁定的 markdown-it 渲染；备用 Atom HTML 只重建排版白名单，不执行原始 HTML、不请求外部图片，也不允许非 HTTP(S) 链接。保留有界完整正文，不按字符截断 Markdown；网页链接走专用原生校验命令，同窗设置和原有官方下载入口不变。见 ADR-016。
 
 - 项目自有文案、配置、命令、路径、IPC、状态和更新元数据统一使用 Harness，按全新契约开发，不实现旧配置兼容、迁移或专项提示。保留常规配置校验与损坏文件保护。第三方 API、锁定依赖与补丁上下文保留真实标识，详见 ADR-014。
 
@@ -36,7 +36,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - GitHub Release 正文根据当前 Tag 和已汇总的完整公开资产集合生成直接下载链接；站点自身的 `Assets` 折叠状态不作为用户下载入口前提。
 - 本机只执行源码验证、E2E、Harness smoke 和当前 macOS 架构打包/启动测试；不以 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 作为正式发布前提。
 - 四平台统一使用工具链 lock 中的 Node `24.20.0` / ABI `137`，Runner 不得依赖全局版本漂移；内部 BUILD-INFO 用于矩阵汇总核验但不公开发布。
-- Harness 更新只写入应用数据目录；仓库模式复用内置 Node/pnpm 拉取、构建并 smoke 候选，可选签名制品模式继续执行签名、兼容和受限解压校验，两者共用原子切换与自动回滚。安装包内置 Harness 始终作为最终恢复基线。设置 schema 只保存可选仓库覆盖值，切换仓库会使旧候选失效，诊断导出不包含仓库地址。
+- Harness 更新只写入应用数据目录；仓库模式复用内置 Node/pnpm 拉取、构建并 smoke 候选，可选签名制品模式继续执行签名、兼容和受限解压校验，两者共用原子切换与自动回滚。安装包内置 Harness 始终作为最终恢复基线。设置 schema 只保存可选仓库覆盖值，切换仓库会使旧候选失效并清空界面中的候选/待安装版本和进度，当前运行版本不变；诊断导出不包含仓库地址。
 - 仓库候选与正式打包共用生产 deploy helper，不把完整源码 checkout 当作安装目录；CLI 入口和版本按 `bin.dsh` 声明识别。桌面扩展随传递依赖装配，核心 peer 由新 Harness 提供；市场和搜索扩展适配公共设置服务的新接口，未知模型路由不盲猜。工作台跨启动代次导航前仅重置受管 Harness 认证 Cookie，避免未经桌面补丁处理的仓库积累旧 Cookie；同代次设置切换不清理页面数据。详见 ADR-015。
 - macOS 仓库 HTTP(S) 检查和克隆在没有显式环境代理时，通过 CFNetwork 按仓库 URL 继承系统静态代理与绕过规则；不修改全局 Git 或网络设置。Git 配置优先，PAC、SSH 和 Windows/Linux 保持既有行为。仓库检查超时单独提示网络/代理原因，并终止 Git 辅助进程。
 - 清单反回放在检查阶段只做校验，接受记录直到制品真正暂存成功才落盘；「恢复内置 Harness」同时清除接受历史，使撤回后同版本换 commit 重新签发仍可安装。

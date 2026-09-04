@@ -549,8 +549,7 @@ impl HarnessUpdateManager {
         self.store.discard_pending()?;
         *self.lock_available()? = None;
         let settings = self.settings.update(settings)?;
-        let status = self.status()?;
-        self.set_status(status)?;
+        self.set_status(repository_changed_status(self.status()?))?;
         self.diagnostics
             .append("harness-update", "Harness repository selection changed");
         Ok(settings)
@@ -2127,6 +2126,27 @@ fn read_pointer(path: &Path) -> DesktopResult<Option<HarnessPointer>> {
     }
 }
 
+fn repository_changed_status(current: HarnessUpdateStatus) -> HarnessUpdateStatus {
+    HarnessUpdateStatus {
+        phase: if current.pinned_version.is_some() {
+            HarnessUpdatePhase::Pinned
+        } else {
+            HarnessUpdatePhase::Idle
+        },
+        message: if current.pinned_version.is_some() {
+            "pinned"
+        } else {
+            "idle"
+        }
+        .to_owned(),
+        available_version: None,
+        pending_version: None,
+        downloaded_bytes: 0,
+        total_bytes: None,
+        ..current
+    }
+}
+
 fn version_directory(version: &str, commit: &str) -> DesktopResult<String> {
     Version::parse(version)
         .map_err(|error| DesktopError::InvalidConfiguration(error.to_string()))?;
@@ -2312,6 +2332,37 @@ mod tests {
             canonical_repository_identity("https://github.com/example/harness.git").unwrap(),
             canonical_repository_identity("https://github.com/example/harness/").unwrap()
         );
+    }
+
+    #[test]
+    fn repository_change_clears_candidate_ui_without_changing_the_running_version() {
+        for phase in [HarnessUpdatePhase::Available, HarnessUpdatePhase::Staged] {
+            let status = repository_changed_status(HarnessUpdateStatus {
+                phase,
+                current_version: "1.0.0".to_owned(),
+                current_commit: "a".repeat(40),
+                available_version: Some("1.1.0".to_owned()),
+                pending_version: Some("1.1.0".to_owned()),
+                downloaded_bytes: 100,
+                total_bytes: Some(100),
+                message: "restart-to-apply".to_owned(),
+                ..HarnessUpdateStatus::default()
+            });
+            assert_eq!(status.phase, HarnessUpdatePhase::Idle);
+            assert_eq!(status.message, "idle");
+            assert_eq!(status.current_version, "1.0.0");
+            assert_eq!(status.current_commit, "a".repeat(40));
+            assert!(status.available_version.is_none());
+            assert!(status.pending_version.is_none());
+            assert_eq!(status.downloaded_bytes, 0);
+            assert!(status.total_bytes.is_none());
+            let pinned = repository_changed_status(HarnessUpdateStatus {
+                pinned_version: Some("1.0.0".to_owned()),
+                ..status
+            });
+            assert_eq!(pinned.phase, HarnessUpdatePhase::Pinned);
+            assert_eq!(pinned.message, "pinned");
+        }
     }
 
     #[test]

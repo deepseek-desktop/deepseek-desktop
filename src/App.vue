@@ -674,7 +674,7 @@ onBeforeUnmount(() => {
             <div>
               <dt>{{ t("update.summary") }}</dt>
               <dd>
-                <ReleaseNotes v-if="update.releaseNotes?.trim()" :notes="update.releaseNotes" :release-tag="update.releaseTag || ''" />
+                <ReleaseNotes v-if="update.releaseNotes?.trim()" :notes="update.releaseNotes" :format="update.releaseNotesFormat" :release-tag="update.releaseTag || ''" />
                 <span v-else>{{ t("update.noSummary") }}</span>
               </dd>
             </div>

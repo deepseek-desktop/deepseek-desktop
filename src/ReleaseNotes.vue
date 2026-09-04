@@ -5,12 +5,13 @@ import { appConfig } from "./app-config";
 import { openDesktopUpdateLink } from "./desktop";
 import { releaseNoteUrl, renderReleaseNotes } from "./release-notes";
 
-const props = defineProps<{ notes: string; releaseTag: string }>();
+const props = defineProps<{ notes: string; releaseTag: string; format?: "markdown" | "html" }>();
 const { t } = useI18n();
 const openFailed = ref(false);
 const html = computed(() => renderReleaseNotes(
   props.notes,
-  `${appConfig.repository}/releases/tag/${encodeURIComponent(props.releaseTag)}`
+  `${appConfig.repository}/releases/tag/${encodeURIComponent(props.releaseTag)}`,
+  props.format
 ));
 watch(() => props.notes, () => { openFailed.value = false; });
 

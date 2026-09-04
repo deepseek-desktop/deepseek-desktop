@@ -38,7 +38,7 @@ const listeners = vi.hoisted(() => ({
 vi.mock("./desktop", () => ({
   checkForUpdates: vi.fn(async () => ({
     enabled: false, channel: "community", currentVersion: "1.0.0", availableVersion: null,
-    releaseTag: null, publishedAt: null, releaseNotes: null, prerelease: false, message: "up-to-date"
+    releaseTag: null, publishedAt: null, releaseNotes: null, releaseNotesFormat: "markdown", prerelease: false, message: "up-to-date"
   })),
   checkHarnessUpdate: vi.fn(async () => ({
     enabled: true, phase: "available", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
@@ -141,6 +141,7 @@ describe(`${appConfig.productName} shell`, () => {
       releaseTag: null,
       publishedAt: null,
       releaseNotes: null,
+      releaseNotesFormat: "markdown",
       prerelease: false,
       message: "up-to-date"
     });
@@ -430,6 +431,7 @@ describe(`${appConfig.productName} shell`, () => {
       releaseTag: "v1.1.0-beta.1",
       publishedAt: "2026-08-30T10:00:00Z",
       releaseNotes: "# Community release\n\nA **tested** community release.\n\n- Fixed update notes",
+      releaseNotesFormat: "markdown",
       prerelease: true,
       message: "update-available"
     });
@@ -452,7 +454,7 @@ describe(`${appConfig.productName} shell`, () => {
   it.each([null, "   "])("keeps the empty-summary fallback for %s notes", async releaseNotes => {
     vi.mocked(checkForUpdates).mockResolvedValue({
       enabled: false, channel: "community", currentVersion: "1.0.0", availableVersion: "1.1.0",
-      releaseTag: "v1.1.0", publishedAt: null, releaseNotes, prerelease: true, message: "update-available"
+      releaseTag: "v1.1.0", publishedAt: null, releaseNotes, releaseNotesFormat: "markdown", prerelease: true, message: "update-available"
     });
     const wrapper = mount(App, { global: { plugins: [i18n] } });
     await flushPromises();

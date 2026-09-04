@@ -64,6 +64,38 @@ describe("release notes", () => {
     }
   });
 
+  it("preserves Atom formatting without inserting publisher HTML or attributes", () => {
+    const source = `<div class="markdown-body"><h1 id="location">Release &amp; fixes</h1>
+      <p><strong>Harness</strong> <code>&lt;script&gt;</code></p><ul><li>First</li></ul>
+      <table style="position:fixed"><tr><td>macOS</td></tr></table>
+      <a href="/downloads/app.dmg" onclick="bad()">Download</a>
+      <img src="https://tracker.example/pixel" alt="Image text" onerror="bad()">
+      <script>bad()</script><iframe src="https://tracker.example/frame"></iframe>
+      <svg><a href="https://tracker.example">SVG link</a></svg>
+      <math><mtext><table><mglyph><style><!--</style><img title="--><img src=x onerror=bad()>"></math>
+      <form><input autofocus><button>Submit</button></form>
+      <a href="java&#x73;cript:bad()">unsafe</a><a href="file:///etc/passwd">file</a>
+      <a href="https://user:password@example.com">credentials</a></div>`;
+    const content = document.createElement("div");
+    content.innerHTML = renderReleaseNotes(source, "https://example.com/releases/tag/v1.0.0", "html");
+    expect(content.querySelector("h1")?.textContent).toBe("Release & fixes");
+    expect(content.querySelector("ul li")?.textContent).toBe("First");
+    expect(content.querySelector(".update-notes-table td")?.textContent).toBe("macOS");
+    expect(content.querySelector("code")?.textContent).toBe("<script>");
+    expect(content.querySelector("script,style,iframe,svg,math,img,input,form,[id],[style],[onclick],[onerror]")).toBeNull();
+    expect([...content.querySelectorAll("a")].map(link => link.href)).toEqual(["https://example.com/downloads/app.dmg"]);
+    expect(content.textContent).toContain("Image text");
+  });
+
+  it("uses the same external-link action for Atom notes", async () => {
+    const wrapper = mount(ReleaseNotes, {
+      props: { notes: '<p><a href="https://example.com/notes"><b>Details</b></a></p>', format: "html", releaseTag: "v1.0.0" },
+      global: { plugins: [i18n] }
+    });
+    await wrapper.get("b").trigger("click");
+    expect(openDesktopUpdateLink).toHaveBeenCalledWith("https://example.com/notes");
+  });
+
   it("opens clicked and middle-clicked links externally without navigating the Shell", async () => {
     const wrapper = mount(ReleaseNotes, {
       props: { notes: "[**Details**](https://example.com/notes)", releaseTag: "v1.0.0" },

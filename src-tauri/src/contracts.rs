@@ -105,8 +105,17 @@ pub struct UpdateStatus {
     pub release_tag: Option<String>,
     pub published_at: Option<String>,
     pub release_notes: Option<String>,
+    pub release_notes_format: ReleaseNotesFormat,
     pub prerelease: bool,
     pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReleaseNotesFormat {
+    #[default]
+    Markdown,
+    Html,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]

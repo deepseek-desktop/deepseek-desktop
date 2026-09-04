@@ -62,6 +62,7 @@ export interface UpdateStatus {
   releaseTag: string | null;
   publishedAt: string | null;
   releaseNotes: string | null;
+  releaseNotesFormat: "markdown" | "html";
   prerelease: boolean;
   message: string;
 }

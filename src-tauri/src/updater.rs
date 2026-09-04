@@ -12,12 +12,11 @@ use tauri::AppHandle;
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
 
-use crate::contracts::{DesktopSettings, UpdateStatus};
+use crate::contracts::{DesktopSettings, ReleaseNotesFormat, UpdateStatus};
 use crate::error::{DesktopError, DesktopResult};
 
 const CHECK_INTERVAL: TimeDelta = TimeDelta::hours(24);
 const MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
-const MAX_RELEASE_NOTES_CHARS: usize = 1_200;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct GithubRepository {
@@ -33,6 +32,8 @@ struct GithubRelease {
     prerelease: bool,
     published_at: Option<String>,
     body: Option<String>,
+    #[serde(skip)]
+    notes_format: ReleaseNotesFormat,
     #[serde(default)]
     assets: Vec<GithubAsset>,
 }
@@ -56,6 +57,7 @@ struct ReleaseCandidate {
     prerelease: bool,
     published_at: DateTime<Utc>,
     notes: Option<String>,
+    notes_format: ReleaseNotesFormat,
 }
 
 pub async fn check(app: &AppHandle, settings: &DesktopSettings) -> DesktopResult<UpdateStatus> {
@@ -151,6 +153,7 @@ async fn check_signed_update(
         release_tag: None,
         published_at: None,
         release_notes: None,
+        release_notes_format: ReleaseNotesFormat::Markdown,
         prerelease: false,
         message: if update.is_some() {
             "update-available"
@@ -386,7 +389,8 @@ fn feed_entry_to_release(entry: FeedEntry, repository: &GithubRepository) -> Opt
         draft: false,
         prerelease: !version.pre.is_empty(),
         published_at: entry.updated,
-        body: sanitize_notes(Some(html_summary(&content))),
+        body: sanitize_notes(Some(content.clone())),
+        notes_format: ReleaseNotesFormat::Html,
         assets: release_assets_from_html(repository, &tag_name, &content),
     })
 }
@@ -424,25 +428,6 @@ fn release_assets_from_html(
     assets
 }
 
-fn html_summary(content: &str) -> String {
-    let mut output = String::new();
-    let mut in_tag = false;
-    for character in content.chars() {
-        match character {
-            '<' => in_tag = true,
-            '>' => {
-                in_tag = false;
-                if !output.ends_with(' ') && !output.ends_with('\n') {
-                    output.push(' ');
-                }
-            }
-            _ if !in_tag => output.push(character),
-            _ => {}
-        }
-    }
-    output
-}
-
 fn select_release(
     releases: Vec<GithubRelease>,
     settings: &DesktopSettings,
@@ -476,6 +461,7 @@ fn select_release(
         release_tag: Some(candidate.tag),
         published_at: Some(candidate.published_at.to_rfc3339()),
         release_notes: candidate.notes,
+        release_notes_format: candidate.notes_format,
         prerelease: candidate.prerelease,
         message: if ignored {
             "update-ignored"
@@ -497,6 +483,7 @@ fn to_candidate(release: GithubRelease) -> Option<ReleaseCandidate> {
         prerelease: release.prerelease,
         published_at,
         notes: sanitize_notes(release.body),
+        notes_format: release.notes_format,
     })
 }
 
@@ -535,8 +522,7 @@ fn has_complete_assets(assets: &[GithubAsset]) -> bool {
 fn sanitize_notes(notes: Option<String>) -> Option<String> {
     let notes = notes?
         .chars()
-        .filter(|character| !character.is_control() || matches!(character, '\n' | '\t'))
-        .take(MAX_RELEASE_NOTES_CHARS)
+        .filter(|character| !character.is_control() || matches!(character, '\n' | '\r' | '\t'))
         .collect::<String>();
     let notes = notes.trim();
     (!notes.is_empty()).then(|| notes.to_owned())
@@ -551,6 +537,7 @@ fn empty_status(settings: &DesktopSettings, message: &str) -> UpdateStatus {
         release_tag: None,
         published_at: None,
         release_notes: None,
+        release_notes_format: ReleaseNotesFormat::Markdown,
         prerelease: false,
         message: message.to_owned(),
     }
@@ -587,6 +574,7 @@ mod tests {
             prerelease,
             published_at: Some(published_at.to_owned()),
             body: Some("Release notes".to_owned()),
+            notes_format: ReleaseNotesFormat::Markdown,
             assets: [
                 "DeepSeek.Desktop_1.0.0_aarch64.dmg",
                 "DeepSeek.Desktop_1.0.0_x64.dmg",
@@ -724,9 +712,29 @@ mod tests {
         assert_eq!(releases[0].tag_name, "v1.2.3");
         assert!(!releases[0].prerelease);
         assert!(has_complete_assets(&releases[0].assets));
-        assert!(releases[0].body.as_deref().is_some_and(|notes| {
-            notes.contains("A complete release") && !notes.contains("<p>")
-        }));
+        assert!(
+            releases[0]
+                .body
+                .as_deref()
+                .is_some_and(|notes| { notes.contains("<p>A complete release.</p>") })
+        );
+        let status = select_release(releases, &DesktopSettings::default(), "1.0.0");
+        assert_eq!(status.release_notes_format, ReleaseNotesFormat::Html);
+    }
+
+    #[test]
+    fn preserves_long_notes_and_ignores_remote_format_overrides() {
+        let notes = format!(
+            "# Release\n\n{}\n\n[Details](https://example.com/notes)",
+            "A paragraph.\n\n".repeat(150)
+        );
+        let mut candidate = release("v1.1.0", false, "2026-09-04T10:00:00Z");
+        candidate.body = Some(notes.clone());
+        let status = select_release(vec![candidate], &DesktopSettings::default(), "1.0.0");
+        assert_eq!(status.release_notes.as_deref(), Some(notes.as_str()));
+        assert_eq!(status.release_notes_format, ReleaseNotesFormat::Markdown);
+        let remote: GithubRelease = serde_json::from_str(r#"{"tag_name":"v1.1.0","draft":false,"prerelease":false,"published_at":null,"body":"<h1>raw</h1>","notes_format":"html"}"#).unwrap();
+        assert_eq!(remote.notes_format, ReleaseNotesFormat::Markdown);
     }
 
     #[test]

@@ -100,6 +100,7 @@ export async function checkForUpdates(silent = false): Promise<UpdateStatus> {
       releaseTag: null,
       publishedAt: null,
       releaseNotes: null,
+      releaseNotesFormat: "markdown",
       prerelease: false,
       message: "updates-disabled"
     };
