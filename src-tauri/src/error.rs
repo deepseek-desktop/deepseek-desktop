@@ -15,6 +15,8 @@ pub enum DesktopError {
     RuntimeStartRejected(String),
     #[error("runtime is not ready")]
     RuntimeNotReady,
+    #[error("Runtime repository command timed out")]
+    RepositoryCommandTimedOut,
     #[error("configuration is invalid: {0}")]
     InvalidConfiguration(String),
     #[error("credential vault operation failed: {0}")]

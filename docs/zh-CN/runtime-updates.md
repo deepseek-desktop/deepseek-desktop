@@ -32,6 +32,8 @@ https://github.com/deepseek-ai/deepseek-harness.git
 
 离线环境可以长期使用当前或内置 Runtime。断网、Git 不可用、依赖下载失败、构建失败或启动验证失败只会记录脱敏状态，不会影响当前 Runtime。诊断包包含当前版本、commit、来源和更新阶段，但不包含仓库地址、Git 凭据、令牌或模型密钥。
 
+如果提示“Runtime 仓库连接超时”，请检查网络或代理，再点击“检查 Runtime”。macOS 会为仓库检查和拉取自动使用系统已开启的静态代理，并遵守系统绕过规则；已有 Git 或环境代理设置仍优先，不需要修改全局 Git 配置。PAC 自动代理、Windows/Linux 以及依赖下载继续使用各工具已有的网络配置。检查失败不会替换或停止当前 Runtime。
+
 ## 构建配置
 
 ```dotenv

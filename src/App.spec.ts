@@ -2,7 +2,7 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import { appConfig } from "./app-config";
-import type { DesktopSettings, RuntimeStatus } from "./contracts";
+import type { DesktopSettings, RuntimeStatus, RuntimeUpdateStatus } from "./contracts";
 import { checkForUpdates, checkRuntimeUpdate, downloadRuntimeUpdate, exportDiagnostics, exportLogs, ignoreDesktopUpdate, openDesktopMenu, openDesktopRelease, openRepository, openWorkbench, saveSettings, startRuntime } from "./desktop";
 import { i18n } from "./i18n";
 
@@ -29,6 +29,7 @@ const runtime: RuntimeStatus = {
 };
 
 const listeners = vi.hoisted(() => ({
+  runtimeUpdate: undefined as ((status: RuntimeUpdateStatus) => void) | undefined,
   locale: undefined as ((locale: "zh-CN" | "zh-TW" | "en-US") => void) | undefined,
   settingsView: undefined as ((view: "runtime" | "diagnostics" | "update" | "desktop-update" | "about") => void) | undefined,
   surface: undefined as ((surface: "settings" | "workbench") => void) | undefined
@@ -64,7 +65,10 @@ vi.mock("./desktop", () => ({
   })),
   getSettings: vi.fn(async () => ({ ...settings })),
   onRuntimeStatus: vi.fn(async () => () => undefined),
-  onRuntimeUpdateStatus: vi.fn(async () => () => undefined),
+  onRuntimeUpdateStatus: vi.fn(async (handler) => {
+    listeners.runtimeUpdate = handler;
+    return () => undefined;
+  }),
   onDesktopLocale: vi.fn(async (handler) => {
     listeners.locale = handler;
     return () => undefined;
@@ -126,6 +130,7 @@ describe(`${appConfig.productName} shell`, () => {
     listeners.settingsView = undefined;
     listeners.surface = undefined;
     listeners.locale = undefined;
+    listeners.runtimeUpdate = undefined;
     delete (window as Window & { __DEEPSEEK_DESKTOP_MENU_ONLY__?: boolean }).__DEEPSEEK_DESKTOP_MENU_ONLY__;
     vi.mocked(checkForUpdates).mockResolvedValue({
       enabled: false,
@@ -161,6 +166,25 @@ describe(`${appConfig.productName} shell`, () => {
     expect(wrapper.text()).toContain("Runtime");
     expect(wrapper.text()).toContain("Diagnostics");
     expect(wrapper.get('[role="menubar"]').text()).toContain("FileEditViewWindowHelp");
+  });
+
+  it.each([
+    ["zh-CN", "Runtime 仓库连接超时，请检查网络或代理后重试。当前版本未受影响。"],
+    ["zh-TW", "Runtime 倉庫連線逾時，請檢查網路或代理後重試。目前版本未受影響。"],
+    ["en-US", "The Runtime repository connection timed out. Check your network or proxy and retry. The current version was not changed."]
+  ] as const)("explains a repository timeout in %s without restarting Runtime", async (locale, message) => {
+    settings.locale = locale;
+    const wrapper = mount(App, { global: { plugins: [i18n] } });
+    await flushPromises();
+    listeners.settingsView?.("update");
+    listeners.runtimeUpdate?.({
+      enabled: true, phase: "failed", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
+      availableVersion: null, pendingVersion: null, channel: "stable", mode: "notify", pinnedVersion: null,
+      downloadedBytes: 0, totalBytes: null, message: "repository-timeout"
+    });
+    await flushPromises();
+    expect(wrapper.text()).toContain(message);
+    expect(startRuntime).toHaveBeenCalledOnce();
   });
 
   it("keeps one keyboard-accessible menu bar in the Desktop Shell", async () => {

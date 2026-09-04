@@ -34,6 +34,7 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 /// update operation lock — and block the user's own actions — for twenty minutes.
 const MANIFEST_TIMEOUT: Duration = Duration::from_secs(30);
 const SMOKE_TIMEOUT: Duration = Duration::from_secs(30);
+const REPOSITORY_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const REPOSITORY_COMMAND_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const MANIFEST_CLOCK_SKEW: chrono::TimeDelta = chrono::TimeDelta::minutes(15);
 
@@ -625,7 +626,7 @@ impl RuntimeUpdateManager {
                         "runtime-update",
                         &format!("repository update check failed: {error}"),
                     );
-                    self.publish(RuntimeUpdatePhase::Failed, "check-failed")?;
+                    self.publish(RuntimeUpdatePhase::Failed, repository_check_failure(&error))?;
                     return Err(error);
                 }
             };
@@ -939,6 +940,7 @@ impl RuntimeUpdateManager {
                 REPOSITORY_COMMAND_TIMEOUT,
                 None,
                 false,
+                Some(&release.repository),
             )?;
             let commit = run_repository_command(
                 Path::new("git"),
@@ -947,6 +949,7 @@ impl RuntimeUpdateManager {
                 SMOKE_TIMEOUT,
                 None,
                 true,
+                None,
             )?;
             if commit.trim() != release.commit {
                 return Err(DesktopError::InvalidConfiguration(
@@ -972,6 +975,7 @@ impl RuntimeUpdateManager {
                 REPOSITORY_COMMAND_TIMEOUT,
                 Some(&tools),
                 false,
+                None,
             )?;
             run_repository_command(
                 Path::new(&node),
@@ -980,6 +984,7 @@ impl RuntimeUpdateManager {
                 REPOSITORY_COMMAND_TIMEOUT,
                 Some(&tools),
                 false,
+                None,
             )?;
 
             let runtime_version = read_package_version(&source.join("package.json"))?;
@@ -1667,15 +1672,24 @@ fn canonical_repository_identity(value: &str) -> DesktopResult<String> {
     Ok(url.to_string().trim_end_matches('/').to_owned())
 }
 
+fn repository_check_failure(error: &DesktopError) -> &'static str {
+    if matches!(error, DesktopError::RepositoryCommandTimedOut) {
+        "repository-timeout"
+    } else {
+        "check-failed"
+    }
+}
+
 fn repository_head(repository: &str) -> DesktopResult<String> {
     canonical_repository_identity(repository)?;
     let output = run_repository_command(
         Path::new("git"),
         &["ls-remote", repository, "HEAD"],
         None,
-        SMOKE_TIMEOUT,
+        REPOSITORY_CHECK_TIMEOUT,
         None,
         true,
+        Some(repository),
     )?;
     let mut fields = output.split_whitespace();
     let commit = fields.next().unwrap_or_default();
@@ -1699,6 +1713,7 @@ fn run_repository_command(
     timeout: Duration,
     tools: Option<&Path>,
     capture_output: bool,
+    repository: Option<&str>,
 ) -> DesktopResult<String> {
     let mut process = Command::new(command);
     process
@@ -1711,6 +1726,10 @@ fn run_repository_command(
             Stdio::null()
         })
         .env("CI", "1");
+    if let Some(repository) = repository {
+        crate::repository_proxy::configure(&mut process, repository);
+        process.env("GIT_TERMINAL_PROMPT", "0");
+    }
     if let Some(cwd) = cwd {
         process.current_dir(cwd);
     }
@@ -1746,11 +1765,24 @@ fn run_repository_command(
             return Ok(output.trim().to_owned());
         }
         if Instant::now() >= deadline {
+            // Git's HTTP/SSH helpers must not keep running after the parent times out.
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(-(child.id() as i32), libc::SIGKILL);
+            }
+            #[cfg(windows)]
+            {
+                let mut terminate = Command::new("taskkill");
+                configure_hidden_process(&mut terminate);
+                let _ = terminate
+                    .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
             let _ = child.kill();
             let _ = child.wait();
-            return Err(DesktopError::Other(
-                "Runtime repository command timed out".to_owned(),
-            ));
+            return Err(DesktopError::RepositoryCommandTimedOut);
         }
         thread::sleep(Duration::from_millis(50));
     }
@@ -2288,6 +2320,54 @@ mod tests {
         assert_eq!(
             canonical_repository_identity("https://github.com/example/runtime.git").unwrap(),
             canonical_repository_identity("https://github.com/example/runtime/").unwrap()
+        );
+    }
+
+    #[test]
+    fn repository_check_timeout_has_a_distinct_safe_status() {
+        assert_eq!(
+            repository_check_failure(&DesktopError::RepositoryCommandTimedOut),
+            "repository-timeout"
+        );
+        assert_eq!(
+            repository_check_failure(&DesktopError::Other("private upstream error".to_owned())),
+            "check-failed"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn repository_timeout_stops_helpers_and_preserves_timeout_classification() {
+        let directory = TempDir::new().unwrap();
+        let marker = directory.path().join("helper-finished");
+        let started = Instant::now();
+        let result = run_repository_command(
+            Path::new("/bin/sh"),
+            &["-c", "(sleep 1; touch helper-finished) & wait"],
+            Some(directory.path()),
+            Duration::from_millis(100),
+            None,
+            false,
+            None,
+        );
+        assert!(matches!(
+            result,
+            Err(DesktopError::RepositoryCommandTimedOut)
+        ));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        thread::sleep(Duration::from_millis(1100));
+        assert!(!marker.exists());
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly selected reachable Git repository"]
+    fn repository_head_live_check() {
+        let repository = std::env::var("DESKTOP_TEST_RUNTIME_REPOSITORY").unwrap();
+        let started = Instant::now();
+        let head = repository_head(&repository).unwrap();
+        println!(
+            "Runtime repository HEAD: {head}; elapsed: {:?}",
+            started.elapsed()
         );
     }
 

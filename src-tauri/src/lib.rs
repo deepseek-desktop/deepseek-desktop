@@ -3,6 +3,7 @@ mod credential_vault;
 mod diagnostics;
 mod error;
 mod native_menu;
+mod repository_proxy;
 mod runtime;
 mod runtime_update;
 mod settings;

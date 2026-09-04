@@ -4,6 +4,16 @@
 
 日期：2026-09-04
 
+## macOS Runtime 仓库代理修复
+
+- 安装版日志确认失败发生于 Git 仓库 HEAD 查询超时，尚未进入候选下载或构建。相同仓库在终端代理环境中约 0.95 秒成功，清除代理环境后 35 秒仍未返回；系统已配置静态代理，但 Finder 启动的 Git 未读取它。
+- 修复后的 opt-in 真实仓库测试清除全部代理环境变量，并限制 PATH 为系统目录，1.17 秒成功解析默认仓库 HEAD。环境代理优先级、系统绕过规则、超时分类和辅助进程清理均有回归覆盖。
+- `verify` 通过：85 项配置与发行协议测试、21 项 Vue 测试、19 项跟随模型搜索测试、87 项 Rust 测试（另 1 项真实联网测试默认忽略，已单独执行）、Clippy `-D warnings`、三语与 Runtime manifest 校验。`test:e2e` 2 项、`runtime:smoke`、`app:sync --check`、`runtime:sync --check` 与 `release:smoke` 均通过；测试后的生成配置已恢复默认应用标识与版本。
+- macOS ARM64 隔离 debug `.app` 通过 Tauri 构建和 `codesign --verify --deep --strict`。使用 LaunchServices、独立应用标识和仓库内测试数据目录启动，实测进程未携带代理环境变量；应用自动检查发现 Runtime commit `76fda729799f`，工作台正常加载，关闭确认后退出。未覆盖用户安装的 `1.0.29`，未下载或激活候选 Runtime，未发布新版本。
+- 本轮没有 Windows/Linux 真机复测，也没有生成发布用 DMG；macOS 静态代理适配不改变 Windows/Linux 既有 Git/环境代理行为。PAC 执行与 pnpm 依赖下载代理不在本轮变更范围。
+
+## 既有验证基线
+
 正式发布收敛为 GitHub Actions 官方托管 Runner 原生矩阵后：
 
 - `corepack pnpm@11.24.0 app:sync --check`：通过，生成配置与源码一致。

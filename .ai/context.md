@@ -32,6 +32,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 本机只执行源码验证、E2E、Runtime smoke 和当前 macOS 架构打包/启动测试；不以 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 作为正式发布前提。
 - 四平台统一使用工具链 lock 中的 Node `24.20.0` / ABI `137`，Runner 不得依赖全局版本漂移；内部 BUILD-INFO 用于矩阵汇总核验但不公开发布。
 - Runtime 更新只写入应用数据目录；仓库模式复用内置 Node/pnpm 拉取、构建并 smoke 候选，可选签名制品模式继续执行签名、兼容和受限解压校验，两者共用原子切换与自动回滚。安装包内置 Runtime 始终作为最终恢复基线。设置 schema 只保存可选仓库覆盖值，切换仓库会使旧候选失效，诊断导出不包含仓库地址。
+- macOS 仓库 HTTP(S) 检查和克隆在没有显式环境代理时，通过 CFNetwork 按仓库 URL 继承系统静态代理与绕过规则；不修改全局 Git 或网络设置。Git 配置优先，PAC、SSH 和 Windows/Linux 保持既有行为。仓库检查超时单独提示网络/代理原因，并终止 Git 辅助进程。
 - 清单反回放在检查阶段只做校验，接受记录直到制品真正暂存成功才落盘；「恢复内置 Runtime」同时清除接受历史，使撤回后同版本换 commit 重新签发仍可安装。
 - 待安装 Runtime 的激活 smoke 与自动检查在后台线程串行执行，不占用驱动窗口的线程；激活期间对外发布 `applying` 状态。
 - 签名清单请求使用 30 秒预算，与制品下载的 20 分钟预算分离，避免更新服务停滞长时间占用更新操作锁。
