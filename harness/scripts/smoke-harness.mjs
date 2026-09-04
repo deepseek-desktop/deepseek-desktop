@@ -257,8 +257,9 @@ if (!dump.stdout.includes("dshmarket")) {
   throw new Error("DSH Market is absent from the composed profile");
 }
 if (!dump.stdout.includes("@deepseek-ai/dsh-web-search-follow-model")
-  || !dump.stdout.includes("searchProvider: follow-model")) {
-  throw new Error("follow-model web search is not the composed profile default");
+  || !dump.stdout.includes("@deepseek-ai/dsh-web-search-follow-model/selection")
+  || !dump.stdout.includes("webSearchSelection")) {
+  throw new Error("the Desktop search selection coordinator and follow-model Provider are not composed");
 }
 const { parse: parseYaml } = createRequire(dsh)("yaml");
 function officialSearchRow(text) {
@@ -273,7 +274,7 @@ const userDisabledDump = spawnSync(node, harnessArguments("--profile", "desktop-
   cwd: smokeRoot, env: environment, input: "smoke-credential-session\n", encoding: "utf8", windowsHide: true
 });
 if (userDisabledDump.status !== 0 || officialSearchRow(userDisabledDump.stdout)?.disabled !== true
-  || !userDisabledDump.stdout.includes("searchProvider: follow-model")) {
+  || !userDisabledDump.stdout.includes("webSearchSelection")) {
   throw new Error("Desktop must preserve the user's official-plugin disable choice without changing search routing");
 }
 await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
@@ -366,7 +367,11 @@ async function runCycle(index) {
     }
     if (options["settings-ui"]) {
       const { verifySearchSettings } = await import("./verify-search-settings-ui.mjs");
-      await verifySearchSettings(cleanUrl, browserCookies, smokeRoot);
+      try {
+        await verifySearchSettings(cleanUrl, browserCookies, smokeRoot);
+      } catch (error) {
+        throw withHarnessDiagnostic(error, output, index);
+      }
     }
     await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
     if (output.includes("dsh web: opening the default browser")) {

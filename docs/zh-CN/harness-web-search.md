@@ -2,15 +2,23 @@
 
 Desktop 独立管理 `@deepseek-ai/dsh-web-search-follow-model`，与 Harness 官方的 `@deepseek-ai/dsh-web-search-deepseek` 共存。官方插件的源码、名称、设置界面和配置保持原样，Desktop 不再强制禁用它，也不会覆盖用户手动禁用它的选择。
 
-**启用插件不等于选择搜索 Provider。** Desktop 装配配置以 `web.searchProvider: follow-model` 明确选择独立扩展；官方 Provider 可以同时注册，不会重复注册 `web_search` 工具或产生自动选择歧义。
+**启用插件不等于选择搜索 Provider。** 官方 Provider 和 follow-model Provider 可以同时注册；`web.searchProvider` 在任一时刻只选择其中一个执行搜索，`web_search` 工具仍只注册一次，不会重复搜索。
 
 ## 使用
 
-普通用户仍按原流程添加模型提供方、地址、密钥和模型，不需要选择联网搜索协议或重复填写密钥。设置 → 插件中的“联网搜索（跟随模型）”是独立设置卡片，默认显示“跟随当前模型”，也可选择“禁用联网搜索”。保存与恢复默认只修改 `web-search-follow-model` 命名空间，不改写官方卡片。
+普通用户仍按原流程添加模型提供方、地址、密钥和模型，不需要选择联网搜索协议或重复填写密钥。设置 → 插件中的“联网搜索（跟随模型）”是独立设置卡片，可选择：
+
+- **跟随当前模型**：默认值，搜索使用当前会话实际选择的模型、地址和凭据。
+- **指定搜索服务**：填写已经注册的搜索 Provider ID，例如官方插件默认注册的 `deepseek-official`；搜索使用该 Provider 自己的配置和凭据。
+- **禁用联网搜索**：立即拒绝后续搜索请求，但保留正常对话、当前会话和网页抓取能力。
+
+保存与恢复默认只修改 `web-search-follow-model` 命名空间，不改写官方插件卡片或用户对官方插件的启停选择。Provider 发生变化时，Desktop 通过 Harness 公开 Loader 生命周期重载宿主 `web` 服务；重载失败时设置会恢复到之前实际生效的值。独立 Provider ID 必须对应已注册的 Harness 搜索 Provider；Harness 没有公开 Provider 枚举接口，因此 Desktop 不读取私有注册表，填写不存在或不可用的 ID 时由 Harness 在实际搜索时明确报错。
+
+Web 应用的 `tool-web` 由 Agent preset 按会话装配，上游明确不允许宿主热重组运行中会话。Desktop 因此不会私自访问会话内部 Loader，也不会为切换设置销毁会话。禁用状态在共享 follow-model Provider 的调用边界即时检查：正在执行的请求按既有取消/完成语义收口，之后的搜索明确返回“已禁用”，`web_fetch` 保持可用。
 
 搜索读取 Harness 公开的当前 Agent 上下文和该会话的实际模型路由。切换模型后，下一次搜索跟随新模型；并发会话不共享端点、模型或凭据快照。凭据通过原有凭据服务按次解析，不复制到新的搜索配置中。
 
-需要单独使用官方或其他搜索 Provider 的高级用户，应通过 Harness 原有 `web.searchProvider` 配置明确选择它。旧扩展配置中的 `independent` 模式会明确提示改用该公开接口，不再调用修改过的 Harness 私有派发方法，也不会静默换服务。
+指定搜索服务仍由 Harness 原有 `web.searchProvider` 执行，Desktop 只是为该公开机制提供可视化入口。插件名称与 Provider ID 不一定相同；输入值必须使用目标插件实际注册的 Provider ID。Desktop 不调用修改过的 Harness 私有派发方法，也不会静默换服务。
 
 ## 自动匹配与边界
 
@@ -32,7 +40,7 @@ Responses 使用 `web_search` 与自动工具选择，避免强制选择与思�
 
 原生 DeepSeek 模型使用上游公开的 `resolveAdapterOptions` 和启动环境快照解析当前模型凭据。只有该适配器的标准官方连接使用已审计的 `/anthropic/v1` 搜索端点；改变原生连接地址后不会套用厂商搜索能力。自定义兼容服务应按正常流程使用通用模型提供方。未公开标准连接信息、仅支持 OAuth 或使用未知 API 的路由会明确提示不可自动跟随，不盲目探测。
 
-Provider 请求最长 90 秒，外层工具预算 100 秒。取消、超时、不支持搜索和缺少凭据分别反馈；失败不改变当前对话模型。
+跟随模型的 Provider 请求最长 55 秒，并服从当前 Agent preset 中 `tool-web` 的外层工具预算（内置 preset 为 60 秒）。取消、超时、不支持搜索和缺少凭据分别反馈；失败不改变当前对话模型。用户自定义 preset 时应保证外层预算不短于 Provider 请求预算。
 
 ## 扩展接口
 
@@ -42,7 +50,7 @@ Provider 请求最长 90 秒，外层工具预算 100 秒。取消、超时、�
 
 ## Harness 更新
 
-扩展的版本、主入口 `index.js`、浏览器入口 `client.js`、公开设置插槽注册和依赖均随 Desktop 自有包交付。源码构建和仓库更新继续使用同一套生产闭包装配逻辑。更新覆盖的是候选目录里的 Desktop 扩展，不是官方插件或用户设置。
+扩展的版本、主入口 `index.js`、选择协调器 `selection.js`、浏览器入口 `client.js`、公开设置插槽注册和依赖均随 Desktop 自有包交付。源码构建和仓库更新继续使用同一套生产闭包装配逻辑。更新覆盖的是候选目录里的 Desktop 扩展，不是官方插件或用户设置。
 
 候选装配检查扩展前后端文件和声明的 Harness 依赖；启动时检查公开 Agent、模型目录与搜索注册接口，再通过现有候选 smoke 和原子切换流程激活。准备或启动失败保留当前可用 Harness、会话与设置。已验证的上游版本不代表未知未来接口永远兼容；不兼容必须先适配并重新验证。
 

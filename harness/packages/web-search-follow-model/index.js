@@ -1,12 +1,10 @@
 import { Service } from "@deepseek-ai/cordis";
 import { credentialRef } from "@deepseek-ai/dsh-credentials";
-import * as settingsApi from "@deepseek-ai/dsh-settings";
 import z from "@deepseek-ai/schemastery";
 import { WebError } from "@deepseek-ai/dsh-web";
 
 const PROVIDER_ID = "follow-model";
-const SETTINGS_NS = "web-search-follow-model";
-const DEFAULT_TIMEOUT_MS = 90_000;
+const DEFAULT_TIMEOUT_MS = 55_000;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_REQUEST_FIELDS = 16;
 const PROTOCOL_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
@@ -29,9 +27,7 @@ const messages = {
     requestFailed: "The current model Provider web search request failed.",
     responseInvalid: "The current model Provider returned an invalid web search response.",
     searchNotPerformed: "The Provider did not return evidence of web search. Its model answer is not a search result.",
-    unsupportedMode: "Select an independent search Provider through the Harness web.searchProvider configuration.",
-    disabled: "Web search is disabled in Harness settings.",
-    independentMissing: "Independent web search mode requires a configured search Provider.",
+    searchDisabled: "Web search is disabled in Desktop settings. Normal chat and web fetch remain available.",
   },
   "zh-CN": {
     routeMissing: "当前会话没有可用的模型路由，无法跟随当前模型联网搜索。",
@@ -43,9 +39,7 @@ const messages = {
     requestFailed: "当前模型提供方的联网搜索请求失败。",
     responseInvalid: "当前模型提供方返回了无法解析的联网搜索结果。",
     searchNotPerformed: "提供方未返回联网搜索执行证据，不能将普通模型回答作为搜索结果。",
-    unsupportedMode: "请通过 Harness 的 web.searchProvider 配置选择独立搜索提供方。",
-    disabled: "联网搜索已在 Harness 设置中禁用。",
-    independentMissing: "独立搜索服务模式需要指定搜索提供方。",
+    searchDisabled: "已在桌面版设置中禁用联网搜索，正常对话和网页抓取仍可继续。",
   },
   "zh-TW": {
     routeMissing: "目前工作階段沒有可用的模型路由，無法跟隨目前模型進行聯網搜尋。",
@@ -57,9 +51,7 @@ const messages = {
     requestFailed: "目前模型提供方的聯網搜尋請求失敗。",
     responseInvalid: "目前模型提供方傳回了無法解析的聯網搜尋結果。",
     searchNotPerformed: "提供方未傳回聯網搜尋執行證據，不能將一般模型回答作為搜尋結果。",
-    unsupportedMode: "請透過 Harness 的 web.searchProvider 設定選擇獨立搜尋提供方。",
-    disabled: "聯網搜尋已在 Harness 設定中停用。",
-    independentMissing: "獨立搜尋服務模式需要指定搜尋提供方。",
+    searchDisabled: "已在桌面版設定中停用聯網搜尋，一般對話和網頁擷取仍可繼續。",
   },
 };
 
@@ -69,12 +61,6 @@ const capabilitySchema = z.object({
   credential: z.union(["inherit"]).default("inherit"),
   endpointPath: z.string(),
   requestFields: z.dict(requestFieldValue),
-});
-
-export const Config = z.object({
-  mode: z.union(["follow-model", "disabled", "independent"]).default("follow-model"),
-  independentProvider: z.string(),
-  fallback: z.union(["none"]).default("none"),
 });
 
 export const WEB_SEARCH_CAPABILITY_SCHEMA = capabilitySchema;
@@ -92,14 +78,6 @@ function locale() {
 
 function copy(key) {
   return messages[locale()][key];
-}
-
-function normalizedConfig(config = {}) {
-  return {
-    mode: config.mode ?? "follow-model",
-    independentProvider: config.independentProvider,
-    fallback: config.fallback ?? "none",
-  };
 }
 
 function activeRoute(agent) {
@@ -591,27 +569,14 @@ export async function resolveConfiguredRoutes(ctx, selection) {
 }
 
 export default class FollowModelWebSearch extends Service {
-  static Config = Config;
-  static inject = ["web", "agents", "settings", "credentials", "llm"];
+  static inject = ["web", "agents", "credentials", "llm", "settings", "webSearchSelection"];
 
-  constructor(ctx, config = {}) {
+  constructor(ctx) {
     super(ctx, "webSearchProtocols");
     for (const [service, method] of [["agents", "currentInitiator"], ["llm", "listConfigurableProviders"], ["web", "registerSearchProvider"]]) {
       if (typeof ctx.get(service)?.[method] !== "function") {
         fail(`Harness extension API is incompatible: ${service}.${method}`, "WEB_FOLLOW_MODEL_HARNESS_INCOMPATIBLE");
       }
-    }
-    let current = () => normalizedConfig(config);
-    const hooks = {
-      setSource: (source) => { current = () => normalizedConfig(source()); },
-      onChange: () => {},
-    };
-    if (typeof settingsApi.installSettingsSection === "function") {
-      settingsApi.installSettingsSection(ctx, SETTINGS_NS, Config, config, hooks);
-    } else {
-      ctx.inject(["settings"], (scope) => {
-        scope.settings.installSection(ctx, SETTINGS_NS, Config, config, hooks);
-      });
     }
     this.engine = new FollowModelSearchEngine({
       resolveCredential: async (ref) => (await ctx.get("credentials")?.resolve(ref))?.value,
@@ -621,12 +586,8 @@ export default class FollowModelWebSearch extends Service {
       id: PROVIDER_ID,
       available: () => true,
       search: async (request, signal) => {
-        const settings = current();
-        if (settings.mode === "disabled") {
-          fail(copy("disabled"), "WEB_FOLLOW_MODEL_DISABLED");
-        }
-        if (settings.mode === "independent") {
-          fail(copy("unsupportedMode"), "WEB_FOLLOW_MODEL_INDEPENDENT_UNSUPPORTED");
+        if (!ctx.webSearchSelection.searchEnabled) {
+          fail(copy("searchDisabled"), "WEB_FOLLOW_MODEL_DISABLED");
         }
         return this.engine.search(ctx.agents.currentInitiator(), request, signal);
       },
@@ -642,4 +603,4 @@ export default class FollowModelWebSearch extends Service {
   }
 }
 
-export { PROVIDER_ID, SETTINGS_NS };
+export { PROVIDER_ID };

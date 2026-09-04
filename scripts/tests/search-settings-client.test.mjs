@@ -16,7 +16,11 @@ vm.runInNewContext(await readFile(resolve(packageRoot, "client.js"), "utf8"), {
 function setup(user = {}, writable = true) {
   const calls = [];
   const listeners = new Set();
-  const state = { status: "ready", writable, base: { mode: "follow-model" }, user, revision: 1 };
+  const state = {
+    status: "ready", writable,
+    base: { mode: "follow-model", independentProvider: "deepseek-official" },
+    user, revision: 1
+  };
   function publish() {
     state.value = { ...state.base, ...state.user };
     for (const listener of listeners) listener();
@@ -72,17 +76,18 @@ test("default requires no writes; saving and resetting use the same isolated nam
   controller.dispose();
 });
 
-test("unsupported independent routing cannot save; supported drafts survive failed writes", async () => {
+test("independent Provider routing validates, saves and survives failed writes", async () => {
   const { controller, scope, calls, state } = setup();
   controller.edit("mode", "independent");
-  await controller.save();
-  assert.equal(calls.length, 0);
   controller.edit("independentProvider", "follow-model");
   assert.equal(controller.getSnapshot().invalid, true);
-  controller.edit("independentProvider", "separate-search");
   await controller.save();
   assert.equal(calls.length, 0);
-  controller.discard();
+  controller.edit("independentProvider", "separate-search");
+  assert.equal(controller.getSnapshot().invalid, false);
+  await controller.save();
+  assert.deepEqual(state.user, { mode: "independent", independentProvider: "separate-search" });
+  assert.equal(calls.length, 1);
   controller.edit("mode", "disabled");
   const mutate = scope.mutate;
   scope.mutate = async () => { throw new Error("test-only failure"); };
@@ -92,9 +97,10 @@ test("unsupported independent routing cannot save; supported drafts survive fail
   assert.equal(controller.getSnapshot().saving, false);
   scope.mutate = mutate;
   await controller.save();
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].ops.length, 1);
-  assert.deepEqual(state.user, { mode: "disabled" });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].ops.length, 2);
+  assert.equal(calls[1].ops.length, 1);
+  assert.deepEqual(state.user, { mode: "disabled", independentProvider: "separate-search" });
   controller.dispose();
 });
 

@@ -6,19 +6,24 @@
 
 - 内置 Harness 更新为 `0.1.3-alpha.1` / `d347e703908d`；模型设置和用户确认补丁已适配新接口。生产闭包校验明确要求权限预设显示“仅可查看”“工作区内修改”“完全权限”，避免中文环境回退到英文。
 - Harness 0.1.3 新增的 `fs-ext` 原生模块暴露了路径清理会改变 Mach-O 字节偏移的问题。修复后文本仍可缩短路径，二进制使用等长 NUL 填充；修改过的 Mach-O 重新执行 ad-hoc 签名。回归测试验证二进制长度和后续字节偏移保持不变；实际 `fs_ext.node` 为原生 arm64、严格签名有效并可被 Harness 启动加载。
-- 当前源码 `verify` 通过 99 项配置与发行协议测试、3 locale / 152 key、30 项前端测试、26 项 follow-model 搜索测试、87 项 Rust 测试（1 项显式外部仓库测试忽略）和 Clippy `-D warnings`。`test:e2e` 5 项通过，覆盖长 Harness 设置表单、Shell 与三种更新摘要布局；`harness:smoke` 通过独立搜索设置、保存/恢复、小窗口、父进程清理和 Harness 0.1.3 真实启停。
+- 当前源码 `verify` 通过 99 项配置与发行协议测试、3 locale / 152 key、30 项前端测试、27 项 follow-model 搜索测试、87 项 Rust 测试（1 项显式外部仓库测试忽略）和 Clippy `-D warnings`。`test:e2e` 5 项通过，覆盖长 Harness 设置表单、Shell 与三种更新摘要布局；`harness:smoke` 通过独立搜索设置、保存/恢复、小窗口、父进程清理和 Harness 0.1.3 真实启停。
+- `DESKTOP_APP_VERSION=1.0.32 corepack pnpm@11.24.0 desktop:package` 完成同一套全链门禁并生成 ARM64 DMG；制品闭包扫描 76265 个文件、1308369569 字节，未残留本机绝对路径。`DeepSeek Desktop_1.0.32_aarch64.dmg` 的 SHA-256 为 `0394a19f8e8468215b9029ab2fa82a4ab96b4f6fd8cda2a0e3b265faafed1b70`，`hdiutil verify`、应用 `codesign --verify --deep --strict`、主程序与内置 Node 的原生 arm64 检查均通过；社区包仍为 ad-hoc 签名而非 Apple Developer ID 公证。
 - Windows x64 Tag 矩阵新增正式 NSIS 安装验收脚本：要求原生 64 位 Runner 和 x64 PE，安装后验证版本标题、工作台、设置菜单、Harness `node*` 子进程、关闭确认取消/确认、子进程清理及卸载。脚本已在 Windows PowerShell 5.1 解析通过；实际 Windows x64 运行结果必须等待对应 Tag 的原生 GitHub Runner，不以本机 ARM64 Windows 模拟替代。
 
 ## 独立联网搜索插件共存验收
 
 日期：2026-09-05
 
-- Desktop 不再强制停用或补丁修改官方 `@deepseek-ai/dsh-web-search-deepseek`；官方 Provider 与独立 `@deepseek-ai/dsh-web-search-follow-model` 同时注册时，`web.searchProvider: follow-model` 只选择后者执行搜索，不重复注册工具。公共 Agent 上下文集成回归同时加载两者，并验证两个并发会话、切换模型、凭据隔离及用户主动停用官方插件后 follow-model 仍可用。
-- 固定内置 Harness `cd5ef8148158` 的完整 `desktop:package` 通过：98 项配置/发行测试、三语 152 个 key、30 项前端测试、26 项搜索测试、87 项 Rust 测试（另 1 项可选真实仓库测试默认忽略）、Clippy、5 项 E2E、真实 Harness smoke、设置页保存/重载/恢复默认与 `760x560` 布局，以及 macOS ARM64 应用和 DMG 构建。DMG、`SHA256SUMS` 与应用深度完整性签名校验通过。
-- 使用用户临时提供且未落盘、未进入日志或提交的供应商凭据完成真实外部测试。Alibaba MaaS 的两个模型通过 Responses 执行搜索，DeepSeek 的 Responses 与 Messages 路径均返回结构化搜索证据；官方插件和 follow-model 同时启用的公共注册表集成也成功。测试由精确端点识别已审计能力，仍复用当前会话模型、端点和凭据；未知端点、显式禁用、普通回答和失败的搜索工具结果均明确失败，不跨 Provider 降级。
-- 从本轮 DMG 提取应用并复用备份后的仓库内隔离数据完成 macOS 原生整链验收：应用沿用当前 `qwen3.8-max` 会话及其 Chat 配置，follow-model 自动选择该端点可用的 Responses 搜索；工作台实际出现 1 次网页搜索工具调用并渲染 4 个来源链接，应用和 Harness 持续运行。测试只新增一条验证会话，原有会话、设置和剪贴板均保留；最近 24 小时未发现新增 DeepSeek Desktop 崩溃报告。
-- 社区候选 `76fda729799f` 与官方 `0.1.3-alpha.1` / `d347e703908d` 均重新装配独立扩展并通过 26 项搜索测试；模型设置补丁已按 0.1.3 的公开写入接口适配，固定官方版本的全量生产闭包、真实服务和浏览器设置 smoke 通过。未来 Harness 仍需逐版验证接口和补丁，不据此宣称任意上游版本自动兼容。
-- 当前只有 Windows 11 ARM64 虚拟机中的 x64 模拟环境，没有目标 Windows x64 原生安装和交互环境。本功能簇不能用模拟、Mock 或旧 CI 代替 Windows x64 真机验收，因此按发布门禁只创建本地功能提交，不推送、不创建 Tag、不发布；现有 `v1.0.31` 保持不变。
+- Desktop 不再强制停用或补丁修改官方 `@deepseek-ai/dsh-web-search-deepseek`；官方 Provider 与独立 `@deepseek-ai/dsh-web-search-follow-model` 可以同时注册，`web.searchProvider` 只选择一个 Provider 执行搜索，不重复注册工具。用户主动启用或停用官方插件的 profile 状态保持原样。
+- 独立选择协调器通过公开 Settings 与 Loader API 提供“跟随当前模型 / 独立搜索 Provider / 关闭搜索”三种模式。单一用户设置映射到 `web.searchProvider`，独立 Provider 的 fixture 搜索实际返回独立结果；关闭后 follow-model Provider 明确返回 `WEB_FOLLOW_MODEL_DISABLED`，恢复默认后重新执行 follow-model。无效值在保存前拒绝，宿主重载失败会恢复先前的持久化值和实际路由。
+- 公共 Agent 上下文集成回归同时加载官方和 follow-model 插件，验证两个并发会话、切换模型、端点/模型/凭据隔离及用户主动停用官方插件后 follow-model 仍可用。未知协议、普通模型回答、无结构化搜索证据、取消和超时均明确失败，不跨 Provider 降级。
+- Web 应用的 `tool-web` 由 Agent preset 按会话装配且不出现在宿主 Loader entries 中；此前尝试热重载该条目的真实 Harness smoke 失败并揭示该边界。最终实现不访问会话私有 Loader，只在 Provider 调用边界执行关闭检查；因此保留当前会话和 `web_fetch`，已开始的请求按既有完成/取消语义收口。
+- `app:sync --check`、`harness:sync --check`、`verify`、`test:e2e`、`harness:smoke` 和 `release:smoke` 均通过。`verify` 包含 27 项搜索回归；真实浏览器设置 smoke 覆盖独立 Provider 保存、重载后恢复、关闭搜索、恢复默认和小窗口滚动。显式外部仓库测试使用公开仓库匿名解析 HEAD，确认社区仓库当前为 `d347e703908d0406b7a7ef80e3a0e594d86b2215`。
+- 模型设置补丁为直接 DeepSeek 模型的 `inputModalities` 和自定义模型的 `input` 增加按模型图片输入开关；内置视觉模型保留上游声明，普通模型不按品牌整体误标。准备后的 Harness schema、模型目录到 LLM 的能力传递及三语可见文案已由闭包验证覆盖。
+- 当前功能簇未使用用户提供的真实 Provider API 密钥，也未向外部供应商发起新的搜索请求；匿名协议 fixture 不能冒充供应商验收。未来 Harness 仍需逐版验证公开接口和补丁，不据此宣称任意上游版本自动兼容。
+- `1.0.32` ARM64 候选已复制到 `/Applications/DeepSeek Desktop.app` 并通过 LaunchServices 启动，标题、工作台和 Harness sidecar 正常。原生设置页确认官方“网页搜索”卡片保持原样，独立卡片完成“跟随当前模型 / 独立搜索服务 / 禁用联网搜索 / 恢复默认”的保存；独立模式重启后仍显示为实际生效值。测试前 Harness 设置已按 SHA-256 一致性恢复，没有清空用户数据或写入 Provider 密钥。
+- 同一安装版确认权限预设显示“工作区内修改”；普通 DeepSeek 模型的高级设置显示“支持图片输入”且默认未勾选，避免品牌级误标。窗口内“文件 / 编辑 / 视图 / 窗口 / 帮助”依次展开后 Desktop 与 Harness PID 均保持存活；WebView API 地址输入框实测 `Cmd+V/A/C/X` 后内容一致且未保存；关闭按钮先显示“取消 / 关闭”，取消后进程继续运行，确认后两进程均退出且无残留。安装验收时间窗内没有新增 DeepSeek DiagnosticReports，也没有命中 abort、panic 或 crash 日志。
+- Windows x64 仍必须由本次新 Tag 的 GitHub 原生 Runner 完成 NSIS 安装、工作台、设置、关闭确认和进程清理门禁。该原生门禁未通过前不得创建 Release，不能用旧 CI、Mock、浏览器视口或 ARM Windows 的 x64 模拟替代。
 
 ## 最近可信验证
 

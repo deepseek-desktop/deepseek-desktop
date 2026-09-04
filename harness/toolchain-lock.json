@@ -147,9 +147,13 @@
       "markers": [
         "profileRevision = written.view.revision",
         "const rollback = await operations.writeSettings",
-        "if (rollback.kind !== \"written\") setCommitted(true);"
+        "if (rollback.kind !== \"written\") setCommitted(true);",
+        "Supports image input",
+        "支持图片输入",
+        "inputModalities\", event.target.checked ? [\"text\", \"image\"] : [\"text\"]",
+        "input: event.target.checked ? [\"text\", \"image\"] : [\"text\"]"
       ],
-      "id": "provider-credential-rollback"
+      "id": "provider-credential-and-image-capability"
     },
     {
       "packageName": "@deepseek-ai/dsh-client-ui-settings-general",

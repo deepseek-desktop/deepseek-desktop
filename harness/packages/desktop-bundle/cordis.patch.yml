@@ -2,19 +2,19 @@
   disabled: true
 
 - id: web
+  inject:
+    - webSearchSelection
   config:
-    searchProvider: follow-model
+    searchProvider: !!js ctx.get('webSearchSelection').searchProvider
     fetchProvider: http
-
-- id: tool-web
-  config:
-    searchTimeoutMs: 100000
 
 - insert:
     - id: desktop-credentials-vault
       name: 'deepseek-desktop-credentials-vault'
-    - id: web-search-follow-model
-      name: '@deepseek-ai/dsh-web-search-follow-model'
+    - id: web-search-selection
+      name: '@deepseek-ai/dsh-web-search-follow-model/selection'
       config:
         mode: follow-model
-        fallback: none
+        independentProvider: deepseek-official
+    - id: web-search-follow-model
+      name: '@deepseek-ai/dsh-web-search-follow-model'

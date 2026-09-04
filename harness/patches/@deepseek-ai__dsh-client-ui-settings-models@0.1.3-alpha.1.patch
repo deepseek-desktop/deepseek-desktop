@@ -1,7 +1,55 @@
 diff --git a/lib/client.js b/lib/client.js
 --- a/lib/client.js
 +++ b/lib/client.js
-@@ -1159,11 +1159,7 @@ window.__ModuleLoader__.load({
+@@ -428,7 +428,23 @@ window.__ModuleLoader__.load({
+ 								]
+ 							}), expanded.has(index) ? (0, react_jsx_runtime.jsxs)("div", {
+ 								className: ModelsSection_module_css_default["modelAdvanced"],
+-								children: [capacityField(model, index, "contextWindow", props.defaultContextWindow), capacityField(model, index, "maxTokens", props.defaultMaxTokens)]
++								children: [capacityField(model, index, "contextWindow", props.defaultContextWindow), capacityField(model, index, "maxTokens", props.defaultMaxTokens), (0, react_jsx_runtime.jsxs)("label", {
++									className: ModelsSection_module_css_default["modelField"],
++									children: [(0, react_jsx_runtime.jsx)("input", {
++										type: "checkbox",
++										checked: Array.isArray(model["inputModalities"]) && model["inputModalities"].includes("image"),
++										disabled: props.disabled,
++										onChange: (event) => {
++											update(index, "inputModalities", event.target.checked ? ["text", "image"] : ["text"]);
++										}
++									}), (0, react_jsx_runtime.jsx)("span", {
++										className: ModelsSection_module_css_default["modelFieldLabel"],
++										children: props.t("modelImageInput")
++									}), (0, react_jsx_runtime.jsx)("span", {
++										className: ModelsSection_module_css_default["advancedHint"],
++										children: props.t("modelImageInputHint")
++									})]
++								})]
+ 							}) : null]
+ 						}, index))
+ 					}),
+@@ -788,6 +804,22 @@ window.__ModuleLoader__.load({
+ 										editCapacity(index, "maxTokens", event.target.value);
+ 									}
+ 								})]
++							}), (0, react_jsx_runtime.jsxs)("label", {
++								className: ModelsSection_module_css_default["modelField"],
++								children: [(0, react_jsx_runtime.jsx)("input", {
++									type: "checkbox",
++									checked: Array.isArray(model["input"]) && model["input"].includes("image"),
++									disabled,
++									onChange: (event) => {
++										patch(index, { input: event.target.checked ? ["text", "image"] : ["text"] });
++									}
++								}), (0, react_jsx_runtime.jsx)("span", {
++									className: ModelsSection_module_css_default["modelFieldLabel"],
++									children: t("modelImageInput")
++								}), (0, react_jsx_runtime.jsx)("span", {
++									className: ModelsSection_module_css_default["advancedHint"],
++									children: t("modelImageInputHint")
++								})]
+ 							})]
+ 						}) : null]
+ 					}, index)),
+@@ -1157,11 +1189,7 @@ window.__ModuleLoader__.load({
  			const [models, setModels] = (0, react.useState)([]);
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
@@ -14,7 +62,7 @@ diff --git a/lib/client.js b/lib/client.js
  			const [committed, setCommitted] = (0, react.useState)(false);
  			const disabled = props.readOnly || busy;
  			/** Everything but the key stops being editable once the provider exists. */
-@@ -1178,6 +1174,7 @@ window.__ModuleLoader__.load({
+@@ -1177,6 +1205,7 @@ window.__ModuleLoader__.load({
  			const createOnce = async () => {
  				const keyRef = deriveKeyRef(route);
  				const storesKey = keyValue.length > 0;
@@ -22,7 +70,7 @@ diff --git a/lib/client.js b/lib/client.js
  				if (!committed) {
  					const profile = {
  						...displayName.length === 0 ? {} : { displayName },
-@@ -1195,11 +1192,29 @@ window.__ModuleLoader__.load({
+@@ -1191,11 +1220,29 @@ window.__ModuleLoader__.load({
  						value: profile
  					}], openedAt);
  					if (written.kind !== "written") return written.kind === "conflict" ? t("conflict") : written.message;
@@ -55,3 +103,25 @@ diff --git a/lib/client.js b/lib/client.js
  				}
  			};
  			const create = async () => {
+@@ -2664,7 +2711,9 @@ window.__ModuleLoader__.load({
+ 			contextWindowPlaceholder: "Uses the provider default",
+ 			maxTokens: "Max output tokens",
+ 			maxTokensPlaceholder: "Uses the provider default",
+-			modelAdvanced: "Capacities",
++			modelAdvanced: "More settings",
++			modelImageInput: "Supports image input",
++			modelImageInputHint: "Enable only when this exact model and endpoint accept images.",
+ 			addModel: "Add model",
+ 			removeModel: "Delete model",
+ 			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
+@@ -2766,7 +2815,9 @@ window.__ModuleLoader__.load({
+ 			contextWindowPlaceholder: "使用提供方默认值",
+ 			maxTokens: "最大输出 token 数",
+ 			maxTokensPlaceholder: "使用提供方默认值",
+-			modelAdvanced: "容量",
++			modelAdvanced: "更多设置",
++			modelImageInput: "支持图片输入",
++			modelImageInputHint: "仅在该模型及当前 API 地址确实支持图片时开启。",
+ 			addModel: "添加模型",
+ 			removeModel: "删除模型",
+ 			modelsEmpty: "模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。",

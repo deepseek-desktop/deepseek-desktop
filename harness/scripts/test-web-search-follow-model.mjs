@@ -11,7 +11,12 @@ const moduleUrl = pathToFileURL(resolve(
   preparedRoot,
   "node_modules/@deepseek-ai/dsh-web-search-follow-model/index.js"
 )).href;
+const selectionUrl = pathToFileURL(resolve(
+  preparedRoot,
+  "node_modules/@deepseek-ai/dsh-web-search-follow-model/selection.js"
+)).href;
 const { default: FollowModelWebSearch, FollowModelSearchEngine, declaredSearchRoutes, resolveConfiguredRoutes } = await import(moduleUrl);
+const { default: WebSearchSelection, validateSelection } = await import(selectionUrl);
 const secretA = "secret-a-for-test";
 const secretB = "secret-b-for-test";
 
@@ -40,6 +45,14 @@ function createEngine({ routes, fetchImpl, credentials = { PROVIDER_A_KEY: secre
   return { engine, resolvedRefs };
 }
 
+async function eventually(predicate, message) {
+  const deadline = Date.now() + 5000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+
 test("public Agent context routes concurrent WebRuntime searches without replacing the official provider", async t => {
   const require = createRequire(moduleUrl);
   const load = name => import(pathToFileURL(require.resolve(name)).href);
@@ -62,6 +75,12 @@ test("public Agent context routes concurrent WebRuntime searches without replaci
     listProviders() { return [{ id: "provider-a" }, { id: "provider-b" }]; }
     listConfigurableProviders() { return this.listProviders().map(({ id }) => ({ provider: id, settingsNs: "llm-pi-ai", settingsPath: ["providers", id] })); }
   }
+  class SearchSelection extends Service {
+    constructor(ctx) {
+      super(ctx, "webSearchSelection");
+      this.searchEnabled = true;
+    }
+  }
   const observed = [];
   t.mock.method(globalThis, "fetch", async (url, options) => {
     await new Promise(resolve => setTimeout(resolve, 5));
@@ -78,6 +97,7 @@ test("public Agent context routes concurrent WebRuntime searches without replaci
   await ctx.plugin(MemorySettings);
   await ctx.plugin(Credentials);
   await ctx.plugin(Models);
+  await ctx.plugin(SearchSelection);
   const { default: z } = await load("@deepseek-ai/schemastery");
   ctx.settings.register("llm-pi-ai", z.any(), { base: { providers: {
     "provider-a": { baseURL: "https://provider-a.test/v1", api: "openai-responses", apiKeyEnv: "PROVIDER_A_KEY" },
@@ -86,7 +106,6 @@ test("public Agent context routes concurrent WebRuntime searches without replaci
   const official = await ctx.plugin(officialPlugin, { apiKey: "official-fixture-key" });
   await ctx.plugin(FollowModelWebSearch);
   assert.ok(ctx.settings.describe().some(section => section.ns === "web-search-deepseek"));
-  assert.ok(ctx.settings.describe().some(section => section.ns === "web-search-follow-model"));
   const first = agent();
   const second = agent("provider-b", "model-b");
   await Promise.all([first, second].map(current => ctx.agents.withInitiator(current, () => ctx.web.search({ query: "search" }))));
@@ -100,6 +119,103 @@ test("public Agent context routes concurrent WebRuntime searches without replaci
   await official.dispose();
   await ctx.agents.withInitiator(first, () => ctx.web.search({ query: "official disabled" }));
   assert.equal(observed.length, 4);
+  ctx.webSearchSelection.searchEnabled = false;
+  await assert.rejects(
+    ctx.agents.withInitiator(first, () => ctx.web.search({ query: "desktop disabled" })),
+    { code: "WEB_FOLLOW_MODEL_DISABLED" },
+  );
+  assert.equal(observed.length, 4);
+});
+
+test("public Settings and Loader APIs apply independent, disabled and restored search routing live", async () => {
+  const require = createRequire(moduleUrl);
+  const load = name => import(pathToFileURL(require.resolve(name)).href);
+  const { Context } = await load("@deepseek-ai/cordis");
+  const { default: Loader } = await load("@deepseek-ai/cordis-plugin-loader");
+  const { default: WebRuntime } = await load("@deepseek-ai/dsh-web");
+  const { default: SettingsProvider } = await load("@deepseek-ai/dsh-settings");
+  class MemorySettings extends SettingsProvider {
+    get writable() { return true; }
+    async load() { return {}; }
+    async persist() {}
+  }
+  class GuardedWebRuntime extends WebRuntime {
+    constructor(ctx, config) {
+      super(ctx, config);
+      if (config.searchProvider === "broken-apply") throw new Error("fixture rejects this Provider");
+    }
+  }
+  const ctx = new Context();
+  try {
+    await ctx.plugin(Loader);
+    await ctx.plugin(MemorySettings);
+    await ctx.plugin(WebSearchSelection);
+    assert.ok(ctx.settings.describe().some(section => section.ns === "web-search-follow-model"));
+    ctx.loader.builtins["guarded-web"] = GuardedWebRuntime;
+    await ctx.loader.create({
+      id: "web",
+      name: "cordis:guarded-web",
+      inject: ["webSearchSelection"],
+      config: {
+        searchProvider: { __jsExpr: "ctx.get('webSearchSelection').searchProvider" },
+        fetchProvider: "http",
+      },
+    });
+    const calls = [];
+    await ctx.plugin({
+      inject: ["web", "webSearchSelection"],
+      apply(current) {
+        current.web.registerSearchProvider({
+          id: "follow-model",
+          available: () => true,
+          search: async () => {
+            if (!current.webSearchSelection.searchEnabled) {
+              const error = new Error("disabled by Desktop settings");
+              error.code = "WEB_FOLLOW_MODEL_DISABLED";
+              throw error;
+            }
+            return { content: "follow", sources: [] };
+          },
+        });
+        current.web.registerSearchProvider({ id: "fixture-independent", available: () => true, search: async () => ({ content: "independent", sources: [] }) });
+        calls.push(current.web);
+      },
+    });
+    assert.equal((await ctx.web.search({ query: "default" })).content, "follow");
+
+    await ctx.settings.update("web-search-follow-model", { mode: "independent", independentProvider: "fixture-independent" });
+    await eventually(() => ctx.get("webSearchSelection").searchProvider === "fixture-independent" && calls.length >= 2,
+      "independent Provider selection did not reload WebRuntime");
+    assert.equal((await ctx.web.search({ query: "independent" })).content, "independent");
+    assert.equal([...ctx.loader.entries()].find(entry => entry.options.id === "web")?.options.config.searchProvider, "fixture-independent");
+
+    const callsBeforeDisable = calls.length;
+    await ctx.settings.update("web-search-follow-model", { mode: "disabled" });
+    await eventually(() => ctx.get("webSearchSelection").searchEnabled === false
+      && ctx.get("webSearchSelection").searchProvider === "follow-model"
+      && ctx.web !== undefined
+      && calls.length > callsBeforeDisable,
+      "disabling search did not restore the guarded follow-model route");
+    await assert.rejects(ctx.web.search({ query: "disabled" }), { code: "WEB_FOLLOW_MODEL_DISABLED" });
+
+    await ctx.settings.replace("web-search-follow-model", {});
+    await eventually(() => ctx.get("webSearchSelection").searchProvider === "follow-model" && ctx.get("webSearchSelection").searchEnabled === true,
+      "restoring defaults did not re-enable follow-model routing");
+    assert.equal((await ctx.web.search({ query: "restored" })).content, "follow");
+
+    assert.throws(() => validateSelection({ mode: "independent", independentProvider: "follow-model" }));
+    await assert.rejects(ctx.settings.update("web-search-follow-model", {
+      mode: "independent", independentProvider: "bad provider",
+    }));
+
+    await ctx.settings.update("web-search-follow-model", { mode: "independent", independentProvider: "broken-apply" });
+    await eventually(() => ctx.settings.describe().find(section => section.ns === "web-search-follow-model")?.value?.mode === "follow-model",
+      "failed live routing did not restore the previous persisted selection");
+    assert.equal(ctx.get("webSearchSelection").searchProvider, "follow-model");
+    assert.equal((await ctx.web.search({ query: "after rollback" })).content, "follow");
+  } finally {
+    await ctx.fiber.dispose();
+  }
 });
 
 test("native DeepSeek route uses its public connection resolver without borrowing official search settings", async () => {
@@ -217,18 +333,23 @@ test("declared routes reject ambiguity and incomplete connection metadata", asyn
   await assert.rejects(engine.resolveRoute(agent()), { code: "WEB_FOLLOW_MODEL_ROUTE_AMBIGUOUS" });
 });
 
-test("prepared Harness carries the extended outer budget without a duplicate Provider search control", async () => {
+test("prepared Harness carries one public Provider selector without a duplicate model search control", async () => {
   const [bundle, modelsSettingsUi, pluginsSettingsUi] = await Promise.all([
     readFile(resolve(preparedRoot, "node_modules/deepseek-desktop-bundle/cordis.patch.yml"), "utf8"),
     readFile(resolve(preparedRoot, "node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js"), "utf8"),
     readFile(resolve(preparedRoot, "node_modules/@deepseek-ai/dsh-web-search-follow-model/client.js"), "utf8")
   ]);
-  assert.match(bundle, /searchTimeoutMs:\s*100000/u);
+  assert.match(bundle, /searchProvider:\s*!!js ctx\.get\('webSearchSelection'\)\.searchProvider/u);
+  assert.doesNotMatch(bundle, /id:\s*tool-web/u);
   assert.doesNotMatch(modelsSettingsUi, /webSearchProtocol|WEB_SEARCH_PROTOCOLS/u);
   assert.match(pluginsSettingsUi, /"follow-model":\s*"Follow current model"/u);
   assert.match(pluginsSettingsUi, /"follow-model":\s*"跟随当前模型"/u);
   assert.match(pluginsSettingsUi, /"follow-model":\s*"跟隨目前模型"/u);
   assert.doesNotMatch(pluginsSettingsUi, /current model \(default\)|当前模型（默认）|目前模型（預設）/u);
+  assert.match(modelsSettingsUi, /Supports image input/u);
+  assert.match(modelsSettingsUi, /支持图片输入/u);
+  assert.match(modelsSettingsUi, /inputModalities", event\.target\.checked \? \["text", "image"\] : \["text"\]/u);
+  assert.match(modelsSettingsUi, /input: event\.target\.checked \? \["text", "image"\] : \["text"\]/u);
 });
 
 test("unset search capability automatically follows the active model API protocol", async t => {

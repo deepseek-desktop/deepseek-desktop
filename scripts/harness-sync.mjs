@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { cp, chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import process from "node:process";
 
 import {
@@ -144,8 +144,11 @@ async function hashTree(directory) {
 function buildPathReplacements(sourceRoot) {
   const paths = [
     [sourceRoot, "/deepseek-harness"],
-    [root, "/deepseek-desktop"]
-  ];
+    [root, "/deepseek-desktop"],
+    [homedir(), "/user-home"],
+    [process.env.HOME, "/user-home"],
+    [process.env.USERPROFILE, "/user-home"]
+  ].filter(([from]) => typeof from === "string" && from.length > 0);
   const normalized = paths.flatMap(([from, to]) => {
     const slashPath = from.replaceAll("\\", "/");
     return slashPath === from ? [[from, to]] : [[from, to], [slashPath, to]];

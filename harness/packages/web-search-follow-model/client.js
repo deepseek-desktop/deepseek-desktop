@@ -11,27 +11,30 @@ window.__ModuleLoader__.load({
         title: "Web search (follow model)", description: "Search follows the model used by each conversation.",
         mode: "Search routing", "follow-model": "Follow current model", disabled: "Disable web search",
         independent: "Independent search service", provider: "Independent search Provider",
+        providerHint: "Enter a Harness search Provider ID, for example deepseek-official.",
         reset: "Restore defaults", save: "Save", discard: "Discard changes", pending: "Unsaved",
         failed: "Changes were not saved. Review the settings and try again.",
-        invalid: "Choose follow-model or disabled. Independent Providers are selected through Harness web.searchProvider.",
+        invalid: "Enter a valid independent search Provider ID.",
         readOnly: "These settings are read-only."
       },
       zh: {
         title: "联网搜索（跟随模型）", description: "联网搜索跟随每个会话使用的模型。",
         mode: "联网搜索", "follow-model": "跟随当前模型", disabled: "禁用联网搜索",
         independent: "独立搜索服务", provider: "独立搜索提供方",
+        providerHint: "填写 Harness 搜索 Provider ID，例如 deepseek-official。",
         reset: "恢复默认", save: "保存", discard: "放弃修改", pending: "未保存",
         failed: "修改未保存，请检查设置后重试。",
-        invalid: "请选择跟随当前模型或禁用；独立提供方通过 Harness 的 web.searchProvider 选择。",
+        invalid: "请填写有效的独立搜索 Provider ID。",
         readOnly: "这些设置为只读。"
       },
       "zh-TW": {
         title: "聯網搜尋（跟隨模型）", description: "聯網搜尋跟隨每個工作階段使用的模型。",
         mode: "聯網搜尋", "follow-model": "跟隨目前模型", disabled: "停用聯網搜尋",
         independent: "獨立搜尋服務", provider: "獨立搜尋提供方",
+        providerHint: "填寫 Harness 搜尋 Provider ID，例如 deepseek-official。",
         reset: "恢復預設", save: "儲存", discard: "放棄修改", pending: "未儲存",
         failed: "修改未儲存，請檢查設定後重試。",
-        invalid: "請選擇跟隨目前模型或停用；獨立提供方透過 Harness 的 web.searchProvider 選擇。",
+        invalid: "請填寫有效的獨立搜尋 Provider ID。",
         readOnly: "這些設定為唯讀。"
       }
     };
@@ -67,14 +70,18 @@ window.__ModuleLoader__.load({
       dispose = () => { this.unsubscribe(); this.listeners.clear(); };
       publish() {
         const current = this.scope.getSnapshot();
-        const value = { mode: "follow-model", independentProvider: "", ...current.value };
-        const base = { mode: "follow-model", independentProvider: "", ...current.base };
+        const value = { mode: "follow-model", independentProvider: "deepseek-official", ...current.value };
+        const base = { mode: "follow-model", independentProvider: "deepseek-official", ...current.base };
         for (const [field, draft] of this.drafts) value[field] = draft === null ? base[field] : draft;
         this.snapshot = {
           ...value, available: current.status === "ready", writable: current.writable,
           overridden: Object.keys(current.user ?? {}).some(key => key === "mode" || key === "independentProvider"),
           dirty: this.operations().length > 0, saving: this.saving, failed: this.failed,
-          invalid: !modes.includes(value.mode) || value.mode === "independent"
+          invalid: !modes.includes(value.mode) || (value.mode === "independent" && (
+            typeof value.independentProvider !== "string" || value.independentProvider.length === 0
+            || value.independentProvider.length > 128 || /[\s\u0000-\u001f\u007f]/u.test(value.independentProvider)
+            || value.independentProvider === "follow-model"
+          ))
         };
         for (const listener of this.listeners) listener();
       }
@@ -139,7 +146,18 @@ window.__ModuleLoader__.load({
           h("label", null, t("mode"), h("select", {
             id: "plugin-config-web-search-mode", value: state.mode, disabled,
             onChange: event => props.edit("mode", event.target.value)
-          }, modes.map(mode => h("option", { key: mode, value: mode, disabled: mode === "independent" }, t(mode))))),
+          }, modes.map(mode => h("option", { key: mode, value: mode }, t(mode))))),
+          state.mode === "independent" ? h("label", null, t("provider"),
+            h("input", {
+              id: "plugin-config-web-search-provider", value: state.independentProvider, disabled,
+              list: "plugin-config-web-search-provider-options", spellCheck: false,
+              onChange: event => props.edit("independentProvider", event.target.value)
+            }),
+            h("datalist", { id: "plugin-config-web-search-provider-options" },
+              h("option", { value: "deepseek-official" })
+            ),
+            h("p", null, t("providerHint"))
+          ) : null,
           !state.writable ? h("p", null, t("readOnly")) : null,
           state.invalid || state.failed ? h("p", { role: "alert" }, t(state.invalid ? "invalid" : "failed")) : null,
           h("footer", null,

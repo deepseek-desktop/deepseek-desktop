@@ -118,9 +118,11 @@ test("build path sanitization preserves binary offsets while shrinking text path
   const root = await fixture(t);
   const source = "/Users/example/a-long-build-root";
   const replacement = "/build";
+  const cache = "/Users/example/Library/Caches/node-gyp";
+  const cacheReplacement = "/user-home/cache";
   const textPath = join(root, "metadata.txt");
   const binaryPath = join(root, "native.node");
-  await writeFile(textPath, `source=${source}\n`);
+  await writeFile(textPath, `source=${source}\ncache=${cache}\n`);
   const binary = Buffer.concat([
     Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0]),
     Buffer.from(source),
@@ -128,13 +130,16 @@ test("build path sanitization preserves binary offsets while shrinking text path
   ]);
   await writeFile(binaryPath, binary);
 
-  const result = await sanitizeBuildPaths(root, [[source, replacement]]);
+  const result = await sanitizeBuildPaths(root, [
+    [source, replacement],
+    [cache, cacheReplacement]
+  ]);
   const sanitizedText = await readFile(textPath, "utf8");
   const sanitizedBinary = await readFile(binaryPath);
-  assert.equal(sanitizedText, `source=${replacement}\n`);
+  assert.equal(sanitizedText, `source=${replacement}\ncache=${cacheReplacement}\n`);
   assert.equal(sanitizedBinary.length, binary.length);
   assert.equal(sanitizedBinary.includes(Buffer.from(source)), false);
   assert.equal(sanitizedBinary.subarray(5, 5 + replacement.length).toString(), replacement);
   assert.deepEqual([...sanitizedBinary.subarray(5 + replacement.length, 5 + source.length)], new Array(source.length - replacement.length).fill(0));
-  assert.deepEqual(result, { rewrittenFiles: 2, replacementCount: 2, resignedFiles: 0 });
+  assert.deepEqual(result, { rewrittenFiles: 2, replacementCount: 3, resignedFiles: 0 });
 });
