@@ -186,8 +186,8 @@ async function startFromStatus(clearNotice = true): Promise<void> {
   }
 }
 
-async function showWorkbench(): Promise<void> {
-  if (harness.value.phase !== "ready" || workbenchVisible.value || workbenchOpening) return;
+async function requestWorkbench(): Promise<void> {
+  if (harness.value.phase !== "ready" || workbenchOpening) return;
   workbenchOpening = true;
   try {
     await openWorkbench();
@@ -198,9 +198,19 @@ async function showWorkbench(): Promise<void> {
   }
 }
 
+async function showWorkbench(): Promise<void> {
+  if (workbenchVisible.value) return;
+  await requestWorkbench();
+}
+
 async function closeSettings(): Promise<void> {
-  if (harness.value.phase !== "ready") return;
-  await showWorkbench();
+  // The desktop process owns surface visibility; `workbenchVisible` only mirrors the
+  // last `desktop://surface` event and can lag behind it. Skipping an opportunistic
+  // call on a stale mirror is harmless, but leaving settings must never be skipped:
+  // the settings layer itself hides on `workbenchVisible`, so a suppressed
+  // `runtime_open` leaves the workbench hidden too and the window renders blank with
+  // no way back. `runtime_open` is idempotent, so a redundant call is cheap.
+  await requestWorkbench();
 }
 
 async function showDesktopMenu(menu: DesktopMenuName, anchorX: number): Promise<void> {
