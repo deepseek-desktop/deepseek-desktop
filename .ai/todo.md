@@ -19,6 +19,7 @@
 - 已验证无效并回滚的方向：把 `Resized` / `ScaleFactorChanged` 回调中的 `sync_surface_layout` 经 `run_on_main_thread` 延后并合并，崩溃栈逐帧不变。
 - v1.0.34 起加入界面层面包屑（设置/工作台切换、`desktop-menu` 子 WebView 创建、限流的重排与窗口尺寸），写入 `desktop.log` 并随诊断导出。正常运行期 `creating desktop-menu webview` 只出现一次，实测已确认；若崩溃前反复出现即锁定视图树扰动源。
 - 已取得带面包屑的新崩溃，继续追踪释放来源；不得通过额外 retain 泄漏、扩大 swizzle 或绕过发布门禁掩盖问题。
+- 隔离原生 probe 已构建并完成 5 轮混合交互，没有复现；具体释放源仍未知，调查工具和已知/未知边界见 [视图生命周期排查](memory/macos-lifecycle.md)。这不是缺陷验收通过。
 
 ## 发布外部条件
 
