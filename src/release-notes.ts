@@ -50,6 +50,11 @@ function renderFeedNotes(source: string, baseUrl: string): string {
       return url ? `<a href="${escape(url)}" target="_blank" rel="noopener noreferrer">${children}</a>` : children;
     }
     if (tag === "hr" || tag === "br") return `<${tag}>`;
+    if (tag === "ol") {
+      const start = node.getAttribute("start") || "";
+      const attribute = /^-?\d{1,9}$/u.test(start) ? ` start="${Number(start)}"` : "";
+      return `<ol${attribute}>${children}</ol>`;
+    }
     const html = `<${tag}>${children}</${tag}>`;
     return tag === "table" ? `<div class="update-notes-table" tabindex="0">${html}</div>` : html;
   }

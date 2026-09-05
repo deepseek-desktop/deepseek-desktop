@@ -13,8 +13,8 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
-function Assert-X64Pe {
-  param([Parameter(Mandatory = $true)][string]$Path)
+function Assert-Pe {
+  param([Parameter(Mandatory = $true)][string]$Path, [int[]]$AllowedMachines = @(0x8664))
 
   $stream = [System.IO.File]::OpenRead($Path)
   try {
@@ -29,8 +29,8 @@ function Assert-X64Pe {
       throw "invalid PE signature: $Path"
     }
     $machine = $reader.ReadUInt16()
-    if ($machine -ne 0x8664) {
-      throw ("expected x64 PE machine 0x8664, got 0x{0:X4}: {1}" -f $machine, $Path)
+    if ($machine -notin $AllowedMachines) {
+      throw ("unexpected PE machine 0x{0:X4}: {1}" -f $machine, $Path)
     }
   } finally {
     $stream.Dispose()
@@ -183,7 +183,8 @@ if ($installers.Count -ne 1) {
   throw "expected exactly one Windows x64 installer, found $($installers.Count)"
 }
 $installer = $installers[0]
-Assert-X64Pe -Path $installer.FullName
+# NSIS uses an x86 stub even when its application payload is x64.
+Assert-Pe -Path $installer.FullName -AllowedMachines @(0x014c, 0x8664)
 
 $appProcess = $null
 $installedEntry = $null
@@ -199,7 +200,8 @@ try {
   do {
     $installedEntry = Get-InstalledEntry
     if ($null -ne $installedEntry) {
-      $candidate = Join-Path $installedEntry.InstallLocation "DeepSeek Desktop.exe"
+      $installLocation = [System.IO.Path]::GetFullPath($installedEntry.InstallLocation.Trim().Trim('"'))
+      $candidate = Join-Path $installLocation "deepseek-desktop.exe"
       if (Test-Path -LiteralPath $candidate) {
         $installedExecutable = $candidate
         break
@@ -211,7 +213,7 @@ try {
     throw "installed DeepSeek Desktop executable was not found"
   }
 
-  Assert-X64Pe -Path $installedExecutable
+  Assert-Pe -Path $installedExecutable -AllowedMachines @(0x8664)
   $appProcess = Start-Process -FilePath $installedExecutable -PassThru
   $expectedTitle = "DeepSeek Desktop v$ExpectedVersion"
   $deadline = [DateTime]::UtcNow.AddSeconds(120)

@@ -11,6 +11,7 @@ export interface HarnessStatus {
 }
 
 export interface DesktopSettings {
+  revision: number;
   schemaVersion: number;
   locale: "zh-CN" | "zh-TW" | "en-US";
   onboardingCompleted: boolean;
@@ -24,6 +25,12 @@ export interface DesktopSettings {
   desktopUpdateIgnoredVersion: string | null;
   recoveryReason?: "corrupt" | "future" | null;
 }
+
+export type DesktopSettingsField = "locale" | "harnessUpdateMode" | "harnessUpdateChannel" | "harnessUpdateRepository" | "harnessPinnedVersion";
+export type DesktopSettingsPatch = {
+  expectedRevision: number;
+  change: { [K in DesktopSettingsField]: { field: K; value: DesktopSettings[K] } }[DesktopSettingsField];
+};
 
 export type HarnessUpdatePhase = "disabled" | "idle" | "checking" | "available" | "downloading" | "staged" | "applying" | "applied" | "failed" | "rolled-back" | "pinned";
 
@@ -63,6 +70,6 @@ export interface UpdateStatus {
   publishedAt: string | null;
   releaseNotes: string | null;
   releaseNotesFormat: "markdown" | "html";
-  prerelease: boolean;
+  prerelease: boolean | null;
   message: string;
 }

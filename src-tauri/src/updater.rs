@@ -18,6 +18,32 @@ use crate::error::{DesktopError, DesktopResult};
 const CHECK_INTERVAL: TimeDelta = TimeDelta::hours(24);
 const MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
 
+#[derive(Default)]
+pub struct UpdateChecks {
+    completed: std::sync::atomic::AtomicU64,
+    result: tauri::async_runtime::Mutex<Option<Result<UpdateStatus, String>>>,
+}
+
+impl UpdateChecks {
+    pub async fn run(
+        &self,
+        check: impl AsyncFnOnce() -> DesktopResult<UpdateStatus>,
+    ) -> DesktopResult<UpdateStatus> {
+        use std::sync::atomic::Ordering;
+        let observed = self.completed.load(Ordering::Acquire);
+        let mut result = self.result.lock().await;
+        if observed == self.completed.load(Ordering::Acquire) {
+            *result = Some(check().await.map_err(|error| error.to_string()));
+            self.completed.fetch_add(1, Ordering::Release);
+        }
+        result
+            .as_ref()
+            .expect("completed update check")
+            .clone()
+            .map_err(DesktopError::Other)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct GithubRepository {
     owner: String,
@@ -29,7 +55,7 @@ struct GithubRepository {
 struct GithubRelease {
     tag_name: String,
     draft: bool,
-    prerelease: bool,
+    prerelease: Option<bool>,
     published_at: Option<String>,
     body: Option<String>,
     #[serde(skip)]
@@ -54,7 +80,7 @@ struct FeedEntry {
 struct ReleaseCandidate {
     version: Version,
     tag: String,
-    prerelease: bool,
+    prerelease: Option<bool>,
     published_at: DateTime<Utc>,
     notes: Option<String>,
     notes_format: ReleaseNotesFormat,
@@ -154,7 +180,7 @@ async fn check_signed_update(
         published_at: None,
         release_notes: None,
         release_notes_format: ReleaseNotesFormat::Markdown,
-        prerelease: false,
+        prerelease: Some(false),
         message: if update.is_some() {
             "update-available"
         } else {
@@ -387,7 +413,11 @@ fn feed_entry_to_release(entry: FeedEntry, repository: &GithubRepository) -> Opt
     Some(GithubRelease {
         tag_name: tag_name.clone(),
         draft: false,
-        prerelease: !version.pre.is_empty(),
+        prerelease: if version.pre.is_empty() {
+            None
+        } else {
+            Some(true)
+        },
         published_at: entry.updated,
         body: sanitize_notes(Some(content.clone())),
         notes_format: ReleaseNotesFormat::Html,
@@ -439,7 +469,7 @@ fn select_release(
     let allow_prerelease = settings.update_channel == "community";
     let candidate = releases
         .into_iter()
-        .filter(|release| !release.draft && (allow_prerelease || !release.prerelease))
+        .filter(|release| !release.draft && (allow_prerelease || release.prerelease == Some(false)))
         .filter(|release| has_complete_assets(&release.assets))
         .filter_map(to_candidate)
         .filter(|release| release.version > current)
@@ -538,7 +568,7 @@ fn empty_status(settings: &DesktopSettings, message: &str) -> UpdateStatus {
         published_at: None,
         release_notes: None,
         release_notes_format: ReleaseNotesFormat::Markdown,
-        prerelease: false,
+        prerelease: None,
         message: message.to_owned(),
     }
 }
@@ -546,6 +576,36 @@ fn empty_status(settings: &DesktopSettings, message: &str) -> UpdateStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn concurrent_checks_reuse_the_in_flight_result() {
+        use std::future::{Future, poll_fn};
+        use std::task::{Context, Poll, Waker};
+        use tauri::async_runtime::block_on;
+        let checks = UpdateChecks::default();
+        let mut first = Box::pin(checks.run(async || {
+            let mut waiting = true;
+            poll_fn(|_| {
+                if std::mem::take(&mut waiting) {
+                    Poll::Pending
+                } else {
+                    Poll::Ready(())
+                }
+            })
+            .await;
+            Ok(empty_status(&DesktopSettings::default(), "first"))
+        }));
+        let mut second = Box::pin(checks.run(async || panic!("duplicate check executed")));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(first.as_mut().poll(&mut cx).is_pending());
+        assert!(second.as_mut().poll(&mut cx).is_pending());
+        assert_eq!(block_on(first).unwrap().message, "first");
+        assert_eq!(block_on(second).unwrap().message, "first");
+        let later =
+            block_on(checks.run(async || Ok(empty_status(&DesktopSettings::default(), "later"))))
+                .unwrap();
+        assert_eq!(later.message, "later");
+    }
 
     #[test]
     fn release_note_links_only_open_web_pages() {
@@ -571,7 +631,7 @@ mod tests {
         GithubRelease {
             tag_name: tag.to_owned(),
             draft: false,
-            prerelease,
+            prerelease: Some(prerelease),
             published_at: Some(published_at.to_owned()),
             body: Some("Release notes".to_owned()),
             notes_format: ReleaseNotesFormat::Markdown,
@@ -652,6 +712,18 @@ mod tests {
     }
 
     #[test]
+    fn stable_channel_never_accepts_an_unknown_atom_release_classification() {
+        let mut candidate = release("v2.0.0", false, "2026-09-05T00:00:00Z");
+        candidate.prerelease = None;
+        let settings = DesktopSettings {
+            update_channel: "stable".to_owned(),
+            ..DesktopSettings::default()
+        };
+        let result = select_release(vec![candidate], &settings, "1.0.0");
+        assert_eq!(result.available_version, None);
+    }
+
+    #[test]
     fn ignored_version_stays_available_without_prompting() {
         let settings = DesktopSettings {
             desktop_update_ignored_version: Some("1.1.0".to_owned()),
@@ -710,7 +782,7 @@ mod tests {
         let releases = parse_release_feed(xml.as_bytes(), &repository).unwrap();
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].tag_name, "v1.2.3");
-        assert!(!releases[0].prerelease);
+        assert_eq!(releases[0].prerelease, None);
         assert!(has_complete_assets(&releases[0].assets));
         assert!(
             releases[0]

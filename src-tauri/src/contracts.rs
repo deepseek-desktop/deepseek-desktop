@@ -25,6 +25,8 @@ pub enum HarnessPhase {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DesktopSettings {
+    #[serde(default)]
+    pub revision: u64,
     #[serde(default = "current_settings_schema_version")]
     pub schema_version: u8,
     pub locale: String,
@@ -50,6 +52,7 @@ pub struct DesktopSettings {
 impl Default for DesktopSettings {
     fn default() -> Self {
         Self {
+            revision: 0,
             schema_version: current_settings_schema_version(),
             locale: "zh-CN".to_owned(),
             onboarding_completed: false,
@@ -62,6 +65,40 @@ impl Default for DesktopSettings {
             desktop_update_last_check_at: None,
             desktop_update_ignored_version: None,
             recovery_reason: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DesktopSettingsPatch {
+    pub expected_revision: u64,
+    pub change: DesktopSettingsChange,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(
+    tag = "field",
+    content = "value",
+    rename_all = "camelCase",
+    deny_unknown_fields
+)]
+pub enum DesktopSettingsChange {
+    Locale(String),
+    HarnessUpdateMode(String),
+    HarnessUpdateChannel(String),
+    HarnessUpdateRepository(Option<String>),
+    HarnessPinnedVersion(Option<String>),
+}
+
+impl DesktopSettingsChange {
+    pub fn apply(self, settings: &mut DesktopSettings) {
+        match self {
+            Self::Locale(value) => settings.locale = value,
+            Self::HarnessUpdateMode(value) => settings.harness_update_mode = value,
+            Self::HarnessUpdateChannel(value) => settings.harness_update_channel = value,
+            Self::HarnessUpdateRepository(value) => settings.harness_update_repository = value,
+            Self::HarnessPinnedVersion(value) => settings.harness_pinned_version = value,
         }
     }
 }
@@ -106,7 +143,7 @@ pub struct UpdateStatus {
     pub published_at: Option<String>,
     pub release_notes: Option<String>,
     pub release_notes_format: ReleaseNotesFormat,
-    pub prerelease: bool,
+    pub prerelease: Option<bool>,
     pub message: String,
 }
 

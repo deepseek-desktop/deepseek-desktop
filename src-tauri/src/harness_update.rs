@@ -547,17 +547,25 @@ impl HarnessUpdateManager {
         Ok(status)
     }
 
-    pub fn save_settings(&self, settings: DesktopSettings) -> DesktopResult<DesktopSettings> {
-        let settings = SettingsStore::validated(settings)?;
+    pub fn save_settings(
+        &self,
+        patch: crate::contracts::DesktopSettingsPatch,
+    ) -> DesktopResult<DesktopSettings> {
+        let _operation = self.lock_operation()?;
         let previous = self.settings.get()?;
+        if previous.revision != patch.expected_revision {
+            return Err(DesktopError::SettingsConflict(previous.revision));
+        }
+        let mut settings = previous.clone();
+        patch.change.clone().apply(&mut settings);
+        let settings = SettingsStore::validated(settings)?;
         if previous.harness_update_repository == settings.harness_update_repository {
-            return self.settings.update(settings);
+            return self.settings.patch(patch);
         }
 
-        let _operation = self.lock_operation()?;
         self.store.discard_pending()?;
         *self.lock_available()? = None;
-        let settings = self.settings.update(settings)?;
+        let settings = self.settings.patch(patch)?;
         self.set_status(repository_changed_status(self.status()?))?;
         self.diagnostics
             .append("harness-update", "Harness repository selection changed");

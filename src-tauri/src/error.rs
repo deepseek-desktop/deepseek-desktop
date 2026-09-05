@@ -3,6 +3,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum DesktopError {
+    #[error("settings revision conflict: current revision {0}")]
+    SettingsConflict(u64),
     #[error("harness is already changing state")]
     HarnessBusy,
     #[error("harness artifact is missing: {0}")]

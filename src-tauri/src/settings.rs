@@ -6,7 +6,7 @@ use std::sync::RwLock;
 use tauri::{AppHandle, Manager};
 use url::Url;
 
-use crate::contracts::{DesktopSettings, current_settings_schema_version};
+use crate::contracts::{DesktopSettings, DesktopSettingsPatch, current_settings_schema_version};
 use crate::error::{DesktopError, DesktopResult};
 
 #[derive(Clone, Debug)]
@@ -108,12 +108,36 @@ impl SettingsStore {
         Ok(settings)
     }
 
+    pub fn patch(&self, patch: DesktopSettingsPatch) -> DesktopResult<DesktopSettings> {
+        self.mutate(|settings| {
+            if settings.revision != patch.expected_revision {
+                return Err(DesktopError::SettingsConflict(settings.revision));
+            }
+            patch.change.apply(settings);
+            settings.revision += 1;
+            Ok(())
+        })
+    }
+
+    #[cfg(test)]
     pub fn update(&self, settings: DesktopSettings) -> DesktopResult<DesktopSettings> {
-        let settings = Self::validated(settings)?;
+        self.mutate(|current| {
+            *current = settings;
+            Ok(())
+        })
+    }
+
+    pub fn mutate(
+        &self,
+        change: impl FnOnce(&mut DesktopSettings) -> DesktopResult<()>,
+    ) -> DesktopResult<DesktopSettings> {
         let mut current = self
             .current
             .write()
             .map_err(|_| DesktopError::Other("settings lock is poisoned".to_owned()))?;
+        let mut settings = current.clone();
+        change(&mut settings)?;
+        let settings = Self::validated(settings)?;
         if self.path.exists() {
             let backup = self.backup_dir.join("settings.previous.json");
             fs::copy(&self.path, backup)?;
@@ -311,6 +335,38 @@ fn validate_harness_repository(value: &str) -> DesktopResult<()> {
 mod tests {
     use super::*;
     use std::sync::{Arc, Barrier};
+
+    #[test]
+    fn user_field_patches_preserve_backend_state_and_reject_stale_revisions() {
+        let root = tempfile::TempDir::new().unwrap();
+        let store = SettingsStore {
+            path: root.path().join("settings.json"),
+            backup_dir: root.path().to_owned(),
+            current: RwLock::new(DesktopSettings::default()),
+        };
+        store
+            .mutate(|settings| {
+                settings.desktop_update_last_check_at = Some("2026-09-05T00:00:00Z".to_owned());
+                Ok(())
+            })
+            .unwrap();
+        let patch = DesktopSettingsPatch {
+            expected_revision: 0,
+            change: crate::contracts::DesktopSettingsChange::Locale("en-US".to_owned()),
+        };
+        let saved = store.patch(patch.clone()).unwrap();
+        assert_eq!(saved.revision, 1);
+        assert_eq!(
+            saved.desktop_update_last_check_at.as_deref(),
+            Some("2026-09-05T00:00:00Z")
+        );
+        assert!(matches!(
+            store.patch(patch),
+            Err(DesktopError::SettingsConflict(1))
+        ));
+        assert_eq!(store.get().unwrap(), saved);
+        assert!(serde_json::from_value::<DesktopSettingsPatch>(serde_json::json!({"expectedRevision":1,"change":{"field":"desktopUpdateLastCheckAt","value":null}})).is_err());
+    }
 
     #[test]
     fn rejects_updates_for_community_channel() {

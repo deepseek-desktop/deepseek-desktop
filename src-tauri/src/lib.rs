@@ -33,6 +33,7 @@ struct AppState {
     diagnostics: Arc<Diagnostics>,
     supervisor: Arc<HarnessSupervisor>,
     harness_updates: Arc<HarnessUpdateManager>,
+    update_checks: updater::UpdateChecks,
     close_dialog_open: AtomicBool,
     close_approved: AtomicBool,
 }
@@ -163,9 +164,9 @@ fn settings_get(state: State<'_, AppState>) -> DesktopResult<DesktopSettings> {
 fn settings_update(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
-    settings: DesktopSettings,
+    patch: contracts::DesktopSettingsPatch,
 ) -> DesktopResult<DesktopSettings> {
-    let settings = state.harness_updates.save_settings(settings)?;
+    let settings = state.harness_updates.save_settings(patch)?;
     native_menu::install(&app, &settings.locale)?;
     let _ = app.emit("desktop://locale", settings.locale.clone());
     Ok(settings)
@@ -251,18 +252,26 @@ async fn update_check(
     state: State<'_, AppState>,
     silent: bool,
 ) -> DesktopResult<UpdateStatus> {
-    let now = chrono::Utc::now();
-    let mut settings = state.settings.get()?;
-    if silent && !updater::check_due(settings.desktop_update_last_check_at.as_deref(), now) {
-        return Ok(updater::skipped_status(&settings));
-    }
-    settings.desktop_update_last_check_at = Some(now.to_rfc3339());
-    let settings = state.settings.update(settings)?;
-    let status = updater::check(&app, &settings).await?;
-    if status.message == "update-available" {
-        state.supervisor.show_settings("update")?;
-    }
-    Ok(status)
+    state
+        .update_checks
+        .run(async || {
+            let now = chrono::Utc::now();
+            let settings = state.settings.get()?;
+            if silent && !updater::check_due(settings.desktop_update_last_check_at.as_deref(), now)
+            {
+                return Ok(updater::skipped_status(&settings));
+            }
+            let settings = state.settings.mutate(|settings| {
+                settings.desktop_update_last_check_at = Some(now.to_rfc3339());
+                Ok(())
+            })?;
+            let status = updater::check(&app, &settings).await?;
+            if status.message == "update-available" {
+                state.supervisor.show_settings("update")?;
+            }
+            Ok(status)
+        })
+        .await
 }
 
 #[tauri::command]
@@ -275,9 +284,10 @@ fn desktop_update_ignore(
             "Desktop ignored version must be valid SemVer".to_owned(),
         )
     })?;
-    let mut settings = state.settings.get()?;
-    settings.desktop_update_ignored_version = Some(version.to_string());
-    state.settings.update(settings)
+    state.settings.mutate(|settings| {
+        settings.desktop_update_ignored_version = Some(version.to_string());
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -516,6 +526,7 @@ pub fn run() {
                 diagnostics,
                 supervisor,
                 harness_updates: Arc::clone(&harness_updates),
+                update_checks: updater::UpdateChecks::default(),
                 close_dialog_open: AtomicBool::new(false),
                 close_approved: AtomicBool::new(false),
             });

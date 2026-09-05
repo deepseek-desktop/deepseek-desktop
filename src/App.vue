@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import DesktopMenuBar from "./DesktopMenuBar.vue";
 import ReleaseNotes from "./ReleaseNotes.vue";
 import { appConfig } from "./app-config";
 import deepSeekDesktopLogo from "./assets/deepseek-desktop.svg";
-import type { DesktopAbout, DesktopSettings, DesktopSettingsView, HarnessStatus, HarnessUpdateStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopSettings, DesktopSettingsPatch, DesktopSettingsField, DesktopSettingsView, HarnessStatus, HarnessUpdateStatus, UpdateStatus } from "./contracts";
 import {
   checkHarnessUpdate,
   checkForUpdates,
@@ -51,6 +51,7 @@ const harness = ref<HarnessStatus>({
   errorCode: null
 });
 const settings = ref<DesktopSettings>({
+  revision: 0,
   schemaVersion: 7,
   locale: normalizeLocale(navigator.language),
   onboardingCompleted: false,
@@ -74,6 +75,19 @@ let unlistenHarnessUpdate: (() => void) | undefined;
 let unlistenLocale: (() => void) | undefined;
 const workbenchVisible = ref(false);
 const updatePromptVisible = ref(false);
+const updateDialog = ref<HTMLElement | null>(null);
+let updateReturnFocus: HTMLElement | null = null;
+watch(updatePromptVisible, async visible => {
+  if (visible) {
+    updateReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    await nextTick();
+    if (updatePromptVisible.value) updateDialog.value?.focus();
+  } else {
+    await nextTick();
+    if (updateReturnFocus?.isConnected) updateReturnFocus.focus();
+    updateReturnFocus = null;
+  }
+});
 let workbenchOpening = false;
 let desktopMenuOpening = false;
 
@@ -150,8 +164,14 @@ function syncHarnessRepositoryDraft(): void {
   };
 }
 
-async function persistSettings(): Promise<void> {
-  settings.value = await saveSettings(settings.value);
+async function persistSettings(field: DesktopSettingsField): Promise<void> {
+  try {
+    settings.value = await saveSettings({ expectedRevision: settings.value.revision,
+      change: { field, value: settings.value[field] } } as DesktopSettingsPatch);
+  } catch (error) {
+    settings.value = await getSettings();
+    throw error;
+  }
 }
 
 function navigate(next: ViewName): void {
@@ -161,14 +181,12 @@ function navigate(next: ViewName): void {
 
 async function selectLocale(value: Event): Promise<void> {
   const next = (value.target as HTMLSelectElement).value as SupportedLocale;
-  const previous = settings.value.locale;
   locale.value = next;
   settings.value.locale = next;
   try {
-    await persistSettings();
+    await persistSettings("locale");
   } catch {
-    locale.value = previous;
-    settings.value.locale = previous;
+    locale.value = settings.value.locale;
     notice.value = t("error.settingsSaveFailed");
   }
 }
@@ -226,6 +244,15 @@ async function showDesktopMenu(menu: DesktopMenuName, anchorX: number): Promise<
 }
 
 function handleSettingsKeydown(event: KeyboardEvent): void {
+  if (updatePromptVisible.value && event.key === "Tab") {
+    const items = Array.from(updateDialog.value?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], [tabindex="0"]') || []);
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (index < 0 || (event.shiftKey && index === 0) || (!event.shiftKey && index === items.length - 1)) {
+      event.preventDefault();
+      (event.shiftKey ? items.at(-1) : items[0])?.focus();
+    }
+    return;
+  }
   if (event.key === "Escape" && updatePromptVisible.value) {
     event.preventDefault();
     updatePromptVisible.value = false;
@@ -279,7 +306,14 @@ function formatPublishedAt(value: string | null): string {
   return new Intl.DateTimeFormat(locale.value, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
+let updateCheck: Promise<void> | undefined;
 async function checkUpdate(silent = false): Promise<void> {
+  if (updateCheck) return updateCheck;
+  updateCheck = performUpdateCheck(silent).finally(() => { updateCheck = undefined; });
+  return updateCheck;
+}
+
+async function performUpdateCheck(silent: boolean): Promise<void> {
   try {
     update.value = await checkForUpdates(silent);
     settings.value = await getSettings();
@@ -358,13 +392,11 @@ async function restoreHarness(): Promise<void> {
 async function selectHarnessUpdateMode(value: Event): Promise<void> {
   if (busy.value) return;
   busy.value = true;
-  const previous = settings.value.harnessUpdateMode;
   settings.value.harnessUpdateMode = (value.target as HTMLSelectElement).value as DesktopSettings["harnessUpdateMode"];
   try {
-    await persistSettings();
+    await persistSettings("harnessUpdateMode");
     harnessUpdate.value = await getHarnessUpdateStatus();
   } catch {
-    settings.value.harnessUpdateMode = previous;
     notice.value = t("error.settingsSaveFailed");
   } finally {
     busy.value = false;
@@ -374,13 +406,11 @@ async function selectHarnessUpdateMode(value: Event): Promise<void> {
 async function selectHarnessUpdateChannel(value: Event): Promise<void> {
   if (busy.value) return;
   busy.value = true;
-  const previous = settings.value.harnessUpdateChannel;
   settings.value.harnessUpdateChannel = (value.target as HTMLSelectElement).value as DesktopSettings["harnessUpdateChannel"];
   try {
-    await persistSettings();
+    await persistSettings("harnessUpdateChannel");
     harnessUpdate.value = await getHarnessUpdateStatus();
   } catch {
-    settings.value.harnessUpdateChannel = previous;
     notice.value = t("error.settingsSaveFailed");
   } finally {
     busy.value = false;
@@ -390,18 +420,15 @@ async function selectHarnessUpdateChannel(value: Event): Promise<void> {
 async function saveHarnessRepository(): Promise<void> {
   if (busy.value || !harnessRepositoryComplete.value) return;
   busy.value = true;
-  const previous = { ...settings.value };
   try {
     const repository = harnessRepositoryDraft.value.repository.trim();
     const official = repository === appConfig.harness.repository;
     settings.value.harnessUpdateRepository = official ? null : repository;
-    await persistSettings();
+    await persistSettings("harnessUpdateRepository");
     syncHarnessRepositoryDraft();
     harnessUpdate.value = await getHarnessUpdateStatus();
     notice.value = t("harnessUpdate.repositorySaved");
   } catch {
-    settings.value = previous;
-    syncHarnessRepositoryDraft();
     notice.value = t("error.harnessRepositoryFailed");
   } finally {
     busy.value = false;
@@ -411,15 +438,13 @@ async function saveHarnessRepository(): Promise<void> {
 async function toggleHarnessPin(value: Event): Promise<void> {
   if (busy.value) return;
   busy.value = true;
-  const previous = settings.value.harnessPinnedVersion;
   settings.value.harnessPinnedVersion = (value.target as HTMLInputElement).checked
     ? harnessUpdate.value?.currentVersion || about.value?.harnessVersion || null
     : null;
   try {
-    await persistSettings();
+    await persistSettings("harnessPinnedVersion");
     harnessUpdate.value = await getHarnessUpdateStatus();
   } catch {
-    settings.value.harnessPinnedVersion = previous;
     notice.value = t("error.settingsSaveFailed");
   } finally {
     busy.value = false;
@@ -508,10 +533,10 @@ onBeforeUnmount(() => {
     <DesktopMenuBar @open="showDesktopMenu" />
   </main>
   <main v-else class="desktop-shell" :class="{ 'workbench-surface': workbenchVisible }">
-    <DesktopMenuBar @open="showDesktopMenu" />
+    <DesktopMenuBar :inert="updatePromptVisible ? true : undefined" @open="showDesktopMenu" />
     <div class="desktop-surface">
     <section v-show="!workbenchVisible" class="settings-window" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-      <header class="topbar">
+      <header class="topbar" :inert="updatePromptVisible ? true : undefined">
       <div class="brand">
         <img class="brand-mark" :src="deepSeekDesktopLogo" alt="" aria-hidden="true" />
         <span>
@@ -536,7 +561,7 @@ onBeforeUnmount(() => {
       </div>
       </header>
 
-    <section class="workspace-layout">
+    <section class="workspace-layout" :inert="updatePromptVisible ? true : undefined">
       <nav class="side-nav" :aria-label="t('navigation.label')">
         <button :class="{ active: view === 'harness' }" @click="navigate('harness')">
           <span aria-hidden="true">01</span>{{ t("navigation.harness") }}
@@ -671,13 +696,14 @@ onBeforeUnmount(() => {
       </section>
     </section>
       <div v-if="updatePromptVisible && update" class="desktop-update-backdrop">
-        <section class="desktop-update-prompt" role="alertdialog" aria-modal="true" aria-labelledby="desktop-update-title">
+        <section ref="updateDialog" class="desktop-update-prompt" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="desktop-update-title">
           <div class="desktop-update-heading">
             <div>
               <span class="eyebrow">{{ t("update.desktopTitle") }}</span>
               <h2 id="desktop-update-title">{{ t("update.promptTitle", { version: update.availableVersion || "" }) }}</h2>
             </div>
             <span v-if="update.prerelease" class="release-badge">{{ t("update.prerelease") }}</span>
+            <span v-else-if="update.prerelease === null" class="release-badge">{{ t("update.classificationUnknown") }}</span>
           </div>
           <dl class="desktop-update-meta">
             <div><dt>{{ t("update.publishedAt") }}</dt><dd>{{ formatPublishedAt(update.publishedAt) }}</dd></div>

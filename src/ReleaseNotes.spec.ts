@@ -9,6 +9,12 @@ vi.mock("./desktop", () => ({ openDesktopUpdateLink: vi.fn() }));
 enableAutoUnmount(afterEach);
 
 describe("release notes", () => {
+  it("preserves safe Atom list numbering without carrying other attributes", () => {
+    expect(renderReleaseNotes('<ol start="7" onclick="bad()"><li>Step</li></ol>', "https://example.com", "html"))
+      .toBe('<ol start="7"><li>Step</li></ol>');
+    expect(renderReleaseNotes('<ol start="7bad"><li>Step</li></ol>', "https://example.com", "html"))
+      .toBe('<ol><li>Step</li></ol>');
+  });
   beforeEach(() => {
     vi.mocked(openDesktopUpdateLink).mockReset();
     i18n.global.locale.value = "zh-CN";

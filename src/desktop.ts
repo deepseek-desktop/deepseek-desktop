@@ -1,13 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { appConfig } from "./app-config";
-import type { DesktopAbout, DesktopSettings, DesktopSettingsView, DesktopSurface, HarnessStatus, HarnessUpdateStatus, UpdateStatus } from "./contracts";
+import type { DesktopAbout, DesktopSettings, DesktopSettingsPatch, DesktopSettingsView, DesktopSurface, HarnessStatus, HarnessUpdateStatus, UpdateStatus } from "./contracts";
 
 const inTauri = (): boolean => "__TAURI_INTERNALS__" in window;
 
 export type DesktopMenuName = "file" | "edit" | "view" | "window" | "help";
 
 const browserSettings: DesktopSettings = {
+  revision: 0,
   schemaVersion: 7,
   locale: "zh-CN",
   onboardingCompleted: false,
@@ -50,12 +51,13 @@ export async function getSettings(): Promise<DesktopSettings> {
   return invoke<DesktopSettings>("settings_get");
 }
 
-export async function saveSettings(settings: DesktopSettings): Promise<DesktopSettings> {
+export async function saveSettings(patch: DesktopSettingsPatch): Promise<DesktopSettings> {
   if (!inTauri()) {
-    Object.assign(browserSettings, settings);
+    if (patch.expectedRevision !== browserSettings.revision) throw new Error("settings revision conflict");
+    Object.assign(browserSettings, { [patch.change.field]: patch.change.value, revision: browserSettings.revision + 1 });
     return { ...browserSettings };
   }
-  return invoke<DesktopSettings>("settings_update", { settings });
+  return invoke<DesktopSettings>("settings_update", { patch });
 }
 
 export async function openWorkbench(): Promise<void> {

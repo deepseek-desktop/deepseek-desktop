@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { parseReleaseTag, releaseTagsForVersion } from "./lib/release-tag.mjs";
+import { releaseIdentity, githubReleaseRemote } from "./lib/release-identity.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -48,6 +49,10 @@ if (!releaseTag) throw new Error(`${channel} release requires tag ${acceptedTags
 if (parseReleaseTag(releaseTag).version !== config.version) {
   throw new Error(`${channel} release tag ${releaseTag} does not match configured version ${config.version}`);
 }
+releaseIdentity({ root, tag: releaseTag, version: config.version,
+  commit: process.env.GITHUB_SHA, expectedObject: process.env.RELEASE_TAG_OBJECT,
+  remote: process.env.GITHUB_ACTIONS ? githubReleaseRemote(process.env.GITHUB_REPOSITORY) : undefined
+});
 if (channel === "community") {
   if (config.release.signed) throw new Error("community release must not claim a trusted publisher signature");
   console.log(`community release gate passed for ${releaseTag}; artifacts remain explicitly unsigned`);

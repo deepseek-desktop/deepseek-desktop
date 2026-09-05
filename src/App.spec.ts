@@ -7,6 +7,7 @@ import { checkForUpdates, checkHarnessUpdate, downloadHarnessUpdate, exportDiagn
 import { i18n } from "./i18n";
 
 const settings: DesktopSettings = {
+  revision: 0,
   schemaVersion: 7,
   locale: "zh-CN",
   onboardingCompleted: false,
@@ -87,7 +88,7 @@ vi.mock("./desktop", () => ({
   openDesktopUpdateLink: vi.fn(),
   openRepository: vi.fn(),
   openWorkbench: vi.fn(),
-  saveSettings: vi.fn(async value => value),
+  saveSettings: vi.fn(async patch => ({ ...settings, [patch.change.field]: patch.change.value, revision: patch.expectedRevision + 1 })),
   downloadHarnessUpdate: vi.fn(async () => ({
     enabled: true, phase: "staged", currentVersion: "1.0.0", currentCommit: "a".repeat(40), currentSource: "bundled",
     availableVersion: "1.1.0", pendingVersion: "1.1.0", channel: "stable", mode: "automatic", pinnedVersion: null,
@@ -107,6 +108,7 @@ enableAutoUnmount(afterEach);
 describe(`${appConfig.productName} shell`, () => {
   beforeEach(() => {
     Object.assign(settings, {
+      revision: 0,
       schemaVersion: 7,
       locale: "zh-CN",
       onboardingCompleted: false,
@@ -416,8 +418,8 @@ describe(`${appConfig.productName} shell`, () => {
     await flushPromises();
 
     expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({
-      schemaVersion: 7,
-      harnessUpdateRepository: "https://git.example.com/harness/harness.git"
+      expectedRevision: 0,
+      change: { field: "harnessUpdateRepository", value: "https://git.example.com/harness/harness.git" }
     }));
     expect(wrapper.text()).toContain("Harness 仓库已保存");
   });
@@ -449,6 +451,36 @@ describe(`${appConfig.productName} shell`, () => {
 
     expect(ignoreDesktopUpdate).toHaveBeenCalledWith("1.1.0-beta.1");
     expect(openDesktopRelease).not.toHaveBeenCalled();
+  });
+
+  it("coalesces update checks and traps/restores the update dialog focus", async () => {
+    let complete: ((value: Awaited<ReturnType<typeof checkForUpdates>>) => void) | undefined;
+    vi.mocked(checkForUpdates).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const host = document.createElement("div");
+    document.body.append(host);
+    const wrapper = mount(App, { attachTo: host, global: { plugins: [i18n] } });
+    await flushPromises();
+    const previous = wrapper.get<HTMLButtonElement>('[role="menuitem"]').element;
+    previous.focus();
+    listeners.settingsView?.("desktop-update");
+    await flushPromises();
+    expect(checkForUpdates).toHaveBeenCalledOnce();
+    complete?.({ enabled: false, channel: "community", currentVersion: "1.0.0", availableVersion: "1.1.0", releaseTag: "v1.1.0", publishedAt: null, releaseNotes: null, releaseNotesFormat: "markdown", prerelease: null, message: "update-available" });
+    await flushPromises();
+    const dialog = wrapper.get<HTMLElement>('[role="alertdialog"]');
+    expect(document.activeElement).toBe(dialog.element);
+    expect(wrapper.get(".workspace-layout").attributes()).toHaveProperty("inert");
+    expect(dialog.text()).toContain("发行类型未知");
+    const buttons = dialog.findAll<HTMLButtonElement>("button");
+    buttons.at(-1)!.element.focus();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", cancelable: true }));
+    expect(document.activeElement).toBe(buttons[0].element);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+    await flushPromises();
+    expect(document.activeElement).toBe(previous);
+    expect(wrapper.get(".workspace-layout").attributes()).not.toHaveProperty("inert");
+    wrapper.unmount();
+    host.remove();
   });
 
   it.each([null, "   "])("keeps the empty-summary fallback for %s notes", async releaseNotes => {

@@ -7,6 +7,7 @@
 - 正式四平台发布只使用 `.github/workflows/community-build.yml` 的 GitHub 官方托管 Runner 原生矩阵。
 - Pull Request 和普通分支 push 不触发发布工作流。
 - 只有带或不带 `v` 的完整 SemVer Tag 才运行质量门禁、构建安装包和创建 Release。
+- Tag 必须是 annotated Tag，并指向实际构建 commit；质量门禁记录 Tag 对象，原生构建及发布前与远端 Tag / peeled commit 再次比对，任何漂移立即失败。不得重建、移动或覆盖旧 Tag。
 - 四个平台都调用现有 `package:community`，禁止复制第二套打包逻辑。
 - 本机只验证源码、E2E、Harness smoke 和当前 macOS 架构安装包。
 - 不把 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 当作正式发布前提。
