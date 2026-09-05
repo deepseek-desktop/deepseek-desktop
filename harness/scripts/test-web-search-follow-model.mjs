@@ -772,9 +772,13 @@ test("third-party protocols register without vendor branches", async () => {
 });
 
 test("custom Provider credential rollback refreshes the form revision for retry", async t => {
-  const source = await readFile(resolve(preparedRoot, "node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js"), "utf8");
+  // Build output, not a repository file, so .gitattributes does not normalize it and
+  // a Windows build can emit CRLF. This is the only assertion here whose pattern spans
+  // line boundaries, which is why it alone failed on the Windows runner.
+  const source = (await readFile(resolve(preparedRoot, "node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js"), "utf8"))
+    .replaceAll("\r\n", "\n");
   const body = source.match(/const createOnce = async \(\) => \{([\s\S]*?)\n\s*\};\n\s*const create = async/u)?.[1];
-  assert.ok(body, "exercise the assembled Provider form, not a duplicate implementation");
+  assert.ok(body, `exercise the assembled Provider form, not a duplicate implementation (${source.length} bytes, createOnce=${source.includes("const createOnce = async")}, create=${source.includes("const create = async")}, crlf=${source.includes("\r")})`);
   for (const rollbackConflict of [false, true]) await t.test(rollbackConflict ? "conflicting rollback" : "retry after successful rollback", async () => {
     let revision = 1;
     let attempts = 0;
