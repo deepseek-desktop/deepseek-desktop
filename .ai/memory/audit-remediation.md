@@ -8,7 +8,12 @@
 | F05 | 损坏或类型错误 profile 保留；仅不存在时初始化，原子写入 | Rust `profile_initialization_preserves_invalid_and_user_owned_content` 通过 |
 | F07 | 激活重放遇到 current == pending 不覆盖 previous | Rust `pointer_switch_rolls_back_to_previous_and_then_bundled` 增加中断重放断言，通过；未做真机断电测试 |
 | F16 | 已有私钥排他创建，拒绝覆盖 | Node `signing key creation never overwrites an existing private key` 通过 |
-| F02–F04、F06、F08–F15、F17–F24 | 依照审计逐项修复 | 未闭环 |
+| F06 | AppKit inset 读取派发到主线程并断言；调用前无持锁等待 | macOS 编译 / Rust lib 通过；真实窗口交互待测，不能归因 SIGABRT |
+| F13 | 等待整个进程组，重复终止幂等 | Rust `termination_waits_for_the_process_group_after_the_leader_exits` 以真实 Unix 子进程通过 |
+| F14 | 同源 popup 导航受管工作台；外链仅系统浏览器，禁止失管 WKWebView | 编译及导航分类器回归通过；原生新窗口交互待测 |
+| F15 | 单实例查找实际 Window，解除最小化再显示聚焦 | macOS 编译通过；双启动真实交互待测 |
+| F22 | 常驻原生快捷键，保留唯一可见窗口菜单 | macOS 编译通过；macOS/Windows/Linux 原生快捷键待测 |
+| F02–F04、F08–F12、F17–F21、F23–F24 | 依照审计逐项修复 | 未闭环 |
 | SIGABRT | 保留崩溃报告，独立分析主线程及视图生命周期 | 未证明根因或修复有效，发布阻塞 |
 
 本地已执行：Rust lib 89 通过 / 1 个显式联网用例忽略；Harness 更新脚本测试 5 通过。该结果仅覆盖当前安全与数据修复，不替代全量 verify、E2E、Harness smoke 或原生安装验收。

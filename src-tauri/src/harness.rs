@@ -166,6 +166,7 @@ struct HarnessInner {
 
 struct ManagedChild {
     child: Child,
+    terminated: bool,
     _credential_session: HarnessSession,
     #[cfg(windows)]
     job: WindowsJob,
@@ -304,12 +305,12 @@ impl HarnessSupervisor {
                     match classify_navigation(managed_origin.as_ref(), candidate) {
                         Navigation::Allow => true,
                         Navigation::Deny => false,
-                        // A failed hand-off leaves the page to the webview, so the
-                        // link is never silently lost.
-                        Navigation::External => navigation_app
-                            .opener()
-                            .open_url(candidate.as_str(), None::<&str>)
-                            .is_err(),
+                        Navigation::External => {
+                            let _ = navigation_app
+                                .opener()
+                                .open_url(candidate.as_str(), None::<&str>);
+                            false
+                        }
                     }
                 })
                 .on_new_window(move |candidate, _features| {
@@ -317,18 +318,18 @@ impl HarnessSupervisor {
                         current_managed_origin(&new_window_origin).as_ref(),
                         &candidate,
                     ) {
-                        Navigation::Allow => tauri::webview::NewWindowResponse::Allow,
+                        Navigation::Allow => {
+                            if let Some(workbench) = new_window_app.get_webview("workbench") {
+                                let _ = workbench.navigate(candidate);
+                            }
+                            tauri::webview::NewWindowResponse::Deny
+                        }
                         Navigation::Deny => tauri::webview::NewWindowResponse::Deny,
                         Navigation::External => {
-                            if new_window_app
+                            let _ = new_window_app
                                 .opener()
-                                .open_url(candidate.as_str(), None::<&str>)
-                                .is_ok()
-                            {
-                                tauri::webview::NewWindowResponse::Deny
-                            } else {
-                                tauri::webview::NewWindowResponse::Allow
-                            }
+                                .open_url(candidate.as_str(), None::<&str>);
+                            tauri::webview::NewWindowResponse::Deny
                         }
                     }
                 });
@@ -1344,6 +1345,7 @@ impl ManagedChild {
         };
         Ok(Self {
             child,
+            terminated: false,
             _credential_session: credential_session,
             #[cfg(windows)]
             job,
@@ -1351,26 +1353,49 @@ impl ManagedChild {
     }
 
     fn terminate(&mut self) {
+        if self.terminated {
+            return;
+        }
+        self.terminated = true;
         #[cfg(windows)]
         self.job.terminate();
         #[cfg(unix)]
-        unsafe {
-            libc::kill(-(self.child.id() as i32), libc::SIGTERM);
-        }
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while Instant::now() < deadline {
-            if self.child.try_wait().ok().flatten().is_some() {
-                return;
+        terminate_process_group(&mut self.child);
+        #[cfg(windows)]
+        {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while Instant::now() < deadline {
+                if self.child.try_wait().ok().flatten().is_some() {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(50));
             }
-            thread::sleep(Duration::from_millis(50));
+            let _ = self.child.kill();
+            let _ = self.child.wait();
         }
-        #[cfg(unix)]
-        unsafe {
-            libc::kill(-(self.child.id() as i32), libc::SIGKILL);
-        }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
     }
+}
+
+#[cfg(unix)]
+fn terminate_process_group(child: &mut Child) {
+    let group = -(child.id() as i32);
+    unsafe {
+        libc::kill(group, libc::SIGTERM);
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        let _ = child.try_wait();
+        if unsafe { libc::kill(group, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            return;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    unsafe {
+        libc::kill(group, libc::SIGKILL);
+    }
+    let _ = child.wait();
 }
 
 impl Drop for ManagedChild {
@@ -1851,6 +1876,31 @@ impl Drop for WindowsJob {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn termination_waits_for_the_process_group_after_the_leader_exits() {
+        use std::io::{BufRead, Read};
+        use std::process::{Command, Stdio};
+        let mut command = Command::new("sh");
+        command
+            .args([
+                "-c",
+                "sh -c 'trap \"\" TERM; echo ready; exec sleep 30' & wait",
+            ])
+            .stdout(Stdio::piped());
+        super::configure_process_group(&mut command);
+        let mut child = command.spawn().unwrap();
+        let mut output = std::io::BufReader::new(child.stdout.take().unwrap());
+        let mut line = String::new();
+        output.read_line(&mut line).unwrap();
+        assert_eq!(line.trim(), "ready");
+        let start = std::time::Instant::now();
+        super::terminate_process_group(&mut child);
+        output.read_to_end(&mut Vec::new()).unwrap();
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        assert!(child.try_wait().unwrap().is_some());
+    }
+
     #[test]
     fn profile_initialization_preserves_invalid_and_user_owned_content() {
         let directory = tempfile::TempDir::new().unwrap();

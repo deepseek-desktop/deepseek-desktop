@@ -321,7 +321,8 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
             |app, _arguments, _working_directory| {
-                if let Some(window) = app.get_webview_window("main") {
+                if let Some(window) = app.get_window("main") {
+                    let _ = window.unminimize();
                     let _ = window.show();
                     let _ = window.set_focus();
                 }

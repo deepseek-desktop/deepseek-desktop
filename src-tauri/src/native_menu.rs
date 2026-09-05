@@ -2,7 +2,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "macos")]
 use tauri::menu::PredefinedMenuItem;
-#[cfg(target_os = "macos")]
 use tauri::menu::SubmenuBuilder;
 use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder};
 use tauri::{AppHandle, Manager};
@@ -50,6 +49,22 @@ impl Drop for NativeMenuPopupGuard<'_> {
 #[cfg(target_os = "macos")]
 pub(crate) fn content_top_inset(window: &tauri::Window) -> DesktopResult<f64> {
     use objc2_app_kit::NSWindow;
+    use objc2_foundation::MainThreadMarker;
+
+    if MainThreadMarker::new().is_none() {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let target = window.clone();
+        window
+            .run_on_main_thread(move || {
+                let _ = sender.send(content_top_inset(&target));
+            })
+            .map_err(desktop_error)?;
+        return receiver.recv().map_err(desktop_error)?;
+    }
+    assert!(
+        MainThreadMarker::new().is_some(),
+        "AppKit view access requires the main thread"
+    );
 
     let ns_window: &NSWindow = unsafe { &*window.ns_window().map_err(desktop_error)?.cast() };
     let content_view = ns_window.contentView().ok_or_else(|| {
@@ -65,10 +80,9 @@ pub(crate) fn content_top_inset(_window: &tauri::Window) -> DesktopResult<f64> {
     Ok(0.0)
 }
 
-#[cfg(target_os = "macos")]
 const APP_NAME: &str = env!("DEEPSEEK_DESKTOP_APP_NAME");
 #[cfg(target_os = "macos")]
-const HIDDEN_EDIT_SHORTCUT_COUNT: isize = 6;
+const HIDDEN_SHORTCUT_COUNT: isize = 10;
 
 #[derive(Clone, Copy)]
 struct MenuLabels {
@@ -111,6 +125,25 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
     let paste = PredefinedMenuItem::paste(app, Some(labels.paste)).map_err(desktop_error)?;
     let select_all =
         PredefinedMenuItem::select_all(app, Some(labels.select_all)).map_err(desktop_error)?;
+    let settings = item(app, SETTINGS_MENU_ID, labels.settings, Some("CmdOrCtrl+,"))?;
+    let workbench = item(
+        app,
+        WORKBENCH_MENU_ID,
+        labels.workbench,
+        Some("CmdOrCtrl+1"),
+    )?;
+    let diagnostics = item(
+        app,
+        DIAGNOSTICS_MENU_ID,
+        labels.diagnostics,
+        Some("CmdOrCtrl+Shift+D"),
+    )?;
+    let close = item(
+        app,
+        CLOSE_MENU_ID,
+        labels.close_settings,
+        Some("CmdOrCtrl+W"),
+    )?;
     let application = SubmenuBuilder::new(app, APP_NAME)
         .services()
         .separator()
@@ -129,6 +162,10 @@ pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
         .item(&copy)
         .item(&paste)
         .item(&select_all)
+        .item(&settings)
+        .item(&workbench)
+        .item(&diagnostics)
+        .item(&close)
         .build()
         .map_err(desktop_error)?;
     let menu = MenuBuilder::new(app)
@@ -161,13 +198,13 @@ fn hide_app_menu_edit_shortcuts() -> DesktopResult<()> {
         DesktopError::Other("macOS application submenu is unavailable".to_owned())
     })?;
     let item_count = application_menu.numberOfItems();
-    if item_count < HIDDEN_EDIT_SHORTCUT_COUNT {
+    if item_count < HIDDEN_SHORTCUT_COUNT {
         return Err(DesktopError::Other(
             "macOS application menu is missing edit shortcuts".to_owned(),
         ));
     }
 
-    for index in item_count - HIDDEN_EDIT_SHORTCUT_COUNT..item_count {
+    for index in item_count - HIDDEN_SHORTCUT_COUNT..item_count {
         let shortcut = application_menu.itemAtIndex(index).ok_or_else(|| {
             DesktopError::Other("macOS edit shortcut menu item is unavailable".to_owned())
         })?;
@@ -178,8 +215,49 @@ fn hide_app_menu_edit_shortcuts() -> DesktopResult<()> {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn install(app: &AppHandle, _locale: &str) -> DesktopResult<()> {
-    app.remove_menu().map_err(desktop_error)?;
+pub fn install(app: &AppHandle, locale: &str) -> DesktopResult<()> {
+    let labels = labels(locale);
+    let shortcuts = SubmenuBuilder::new(app, APP_NAME)
+        .item(&item(
+            app,
+            SETTINGS_MENU_ID,
+            labels.settings,
+            Some("CmdOrCtrl+,"),
+        )?)
+        .item(&item(
+            app,
+            WORKBENCH_MENU_ID,
+            labels.workbench,
+            Some("CmdOrCtrl+1"),
+        )?)
+        .item(&item(
+            app,
+            DIAGNOSTICS_MENU_ID,
+            labels.diagnostics,
+            Some("CmdOrCtrl+Shift+D"),
+        )?)
+        .item(&item(
+            app,
+            CLOSE_MENU_ID,
+            labels.close_settings,
+            Some("CmdOrCtrl+W"),
+        )?)
+        .item(&item(app, QUIT_MENU_ID, labels.quit, Some("CmdOrCtrl+Q"))?)
+        .build()
+        .map_err(desktop_error)?;
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| DesktopError::Other("main desktop window is unavailable".to_owned()))?;
+    window
+        .set_menu(
+            MenuBuilder::new(app)
+                .item(&shortcuts)
+                .build()
+                .map_err(desktop_error)?,
+        )
+        .map_err(desktop_error)?;
+    // Keep the native accelerator table attached without a second visible menu.
+    window.hide_menu().map_err(desktop_error)?;
     Ok(())
 }
 
