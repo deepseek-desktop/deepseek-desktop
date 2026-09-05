@@ -94,7 +94,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 1. 查询远程最新 Tag/Release，选择下一个未占用完整 SemVer。
 2. 确认 `master`、工作区、验证、提交范围和远端状态。
 3. 创建新的 annotated Tag；已有 `v` 时保持，没有时按约定补 `v`。
-4. 推送 `master` 和新 Tag，不 force push、不移动旧 Tag。
+4. 推送 `master` 和新 Tag，不 force push、不移动旧 Tag。社区预发布显式使用 `--prerelease --latest=false`，不依赖 GitHub 默认 Latest 推断。
 5. 等待质量检查、四平台矩阵和汇总发布全部完成。
 6. 重新读取 Release，核对 5 个安装包、`SHA256SUMS`、名称、大小、摘要、正文直接下载链接和 Tag/commit。
 

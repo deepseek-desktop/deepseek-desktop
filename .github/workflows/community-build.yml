@@ -151,7 +151,7 @@ jobs:
           test "${#assets[@]}" -eq 6
           release_flags=()
           if [[ "$(node scripts/ci-release-prerelease.mjs)" == "true" ]]; then
-            release_flags+=(--prerelease)
+            release_flags+=(--prerelease --latest=false)
           fi
           # The release list only shows a truncated title, so repeating the product
           # name on every entry hides the one thing that tells them apart.

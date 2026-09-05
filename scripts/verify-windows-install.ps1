@@ -231,7 +231,7 @@ try {
     throw "main window did not become ready with title '$expectedTitle'"
   }
 
-  Wait-AppUiElement -Names @("新会话", "新增對話", "New Session") -RootProcessId $appProcess.Id -TimeoutSeconds 120 | Out-Null
+  Wait-AppUiElement -Names @("新建会话", "新会话", "新增對話", "New session") -RootProcessId $appProcess.Id -TimeoutSeconds 120 | Out-Null
   $fileMenu = Wait-AppUiElement -Names @("文件", "檔案", "File") -RootProcessId $appProcess.Id
   Invoke-UiElement -Element $fileMenu
   $settingsMenu = Wait-AppUiElement -Names @(

@@ -300,6 +300,7 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   assert.match(workflow, /--notes-file release-assets\/RELEASE-NOTES\.md/u);
   assert.match(workflow, /release\/\*\*\/SHA256SUMS/u);
   assert.match(workflow, /node scripts\/ci-release-prerelease\.mjs/u);
+  assert.match(workflow, /release_flags\+=\(--prerelease --latest=false\)/u);
   assert.match(workflow, /verify-windows-install\.ps1/u);
   assert.match(workflow, /-ExpectedVersion \$env:DESKTOP_APP_VERSION/u);
   assert.match(windowsAcceptance, /Is64BitOperatingSystem/u);
@@ -308,7 +309,7 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   assert.match(windowsAcceptance, /Assert-Pe -Path \$installer.FullName -AllowedMachines @\(0x014c, 0x8664\)/u);
   assert.match(windowsAcceptance, /Assert-Pe -Path \$installedExecutable -AllowedMachines @\(0x8664\)/u);
   assert.match(windowsAcceptance, /Join-Path \$installLocation "deepseek-desktop\.exe"/u);
-  assert.match(windowsAcceptance, /Wait-AppUiElement -Names @\("新会话", "新增對話", "New Session"\)/u);
+  assert.match(windowsAcceptance, /Wait-AppUiElement -Names @\("新建会话", "新会话", "新增對話", "New session"\)/u);
   assert.match(windowsAcceptance, /Get-DescendantProcessIds -RootProcessId \$RootProcessId/u);
   assert.match(windowsAcceptance, /ProcessName -like "node\*"/u);
   assert.match(windowsAcceptance, /"设置…", "设置\.\.\."/u);
