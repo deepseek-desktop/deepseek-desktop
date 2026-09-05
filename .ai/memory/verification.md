@@ -190,14 +190,12 @@
 
 另一路实机故障来自 WebKit 的 Cookie 作用域：Harness 每次随机端口启动生成新的 `dsh-auth-*` Cookie 名称，但这些 Cookie 均属于 `127.0.0.1`，会被发送给后续端口。累计请求头接近 Node 16 KiB 默认上限时，短页面请求仍返回 200，约 3 KiB 的 `/plugins/??...` 请求先返回 **HTTP 431 / 0 字节**。Harness smoke 现在预置 60 个旧会话 Cookie，验证令牌交换只保留当前 Cookie，并实际请求 HTML 引用的全部插件脚本；修复后的脚本请求均返回 2xx JavaScript。
 
-## 全屏切换 SIGABRT（未闭环，非回归）
+## 全屏切换 SIGABRT（未闭环，非回归，且**无稳定复现**）
 
-2026-09-05 在本机 1.0.0 验收包上稳定复现出同一崩溃，v1.0.33 同样存在，不是新引入的回归。
+2026-09-05 在本机 1.0.0 验收包上捕获三份崩溃报告（07:52:12、07:54:53、08:01:36），
+均发生在交互式测试期间。v1.0.33 同样存在，不是新引入的回归。
 
-触发条件：先连续快速改变窗口尺寸（7 次，间隔 0.25 秒），紧接着点击窗口的
-`AXFullScreenButton`。单独连续点击全屏按钮 6 次不崩；只改尺寸不点全屏 35 次也不崩。
-
-三份崩溃报告（07:52:12、07:54:53、08:01:36）栈完全一致：
+三份报告栈逐帧一致：
 
 ```
 _objc_fatal <- weak_register_no_lock <- objc_initWeak
@@ -211,11 +209,16 @@ _objc_fatal <- weak_register_no_lock <- objc_initWeak
 
 `objc_initWeak` 在目标对象正在析构时 fatal，即 AppKit 遍历约束时对一个已进入析构的视图建立弱引用。
 
+**触发条件未知。** 曾据前后顺序推断为「连续快速改尺寸后点全屏按钮」，随后用脚本做了
+18 次试验予以证伪，全部存活，分三种策略：
+
+1. 新启动 + 7 次快速改尺寸 + 点 `AXFullScreenButton`：11 次，0 崩溃。
+2. 在全屏动画未结束时插入改尺寸和二次点击：4 次，0 崩溃。
+3. 混合设置层开关、菜单弹出（会 hide/show `desktop-menu` 子 WebView）、改尺寸与全屏切换：3 次，0 崩溃。
+
 已排除的修复方向：把 `Resized` / `ScaleFactorChanged` 回调里的 `sync_surface_layout()`
-改为经 `run_on_main_thread` 延后并合并（假设是在 AppKit 布局遍历内部重入修改视图树）。
-实测崩溃栈逐帧不变，**该改动无效，已回滚**，不要重复尝试。
+改为经 `run_on_main_thread` 延后并合并。实测崩溃栈逐帧不变，**该改动无效，已回滚**，不要重复尝试。
 
-下一步应查的方向：`ensure_desktop_menu` 在取不到菜单 WebView 时会 `add_child` 新建，
-全屏过渡期间反复新建/替换子 WebView 是当前最可疑的视图树扰动源；以及
-`tao_view_guard` 对 `dealloc` 的 swizzle 是否改变了析构时序。二者都需先做 A/B 验证再改。
-
+没有稳定复现之前不要改代码：任何修复都无法验证，而过宽的 `tao_view_guard` swizzle
+曾正是以这条相同的 `objc_initWeak` 栈制造过新崩溃。优先做的应是让下一次真实发生可被诊断
+（记录析构对象的类名与当时的子 WebView 集合），而不是盲改。
