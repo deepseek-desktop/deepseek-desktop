@@ -176,7 +176,48 @@ function Wait-AppUiElement {
     }
     Start-Sleep -Milliseconds 500
   } while ([DateTime]::UtcNow -lt $deadline)
+  Write-AppUiDiagnostic -RootProcessId $RootProcessId
   throw "application UI element did not appear: $($Names -join ', ')"
+}
+
+# A bare timeout cannot distinguish "the Harness never started", "it started but the
+# workbench failed to load" and "it is still preparing its profile on first run", and
+# each Windows matrix round costs half an hour. Report what the runner actually had.
+function Write-AppUiDiagnostic {
+  param([Parameter(Mandatory = $true)][int]$RootProcessId)
+
+  Write-Host "--- acceptance diagnostic ---"
+  try {
+    $processIds = @($RootProcessId) + @(Get-DescendantProcessIds -RootProcessId $RootProcessId)
+    foreach ($processId in $processIds) {
+      $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+      if ($process) { Write-Host "process $processId $($process.ProcessName) title='$($process.MainWindowTitle)'" }
+    }
+  } catch { Write-Host "process enumeration failed: $($_.Exception.Message)" }
+
+  try {
+    $names = @()
+    foreach ($element in Get-UiElements) {
+      try {
+        if ($processIds -notcontains $element.Current.ProcessId) { continue }
+        $name = $element.Current.Name
+        if ($name) { $names += "$($element.Current.ControlType.ProgrammaticName):$name" }
+      } catch { continue }
+    }
+    Write-Host "automation elements: $($names.Count)"
+    foreach ($name in ($names | Select-Object -First 40)) { Write-Host "  $name" }
+  } catch { Write-Host "automation enumeration failed: $($_.Exception.Message)" }
+
+  foreach ($relative in @("deepseek.desktop\logs\desktop.log", "deepseek.desktop\logs\harness.log")) {
+    $logPath = Join-Path $env:APPDATA $relative
+    if (Test-Path -LiteralPath $logPath) {
+      Write-Host "--- tail $logPath ---"
+      Get-Content -LiteralPath $logPath -Tail 40 | ForEach-Object { Write-Host "  $_" }
+    } else {
+      Write-Host "no log at $logPath"
+    }
+  }
+  Write-Host "--- end diagnostic ---"
 }
 
 $processorArchitectures = @(
@@ -246,7 +287,7 @@ try {
     throw "main window did not become ready with title '$expectedTitle'"
   }
 
-  Wait-AppUiElement -Names @("新建会话", "新会话", "新增對話", "New session") -RootProcessId $appProcess.Id -TimeoutSeconds 120 | Out-Null
+  Wait-AppUiElement -Names @("新建会话", "新会话", "新增對話", "New session") -RootProcessId $appProcess.Id -TimeoutSeconds 420 | Out-Null
   $fileMenu = Wait-AppUiElement -Names @("文件", "檔案", "File") -RootProcessId $appProcess.Id
   Open-UiMenu -Element $fileMenu
   $settingsMenu = Wait-AppUiElement -Names @(
