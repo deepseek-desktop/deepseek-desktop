@@ -313,6 +313,9 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   assert.match(windowsAcceptance, /Get-DescendantProcessIds -RootProcessId \$RootProcessId/u);
   assert.match(windowsAcceptance, /ProcessName -like "node\*"/u);
   assert.match(windowsAcceptance, /"设置…", "设置\.\.\."/u);
+  assert.match(windowsAcceptance, /Open-UiMenu -Element \$fileMenu/u);
+  assert.match(windowsAcceptance, /\[System\.Windows\.Automation\.ExpandCollapsePattern\]\$pattern\)\.Expand\(\)/u);
+  assert.doesNotMatch(windowsAcceptance, /Invoke-UiElement -Element \$fileMenu/u);
   assert.match(windowsAcceptance, /Harness Node child process was not running/u);
   assert.match(windowsAcceptance, /canceling the close confirmation unexpectedly exited/u);
   assert.match(windowsAcceptance, /orphan child processes remained after exit/u);

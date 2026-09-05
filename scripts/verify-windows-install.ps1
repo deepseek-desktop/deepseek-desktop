@@ -115,6 +115,21 @@ function Invoke-UiElement {
   throw "UI element does not support InvokePattern: $($Element.Current.Name)"
 }
 
+function Open-UiMenu {
+  param([Parameter(Mandatory = $true)]$Element)
+
+  # WebView2 exposes aria-haspopup menus through ExpandCollapse, not Invoke.
+  $pattern = $null
+  if ($Element.TryGetCurrentPattern(
+      [System.Windows.Automation.ExpandCollapsePattern]::Pattern,
+      [ref]$pattern
+    )) {
+    ([System.Windows.Automation.ExpandCollapsePattern]$pattern).Expand()
+    return
+  }
+  Invoke-UiElement -Element $Element
+}
+
 function Activate-App {
   param([Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process)
 
@@ -233,7 +248,7 @@ try {
 
   Wait-AppUiElement -Names @("新建会话", "新会话", "新增對話", "New session") -RootProcessId $appProcess.Id -TimeoutSeconds 120 | Out-Null
   $fileMenu = Wait-AppUiElement -Names @("文件", "檔案", "File") -RootProcessId $appProcess.Id
-  Invoke-UiElement -Element $fileMenu
+  Open-UiMenu -Element $fileMenu
   $settingsMenu = Wait-AppUiElement -Names @(
     "设置…", "设置...",
     "設定…", "設定...",

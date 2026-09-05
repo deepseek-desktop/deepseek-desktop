@@ -12,7 +12,7 @@
 | F13 | 等待整个进程组，重复终止幂等 | Rust `termination_waits_for_the_process_group_after_the_leader_exits` 以真实 Unix 子进程通过 |
 | F14 | 同源 popup 导航受管工作台；外链仅系统浏览器，禁止失管 WKWebView | 原生 Markdown 外链打开系统 Chrome，Desktop 保持单窗口；最新 WebKit 修复包再次点击当前受管 Origin 的 Markdown 链接后仍为原单窗口、同一 Desktop/Harness 进程，完整历史与当前模型保留，无白屏 |
 | F15 | 单实例查找实际 Window，解除最小化再显示聚焦 | macOS 安装包最小化后双启动恢复同一 PID、单窗口并聚焦；其他平台未验 |
-| F22 | 常驻原生快捷键，保留唯一可见窗口菜单 | 前一 macOS 包 Cmd+, / Cmd+W 与编辑快捷键通过；最新包聊天输入框自动化三次未通过，AX 旧值与焦点问题尚未区分，不算最终通过；Windows/Linux 未验 |
+| F22 | 常驻原生快捷键，保留唯一可见窗口菜单 | 1.1.0 实际 DMG 聊天输入框 Cmd+A/C/X/V 及 Cmd+, / Cmd+W 通过；实际鼠标定位、每次新取 AX 引用，草稿和原剪贴板各类型数据恢复一致；Windows/Linux 未验 |
 | F02 / F03 | NSIS 外壳允许 x86；实际 deepseek-desktop.exe 必须 x64；规范化注册表安装路径 | 脚本已修复，Windows x64 原生安装验收仍阻塞，不能记为通过 |
 | F17 | 校验 annotated Tag / 版本 / HEAD / 构建 commit，矩阵传递 Tag 对象并在发布前重读远端 | Node `release identity rejects lightweight, moved, mismatched and replaced annotated tags` 通过；未改动真实 Tag |
 | F18 | 用户字段级 CAS，后端时间戳原子修改，不接受前端快照覆盖 | Rust `user_field_patches_preserve_backend_state_and_reject_stale_revisions` 通过 |
@@ -47,3 +47,13 @@ DeepSeek GUI 并发验收的失败证据仍保留：首轮请求实际未重叠�
 随后通过聊天生成当前受管 Origin 的 Markdown 链接并原生点击，最新回复和历史完整恢复，所选 Max 模型保留、原 Desktop/Harness PID 不变、窗口数仍为 1；最终包同源导航复验通过。Windows x64 原生门禁仍未运行，聊天输入框剪贴板复验未闭环，不推送发行 Tag、不创建 Release。
 
 新包输入框剪贴板复测保留失败状态：前两次 Cmd+C 的实际剪贴板文本正确，但持有的 AXTextArea 一直返回旧草稿值；第三次改用剪贴板读回后，焦点和草稿恢复断言未通过。连续三次失败后已停止重复操作；仅涉及隔离测试会话草稿，系统原剪贴板在 finally 恢复，未改动其他会话文件。该结果不足以证明编辑快捷键的产品根因，也不能作为通过证据。
+
+## 1.1.0 本地最终验收
+
+- DMG SHA256：`4f4f4bd0d290013bca121c9339ea35f4c39a28e93be378217e79a0847a9fbafd`；主程序 SHA256：`e162205f8c986faf6f90b5ecaa04cfd2079880996a6224984a58ed841ccba1f3`。备份应用及数据后从实际 DMG 安装，以 LaunchServices 正常启动，标题为 1.1.0，严格 ad-hoc 完整性验证通过，非 Developer ID 签名。
+- 物理鼠标定位输入框并每次重新取 AXTextArea，实际 Cmd+A/C/X/V、草稿恢复通过。JXA 的 pasteboardItems.count 返回字符串，测试断言改用 Number 后逐类型 NSData 恢复校验也通过；没有为自动化修改产品源码。证据为 `release-1.1.0-clipboard.json`。
+- 两轮五菜单、全屏、设置、关闭取消、最小化恢复通过；退出首个实例后 Desktop/Node 均清理。历史 SIGABRT 原因对照、三次冷启动、20 轮及 30 分钟观察仍见生命周期记录；本次未发现新增相关崩溃。
+- GUI 准备/激活兼容 fixture `11cb06c7bf34`，五个 Desktop 扩展在安装包和候选中的摘要逐项一致。候选搜索设置初始跟随模型，禁用及恢复均保存并显示已生效。不兼容 fixture 明确失败，current 未变、无 pending；恢复内置并重新启动后正常。已通过原界面恢复默认官方仓库，未清空数据。
+- 恢复后的 1.1.0 GUI 以 `aliyun-maas/qwen3.8-max` 完成一次真实 web_search，工具 seq 185 返回 8 条 `meta.sources`、isError=false，turn 14 正常完成；同源 Markdown 链接点击后原窗口历史保留。证据在 `release-1.1.0-search.jsonl` 与最终 AX 记录，密钥未写入证据。
+- `desktop:package`、`app:sync --check`、`harness:sync --check`、`release:smoke` 通过；最后的 Windows 脚本修改后重跑 `verify` 和 25 项发行协议回归。总量仍为 Node 106、Vue 32、搜索 40、Rust 94 加 1 项显式联网 ignore，七项 E2E 与真实 Harness smoke；不以这些总数替代上面的缺陷场景。
+- Windows 菜单具有 `aria-haspopup=menu`，Chromium 的 [UIA pattern 映射](https://github.com/chromium/chromium/blob/81600c6b4533260c0fae1099e82d5327656d81f0/ui/accessibility/platform/ax_platform_node_win.cc#L8714-L8738) 对该菜单提供 ExpandCollapse 而非 Invoke。验收 helper 优先展开，仅在无展开 pattern 时调用 Invoke；后续设置菜单/关闭确认/清理/卸载断言不变。这是源码与脚本回归证据，Windows x64 真正通过须以新 Tag 官方矩阵为准。
