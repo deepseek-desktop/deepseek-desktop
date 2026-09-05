@@ -153,7 +153,14 @@ function buildPathReplacements(sourceRoot) {
   const paths = [
     [sourceRoot, "/deepseek-harness"],
     [root, "/deepseek-desktop"],
-    ...artifactForbiddenRoots(root).map(value => [value, "/deepseek-desktop"]),
+    // artifactForbiddenRoots normalizes to forward slashes, but a Windows binary
+    // embeds its build directory with backslashes, so both spellings must be
+    // replaced. The scan normalizes file content before comparing, which is why it
+    // catches a path the forward-slash-only replacement never matched.
+    ...artifactForbiddenRoots(root).flatMap(value => [
+      [value, "/deepseek-desktop"],
+      [value.replaceAll("/", "\\"), "/deepseek-desktop"]
+    ]),
     [homedir(), "/user-home"],
     [process.env.HOME, "/user-home"],
     [process.env.USERPROFILE, "/user-home"]

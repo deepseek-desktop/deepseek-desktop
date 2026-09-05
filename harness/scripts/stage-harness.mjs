@@ -6,6 +6,7 @@ import process from "node:process";
 
 import { findInstalledPackages, listInstalledPackages } from "../../scripts/lib/installed-packages.mjs";
 import { downloadVerified } from "../../scripts/lib/download-verified.mjs";
+import { artifactForbiddenRoots, scanArtifactPaths } from "../../scripts/lib/artifact-scan.mjs";
 import { atomicWriteJson } from "../../scripts/release-system/common.mjs";
 import {
   contentCacheKey,
@@ -300,6 +301,12 @@ await rm(join(output, "node_modules", ...lock.harness.packageName.split("/"), "n
 await pruneIncompatiblePackages(join(output, "node_modules"), target);
 await pruneDevelopmentFiles(join(output, "node_modules"));
 await pruneNativeArtifacts(join(output, "node_modules"), target);
+
+// Check the staged closure with the very scanner that gates the release, here where
+// the offending file is still the original rather than a copy. Without this the same
+// violation only surfaces after the Rust build and installer bundling — half an hour
+// later on a CI runner — which is how four consecutive Windows releases were lost.
+await scanArtifactPaths([output], { forbiddenRoots: artifactForbiddenRoots(desktopRoot) });
 
 const dshEntry = join(output, lock.harness.entry);
 await stat(dshEntry);
