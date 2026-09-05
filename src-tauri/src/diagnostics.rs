@@ -270,18 +270,22 @@ pub fn redact(value: &str) -> String {
                 (part, "")
             };
             let lower = line.to_ascii_lowercase();
-            if lower.contains("authorization:")
+            if lower.contains("authorization")
                 || lower.contains("api_key")
                 || lower.contains("apikey")
+                || lower.contains("api-key")
+                || lower.contains("access_token")
+                || lower.contains("\"token\"")
                 || lower.contains("password")
-                || lower.contains("cookie:")
+                || lower.contains("cookie")
                 || lower.contains("secret")
+                || lower
+                    .split(|character: char| !character.is_ascii_alphabetic())
+                    .any(|word| word == "bearer")
             {
                 output.push_str("<redacted>");
             } else {
-                output.push_str(&redact_query_tokens(
-                    &line.replace("Bearer ", "Bearer <redacted>"),
-                ));
+                output.push_str(&redact_query_tokens(line));
             }
             output.push_str(ending);
             output
@@ -308,7 +312,10 @@ fn redact_query_tokens(value: &str) -> String {
         } else {
             value[value_start..]
                 .bytes()
-                .take_while(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+                .take_while(|byte| {
+                    !byte.is_ascii_whitespace()
+                        && !matches!(byte, b'&' | b'#' | b'\"' | b'\'' | b'<' | b'>')
+                })
                 .count()
         };
         cursor = value_start + token_length;
@@ -349,6 +356,26 @@ mod tests {
             redact("dsh web: http://127.0.0.1:43127/?token=<redacted>"),
             "dsh web: http://127.0.0.1:43127/?token=<redacted>"
         );
+    }
+
+    #[test]
+    fn redaction_removes_entire_credentials_and_is_idempotent() {
+        for value in [
+            "request Bearer fake.payload.signature",
+            "request bEaReR\tfake-token",
+            r#"{"Authorization":"bearer fake.payload.signature"}"#,
+            r#"{"COOKIE":"session=fake-token"}"#,
+            r#"{"apiKey":"fake-token"}"#,
+            r#"{"token":"fake-token"}"#,
+            r#"{"value":"bEaReR\tfake-token"}"#,
+        ] {
+            let masked = redact(value);
+            assert_eq!(masked, "<redacted>");
+            assert_eq!(redact(&masked), masked);
+        }
+        let masked = redact("url?token=fake.payload%2B==&x=1&token=another.token\r\nready");
+        assert_eq!(masked, "url?token=<redacted>&x=1&token=<redacted>\r\nready");
+        assert_eq!(redact(&masked), masked);
     }
 
     fn environment(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + use<> {

@@ -274,15 +274,24 @@ impl HarnessStore {
         };
         let location = self.location_for_pointer(&pointer)?;
         smoke_candidate(&location, &pointer)?;
-        if let Some(current) = read_pointer(&self.current)? {
-            write_json_atomic(&self.previous, &current)?;
-        } else if self.previous.exists() {
-            fs::remove_file(&self.previous)?;
+        self.finish_activation(&pointer)?;
+        Ok(Some(pointer))
+    }
+
+    fn finish_activation(&self, pointer: &HarnessPointer) -> DesktopResult<()> {
+        let current = read_pointer(&self.current)?;
+        // Replaying after the current write must keep the original rollback target.
+        if current.as_ref() != Some(pointer) {
+            if let Some(current) = current {
+                write_json_atomic(&self.previous, &current)?;
+            } else if self.previous.exists() {
+                fs::remove_file(&self.previous)?;
+            }
+            write_json_atomic(&self.current, pointer)?;
         }
-        write_json_atomic(&self.current, &pointer)?;
         fs::remove_file(&self.pending)?;
         self.prune_versions()?;
-        Ok(Some(pointer))
+        Ok(())
     }
 
     fn rollback(&self) -> DesktopResult<bool> {
@@ -2807,6 +2816,30 @@ mod tests {
         store.prune_versions().unwrap();
         assert!(store.versions.join(&pointer.directory).is_dir());
         assert!(!orphan.exists());
+        let mut next = pointer.clone();
+        next.directory = "1.1.0-dddddddddddd".to_owned();
+        next.harness_commit = "d".repeat(40);
+        fs::create_dir_all(store.versions.join(&next.directory)).unwrap();
+        write_json_atomic(&store.pending, &next).unwrap();
+        // Simulate interruption before/after the previous and current writes.
+        write_json_atomic(&store.previous, &pointer).unwrap();
+        store.finish_activation(&next).unwrap();
+        assert_eq!(
+            read_pointer(&store.previous).unwrap(),
+            Some(pointer.clone())
+        );
+        write_json_atomic(&store.pending, &next).unwrap();
+        store.finish_activation(&next).unwrap();
+        assert_eq!(
+            read_pointer(&store.previous).unwrap(),
+            Some(pointer.clone())
+        );
+        assert_eq!(read_pointer(&store.current).unwrap(), Some(next));
+        assert!(store.versions.join(&pointer.directory).is_dir());
+        assert!(!store.pending.exists());
+        // Restore the original fixture for its bundled rollback check.
+        write_json_atomic(&store.current, &pointer).unwrap();
+        fs::remove_file(&store.previous).unwrap();
         assert!(store.rollback().unwrap());
         assert!(!store.current.exists());
         assert!(!store.versions.join(&pointer.directory).exists());

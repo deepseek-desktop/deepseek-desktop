@@ -10,6 +10,24 @@ import { artifactName, assertSemVer, compareSemVer, hostTarget, isPrereleaseSemV
 
 const root = resolve(import.meta.dirname, "../..");
 
+test("signing key creation never overwrites an existing private key", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-keygen-"));
+  try {
+    const path = join(directory, "signing.pem");
+    const run = () => spawnSync(process.execPath, ["scripts/harness-update/keygen.mjs", path], { cwd: root, encoding: "utf8" });
+    const first = run();
+    assert.equal(first.status, 0, first.stderr);
+    const original = await readFile(path);
+    const second = run();
+    assert.notEqual(second.status, 0);
+    assert.match(second.stderr, /EEXIST/u);
+    assert.deepEqual(await readFile(path), original);
+    assert.doesNotMatch(first.stdout + first.stderr + second.stdout + second.stderr, /BEGIN PRIVATE KEY/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("maps only native Harness update targets", () => {
   assert.equal(hostTarget("darwin", "arm64"), "aarch64-apple-darwin");
   assert.equal(hostTarget("win32", "x64"), "x86_64-pc-windows-msvc");

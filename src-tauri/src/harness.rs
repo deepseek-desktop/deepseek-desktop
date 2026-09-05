@@ -23,7 +23,7 @@ use crate::credential_vault::HarnessSession;
 use crate::diagnostics::Diagnostics;
 use crate::error::{DesktopError, DesktopResult};
 use crate::harness_update::{HarnessLocation, HarnessStore, HarnessUpdateManager};
-use crate::settings::{AppPaths, SettingsStore};
+use crate::settings::{AppPaths, SettingsStore, write_json_atomic};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
 const HARNESS_WORK_DIR_NAME: &str = concat!("harness", "-workdir");
@@ -1261,14 +1261,7 @@ fn prepare_harness_profile(paths: &AppPaths, harness_dir: &Path, node: &Path) ->
     let modules = profile.join("node_modules");
     fs::create_dir_all(&modules)?;
     let manifest_path = profile.join("package.json");
-    let existing = fs::read_to_string(&manifest_path)
-        .ok()
-        .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok());
-    let manifest = merge_profile_manifest(existing);
-    fs::write(
-        manifest_path,
-        format!("{}\n", serde_json::to_string_pretty(&manifest)?),
-    )?;
+    prepare_profile_manifest(&manifest_path)?;
     if !profile.join("cordis.patch.yml").exists() {
         fs::write(profile.join("cordis.patch.yml"), "[]\n")?;
     }
@@ -1708,6 +1701,40 @@ fn collect_directory_files(
     Ok(())
 }
 
+fn prepare_profile_manifest(path: &Path) -> DesktopResult<()> {
+    let existing = match fs::read(path) {
+        Ok(bytes) => {
+            let manifest: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
+                DesktopError::Other(
+                    "Harness profile is invalid JSON; original file preserved".to_owned(),
+                )
+            })?;
+            let valid = manifest.is_object()
+                && ["/dependencies", "/dsh", "/dsh/profile"].iter().all(|key| {
+                    manifest
+                        .pointer(key)
+                        .is_none_or(serde_json::Value::is_object)
+                })
+                && manifest
+                    .pointer("/dsh/profile/bundles")
+                    .is_none_or(|bundles| {
+                        bundles
+                            .as_array()
+                            .is_some_and(|values| values.iter().all(serde_json::Value::is_string))
+                    });
+            if !valid {
+                return Err(DesktopError::Other(
+                    "Harness profile has invalid fields; original file preserved".to_owned(),
+                ));
+            }
+            Some(manifest)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    write_json_atomic(path, &merge_profile_manifest(existing))
+}
+
 fn merge_profile_manifest(existing: Option<serde_json::Value>) -> serde_json::Value {
     const BUILT_IN_BUNDLES: [&str; 4] = [
         "@deepseek-ai/dsh-base",
@@ -1824,6 +1851,39 @@ impl Drop for WindowsJob {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn profile_initialization_preserves_invalid_and_user_owned_content() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("package.json");
+        for original in [
+            "{broken",
+            "[]",
+            r#"{"dependencies":[]}"#,
+            r#"{"dsh":{"profile":{"bundles":[42]}}}"#,
+        ] {
+            std::fs::write(&path, original).unwrap();
+            assert!(super::prepare_profile_manifest(&path).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        }
+        std::fs::remove_file(&path).unwrap();
+        super::prepare_profile_manifest(&path).unwrap();
+        std::fs::write(&path, r#"{"custom":"preserved","dependencies":{"my-plugin":"1.0.0"},"dsh":{"profile":{"bundles":["my-bundle"]}}}"#).unwrap();
+        super::prepare_profile_manifest(&path).unwrap();
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["custom"], "preserved");
+        assert_eq!(value["dependencies"]["my-plugin"], "1.0.0");
+        assert!(
+            value["dsh"]["profile"]["bundles"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("my-bundle"))
+        );
+        let once = std::fs::read(&path).unwrap();
+        super::prepare_profile_manifest(&path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), once);
+    }
+
     #[test]
     fn only_managed_browser_session_cookies_are_reset_between_harness_generations() {
         let name = format!("dsh-auth-{}", "a".repeat(43));
