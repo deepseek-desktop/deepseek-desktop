@@ -104,6 +104,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 
 | 现象 | 处理 |
 | --- | --- |
+| 容器身份检查报 Git dubious ownership | Checkout 的临时 HOME 安全目录不会自动覆盖后续容器步骤；只在临时 CI Job 中登记实际 `GITHUB_WORKSPACE`，不得使用通配信任、修改本机全局 Git 或跳过 annotated Tag 校验 |
 | 普通提交出现发布构建记录 | 工作流只能监听完整 SemVer Tag；禁止添加 PR、分支 push 或手动触发入口 |
 | 已签名版本仍被标为 prerelease | 检查生成配置的 `release.signed` 是否为布尔 `true`；`ci-release-prerelease.mjs` 对缺失或非布尔的签名声明一律按未签名处理 |
 | Release 多出 BUILD-INFO | 只从五类安装包生成公开目录，发布前检查文件总数为 6 |

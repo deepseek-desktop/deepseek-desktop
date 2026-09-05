@@ -8,7 +8,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
-- 2026-09-05 macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地安装包和候选切换验收已完成，Windows x64 原生验收尚未运行。用户授权条件满足后发布 `1.1.0` 社区预发布，明确未签名且不占 Latest；不放宽 stable 签名门禁。以下旧版本记录不代表当前发布验收，逐缺陷证据见 [审计修复验收](memory/audit-remediation.md)。
+- 2026-09-05 macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地安装包和候选切换验收已完成；其 Tag 工作流在容器 Git 所有权检查失败，未进入原生矩阵或创建 Release。保留失败 Tag，修复后按授权选择下一个未占用补丁版本，明确未签名且不占 Latest；不放宽 stable 签名门禁。以下旧版本记录不代表当前发布验收，逐缺陷证据见 [审计修复验收](memory/audit-remediation.md)。
 
 - 1.1.0 本地 DMG 最终复验已通过，含 WebKit 历史恢复、同源链接、真实编辑快捷键、混合窗口交互、候选激活/拒绝/恢复与独立搜索设置。完整 `desktop:package`、七项 E2E、真实 Harness smoke 与同步检查通过。Alibaba MaaS Max / Flash 原生 GUI 并发搜索实际重叠 8067 毫秒，各有 8 条结构化来源；恢复内置后的 1.1.0 GUI 搜索再次成功。该实测不替代不同端点、不同凭据的并发验证。Windows x64 仍等待新 annotated Tag 的官方矩阵，全部通过才发布未签名、非 Latest 社区预发布。
 
