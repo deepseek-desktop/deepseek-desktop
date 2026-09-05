@@ -151,6 +151,10 @@ pub struct HarnessSupervisor {
     workbench_page: Mutex<Option<(u64, Url)>>,
     harness_generation: AtomicU64,
     workbench_visible: AtomicBool,
+    // Breadcrumbs for the unreproducible fullscreen SIGABRT: relayout fires on every
+    // resize frame, so its trail is rate limited, while the rare view-tree mutations
+    // it can perform are always recorded.
+    last_layout_breadcrumb: Mutex<Option<Instant>>,
 }
 
 struct HarnessInner {
@@ -194,6 +198,7 @@ impl HarnessSupervisor {
             workbench_page: Mutex::new(None),
             harness_generation: AtomicU64::new(0),
             workbench_visible: AtomicBool::new(false),
+            last_layout_breadcrumb: Mutex::new(None),
         });
         Self::start_monitor(&supervisor);
         supervisor
@@ -270,6 +275,7 @@ impl HarnessSupervisor {
                     .unwrap_or_else(std::sync::PoisonError::into_inner) =
                     Some((generation, managed_url.clone()));
             }
+            self.diagnostics.append("surface", "show workbench (reuse)");
             self.workbench_visible.store(true, Ordering::Release);
             webview
                 .show()
@@ -354,6 +360,8 @@ impl HarnessSupervisor {
                 "unknown desktop settings view".to_owned(),
             ));
         }
+        self.diagnostics
+            .append("surface", &format!("show settings view={view}"));
         self.workbench_visible.store(false, Ordering::Release);
         if let Some(webview) = self.app.get_webview("workbench") {
             webview
@@ -376,11 +384,41 @@ impl HarnessSupervisor {
     }
 
     pub fn sync_surface_layout(&self) -> DesktopResult<()> {
-        if self.workbench_visible.load(Ordering::Acquire) {
+        let workbench = self.workbench_visible.load(Ordering::Acquire);
+        self.breadcrumb_throttled(|| {
+            let size = self
+                .app
+                .get_window("main")
+                .and_then(|window| window.inner_size().ok())
+                .map(|size| format!("{}x{}", size.width, size.height))
+                .unwrap_or_else(|| "unknown".to_owned());
+            format!(
+                "relayout surface={} window={size}",
+                if workbench { "workbench" } else { "settings" }
+            )
+        });
+        if workbench {
             self.layout_workbench()
         } else {
             self.layout_settings()
         }
+    }
+
+    /// Records a breadcrumb at most every 250ms. A live window drag emits relayout
+    /// requests every frame; recording each one would push the rest of the trail out
+    /// of the rotated log before a crash could be read from it.
+    fn breadcrumb_throttled(&self, message: impl FnOnce() -> String) {
+        let mut last = self
+            .last_layout_breadcrumb
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let now = Instant::now();
+        if last.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
+            return;
+        }
+        *last = Some(now);
+        drop(last);
+        self.diagnostics.append("surface", &message());
     }
 
     pub fn workbench_visible(&self) -> bool {
@@ -434,6 +472,11 @@ impl HarnessSupervisor {
             return Ok(());
         }
 
+        // Adding a child webview mutates the native view tree. This should happen once
+        // per run; if the crash trail shows it repeating, especially around a fullscreen
+        // transition, that is the view churn to investigate first.
+        self.diagnostics
+            .append("surface", "creating desktop-menu webview");
         let builder = tauri::webview::WebviewBuilder::new(
             DESKTOP_MENU_WEBVIEW_LABEL,
             tauri::WebviewUrl::App("index.html".into()),
