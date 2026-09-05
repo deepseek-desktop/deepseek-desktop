@@ -6,6 +6,14 @@
 - Harness `0.1.3-alpha.1` 的模型设置与用户确认补丁已完成上游适配，权限预设三项中文文案由锁定源码和生产闭包校验。生产路径清理会保持二进制长度并重新签名修改后的 Mach-O，真实 Harness smoke 已覆盖 `fs-ext` 加载。
 - 当前可访问的本地 Windows 节点为 Windows 11 ARM64，不能冒充目标 Windows x64 原生环境。Tag 矩阵新增 Windows x64 NSIS 安装、启动、工作台与设置交互、关闭确认、Harness 清理和卸载门禁；该原生门禁通过前不得创建 Release。
 
+## 未闭环缺陷：全屏切换 SIGABRT
+
+- 已捕获三份栈完全一致的崩溃报告，均为 AppKit 约束遍历中 `objc_initWeak` 对正在析构的视图建立弱引用而 abort；v1.0.33 同样存在，非新引入。
+- **没有稳定复现。** 18 次脚本试验（快速改尺寸后点全屏 11 次、全屏动画期插入操作 4 次、混合设置层开关与菜单弹出 3 次）全部存活，先前据前后顺序推断的触发条件已被证伪。
+- 已验证无效并回滚的方向：把 `Resized` / `ScaleFactorChanged` 回调中的 `sync_surface_layout` 经 `run_on_main_thread` 延后并合并，崩溃栈逐帧不变。
+- v1.0.34 起加入界面层面包屑（设置/工作台切换、`desktop-menu` 子 WebView 创建、限流的重排与窗口尺寸），写入 `desktop.log` 并随诊断导出。正常运行期 `creating desktop-menu webview` 只出现一次，实测已确认；若崩溃前反复出现即锁定视图树扰动源。
+- 在拿到稳定复现或一份带面包屑的真实崩溃之前不要改这块代码：修复无法验证，而过宽的 `tao_view_guard` swizzle 历史上正是以同一条 `objc_initWeak` 栈制造过新崩溃。
+
 ## 发布外部条件
 
 - macOS Apple Developer ID 签名与公证尚未接入；具备证书后再启用 stable 发布门禁。
