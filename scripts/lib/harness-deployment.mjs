@@ -41,49 +41,62 @@ function signMachO(path) {
   }
 }
 
-// Native modules are compiled in place, so node-gyp and MSVC leave their link-time
-// intermediates next to the loadable .node. Nothing loads them at runtime, they inflate
-// the installer, and MSVC incremental-link files such as .iobj embed the absolute build
-// directory, which the release artifact scan rejects outright (this is what broke the
-// Windows job for v1.0.32 and v1.0.33). Drop them from the staged tree instead.
-const NATIVE_BUILD_INTERMEDIATE_EXTENSIONS = new Set([
-  ".exp",
-  ".ilk",
-  ".iobj",
-  ".ipdb",
-  ".lib",
-  ".map",
-  ".o",
-  ".obj",
-  ".pdb",
-  ".tlog"
-]);
+// A node-gyp build directory keeps the entire build system next to the loadable
+// addon: config.gypi, the generated Makefile/vcxproj, dependency records under
+// .deps, and link intermediates such as MSVC .iobj. All of them embed absolute
+// build paths, none of them are read at runtime (the loader only requires the
+// .node), and the release artifact scan rejects any file carrying the build root.
+// That is what broke the Windows job for v1.0.32 and v1.0.33. Keep the addon, drop
+// the rest of the build tree.
+//
+// Only directories that are actually node-gyp output are touched: plenty of
+// packages ship hand-written sources under a directory called "build".
+async function isNodeGypBuildDirectory(path) {
+  const entries = await readdir(path, { withFileTypes: true }).catch(() => []);
+  if (entries.some(entry => entry.isFile() && entry.name === "config.gypi")) return true;
+  for (const configuration of ["Release", "Debug"]) {
+    const candidate = entries.find(entry => entry.isDirectory() && entry.name === configuration);
+    if (!candidate) continue;
+    const inner = await readdir(join(path, configuration), { withFileTypes: true }).catch(() => []);
+    if (inner.some(entry => entry.isFile() && entry.name.endsWith(".node"))) return true;
+  }
+  return false;
+}
 
-function isNativeBuildOutputDirectory(relativePath) {
-  return /(?:^|\/)build\/(?:Release|Debug)(?:\/|$)/u.test(relativePath);
+async function pruneBuildDirectory(path, relativePath, removed) {
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    const entryPath = join(path, entry.name);
+    const entryRelative = `${relativePath}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (entry.name === "Release" || entry.name === "Debug") {
+        for (const inner of await readdir(entryPath, { withFileTypes: true })) {
+          if (inner.isFile() && inner.name.endsWith(".node")) continue;
+          await rm(join(entryPath, inner.name), { recursive: true, force: true });
+          removed.push(`${entryRelative}/${inner.name}${inner.isDirectory() ? "/" : ""}`);
+        }
+        continue;
+      }
+      await rm(entryPath, { recursive: true, force: true });
+      removed.push(`${entryRelative}/`);
+      continue;
+    }
+    await rm(entryPath, { force: true });
+    removed.push(entryRelative);
+  }
 }
 
 export async function pruneNativeBuildIntermediates(directory) {
   const removed = [];
   async function visit(current, relativePath) {
     for (const entry of await readdir(current, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
       const path = join(current, entry.name);
       const entryRelative = relativePath ? `${relativePath}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        // node-gyp keeps a per-target object tree under build/<config>/obj.
-        if (entry.name === "obj" && isNativeBuildOutputDirectory(entryRelative)) {
-          await rm(path, { recursive: true, force: true });
-          removed.push(`${entryRelative}/`);
-          continue;
-        }
-        await visit(path, entryRelative);
+      if (entry.name === "build" && (await isNodeGypBuildDirectory(path))) {
+        await pruneBuildDirectory(path, entryRelative, removed);
         continue;
       }
-      if (!entry.isFile()) continue;
-      if (!isNativeBuildOutputDirectory(entryRelative)) continue;
-      if (!NATIVE_BUILD_INTERMEDIATE_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
-      await rm(path, { force: true });
-      removed.push(entryRelative);
+      await visit(path, entryRelative);
     }
   }
   await visit(directory, "");

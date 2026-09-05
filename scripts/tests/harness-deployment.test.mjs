@@ -170,35 +170,39 @@ test("build path sanitization bounds longer replacements inside binaries", async
   assert.deepEqual(result, { rewrittenFiles: 2, replacementCount: 2, resignedFiles: 0 });
 });
 
-test("native build intermediates are pruned but the loadable addon survives", async t => {
-  // The Windows release job for v1.0.32 and v1.0.33 failed because fs-ext shipped
-  // fs_ext.iobj, an MSVC incremental-link file that embeds the absolute build
-  // directory, which the artifact scan rejects.
+test("node-gyp build trees keep only the loadable addon", async t => {
+  // The Windows release job for v1.0.32 and v1.0.33 failed on fs_ext.iobj, but the
+  // whole gyp build tree carries absolute build paths: config.gypi, the generated
+  // makefiles and the .deps dependency records. None of it is read at runtime.
   const root = await fixture(t);
-  const release = join(root, "node_modules", "fs-ext", "build", "Release");
-  await mkdir(join(release, "obj", "fs_ext"), { recursive: true });
-  await writeFile(join(release, "fs_ext.node"), "addon");
-  await writeFile(join(release, "fs_ext.iobj"), "C:/d/harness/staging");
-  await writeFile(join(release, "fs_ext.ipdb"), "intermediate");
-  await writeFile(join(release, "fs_ext.pdb"), "symbols");
-  await writeFile(join(release, "fs_ext.lib"), "import library");
-  await writeFile(join(release, "obj", "fs_ext", "fs_ext.obj"), "object");
-  // Runtime sources that merely live under a directory named build must be kept.
-  await mkdir(join(root, "node_modules", "other", "build"), { recursive: true });
-  await writeFile(join(root, "node_modules", "other", "build", "index.obj"), "keep");
+  const build = join(root, "node_modules", "fs-ext", "build");
+  await mkdir(join(build, "Release", ".deps", "Release"), { recursive: true });
+  await mkdir(join(build, "Release", "obj.target", "fs_ext"), { recursive: true });
+  await writeFile(join(build, "config.gypi"), "{ 'variables': { 'nodedir': '/abs/path' } }");
+  await writeFile(join(build, "Makefile"), "# absolute paths live here");
+  await writeFile(join(build, "fs_ext.target.mk"), "# more absolute paths");
+  await writeFile(join(build, "Release", "fs_ext.node"), "addon");
+  await writeFile(join(build, "Release", "fs_ext.iobj"), "C:/d/harness/staging");
+  await writeFile(join(build, "Release", ".deps", "Release", "fs_ext.node.d"), "dep record");
+  await writeFile(join(build, "Release", "obj.target", "fs_ext", "fs-ext.o"), "object");
+
+  // A hand-written source tree that merely lives under "build" must be untouched.
+  const plain = join(root, "node_modules", "other", "build");
+  await mkdir(join(plain, "Release"), { recursive: true });
+  await writeFile(join(plain, "index.js"), "keep");
+  await writeFile(join(plain, "Release", "notes.txt"), "keep");
 
   const removed = await pruneNativeBuildIntermediates(root);
 
   assert.deepEqual(removed, [
+    "node_modules/fs-ext/build/Makefile",
+    "node_modules/fs-ext/build/Release/.deps/",
     "node_modules/fs-ext/build/Release/fs_ext.iobj",
-    "node_modules/fs-ext/build/Release/fs_ext.ipdb",
-    "node_modules/fs-ext/build/Release/fs_ext.lib",
-    "node_modules/fs-ext/build/Release/fs_ext.pdb",
-    "node_modules/fs-ext/build/Release/obj/"
+    "node_modules/fs-ext/build/Release/obj.target/",
+    "node_modules/fs-ext/build/config.gypi",
+    "node_modules/fs-ext/build/fs_ext.target.mk"
   ]);
-  assert.equal(await readFile(join(release, "fs_ext.node"), "utf8"), "addon");
-  assert.equal(
-    await readFile(join(root, "node_modules", "other", "build", "index.obj"), "utf8"),
-    "keep"
-  );
+  assert.equal(await readFile(join(build, "Release", "fs_ext.node"), "utf8"), "addon");
+  assert.equal(await readFile(join(plain, "index.js"), "utf8"), "keep");
+  assert.equal(await readFile(join(plain, "Release", "notes.txt"), "utf8"), "keep");
 });

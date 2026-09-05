@@ -14,6 +14,7 @@ import {
   sanitizeBuildPaths
 } from "./lib/harness-deployment.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
+import { artifactForbiddenRoots } from "./lib/artifact-scan.mjs";
 import { selectLatestHarnessTag } from "./lib/harness-ref.mjs";
 import { findInstalledPackages } from "./lib/installed-packages.mjs";
 import { applyPackagePatch } from "./lib/package-patch.mjs";
@@ -143,9 +144,16 @@ async function hashTree(directory) {
 }
 
 function buildPathReplacements(sourceRoot) {
+  // Every root the release artifact scan rejects must also be rewritten here, or a
+  // binary that embeds one ships unmodified and fails the scan instead. Keeping the
+  // two lists independent is what kept the Windows job failing: after the build moved
+  // to the short path C:\d, only that root was replaced, while GITHUB_WORKSPACE
+  // (D:\a\...) stayed forbidden and unreplaced, and MSVC embeds the real build
+  // directory in the .node debug directory.
   const paths = [
     [sourceRoot, "/deepseek-harness"],
     [root, "/deepseek-desktop"],
+    ...artifactForbiddenRoots(root).map(value => [value, "/deepseek-desktop"]),
     [homedir(), "/user-home"],
     [process.env.HOME, "/user-home"],
     [process.env.USERPROFILE, "/user-home"]
