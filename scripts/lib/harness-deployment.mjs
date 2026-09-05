@@ -6,6 +6,29 @@ import { createHash } from "node:crypto";
 
 function packagePath(nodeModules, name) { return join(nodeModules, ...name.split("/")); }
 
+export async function patchBrowserJsonIntrinsics(deploymentRoot) {
+  const before = 'Function.prototype.toString.call(constructor) === `function ${name}() { [native code] }`';
+  const after = 'Function.prototype.toString.call(constructor) === Function.prototype.toString.call(name === "Array" ? Array : Object)';
+  const changed = [];
+  // These browser entry points inline util-values; changing only its package is insufficient.
+  for (const [name, entry] of [
+    ["dsh-util-values", "lib/index.js"],
+    ["dsh-client-connection", "lib/client.js"],
+    ["dsh-api-session-controller", "lib/client.js"],
+    ["dsh-client-ui-chat", "lib/client.js"],
+    ["dsh-client-ui-trajectory", "lib/client.js"]
+  ]) {
+    const file = join(deploymentRoot, "node_modules", "@deepseek-ai", name, entry);
+    let source;
+    try { source = await readFile(file, "utf8"); }
+    catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    if (!source.includes(before)) continue;
+    await writeFile(file, source.replaceAll(before, after));
+    changed.push(`${name}/${entry}`);
+  }
+  return changed;
+}
+
 function replaceBuffer(input, search, replacement, preserveSize, unitBytes = 1) {
   if (search.length === 0 || !input.includes(search)) return { bytes: input, replacements: 0 };
   const boundedReplacement = preserveSize && replacement.length > search.length
@@ -404,6 +427,7 @@ export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, d
     ], sourceRoot);
     const restored = await restoreWorkspaceClosure(destination, workspacePackages);
     await materializePackageLinks(join(destination, "node_modules"));
+    await patchBrowserJsonIntrinsics(destination);
     return restored;
   } finally {
     await writeFile(manifestPath, originalManifest);

@@ -1687,13 +1687,22 @@ fn repository_head(repository: &str) -> DesktopResult<String> {
         true,
         Some(repository),
     )?;
-    let mut fields = output.split_whitespace();
+    parse_repository_head(&output)
+}
+
+fn parse_repository_head(output: &str) -> DesktopResult<String> {
+    // ls-remote patterns also match trailing ref components such as origin/HEAD.
+    let mut heads = output
+        .lines()
+        .filter(|line| line.split_whitespace().nth(1) == Some("HEAD"));
+    let mut fields = heads.next().unwrap_or_default().split_whitespace();
     let commit = fields.next().unwrap_or_default();
     let reference = fields.next().unwrap_or_default();
     if commit.len() != 40
         || !commit.chars().all(|value| value.is_ascii_hexdigit())
         || reference != "HEAD"
         || fields.next().is_some()
+        || heads.next().is_some()
     {
         return Err(DesktopError::InvalidConfiguration(
             "Harness repository did not return a valid HEAD commit".to_owned(),
@@ -2492,10 +2501,38 @@ mod tests {
             .output()
             .unwrap();
         let repository_url = Url::from_file_path(&repository).unwrap().to_string();
+        // A non-bare clone legitimately advertises its remote-tracking HEAD too.
+        let status = Command::new("git")
+            .args(["update-ref", "refs/remotes/origin/HEAD", "HEAD"])
+            .current_dir(&repository)
+            .status()
+            .unwrap();
+        assert!(status.success());
         assert_eq!(
             repository_head(&repository_url).unwrap(),
             String::from_utf8(expected.stdout).unwrap().trim()
         );
+    }
+
+    #[test]
+    fn repository_head_requires_one_exact_valid_head() {
+        let commit = "a".repeat(40);
+        let remote = "b".repeat(40);
+        assert_eq!(
+            parse_repository_head(&format!(
+                "{remote}\trefs/remotes/origin/HEAD\n{commit}\tHEAD\n"
+            ))
+            .unwrap(),
+            commit
+        );
+        for invalid in [
+            format!("{remote}\trefs/remotes/origin/HEAD\n"),
+            format!("{commit}\tHEAD\n{remote}\tHEAD\n"),
+            format!("{commit}\tHEAD extra\n"),
+            "invalid\tHEAD\n".to_owned(),
+        ] {
+            assert!(parse_repository_head(&invalid).is_err());
+        }
     }
 
     #[test]

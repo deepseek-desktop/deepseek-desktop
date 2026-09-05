@@ -14,9 +14,16 @@ process.env.no_proxy = process.env.NO_PROXY;
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
+  projects: [
+    { name: "chromium", use: { channel: process.env.CI ? undefined : "chrome" } },
+    ...(process.platform === "darwin" ? [{
+      name: "webkit",
+      testMatch: /harness-values\.spec\.ts/,
+      use: { browserName: "webkit" as const }
+    }] : [])
+  ],
   use: {
     baseURL: `http://127.0.0.1:${port}`,
-    channel: process.env.CI ? undefined : "chrome",
     trace: "retain-on-failure",
     screenshot: "only-on-failure"
   },

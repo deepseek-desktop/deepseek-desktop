@@ -84,9 +84,8 @@ fn retained_content_view(
     // macOS 26 ARM64 otherwise over-release the mounted root view on each query.
     // The window owns this +0 result; Retained pairs our explicit retain with Drop.
     let view: *mut NSView = unsafe { msg_send![window, contentView] };
-    unsafe { Retained::retain(view) }.ok_or_else(|| {
-        DesktopError::Other("macOS window content view is unavailable".to_owned())
-    })
+    unsafe { Retained::retain(view) }
+        .ok_or_else(|| DesktopError::Other("macOS window content view is unavailable".to_owned()))
 }
 
 #[cfg(not(target_os = "macos"))]

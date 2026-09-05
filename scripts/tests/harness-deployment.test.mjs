@@ -9,6 +9,7 @@ import {
   findCliPackage,
   findWorkspacePackages,
   mergeDesktopClosure,
+  patchBrowserJsonIntrinsics,
   pruneNativeBuildIntermediates,
   sanitizeBuildPaths
 } from "../lib/harness-deployment.mjs";
@@ -25,6 +26,20 @@ async function packageAt(root, name, manifest = {}) {
   await writeFile(join(directory, "package.json"), JSON.stringify({ name, version: "1.0.0", ...manifest }));
   return directory;
 }
+
+test("browser JSON intrinsic correction is scoped and idempotent in candidate deployment", async t => {
+  const root = await fixture(t);
+  const old = 'Function.prototype.toString.call(constructor) === `function ${name}() { [native code] }`';
+  for (const [name, entry] of [["dsh-util-values", "index.js"], ["dsh-client-ui-chat", "client.js"], ["dsh-web-search-deepseek", "index.js"]]) {
+    const directory = await packageAt(join(root, "node_modules"), `@deepseek-ai/${name}`);
+    await mkdir(join(directory, "lib"));
+    await writeFile(join(directory, "lib", entry), old);
+  }
+  assert.equal((await patchBrowserJsonIntrinsics(root)).length, 2);
+  assert.deepEqual(await patchBrowserJsonIntrinsics(root), []);
+  assert.match(await readFile(join(root, "node_modules/@deepseek-ai/dsh-util-values/lib/index.js"), "utf8"), /name === "Array" \? Array : Object/);
+  assert.equal(await readFile(join(root, "node_modules/@deepseek-ai/dsh-web-search-deepseek/lib/index.js"), "utf8"), old);
+});
 
 test("desktop closure includes transitive dependencies but preserves the new Harness core", async t => {
   const root = await fixture(t);
