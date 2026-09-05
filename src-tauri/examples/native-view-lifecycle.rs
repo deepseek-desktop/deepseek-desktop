@@ -38,6 +38,23 @@ fn main() {
             }
             app.get_webview("probe-settings").unwrap().hide()?;
             native_menu::install(app.handle(), "en-US")?;
+            if std::env::args().any(|arg| arg == "--check-ownership") {
+                use objc2::{msg_send, rc::autoreleasepool, runtime::AnyObject};
+                let view = window.ns_view()?.cast::<AnyObject>();
+                let count = || unsafe { msg_send![&*view, retainCount] };
+                for iteration in 0..32 {
+                    let before: usize = count();
+                    autoreleasepool(|_| native_menu::content_top_inset(&window)).unwrap();
+                    let after: usize = count();
+                    eprintln!("ownership iteration={iteration} before={before} after={after}");
+                    if before != after {
+                        eprintln!("FAIL: inset query changed root view ownership");
+                        // Exit this disposable probe without unwinding across Cocoa.
+                        std::process::exit(1);
+                    }
+                }
+                app.handle().exit(0);
+            }
             eprintln!("probe ready pid={}", std::process::id());
             Ok(())
         })

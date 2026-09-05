@@ -67,12 +67,26 @@ pub(crate) fn content_top_inset(window: &tauri::Window) -> DesktopResult<f64> {
     );
 
     let ns_window: &NSWindow = unsafe { &*window.ns_window().map_err(desktop_error)?.cast() };
-    let content_view = ns_window.contentView().ok_or_else(|| {
-        DesktopError::Other("macOS window content view is unavailable".to_owned())
-    })?;
+    let content_view = retained_content_view(ns_window)?;
     let content_frame = content_view.frame();
     let layout = ns_window.contentLayoutRect();
     Ok((content_frame.size.height - (layout.origin.y + layout.size.height)).max(0.0))
+}
+
+#[cfg(target_os = "macos")]
+fn retained_content_view(
+    window: &objc2_app_kit::NSWindow,
+) -> DesktopResult<objc2::rc::Retained<objc2_app_kit::NSView>> {
+    use objc2::{msg_send, rc::Retained};
+    use objc2_app_kit::NSView;
+
+    // Avoid the optimized autorelease-return handshake here: release builds on
+    // macOS 26 ARM64 otherwise over-release the mounted root view on each query.
+    // The window owns this +0 result; Retained pairs our explicit retain with Drop.
+    let view: *mut NSView = unsafe { msg_send![window, contentView] };
+    unsafe { Retained::retain(view) }.ok_or_else(|| {
+        DesktopError::Other("macOS window content view is unavailable".to_owned())
+    })
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -397,9 +411,7 @@ fn popup_below_title(
         DesktopError::Other("macOS menus must open on the main thread".to_owned())
     })?;
     let ns_window: &NSWindow = unsafe { &*window.ns_window().map_err(desktop_error)?.cast() };
-    let content = ns_window.contentView().ok_or_else(|| {
-        DesktopError::Other("macOS window content view is unavailable".to_owned())
-    })?;
+    let content = retained_content_view(ns_window)?;
     let y = content.frame().size.height - content_top_inset(window)? - WINDOW_MENU_HEIGHT_LOGICAL;
     let point = content.convertPoint_toView(NSPoint::new(anchor_x, y), None);
     let screen_point = ns_window.convertPointToScreen(point);

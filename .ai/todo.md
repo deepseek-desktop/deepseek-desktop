@@ -3,8 +3,9 @@
 ## 全量审计修复
 
 - F01–F24 分簇修复中；逐项证据和未闭环项见 [审计修复验收](memory/audit-remediation.md)。安全与数据保护第一簇已完成本地回归，其余项不能以既有测试总数代替验收。
-- Claude 装配任务已交接补丁并停止写入；当前未提交搜索与装配修改由本任务接管，仅按精确 pathspec 提交。全部必要平台、签名及 SIGABRT 门禁通过前不创建新 Tag / Release，旧 Tag 不移动。
-- 2026-09-05 新验证 DMG 已备份后安装，工作台可见且原生菜单、编辑、关闭取消、最小化唤回和长设置滚动通过；旧白屏在本次启动未再现。全屏仍崩溃，不能将这些分项通过写成安装包整体通过。
+- Claude 装配任务已交接并停止写入，搜索与装配修复已本地提交；继续只按精确 pathspec 提交。用户已授权满足门禁后创建 1.1.0 社区预发布（未签名、非 Latest），Windows x64 可在新 Tag 官方矩阵验收；stable 签名要求不变，旧 Tag 不移动。
+- 新验证 DMG 已备份后安装，原生生命周期修复正在收口；工作台可见不等于新会话和搜索端到端通过。发现搜索设置切换后无工作区时添加入口没有打开选择器，正在复核公开目录选择插件装配及重载。
+- 候选检查发现 `git ls-remote <repo> HEAD` 可额外返回 `refs/remotes/origin/HEAD`，现有解析误拒绝合法自定义仓库；应按精确 HEAD ref 解析并补充真实 Git 回归。兼容 bare 候选已通过安装包准备检查，激活及恢复待验。
 
 ## 独立搜索扩展的外部验收
 
@@ -12,14 +13,10 @@
 - Harness `0.1.3-alpha.1` 的模型设置与用户确认补丁已完成上游适配，权限预设三项中文文案由锁定源码和生产闭包校验。生产路径清理会保持二进制长度并重新签名修改后的 Mach-O，真实 Harness smoke 已覆盖 `fs-ext` 加载。
 - 当前可访问的本地 Windows 节点为 Windows 11 ARM64，不能冒充目标 Windows x64 原生环境。Tag 矩阵新增 Windows x64 NSIS 安装、启动、工作台与设置交互、关闭确认、Harness 清理和卸载门禁；该原生门禁通过前不得创建 Release。
 
-## 未闭环缺陷：全屏切换 SIGABRT
+## macOS 生命周期收口
 
-- 历史三份同类崩溃之外，2026-09-05 15:36:12 新安装包再次在全屏过程中崩溃。均在 AppKit 约束遍历中为正在析构的视图创建弱引用；v1.0.33 同样存在。
-- LLDB 捕获主窗口 contentView 的 TaoView 已标记 deallocating，仍挂载在 NSThemeFrame 下；在关闭确认操作附近命中 guarded_dealloc，调用方为自动释放池清理。尚未找到造成引用计数失衡的具体调用，不能把全屏或关闭确认直接认定为根因。调试后恢复用户应用正常启动，后续采用无用户数据的隔离原生 probe。
-- 已验证无效并回滚的方向：把 `Resized` / `ScaleFactorChanged` 回调中的 `sync_surface_layout` 经 `run_on_main_thread` 延后并合并，崩溃栈逐帧不变。
-- v1.0.34 起加入界面层面包屑（设置/工作台切换、`desktop-menu` 子 WebView 创建、限流的重排与窗口尺寸），写入 `desktop.log` 并随诊断导出。正常运行期 `creating desktop-menu webview` 只出现一次，实测已确认；若崩溃前反复出现即锁定视图树扰动源。
-- 已取得带面包屑的新崩溃，继续追踪释放来源；不得通过额外 retain 泄漏、扩大 swizzle 或绕过发布门禁掩盖问题。
-- 隔离原生 probe 已构建并完成 5 轮混合交互，没有复现；具体释放源仍未知，调查工具和已知/未知边界见 [视图生命周期排查](memory/macos-lifecycle.md)。这不是缺陷验收通过。
+- 过度释放来源已由硬件写监视定位到 `content_top_inset`；优化 probe 修改前两次独立启动均失衡，修改后 32 次查询及无输入 guard 对照均平衡。修复和证据边界见 [ADR-019](decisions/adr-019-appkit-content-view-ownership.md) 与 [视图生命周期验收](memory/macos-lifecycle.md)。
+- 不再对用户使用中的应用附加断点，不扩大 swizzle、不禁用全屏；测试断言造成的 probe SIGABRT 与原始 OBJC 崩溃分开统计。后续每个最终发行包继续按本次计划验证原生交互。
 
 ## 发布外部条件
 

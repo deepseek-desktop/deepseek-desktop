@@ -8,7 +8,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
-- 2026-09-05 审计修复验证包（本地默认版本 `1.0.0`）已备份后安装，内置 Harness 以当前 lock 为准。完整本地打包与搜索/设置 smoke 通过，但实际全屏再次触发 SIGABRT；macOS 整体验收、Windows x64 原生验收和可信签名尚未闭环。用户授权条件满足后发布 `1.1.0`，目前不得创建 Tag/Release；以下旧版本记录不代表当前已通过发布验收，逐缺陷证据见 [审计修复验收](memory/audit-remediation.md)。
+- 2026-09-05 审计修复验证包（本地默认版本 `1.0.0`）已备份后安装。macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。安装包功能和候选切换验收仍在进行，Windows x64 原生验收尚未运行。用户授权条件满足后发布 `1.1.0` 社区预发布，明确未签名且不占 Latest；不放宽 stable 签名门禁。以下旧版本记录不代表当前发布验收，逐缺陷证据见 [审计修复验收](memory/audit-remediation.md)。
 
 - 跟随模型搜索现为 Desktop 独立 host/client 扩展，通过公开 Agent 异步上下文、模型目录、搜索 Provider 注册和设置插槽接入。官方搜索源码、设置和启用状态遵循上游及用户配置；Desktop 的单一选择可以映射为 `follow-model`、已注册的独立搜索 Provider 或关闭搜索，不再补丁修改官方搜索卡片或 Harness 搜索核心。候选闭包验证扩展前后端及 Harness 依赖，详见 ADR-017。`1.0.32` macOS ARM64 安装候选已完成真实安装与交互验收，发布仍必须等待本次 Tag 的 Windows x64 原生安装门禁和四平台矩阵。
 
