@@ -58,13 +58,18 @@ export function formatDisplayVersion(version) {
   return version.startsWith("v") ? version : `v${version}`;
 }
 
+// Release verification passes its own inputs through the environment, and they share
+// the RELEASE_ prefix without being build configuration. Exempt them by name rather
+// than loosening the prefix check, which is what catches typos such as RELEASE_CHANEL.
+const RESERVED_NON_CONFIG_KEYS = new Set(["RELEASE_TAG_OBJECT"]);
+
 function assertKnownKeys(values, source) {
   const unknown = Object.keys(values)
     .filter(key => (
       key.startsWith("DESKTOP_APP_")
       || key.startsWith("HARNESS_")
       || key.startsWith("RELEASE_")
-    ) && !CONFIG_KEYS.includes(key))
+    ) && !CONFIG_KEYS.includes(key) && !RESERVED_NON_CONFIG_KEYS.has(key))
     .sort();
   if (unknown.length > 0) throw new Error(`${source} contains unsupported build configuration: ${unknown.join(", ")}`);
 }

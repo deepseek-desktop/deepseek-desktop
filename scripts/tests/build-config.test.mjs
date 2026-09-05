@@ -104,6 +104,9 @@ test("rejects unknown and required empty declared values", () => {
   assert.throws(() => resolveBuildValues({ fileValues: { DESKTOP_APP_NANE: "typo" } }), /unsupported build configuration/u);
   assert.throws(() => resolveBuildValues({ environment: { DESKTOP_APP_NAME: " " } }), /must not be empty/u);
   assert.throws(() => resolveBuildValues({ environment: { RELEASE_CHANEL: "stable" } }), /unsupported build configuration/u);
+  // The tag matrix exports its identity input to every build job; it shares the
+  // RELEASE_ prefix but is not build configuration and must not fail the build.
+  assert.doesNotThrow(() => resolveBuildValues({ environment: { RELEASE_TAG_OBJECT: "4ce8e0e67f6f4d85f2dc1f164d52b1ace23e29bd" } }));
 });
 
 test("uses Harness throughout the public shell contracts, copy, and package commands", async () => {
