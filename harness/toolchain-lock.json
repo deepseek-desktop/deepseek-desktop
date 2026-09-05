@@ -147,7 +147,8 @@
       "markers": [
         "profileRevision = written.view.revision",
         "const rollback = await operations.writeSettings",
-        "if (rollback.kind !== \"written\") setCommitted(true);",
+        "setOpenedAt(rollback.view.revision);",
+        "if (committed) return t(\"conflict\");",
         "Supports image input",
         "支持图片输入",
         "inputModalities\", event.target.checked ? [\"text\", \"image\"] : [\"text\"]",

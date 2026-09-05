@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
+import { runInNewContext } from "node:vm";
 
 const desktopRoot = resolve(import.meta.dirname, "..", "..");
 const preparedRoot = resolve(desktopRoot, process.env.DEEPSEEK_DESKTOP_TEST_HARNESS_DIR || "target/generated/harness/prepared");
@@ -127,12 +128,14 @@ test("public Agent context routes concurrent WebRuntime searches without replaci
   assert.equal(observed.length, 4);
 });
 
-test("public Settings and Loader APIs apply independent, disabled and restored search routing live", async () => {
+test("public Settings and Loader APIs apply independent, disabled and restored search routing live", async t => {
   const require = createRequire(moduleUrl);
   const load = name => import(pathToFileURL(require.resolve(name)).href);
   const { Context } = await load("@deepseek-ai/cordis");
   const { default: Loader } = await load("@deepseek-ai/cordis-plugin-loader");
   const { default: WebRuntime } = await load("@deepseek-ai/dsh-web");
+  const { default: ToolRuntime } = await load("@deepseek-ai/dsh-tools");
+  const { default: SystemPrompt } = await load("@deepseek-ai/dsh-system-prompt");
   const { default: SettingsProvider } = await load("@deepseek-ai/dsh-settings");
   class MemorySettings extends SettingsProvider {
     get writable() { return true; }
@@ -149,6 +152,8 @@ test("public Settings and Loader APIs apply independent, disabled and restored s
   try {
     await ctx.plugin(Loader);
     await ctx.plugin(MemorySettings);
+    await ctx.plugin(SystemPrompt, {});
+    await ctx.plugin(ToolRuntime);
     await ctx.plugin(WebSearchSelection);
     assert.ok(ctx.settings.describe().some(section => section.ns === "web-search-follow-model"));
     ctx.loader.builtins["guarded-web"] = GuardedWebRuntime;
@@ -181,6 +186,7 @@ test("public Settings and Loader APIs apply independent, disabled and restored s
         calls.push(current.web);
       },
     });
+    await ctx.webSearchSelection.applyQueue;
     assert.equal((await ctx.web.search({ query: "default" })).content, "follow");
 
     await ctx.settings.update("web-search-follow-model", { mode: "independent", independentProvider: "fixture-independent" });
@@ -212,7 +218,74 @@ test("public Settings and Loader APIs apply independent, disabled and restored s
     await eventually(() => ctx.settings.describe().find(section => section.ns === "web-search-follow-model")?.value?.mode === "follow-model",
       "failed live routing did not restore the previous persisted selection");
     assert.equal(ctx.get("webSearchSelection").searchProvider, "follow-model");
+    assert.equal(ctx.webSearchSelection.activationStatus().phase, "failed");
+    await ctx.webSearchSelection.enqueue(ctx, ctx.settings.describe().find(section => section.ns === "web-search-follow-model").value);
     assert.equal((await ctx.web.search({ query: "after rollback" })).content, "follow");
+
+    await t.test("a failed older application cannot overwrite a later disabled save", async () => {
+      const entry = [...ctx.loader.entries()].find(entry => entry.options.id === "web");
+      const update = entry.update.bind(entry);
+      let release;
+      const waiting = new Promise(resolve => { release = resolve; });
+      let started = false;
+      t.mock.method(entry, "update", async options => {
+        if (options.config.searchProvider === "broken-apply") { started = true; await waiting; }
+        return update(options);
+      });
+      await ctx.settings.update("web-search-follow-model", { mode: "independent", independentProvider: "broken-apply" });
+      await eventually(() => started, "the failing application did not start");
+      await ctx.settings.update("web-search-follow-model", { mode: "disabled" });
+      release();
+      await ctx.webSearchSelection.applyQueue;
+      assert.equal(ctx.settings.describe().find(section => section.ns === "web-search-follow-model").value.mode, "disabled");
+      assert.equal(ctx.webSearchSelection.activationStatus().phase, "active");
+      await assert.rejects(ctx.web.search({ query: "still disabled" }), { code: "WEB_FOLLOW_MODEL_DISABLED" });
+      t.mock.restoreAll();
+    });
+
+    await t.test("startup routing overrides are reconciled even when the logical Provider is unchanged", async () => {
+      const entry = [...ctx.loader.entries()].find(entry => entry.options.id === "web");
+      await entry.update({ config: { searchProvider: "fixture-independent", fetchProvider: "http" } });
+      await ctx.webSearchSelection.enqueue(ctx, ctx.settings.describe().find(section => section.ns === "web-search-follow-model").value);
+      assert.equal(entry.options.config.searchProvider, "follow-model");
+      await assert.rejects(ctx.web.search({ query: "override cannot bypass disabled" }), { code: "WEB_FOLLOW_MODEL_DISABLED" });
+    });
+
+    await t.test("route changes drain admitted searches and reject new admission", async () => {
+      await ctx.settings.replace("web-search-follow-model", {});
+      await ctx.webSearchSelection.applyQueue;
+      let finish;
+      const first = ctx.webSearchSelection.runSearch(() => new Promise(resolve => { finish = resolve; }));
+      const oldInstances = calls.length;
+      await ctx.settings.update("web-search-follow-model", { mode: "independent", independentProvider: "fixture-independent" });
+      assert.equal(calls.length, oldInstances);
+      await assert.rejects(ctx.webSearchSelection.runSearch(() => { throw new Error("must not execute"); }), { code: "WEB_SEARCH_SELECTION_INACTIVE" });
+      finish("completed on original route");
+      assert.equal(await first, "completed on original route");
+      await ctx.webSearchSelection.applyQueue;
+      assert.ok(calls.length > oldInstances);
+      assert.equal((await ctx.web.search({ query: "new route" })).content, "independent");
+    });
+    await t.test("the public tool pipeline denies disabled search but preserves web fetch", async () => {
+      const executed = [];
+      for (const name of ["web_search", "web_fetch"]) ctx.tools.register({
+        name, description: name, parameters: { type: "object", properties: {} },
+        output: { schema: { type: "string" }, render: value => value },
+        execute: async () => { executed.push(name); return name; },
+      });
+      const execute = name => ctx.tools.execute({ name, arguments: {}, callId: name, signal: new AbortController().signal });
+      await ctx.settings.update("web-search-follow-model", { mode: "disabled" });
+      await ctx.webSearchSelection.applyQueue;
+      await execute("web_search");
+      assert.deepEqual(executed, []);
+      await execute("web_fetch");
+      assert.deepEqual(executed, ["web_fetch"]);
+      await ctx.settings.replace("web-search-follow-model", {});
+      await ctx.webSearchSelection.applyQueue;
+      await execute("web_search");
+      assert.deepEqual(executed, ["web_fetch", "web_search"]);
+      assert.equal(ctx.webSearchSelection.inFlight, 0);
+    });
   } finally {
     await ctx.fiber.dispose();
   }
@@ -470,7 +543,7 @@ test("standard protocols inherit the active model route and normalize sources", 
   }
 });
 
-test("MCP discovery calls only the declared tool and keeps one provider session", async () => {
+for (const encoding of ["json", "sse"]) test(`MCP ${encoding} discovery calls only the declared tool and keeps one provider session`, async () => {
   const calls = [];
   const { engine } = createEngine({
     routes: {
@@ -487,24 +560,43 @@ test("MCP discovery calls only the declared tool and keeps one provider session"
       }
     },
     fetchImpl: async (_url, options) => {
+      if (options.method === "GET") return new Response(null, { status: 405 });
       const payload = JSON.parse(options.body);
-      calls.push({ method: payload.method, headers: options.headers, payload });
-      if (payload.method === "initialize") return jsonResponse({ jsonrpc: "2.0", id: 1, result: {} }, 200, { "mcp-session-id": "session-a" });
+      calls.push({ method: payload.method, headers: new Headers(options.headers), payload });
+      const reply = result => {
+        const body = { jsonrpc: "2.0", id: payload.id, result };
+        return encoding === "json" ? jsonResponse(body, 200, { "mcp-session-id": "session-a" })
+          : new Response(`event: message\ndata: ${JSON.stringify(body)}\n\n`, {
+            headers: { "content-type": "text/event-stream", "mcp-session-id": "session-a" }
+          });
+      };
+      if (payload.method === "initialize") return reply({ protocolVersion: payload.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "search-test", version: "1.0.0" } });
       if (payload.method === "notifications/initialized") return new Response(null, { status: 202 });
-      if (payload.method === "tools/list") return jsonResponse({ jsonrpc: "2.0", id: 2, result: { tools: [{ name: "search_docs" }] } });
-      return jsonResponse({
-        jsonrpc: "2.0",
-        id: 3,
-        result: { structuredContent: { content: "mcp answer", sources: [{ url: "https://sources.test/mcp" }] } }
-      });
+      if (payload.method === "tools/list") return reply({ tools: [{ name: "search_docs", inputSchema: { type: "object" } }] });
+      return reply({ content: [], structuredContent: { content: "mcp answer", sources: [{ url: "https://sources.test/mcp" }] } });
     }
   });
   const result = await engine.search(agent(), { query: "MCP search", maxResults: 2 });
   assert.deepEqual(calls.map(item => item.method), ["initialize", "notifications/initialized", "tools/list", "tools/call"]);
-  assert.equal(calls[2].headers["mcp-session-id"], "session-a");
+  assert.equal(calls[2].headers.get("mcp-session-id"), "session-a");
+  assert.ok(calls.every(call => call.headers.get("authorization") === `Bearer ${secretA}`));
   assert.equal(calls[3].payload.params.name, "search_docs");
   assert.deepEqual(calls[3].payload.params.arguments, { safeSearch: true, query: "MCP search", maxResults: 2 });
   assert.equal(result.sources[0].url, "https://sources.test/mcp");
+});
+
+test("MCP SSE size failures cancel immediately instead of waiting for SDK reconnect or timeout", async () => {
+  let canceled = false;
+  const { engine } = createEngine({ timeoutMs: 200,
+    routes: { "provider-a/model-a": { provider: "provider-a", model: "model-a", endpoint: "https://mcp-provider.test/mcp",
+      credentialRef: "PROVIDER_A_KEY", webSearch: { protocol: "mcp-web-search", credential: "inherit" } } },
+    fetchImpl: async () => new Response(new ReadableStream({
+      pull(controller) { controller.enqueue(new Uint8Array(512 * 1024).fill(32)); },
+      cancel() { canceled = true; },
+    }), { headers: { "content-type": "text/event-stream" } }),
+  });
+  await assert.rejects(engine.search(agent(), { query: "search" }), { code: "WEB_FOLLOW_MODEL_RESPONSE_TOO_LARGE" });
+  assert.equal(canceled, true);
 });
 
 test("model switches and concurrent sessions never mix endpoints or credentials", async () => {
@@ -630,6 +722,32 @@ test("credential, endpoint, redirect, cancellation and invalid responses are fai
   });
 });
 
+test("streamed responses are bounded and canceled during body reads", async t => {
+  const route = { provider: "provider-a", model: "model-a", endpoint: "https://provider-a.test/v1", credentialRef: "PROVIDER_A_KEY", webSearch: { protocol: "dsh-web-search-v1", credential: "inherit" } };
+  for (const failure of ["size", "timeout", "cancel"]) await t.test(failure, async () => {
+    const controller = new AbortController();
+    let canceled = false;
+    let chunks = 0;
+    const engine = createEngine({
+      routes: { "provider-a/model-a": route }, timeoutMs: failure === "timeout" ? 15 : 500,
+      fetchImpl: async () => new Response(new ReadableStream({
+        pull(stream) {
+          chunks += 1;
+          if (failure === "size") stream.enqueue(new Uint8Array(512 * 1024));
+          else if (failure === "cancel") setTimeout(() => controller.abort(), 5);
+        },
+        cancel() { canceled = true; }
+      }))
+    }).engine;
+    await assert.rejects(engine.search(agent(), { query: "body" }, controller.signal), error => {
+      assert.equal(error.code, { size: "WEB_FOLLOW_MODEL_RESPONSE_TOO_LARGE", timeout: "WEB_FOLLOW_MODEL_TIMED_OUT", cancel: "WEB_FOLLOW_MODEL_CANCELED" }[failure]);
+      return true;
+    });
+    assert.equal(canceled, true, "the upstream stream must be canceled, not drained");
+    assert.ok(chunks <= 7, "response size checking must stop reading promptly");
+  });
+});
+
 test("third-party protocols register without vendor branches", async () => {
   const { engine } = createEngine({
     routes: {
@@ -651,4 +769,34 @@ test("third-party protocols register without vendor branches", async () => {
   assert.equal(result.content, `model-a:extension:${secretA.length}`);
   dispose();
   await assert.rejects(engine.search(agent(), { query: "extension" }), /protocol that is unavailable/u);
+});
+
+test("custom Provider credential rollback refreshes the form revision for retry", async t => {
+  const source = await readFile(resolve(preparedRoot, "node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js"), "utf8");
+  const body = source.match(/const createOnce = async \(\) => \{([\s\S]*?)\n\s*\};\n\s*const create = async/u)?.[1];
+  assert.ok(body, "exercise the assembled Provider form, not a duplicate implementation");
+  for (const rollbackConflict of [false, true]) await t.test(rollbackConflict ? "conflicting rollback" : "retry after successful rollback", async () => {
+    let revision = 1;
+    let attempts = 0;
+    const draft = [{ id: "test-model" }];
+    const state = {
+      openedAt: revision, committed: false, route: "test-provider", displayName: "Test", protocol: "openai-completions", baseURL: "https://test.example/v1",
+      models: draft, keyValue: "fixture-key", deriveKeyRef: () => "TEST_KEY", NS$1: "llm-pi-ai", t: key => key,
+      setOpenedAt(value) { state.openedAt = value; }, setCommitted(value) { state.committed = value; },
+      operations: {
+        async writeSettings(_ns, ops, expected) {
+          assert.equal(expected, revision);
+          if (rollbackConflict && ops[0].op === "unset") { revision++; return { kind: "conflict" }; }
+          return { kind: "written", view: { revision: ++revision } };
+        },
+        async storeCredential() { return ++attempts === 1 ? "fixture vault unavailable" : undefined; }
+      }
+    };
+    const create = runInNewContext(`(async () => {${body}\n})`, state);
+    assert.equal(await create(), rollbackConflict ? "conflict" : "fixture vault unavailable");
+    assert.equal(state.models, draft);
+    assert.equal(state.keyValue, "fixture-key");
+    assert.equal(await create(), rollbackConflict ? "conflict" : undefined);
+    assert.equal(attempts, rollbackConflict ? 1 : 2);
+  });
 });

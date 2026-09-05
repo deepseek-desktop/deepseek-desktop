@@ -49,6 +49,11 @@ diff --git a/lib/client.js b/lib/client.js
  							})]
  						}) : null]
  					}, index)),
+@@ -1150,3 +1182,3 @@ window.__ModuleLoader__.load({
+ 			const { taken, protocols, operations, t } = props;
+-			const [openedAt] = (0, react.useState)(() => props.revision);
++			const [openedAt, setOpenedAt] = (0, react.useState)(() => props.revision);
+ 			const [route, setRoute] = (0, react.useState)("");
 @@ -1157,11 +1189,7 @@ window.__ModuleLoader__.load({
  			const [models, setModels] = (0, react.useState)([]);
  			const [busy, setBusy] = (0, react.useState)(false);
@@ -62,15 +67,16 @@ diff --git a/lib/client.js b/lib/client.js
  			const [committed, setCommitted] = (0, react.useState)(false);
  			const disabled = props.readOnly || busy;
  			/** Everything but the key stops being editable once the provider exists. */
-@@ -1177,6 +1205,7 @@ window.__ModuleLoader__.load({
+@@ -1177,6 +1205,8 @@ window.__ModuleLoader__.load({
  			const createOnce = async () => {
++				if (committed) return t("conflict");
  				const keyRef = deriveKeyRef(route);
  				const storesKey = keyValue.length > 0;
 +				let profileRevision;
  				if (!committed) {
  					const profile = {
  						...displayName.length === 0 ? {} : { displayName },
-@@ -1191,11 +1220,29 @@ window.__ModuleLoader__.load({
+@@ -1191,11 +1221,34 @@ window.__ModuleLoader__.load({
  						value: profile
  					}], openedAt);
  					if (written.kind !== "written") return written.kind === "conflict" ? t("conflict") : written.message;
@@ -93,9 +99,14 @@ diff --git a/lib/client.js b/lib/client.js
 +									op: "unset",
 +									path: ["providers", route]
 +								}], profileRevision);
-+								if (rollback.kind !== "written") setCommitted(true);
++								if (rollback.kind !== "written") {
++									setCommitted(true);
++									return t("conflict");
++								}
++								setOpenedAt(rollback.view.revision);
 +							} catch {
 +								setCommitted(true);
++								return t("conflict");
 +							}
 +						}
 +						return stored;
@@ -103,7 +114,7 @@ diff --git a/lib/client.js b/lib/client.js
  				}
  			};
  			const create = async () => {
-@@ -2664,7 +2711,9 @@ window.__ModuleLoader__.load({
+@@ -2664,7 +2717,9 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "Uses the provider default",
  			maxTokens: "Max output tokens",
  			maxTokensPlaceholder: "Uses the provider default",
@@ -114,7 +125,7 @@ diff --git a/lib/client.js b/lib/client.js
  			addModel: "Add model",
  			removeModel: "Delete model",
  			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
-@@ -2766,7 +2815,9 @@ window.__ModuleLoader__.load({
+@@ -2766,7 +2821,9 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "使用提供方默认值",
  			maxTokens: "最大输出 token 数",
  			maxTokensPlaceholder: "使用提供方默认值",

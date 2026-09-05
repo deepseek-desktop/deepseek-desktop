@@ -2,13 +2,14 @@ import { spawnSync } from "node:child_process";
 import { cp, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, sep } from "node:path";
 import process from "node:process";
+import { createHash } from "node:crypto";
 
 function packagePath(nodeModules, name) { return join(nodeModules, ...name.split("/")); }
 
-function replaceBuffer(input, search, replacement, preserveSize) {
+function replaceBuffer(input, search, replacement, preserveSize, unitBytes = 1) {
   if (search.length === 0 || !input.includes(search)) return { bytes: input, replacements: 0 };
   const boundedReplacement = preserveSize && replacement.length > search.length
-    ? replacement.subarray(0, Math.max(0, search.length - 1))
+    ? replacement.subarray(0, Math.max(0, search.length - unitBytes))
     : replacement;
   const effectiveReplacement = preserveSize
     ? Buffer.concat([boundedReplacement, Buffer.alloc(search.length - boundedReplacement.length)])
@@ -120,11 +121,14 @@ export async function sanitizeBuildPaths(directory, replacements) {
       const machO = binary && process.platform === "darwin" && isMachO(bytes);
       let changed = false;
       for (const [from, to] of replacements) {
-        const result = replaceBuffer(bytes, Buffer.from(from), Buffer.from(to), binary);
-        bytes = result.bytes;
-        if (result.replacements > 0) {
-          changed = true;
-          replacementCount += result.replacements;
+        // Match both encodings inspected by the artifact scanner, including PE strings.
+        for (const encoding of ["utf8", "utf16le"]) {
+          const result = replaceBuffer(bytes, Buffer.from(from, encoding), Buffer.from(to, encoding), binary, encoding === "utf16le" ? 2 : 1);
+          bytes = result.bytes;
+          if (result.replacements > 0) {
+            changed = true;
+            replacementCount += result.replacements;
+          }
         }
       }
       if (changed) {
@@ -302,6 +306,7 @@ export async function mergeDesktopClosure(desktopDeployment, harnessDeployment, 
   const destinationModules = join(harnessDeployment, "node_modules");
   const visited = new Set();
   const copied = [];
+  const identities = [];
   async function visit(name, required = true) {
     if (visited.has(name)) return;
     const destination = packagePath(destinationModules, name);
@@ -326,6 +331,14 @@ export async function mergeDesktopClosure(desktopDeployment, harnessDeployment, 
     }
     await rm(destination, { recursive: true, force: true });
     await copyPackage(source, destination);
+    const digest = await packageDigest(source);
+    if (digest !== await packageDigest(destination)) throw new Error(`Desktop extension copy failed verification: ${name}`);
+    const backend = manifest.main ?? manifest.exports?.["."];
+    if (typeof backend === "string" && !await pathExists(join(destination, backend))) {
+      throw new Error(`Desktop backend entry is missing: ${name}`);
+    }
+    identities.push({ name, version: manifest.version, sha256: digest, backend,
+      client: manifest.exports?.["./client"], dependencies: manifest.dependencies ?? {}, peers: manifest.peerDependencies ?? {} });
     if (manifest.dsh?.client) {
       const client = manifest.exports?.["./client"];
       const entry = typeof client === "string" ? client : client?.default;
@@ -347,7 +360,26 @@ export async function mergeDesktopClosure(desktopDeployment, harnessDeployment, 
     for (const dependency of Object.keys(manifest.optionalDependencies || {})) await visit(dependency, false);
   }
   for (const name of roots) await visit(name);
+  await writeFile(join(harnessDeployment, "desktop-extensions.json"), `${JSON.stringify({ schemaVersion: 1, roots, packages: identities }, null, 2)}\n`);
   return copied;
+}
+
+async function packageDigest(root) {
+  const hash = createHash("sha256");
+  async function walk(directory) {
+    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (directory === root && entry.name === "node_modules") continue;
+      const path = join(directory, entry.name);
+      if ((await stat(path)).isDirectory()) await walk(path);
+      else {
+        hash.update(relative(root, path).split(sep).join("/"));
+        hash.update("\0");
+        hash.update(createHash("sha256").update(await readFile(path)).digest());
+      }
+    }
+  }
+  await walk(root);
+  return hash.digest("hex");
 }
 
 export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, destination, runHarnessPnpm) {

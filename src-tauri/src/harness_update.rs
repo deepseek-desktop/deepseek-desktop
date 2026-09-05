@@ -983,7 +983,8 @@ impl HarnessUpdateManager {
                 ));
             }
 
-            let current = self.store.location()?;
+            // Desktop owns extensions and its preparation toolchain, not the active Harness.
+            let current = &self.store.bundled;
             let pnpm_cli = current.harness_dir.join("node_modules/pnpm/bin/pnpm.cjs");
             if !pnpm_cli.is_file() {
                 return Err(DesktopError::HarnessArtifactMissing(
@@ -995,7 +996,7 @@ impl HarnessUpdateManager {
             let harness_dir = candidate.join("harness");
             fs::create_dir_all(&candidate)?;
             let prepared =
-                deploy_repository_harness(&staging, &source, &harness_dir, &current, &tools)?;
+                deploy_repository_harness(&staging, &source, &harness_dir, current, &tools)?;
             let harness_version = prepared.version;
 
             let node_file = if cfg!(windows) { "node.exe" } else { "node" };

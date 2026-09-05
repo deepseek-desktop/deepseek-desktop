@@ -2,6 +2,8 @@ import { Service } from "@deepseek-ai/cordis";
 import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import z from "@deepseek-ai/schemastery";
 import { WebError } from "@deepseek-ai/dsh-web";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const PROVIDER_ID = "follow-model";
 const DEFAULT_TIMEOUT_MS = 55_000;
@@ -179,45 +181,78 @@ function constrainedFields(fields, reserved) {
   return result;
 }
 
-function responseText(response) {
+async function limitedResponse(response, signal, onFailure = () => {}) {
   const length = Number(response.headers.get("content-length"));
   if (Number.isFinite(length) && length > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel();
     fail("The web search response exceeded the safe size limit.", "WEB_FOLLOW_MODEL_RESPONSE_TOO_LARGE");
   }
-  return response.text().then((text) => {
-    if (Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES) {
-      fail("The web search response exceeded the safe size limit.", "WEB_FOLLOW_MODEL_RESPONSE_TOO_LARGE");
-    }
-    return text;
+  if (!response.body) return response;
+  const reader = response.body.getReader();
+  let bytes = 0;
+  let stopped = false;
+  let abort;
+  const cleanup = () => { stopped = true; signal?.removeEventListener("abort", abort); };
+  const body = new ReadableStream({
+    start(controller) {
+      abort = () => {
+        if (stopped) return;
+        cleanup();
+        void reader.cancel(signal.reason).catch(() => {});
+        controller.error(signal.reason);
+      };
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
+    },
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (stopped) return;
+        if (done) { cleanup(); controller.close(); return; }
+        bytes += value.byteLength;
+        if (bytes > MAX_RESPONSE_BYTES) {
+          cleanup();
+          await reader.cancel();
+          fail("The web search response exceeded the safe size limit.", "WEB_FOLLOW_MODEL_RESPONSE_TOO_LARGE");
+        }
+        controller.enqueue(value);
+      } catch (error) { cleanup(); onFailure(error); controller.error(error); }
+    },
+    cancel(reason) { cleanup(); return reader.cancel(reason); },
   });
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+}
+
+function requestFailure(error, signal, timeout) {
+  if (timeout.aborted) fail(copy("requestTimedOut"), "WEB_FOLLOW_MODEL_TIMED_OUT");
+  if (signal?.aborted) fail(copy("requestCanceled"), "WEB_FOLLOW_MODEL_CANCELED");
+  if (error instanceof WebError) throw error;
+  fail(copy("requestFailed"), "WEB_FOLLOW_MODEL_REQUEST_FAILED");
 }
 
 async function postJsonResponse(url, body, headers, signal, fetchImpl = fetch, allowEmpty = false, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const timeout = AbortSignal.timeout(timeoutMs);
   const combined = signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
-  let response;
   try {
-    response = await fetchImpl(url, {
+    const response = await limitedResponse(await fetchImpl(url, {
       method: "POST",
       redirect: "error",
       signal: combined,
       headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
-    });
+    }), combined);
+    const text = await response.text();
+    if (!response.ok) {
+      fail(`The current Provider web search request failed with HTTP ${response.status}.`, "WEB_FOLLOW_MODEL_REQUEST_FAILED");
+    }
+    if (allowEmpty && text.length === 0) return { response, payload: undefined };
+    try {
+      return { response, payload: JSON.parse(text) };
+    } catch {
+      fail(copy("responseInvalid"), "WEB_FOLLOW_MODEL_RESPONSE_INVALID");
+    }
   } catch (error) {
-    if (timeout.aborted) fail(copy("requestTimedOut"), "WEB_FOLLOW_MODEL_TIMED_OUT", error);
-    if (signal?.aborted || combined.aborted) fail(copy("requestCanceled"), "WEB_FOLLOW_MODEL_CANCELED", error);
-    fail(copy("requestFailed"), "WEB_FOLLOW_MODEL_REQUEST_FAILED", error);
-  }
-  const text = await responseText(response);
-  if (!response.ok) {
-    fail(`The current Provider web search request failed with HTTP ${response.status}.`, "WEB_FOLLOW_MODEL_REQUEST_FAILED");
-  }
-  if (allowEmpty && text.length === 0) return { response, payload: undefined };
-  try {
-    return { response, payload: JSON.parse(text) };
-  } catch (error) {
-    fail(copy("responseInvalid"), "WEB_FOLLOW_MODEL_RESPONSE_INVALID", error);
+    requestFailure(error, signal, timeout);
   }
 }
 
@@ -292,14 +327,6 @@ function bearerHeaders(apiKey) {
   return { authorization: `Bearer ${apiKey}` };
 }
 
-function mcpHeaders(credential, sessionId) {
-  return {
-    ...bearerHeaders(credential),
-    accept: "application/json, text/event-stream",
-    ...sessionId === undefined ? {} : { "mcp-session-id": sessionId },
-  };
-}
-
 function mcpResult(payload, maxResults) {
   if (payload?.error !== undefined) fail(copy("requestFailed"), "WEB_FOLLOW_MODEL_REQUEST_FAILED");
   const result = payload?.result;
@@ -316,8 +343,6 @@ function mcpResult(payload, maxResults) {
 
 function builtInProtocols(fetchImpl, timeoutMs) {
   const requestJson = (url, body, headers, signal) => postJson(url, body, headers, signal, fetchImpl, timeoutMs);
-  const requestJsonResponse = (url, body, headers, signal, allowEmpty = false) =>
-    postJsonResponse(url, body, headers, signal, fetchImpl, allowEmpty, timeoutMs);
   return new Map([
     ["openai-responses-web-search", async ({ route, capability, credential, request, signal }) => {
       const payload = await requestJson(requestUrl(route.endpoint, "/responses"), {
@@ -383,48 +408,41 @@ function builtInProtocols(fetchImpl, timeoutMs) {
     }],
     ["mcp-web-search", async ({ route, capability, credential, request, signal }) => {
       const endpoint = endpointUrl(route.endpoint);
-      const initialize = await requestJsonResponse(endpoint, {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2025-03-26",
-          capabilities: {},
-          clientInfo: { name: "dsh-web-search-follow-model", version: "1.0.0" },
+      const timeout = AbortSignal.timeout(timeoutMs);
+      const streamFailure = new AbortController();
+      const combined = AbortSignal.any([timeout, streamFailure.signal, ...signal ? [signal] : []]);
+      const client = new Client({ name: "dsh-web-search-follow-model", version: "1.0.0" });
+      client.onerror = () => { void client.close().catch(() => {}); };
+      const transport = new StreamableHTTPClientTransport(endpoint, {
+        requestInit: { headers: bearerHeaders(credential) },
+        fetch: async (url, init) => {
+          if (new URL(url).href !== endpoint.href) fail("MCP endpoint changed unexpectedly.", "WEB_FOLLOW_MODEL_ENDPOINT_UNTRUSTED");
+          const requestSignal = init?.signal ? AbortSignal.any([combined, init.signal]) : combined;
+          return limitedResponse(await fetchImpl(url, { ...init, redirect: "error", signal: requestSignal }), requestSignal, error => streamFailure.abort(error));
         },
-      }, mcpHeaders(credential), signal);
-      const sessionId = initialize.response.headers.get("mcp-session-id") ?? undefined;
-      await requestJsonResponse(endpoint, {
-        jsonrpc: "2.0",
-        method: "notifications/initialized",
-      }, mcpHeaders(credential, sessionId), signal, true);
-      const listed = await requestJson(endpoint, {
-        jsonrpc: "2.0",
-        id: 2,
-        method: "tools/list",
-        params: {},
-      }, mcpHeaders(credential, sessionId), signal);
-      const configuredName = capability.requestFields?.toolName;
-      const toolName = typeof configuredName === "string" && configuredName.length > 0 ? configuredName : "web_search";
-      if (!listed?.result?.tools?.some?.((tool) => tool?.name === toolName)) {
-        fail(`The MCP endpoint does not advertise the declared web search tool "${toolName}".`, "WEB_FOLLOW_MODEL_CAPABILITY_MISSING");
-      }
-      const { toolName: _toolName, ...declaredFields } = capability.requestFields ?? {};
-      const extension = constrainedFields(declaredFields, new Set(["query", "maxResults"]));
-      const called = await requestJson(endpoint, {
-        jsonrpc: "2.0",
-        id: 3,
-        method: "tools/call",
-        params: {
+      });
+      try {
+        await client.connect(transport, { signal: combined, timeout: timeoutMs });
+        const options = { signal: combined, timeout: timeoutMs, maxTotalTimeout: timeoutMs };
+        const listed = await client.listTools({}, options);
+        const configuredName = capability.requestFields?.toolName;
+        const toolName = typeof configuredName === "string" && configuredName.length > 0 ? configuredName : "web_search";
+        if (!listed.tools.some(tool => tool.name === toolName)) {
+          fail(`The MCP endpoint does not advertise the declared web search tool "${toolName}".`, "WEB_FOLLOW_MODEL_CAPABILITY_MISSING");
+        }
+        const { toolName: _toolName, ...declaredFields } = capability.requestFields ?? {};
+        const extension = constrainedFields(declaredFields, new Set(["query", "maxResults"]));
+        const called = await client.callTool({
           name: toolName,
           arguments: {
             ...extension,
             query: request.query,
             ...request.maxResults === undefined ? {} : { maxResults: request.maxResults },
           },
-        },
-      }, mcpHeaders(credential, sessionId), signal);
-      return mcpResult(called, request.maxResults);
+        }, undefined, options);
+        return mcpResult({ result: called }, request.maxResults);
+      } catch (error) { requestFailure(streamFailure.signal.reason ?? error, signal, timeout); }
+      finally { await client.close(); }
     }],
   ]);
 }

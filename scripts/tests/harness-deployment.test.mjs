@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { scanArtifactPaths } from "../lib/artifact-scan.mjs";
 import {
   deployHarnessClosure,
   findCliPackage,
@@ -70,6 +71,14 @@ test("desktop client and its Harness dependencies survive replacement and reject
   await writeFile(join(next, "settings.yaml"), "user-choice");
   await mergeDesktopClosure(old, next, ["extension"]);
   assert.equal(await readFile(join(next, "settings.yaml"), "utf8"), "user-choice");
+  const before = JSON.parse(await readFile(join(next, "desktop-extensions.json")));
+  await writeFile(join(extension, "client.js"), "new-desktop-settings");
+  await mergeDesktopClosure(old, next, ["extension"]);
+  const after = JSON.parse(await readFile(join(next, "desktop-extensions.json")));
+  assert.notEqual(after.packages[0].sha256, before.packages[0].sha256);
+  assert.equal(after.packages[0].client, "./client.js");
+  assert.equal(after.packages[0].version, "1.0.0");
+  assert.equal(await readFile(join(next, "node_modules/extension/client.js"), "utf8"), "new-desktop-settings");
 });
 
 test("missing required desktop dependency fails preparation", async t => {
@@ -168,6 +177,21 @@ test("build path sanitization bounds longer replacements inside binaries", async
   assert.equal(sanitizedBinary.subarray(3, 6).toString(), "/de");
   assert.equal(sanitizedBinary[6], 0);
   assert.deepEqual(result, { rewrittenFiles: 2, replacementCount: 2, resignedFiles: 0 });
+});
+
+test("Windows UTF-16 build paths are removed without changing binary offsets", async t => {
+  const root = await fixture(t);
+  const path = join(root, "native.node");
+  const source = root.replaceAll("/", "\\");
+  const bytes = Buffer.concat([Buffer.from([0x4d, 0x5a, 0]), Buffer.from(`${source}\\fs_ext.pdb`, "utf16le"), Buffer.from([0, 0, 0x12, 0x34])]);
+  await writeFile(path, bytes);
+  await assert.rejects(scanArtifactPaths([path], { forbiddenRoots: [root] }), /local path/u);
+  await sanitizeBuildPaths(root, [[source, "/build"]]);
+  await scanArtifactPaths([path], { forbiddenRoots: [root] });
+  const sanitized = await readFile(path);
+  assert.equal(sanitized.length, bytes.length);
+  assert.deepEqual(sanitized.subarray(3 + source.length * 2), bytes.subarray(3 + source.length * 2));
+  assert.equal(sanitized.subarray(3, 15).toString("utf16le"), "/build");
 });
 
 test("node-gyp build trees keep only the loadable addon", async t => {

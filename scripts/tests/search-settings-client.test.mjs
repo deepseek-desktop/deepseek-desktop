@@ -9,7 +9,7 @@ const packageRoot = resolve(root, "harness/packages/web-search-follow-model");
 let client;
 const document = { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } };
 vm.runInNewContext(await readFile(resolve(packageRoot, "client.js"), "utf8"), {
-  document,
+  document, AbortSignal,
   window: { __ModuleLoader__: { load: entry => { client = entry.factory(() => ({})); } } }
 });
 
@@ -40,7 +40,8 @@ function setup(user = {}, writable = true) {
       publish();
     }
   };
-  return { scope, state, calls, publish, listeners, controller: new client.SearchSettingsController(scope) };
+  const activation = async () => ({ phase: "active", revision: state.revision, selection: state.value });
+  return { scope, state, calls, publish, listeners, controller: new client.SearchSettingsController(scope, activation) };
 }
 
 test("search owns its browser entry and locales without patching the official settings plugin", async () => {
@@ -129,6 +130,7 @@ test("slot registration is owned by follow-model and cleans subscriptions on unl
   const registrations = [];
   const disposers = [];
   const context = {
+    connection: { rpc: { call: async () => ({ ok: true, value: { phase: "active", selection: scope.getSnapshot().value } }) } },
     locale: { register: () => () => {} },
     settingsScope: { bind: ({ namespace }) => { assert.equal(namespace, "web-search-follow-model"); return scope; } },
     effect: callback => { disposers.push(callback()); },
@@ -142,4 +144,23 @@ test("slot registration is owned by follow-model and cleans subscriptions on unl
   assert.equal(listeners.size, 1);
   for (const dispose of disposers.reverse()) dispose?.();
   assert.equal(listeners.size, 0);
+});
+
+test("saved settings are not reported active until the backend confirms activation", async () => {
+  const { controller, state } = setup();
+  let complete;
+  controller.activation = () => new Promise(resolve => { complete = resolve; });
+  controller.edit("mode", "disabled");
+  const saving = controller.save();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(state.user.mode, "disabled");
+  assert.equal(controller.getSnapshot().saving, true);
+  complete({ phase: "failed", selection: { mode: "follow-model", independentProvider: "deepseek-official" } });
+  await saving;
+  assert.equal(controller.getSnapshot().failed, true);
+  assert.equal(controller.getSnapshot().activationPhase, "failed");
+  controller.activation = async () => ({ phase: "active", selection: state.value });
+  await controller.save();
+  assert.equal(controller.getSnapshot().failed, false);
+  controller.dispose();
 });

@@ -13,7 +13,8 @@ window.__ModuleLoader__.load({
         independent: "Independent search service", provider: "Independent search Provider",
         providerHint: "Enter a Harness search Provider ID, for example deepseek-official.",
         reset: "Restore defaults", save: "Save", discard: "Discard changes", pending: "Unsaved",
-        failed: "Changes were not saved. Review the settings and try again.",
+        failed: "Changes could not be completed. Review the settings and try again.",
+        active: "Active", saved: "Saved; applying", applying: "Applying", activationFailed: "Search settings are not active. Retry or choose another service.",
         invalid: "Enter a valid independent search Provider ID.",
         readOnly: "These settings are read-only."
       },
@@ -23,7 +24,8 @@ window.__ModuleLoader__.load({
         independent: "独立搜索服务", provider: "独立搜索提供方",
         providerHint: "填写 Harness 搜索 Provider ID，例如 deepseek-official。",
         reset: "恢复默认", save: "保存", discard: "放弃修改", pending: "未保存",
-        failed: "修改未保存，请检查设置后重试。",
+        failed: "修改未能完成，请检查设置后重试。",
+        active: "已生效", saved: "已保存，等待生效", applying: "应用中", activationFailed: "搜索设置尚未生效，请重试或选择其他服务。",
         invalid: "请填写有效的独立搜索 Provider ID。",
         readOnly: "这些设置为只读。"
       },
@@ -33,7 +35,8 @@ window.__ModuleLoader__.load({
         independent: "獨立搜尋服務", provider: "獨立搜尋提供方",
         providerHint: "填寫 Harness 搜尋 Provider ID，例如 deepseek-official。",
         reset: "恢復預設", save: "儲存", discard: "放棄修改", pending: "未儲存",
-        failed: "修改未儲存，請檢查設定後重試。",
+        failed: "修改未能完成，請檢查設定後重試。",
+        active: "已生效", saved: "已儲存，等待生效", applying: "套用中", activationFailed: "搜尋設定尚未生效，請重試或選擇其他服務。",
         invalid: "請填寫有效的獨立搜尋 Provider ID。",
         readOnly: "這些設定為唯讀。"
       }
@@ -56,18 +59,33 @@ window.__ModuleLoader__.load({
 
     // Own the settings contribution so repository upgrades cannot drop a core UI patch.
     class SearchSettingsController {
-      constructor(scope) {
+      constructor(scope, activation) {
         this.scope = scope;
+        this.activation = activation;
+        this.activationPhase = "saved";
         this.drafts = new Map();
         this.listeners = new Set();
         this.saving = false;
         this.failed = false;
         this.publish();
-        this.unsubscribe = scope.subscribe(() => this.publish());
+        this.unsubscribe = scope.subscribe(() => { this.publish(); void this.refreshActivation(); });
+        void this.refreshActivation();
       }
       getSnapshot = () => this.snapshot;
       subscribe = listener => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
       dispose = () => { this.unsubscribe(); this.listeners.clear(); };
+      async refreshActivation(apply = false) {
+        const request = this.activationRequest = (this.activationRequest ?? 0) + 1;
+        try {
+          const status = await this.activation(apply, this.scope.getSnapshot().revision);
+          if (request !== this.activationRequest) return status;
+          this.activationPhase = status.phase;
+          this.publish();
+          return status;
+        } catch {
+          if (request === this.activationRequest) { this.activationPhase = "failed"; this.publish(); }
+        }
+      }
       publish() {
         const current = this.scope.getSnapshot();
         const value = { mode: "follow-model", independentProvider: "deepseek-official", ...current.value };
@@ -77,6 +95,7 @@ window.__ModuleLoader__.load({
           ...value, available: current.status === "ready", writable: current.writable,
           overridden: Object.keys(current.user ?? {}).some(key => key === "mode" || key === "independentProvider"),
           dirty: this.operations().length > 0, saving: this.saving, failed: this.failed,
+          activationPhase: this.activationPhase,
           invalid: !modes.includes(value.mode) || (value.mode === "independent" && (
             typeof value.independentProvider !== "string" || value.independentProvider.length === 0
             || value.independentProvider.length > 128 || /[\s\u0000-\u001f\u007f]/u.test(value.independentProvider)
@@ -113,16 +132,23 @@ window.__ModuleLoader__.load({
         this.publish();
       };
       save = async () => {
-        if (!this.snapshot.available || !this.snapshot.writable || this.saving || this.snapshot.invalid || !this.snapshot.dirty) return;
+        if (!this.snapshot.available || !this.snapshot.writable || this.saving || this.snapshot.invalid || (!this.snapshot.dirty && this.activationPhase !== "failed")) return;
         const ops = this.operations();
+        const desired = { mode: this.snapshot.mode, independentProvider: this.snapshot.independentProvider };
         this.saving = true;
         this.failed = false;
         this.publish();
         try {
           await this.scope.mutate(ops, this.revision);
+          this.activationPhase = "applying";
+          this.publish();
+          const activation = await this.refreshActivation(true);
           const user = this.scope.getSnapshot().user ?? {};
-          this.failed = !ops.every(op => op.op === "unset" ? !Object.hasOwn(user, op.path[0]) : user[op.path[0]] === op.value);
+          this.failed = activation?.phase !== "active" || activation.selection?.mode !== desired.mode
+            || activation.selection?.independentProvider !== desired.independentProvider
+            || !ops.every(op => op.op === "unset" ? !Object.hasOwn(user, op.path[0]) : user[op.path[0]] === op.value);
           if (!this.failed) this.drafts.clear();
+          else this.revision = this.scope.getSnapshot().revision;
         } catch {
           this.failed = true;
         } finally {
@@ -159,11 +185,12 @@ window.__ModuleLoader__.load({
             h("p", null, t("providerHint"))
           ) : null,
           !state.writable ? h("p", null, t("readOnly")) : null,
+          h("p", { role: state.activationPhase === "failed" ? "alert" : "status" }, t(state.activationPhase === "failed" ? "activationFailed" : state.activationPhase)),
           state.invalid || state.failed ? h("p", { role: "alert" }, t(state.invalid ? "invalid" : "failed")) : null,
           h("footer", null,
             h("button", { type: "button", disabled: disabled || !state.overridden, onClick: props.reset }, t("reset")),
             h("button", { type: "button", disabled: state.saving || (!state.dirty && !state.failed), onClick: props.discard }, t("discard")),
-            h("button", { type: "submit", disabled: disabled || !state.dirty || state.invalid }, t("save"))
+            h("button", { type: "submit", disabled: disabled || (!state.dirty && state.activationPhase !== "failed") || state.invalid }, t("save"))
           )
         )
       ));
@@ -178,7 +205,11 @@ window.__ModuleLoader__.load({
         document.head.appendChild(style);
         return () => style.remove();
       }, "web-search: settings styles");
-      const controller = new SearchSettingsController(ctx.settingsScope.bind({ namespace }));
+      const controller = new SearchSettingsController(ctx.settingsScope.bind({ namespace }), async (apply, revision) => {
+        const result = await ctx.connection.rpc.call("/desktop-web-search", apply ? "apply" : "status", { revision }, AbortSignal.timeout(65_000));
+        if (!result.ok) throw new Error("Search activation could not be confirmed.");
+        return result.value;
+      });
       ctx.effect(() => controller.dispose, "web-search: settings scope");
       ctx.slots.inject("settings.plugin.item", () => ctx.slots.register({
         name: "settings.plugin.item", key: namespace, locale: localeNamespace,
@@ -186,6 +217,6 @@ window.__ModuleLoader__.load({
       }, SearchSettingsCard));
     }
 
-    return { inject: ["slots", "locale", "settingsScope"], apply, SearchSettingsController, dictionaries };
+    return { inject: ["slots", "locale", "settingsScope", "connection"], apply, SearchSettingsController, dictionaries };
   }
 });

@@ -75,7 +75,7 @@ export function artifactForbiddenRoots(projectRoot, environment = process.env, u
 function scanText(path, text, roots, textFile) {
   const normalized = text.replaceAll("\\", "/");
   for (const root of roots) {
-    if (normalized.includes(root)) throw new Error(`${path} contains forbidden local path`);
+    if (normalized.includes(root)) throw new Error(`${path} contains forbidden local path rooted at ${root}`);
   }
   for (const secret of secretPatterns) {
     if (secret.textOnly && !textFile) continue;
