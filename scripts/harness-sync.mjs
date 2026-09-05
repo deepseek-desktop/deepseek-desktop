@@ -10,6 +10,7 @@ import {
   findCliPackage,
   findWorkspacePackages,
   mergeDesktopPackages,
+  pruneNativeBuildIntermediates,
   sanitizeBuildPaths
 } from "./lib/harness-deployment.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
@@ -299,6 +300,7 @@ try {
 
   const finalModules = join(prepared, "node_modules");
   const patches = await applyDesktopPatches([finalModules]);
+  const prunedBuildIntermediates = await pruneNativeBuildIntermediates(prepared);
   const sanitizedPaths = await sanitizeBuildPaths(prepared, buildPathReplacements(source.sourceRoot));
   const entry = join("node_modules", ...cli.manifest.name.split("/"), cli.entry).split(sep).join("/");
   await stat(join(prepared, entry));
@@ -323,6 +325,7 @@ try {
       sourceKind: source.kind,
       sourceDirty: source.dirty,
       sanitizedPaths,
+      prunedBuildIntermediates,
       restoredWorkspacePackages: restoredHarnessPackages,
       mergedDesktopPackages,
       packageName: cli.manifest.name,

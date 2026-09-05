@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { cp, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative, sep } from "node:path";
+import { basename, dirname, extname, join, relative, sep } from "node:path";
 import process from "node:process";
 
 function packagePath(nodeModules, name) { return join(nodeModules, ...name.split("/")); }
@@ -39,6 +39,55 @@ function signMachO(path) {
   if (result.status !== 0) {
     throw new Error(`codesign failed for sanitized Mach-O ${path}: ${result.stderr || result.stdout}`);
   }
+}
+
+// Native modules are compiled in place, so node-gyp and MSVC leave their link-time
+// intermediates next to the loadable .node. Nothing loads them at runtime, they inflate
+// the installer, and MSVC incremental-link files such as .iobj embed the absolute build
+// directory, which the release artifact scan rejects outright (this is what broke the
+// Windows job for v1.0.32 and v1.0.33). Drop them from the staged tree instead.
+const NATIVE_BUILD_INTERMEDIATE_EXTENSIONS = new Set([
+  ".exp",
+  ".ilk",
+  ".iobj",
+  ".ipdb",
+  ".lib",
+  ".map",
+  ".o",
+  ".obj",
+  ".pdb",
+  ".tlog"
+]);
+
+function isNativeBuildOutputDirectory(relativePath) {
+  return /(?:^|\/)build\/(?:Release|Debug)(?:\/|$)/u.test(relativePath);
+}
+
+export async function pruneNativeBuildIntermediates(directory) {
+  const removed = [];
+  async function visit(current, relativePath) {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      const entryRelative = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        // node-gyp keeps a per-target object tree under build/<config>/obj.
+        if (entry.name === "obj" && isNativeBuildOutputDirectory(entryRelative)) {
+          await rm(path, { recursive: true, force: true });
+          removed.push(`${entryRelative}/`);
+          continue;
+        }
+        await visit(path, entryRelative);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (!isNativeBuildOutputDirectory(entryRelative)) continue;
+      if (!NATIVE_BUILD_INTERMEDIATE_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
+      await rm(path, { force: true });
+      removed.push(entryRelative);
+    }
+  }
+  await visit(directory, "");
+  return removed.sort();
 }
 
 export async function sanitizeBuildPaths(directory, replacements) {

@@ -8,6 +8,7 @@ import {
   findCliPackage,
   findWorkspacePackages,
   mergeDesktopClosure,
+  pruneNativeBuildIntermediates,
   sanitizeBuildPaths
 } from "../lib/harness-deployment.mjs";
 
@@ -167,4 +168,37 @@ test("build path sanitization bounds longer replacements inside binaries", async
   assert.equal(sanitizedBinary.subarray(3, 6).toString(), "/de");
   assert.equal(sanitizedBinary[6], 0);
   assert.deepEqual(result, { rewrittenFiles: 2, replacementCount: 2, resignedFiles: 0 });
+});
+
+test("native build intermediates are pruned but the loadable addon survives", async t => {
+  // The Windows release job for v1.0.32 and v1.0.33 failed because fs-ext shipped
+  // fs_ext.iobj, an MSVC incremental-link file that embeds the absolute build
+  // directory, which the artifact scan rejects.
+  const root = await fixture(t);
+  const release = join(root, "node_modules", "fs-ext", "build", "Release");
+  await mkdir(join(release, "obj", "fs_ext"), { recursive: true });
+  await writeFile(join(release, "fs_ext.node"), "addon");
+  await writeFile(join(release, "fs_ext.iobj"), "C:/d/harness/staging");
+  await writeFile(join(release, "fs_ext.ipdb"), "intermediate");
+  await writeFile(join(release, "fs_ext.pdb"), "symbols");
+  await writeFile(join(release, "fs_ext.lib"), "import library");
+  await writeFile(join(release, "obj", "fs_ext", "fs_ext.obj"), "object");
+  // Runtime sources that merely live under a directory named build must be kept.
+  await mkdir(join(root, "node_modules", "other", "build"), { recursive: true });
+  await writeFile(join(root, "node_modules", "other", "build", "index.obj"), "keep");
+
+  const removed = await pruneNativeBuildIntermediates(root);
+
+  assert.deepEqual(removed, [
+    "node_modules/fs-ext/build/Release/fs_ext.iobj",
+    "node_modules/fs-ext/build/Release/fs_ext.ipdb",
+    "node_modules/fs-ext/build/Release/fs_ext.lib",
+    "node_modules/fs-ext/build/Release/fs_ext.pdb",
+    "node_modules/fs-ext/build/Release/obj/"
+  ]);
+  assert.equal(await readFile(join(release, "fs_ext.node"), "utf8"), "addon");
+  assert.equal(
+    await readFile(join(root, "node_modules", "other", "build", "index.obj"), "utf8"),
+    "keep"
+  );
 });
