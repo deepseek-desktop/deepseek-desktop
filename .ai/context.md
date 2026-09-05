@@ -10,7 +10,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 - 2026-09-05 审计修复验证包（本地默认版本 `1.0.0`）已备份后安装。macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。安装包功能和候选切换验收仍在进行，Windows x64 原生验收尚未运行。用户授权条件满足后发布 `1.1.0` 社区预发布，明确未签名且不占 Latest；不放宽 stable 签名门禁。以下旧版本记录不代表当前发布验收，逐缺陷证据见 [审计修复验收](memory/audit-remediation.md)。
 
-- 最新本地 DMG 已修复 Harness 的 V8 专用 JSON 校验，WebKit 可完整恢复历史消息，详见 ADR-020。完整 `desktop:package`、七项浏览器 E2E、真实 Harness smoke 与同步检查通过，原生新包历史恢复和混合窗口交互通过。DeepSeek 授权测试凭据在并发 GUI 验收阶段返回 HTTP 402 `Insufficient Balance`，该项不得记为通过；在凭据额度及 Windows x64 原生门禁闭环前不创建发行 Tag / Release。
+- 最新本地 DMG 已修复 Harness 的 V8 专用 JSON 校验，WebKit 可完整恢复历史消息，详见 ADR-020。完整 `desktop:package`、七项浏览器 E2E、真实 Harness smoke 与同步检查通过，原生新包历史恢复、同源导航和混合窗口交互通过。DeepSeek 测试凭据返回 HTTP 402；用户另行授权 Alibaba MaaS 后，原生 GUI 显式配置并选择 `qwen3.8-max` / `qwen3.8-flash`，两个会话搜索实际重叠 8067 毫秒，均正常完成并各有 8 条结构化来源。该实测不替代不同端点、不同凭据的并发验证；聊天输入框剪贴板复验与 Windows x64 原生门禁未闭环，不创建发行 Tag / Release。
 
 - 跟随模型搜索现为 Desktop 独立 host/client 扩展，通过公开 Agent 异步上下文、模型目录、搜索 Provider 注册和设置插槽接入。官方搜索源码、设置和启用状态遵循上游及用户配置；Desktop 的单一选择可以映射为 `follow-model`、已注册的独立搜索 Provider 或关闭搜索，不再补丁修改官方搜索卡片或 Harness 搜索核心。候选闭包验证扩展前后端及 Harness 依赖，详见 ADR-017。`1.0.32` macOS ARM64 安装候选已完成真实安装与交互验收，发布仍必须等待本次 Tag 的 Windows x64 原生安装门禁和四平台矩阵。
 

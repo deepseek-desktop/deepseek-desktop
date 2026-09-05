@@ -10,7 +10,7 @@
 | F16 | 已有私钥排他创建，拒绝覆盖 | Node `signing key creation never overwrites an existing private key` 通过 |
 | F06 | AppKit inset 读取派发到主线程并断言；调用前无持锁等待 | macOS 安装包菜单、设置和全屏混合回归通过；另行定位并修复下列所有权缺陷，不把线程修复当成崩溃根因 |
 | F13 | 等待整个进程组，重复终止幂等 | Rust `termination_waits_for_the_process_group_after_the_leader_exits` 以真实 Unix 子进程通过 |
-| F14 | 同源 popup 导航受管工作台；外链仅系统浏览器，禁止失管 WKWebView | 原生 Markdown 外链打开系统 Chrome，Desktop 保持单窗口；同源链接复用同一窗口，但发现下列 WebKit 历史回放缺陷，修复后需再验 |
+| F14 | 同源 popup 导航受管工作台；外链仅系统浏览器，禁止失管 WKWebView | 原生 Markdown 外链打开系统 Chrome，Desktop 保持单窗口；最新 WebKit 修复包再次点击当前受管 Origin 的 Markdown 链接后仍为原单窗口、同一 Desktop/Harness 进程，完整历史与当前模型保留，无白屏 |
 | F15 | 单实例查找实际 Window，解除最小化再显示聚焦 | macOS 安装包最小化后双启动恢复同一 PID、单窗口并聚焦；其他平台未验 |
 | F22 | 常驻原生快捷键，保留唯一可见窗口菜单 | 前一 macOS 包 Cmd+, / Cmd+W 与编辑快捷键通过；最新包聊天输入框自动化三次未通过，AX 旧值与焦点问题尚未区分，不算最终通过；Windows/Linux 未验 |
 | F02 / F03 | NSIS 外壳允许 x86；实际 deepseek-desktop.exe 必须 x64；规范化注册表安装路径 | 脚本已修复，Windows x64 原生安装验收仍阻塞，不能记为通过 |
@@ -22,7 +22,7 @@
 | F24 | HTML 有序列表 start 保留有限整数，非法属性不保留 | ReleaseNotes 回归通过 |
 | F04 | 候选从当前 Desktop 内置闭包取扩展，记录版本/摘要/入口/依赖并核对复制结果 | Node 闭包旧新版本、摘要和缺失依赖回归通过；实际 DMG 准备并激活同源码新 commit 候选，五扩展完整；无效候选失败保持当前版本，恢复内置后会话与搜索选择仍在。仅兼容 fixture，不宣称升级到更新的上游功能版本 |
 | F08 / F09 | 单一设置契约、启动路由核对、串行应用、revision 回滚；公开工具 guard 关闭准入并等待已有搜索完成 | Cordis Settings / Loader / ToolRuntime 并发回归及真实 Harness 浏览器 smoke 通过；macOS GUI 跟随、独立服务、禁用、恢复默认实际执行生效；禁用后 web_fetch 仍返回 HTTP 200 |
-| F10 / F11 / F23 | 头部与流读取共用预算，2 MiB 累计截断取消，MCP SDK 接入 JSON/SSE | 40 项后端回归通过，含 MCP SSE 超限与多会话隔离；真实 DeepSeek / Alibaba MaaS 后端请求有结构化来源；macOS GUI DeepSeek Pro/Flash 与独立 deepseek-official 搜索均有结构化来源，GUI 并发会话待最终复验 |
+| F10 / F11 / F23 | 头部与流读取共用预算，2 MiB 累计截断取消，MCP SDK 接入 JSON/SSE | 40 项后端回归通过，含 MCP SSE 超限与多会话隔离；真实 DeepSeek / Alibaba MaaS 后端及 macOS GUI 有结构化来源。最新安装包 Max / Flash 两会话搜索实际重叠 8067 毫秒，各返回 8 条来源，模型分别正确且正常完成；同端点同凭据实测不替代不同端点/密钥的并发隔离回归 |
 | F12 | 凭据写入失败成功回滚后更新表单 revision，保留草稿；冲突不重写 | 执行实际装配后的 createOnce 函数，成功回滚后重试与回滚冲突两个场景通过 |
 | SIGABRT | contentView 查询采用显式成对的局部引用，不泄漏、不修改 dealloc | 修改前两次独立启动查询失衡、隔离完整应用硬件监视定位过度释放；修改后 32 次查询平衡，实际 DMG 三次冷启动、20 轮混合操作与同一 PID 超过 30 分钟观察通过，见 [生命周期证据](macos-lifecycle.md) |
 
@@ -40,6 +40,10 @@ Claude 交接补丁中的扫描器诊断已承接；另外复现并修复清理�
 
 最新 WebKit 修复包完整 `desktop:package` 通过：Node 106、Vue 32、搜索 40、Rust 94（1 个显式联网用例忽略）、E2E 7（含实际装配产物的 Chromium / WebKit JSON 校验）及真实 Harness smoke。另行 `app:sync --check`、`harness:sync --check`、`release:smoke` 通过。DMG SHA256 为 `8c2d29cbb0dd6f44cabe8e6f0021d1c4e6bd1515e7212b5bd0b9a24ae47ca112`，备份后实际安装，正常启动恢复测试会话全部历史和最新链接；两轮菜单、全屏、设置、关闭取消、最小化恢复通过。
 
-真实 GUI 并发验收未通过：首轮请求实际未重叠，只能作为 Pro/Flash 模型隔离及真实来源的顺序证据。随后两个测试会话相隔 0.91 秒提交，DeepSeek 均返回 HTTP 402 `Insufficient Balance`，未得到搜索结果。保留该失败证据，不把模拟多会话回归或顺序成功替代并发真实验收。需要有效测试额度后继续同源导航最终包复验和并发搜索；Windows x64 原生门禁仍未运行，不推送发行 Tag、不创建 Release。
+DeepSeek GUI 并发验收的失败证据仍保留：首轮请求实际未重叠，随后两会话相隔 0.91 秒提交均返回 HTTP 402 `Insufficient Balance`。用户另行提供并授权 Alibaba MaaS 凭据后，原生 GUI 通过标准模型表单添加 `aliyun-maas`、获取可用模型并保存，仅选择 `qwen3.8-max` / `qwen3.8-flash`，不新增搜索协议或重复密钥。搜索自动匹配 Responses web search 协议；Max 单次 GUI 搜索及两个模型并发均有结构化来源。
+
+并发实测基于上述 SHA256 的同一 DMG：Max 工具调用区间为 `1788610936874` 至 `1788610981262`，Flash 为 `1788610934953` 至 `1788610944941`（Unix 毫秒），实际重叠 `8067` 毫秒；两会话各有 8 条 `meta.sources`、工具 `isError=false`，结束状态均为 `completed`。证据在忽略目录的 `aliyun-concurrent-A.jsonl`、`aliyun-concurrent-B.jsonl` 与 `aliyun-concurrent-proof.json`，不包含密钥。该次实测为同一提供方、同一凭据的不同模型，不宣称已实测不同端点/密钥并发。
+
+随后通过聊天生成当前受管 Origin 的 Markdown 链接并原生点击，最新回复和历史完整恢复，所选 Max 模型保留、原 Desktop/Harness PID 不变、窗口数仍为 1；最终包同源导航复验通过。Windows x64 原生门禁仍未运行，聊天输入框剪贴板复验未闭环，不推送发行 Tag、不创建 Release。
 
 新包输入框剪贴板复测保留失败状态：前两次 Cmd+C 的实际剪贴板文本正确，但持有的 AXTextArea 一直返回旧草稿值；第三次改用剪贴板读回后，焦点和草稿恢复断言未通过。连续三次失败后已停止重复操作；仅涉及隔离测试会话草稿，系统原剪贴板在 finally 恢复，未改动其他会话文件。该结果不足以证明编辑快捷键的产品根因，也不能作为通过证据。
