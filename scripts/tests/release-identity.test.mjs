@@ -60,9 +60,12 @@ test("container checkout trust preserves annotated tag checks without trusting o
     assert.equal(execute("git", ["config", "--global", "--get-all", "safe.directory"]), checkout);
     assert.throws(() => execute("git", ["status", "--porcelain"], source), /dubious ownership/u);
     const moduleUrl = new URL("../lib/release-identity.mjs", import.meta.url).href;
-    const input = { root: checkout, tag: "v1.0.0", version: "1.0.0", commit, expectedObject: object, remote: checkout };
-    const script = `import { releaseIdentity } from ${JSON.stringify(moduleUrl)}; console.log(JSON.stringify(releaseIdentity(${JSON.stringify(input)})));`;
-    assert.deepEqual(JSON.parse(execute(process.execPath, ["--input-type=module", "-e", script])), { object, commit });
+    const input = { root: checkout, tag: "v1.0.0", version: "1.0.0", commit, expectedObject: object };
+    const script = value => `import { releaseIdentity } from ${JSON.stringify(moduleUrl)}; console.log(JSON.stringify(releaseIdentity(${JSON.stringify(value)})));`;
+    assert.deepEqual(JSON.parse(execute(process.execPath, ["--input-type=module", "-e", script(input)])), { object, commit });
+    // A local upload-pack inherits this test hook, unlike the actual GitHub server.
+    delete env.GIT_TEST_ASSUME_DIFFERENT_OWNER;
+    assert.deepEqual(JSON.parse(execute(process.execPath, ["--input-type=module", "-e", script({ ...input, remote: checkout })])), { object, commit });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

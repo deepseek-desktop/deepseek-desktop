@@ -6,7 +6,11 @@
 
 真实 Git 回归使用隔离配置和 `GIT_TEST_ASSUME_DIFFERENT_OWNER` 复现原错误，执行工作流原命令后验证 annotated Tag、commit 和远端对象一致，未登记的其他仓库仍被拒绝。与 Checkout 相同的显式 `--depth=1` Tag fetch 保留 annotated 对象，未改成全量拉取。发行及身份回归共 27 项通过；失败 Tag 保持不可变，后续补丁版本仍以新矩阵实际结果为准。
 
+`v1.1.1` 的 Run `33970258551` 正式身份检查通过；新增回归在 Linux Git 的本地 upload-pack 中继承模拟所有权异常，额外拒绝 `.git` 目录，导致测试失败。修正为先在模拟条件下验证本地身份及精确信任，再去除测试专用环境后验证本地远端身份；生产校验和工作流不变。同一 `playwright:v1.62.1-noble` Linux x64 容器内修改前失败、修改后两项通过，macOS 两项也通过；临时镜像已清理。容器使用镜像自带 Node `24.18.1`，此结果仅为 Git 测试隔离的前后对照，不是锁定 Node `24.20.0` 的发布矩阵或原生 Windows 验收。
+
 `1.1.1` 版本注入的本地完整 `desktop:package` 通过：107 项配置/发行测试、32 项前端测试、40 项搜索回归、94 项 Rust 测试（1 项显式外部仓库测试忽略）、Clippy、7 项 E2E 和真实 Harness 设置/父进程清理 smoke。另执行 `app:sync --check`、`harness:sync --check`、`release:smoke` 及 10 项发行说明/资产回归。ARM64 DMG 摘要为 `1052ea6c374d1ec79292b2f041c554f9a2667a1db92d1feb8a714a6d4de1954a`；该本地包不是 GitHub 已发布制品。
+
+测试隔离修正后，以 `1.1.2` 重新完成同一套 `desktop:package`、`app:sync --check`、`harness:sync --check` 和 `release:smoke`，各项通过。ARM64 DMG 摘要为 `a5539607050dcb30d57e7688a56c196f82c1dca9de13dbb598f36ed6b5bcefcd`。备份应用及数据后从 DMG 安装，27,662 个文件和 496 个链接核对一致；正常 LaunchServices 启动显示 `1.1.2`，真实工作台及两轮五组菜单、全屏、设置往返、关闭取消和最小化/恢复通过。此前 `1.1.0` 最终包追加 20 轮混合操作全部通过，同一 Desktop PID 超过 50 分钟、Harness PID 超过 37 分钟保持存活；`1.1.1` 安装版剪贴板及草稿恢复实测也通过。
 
 ## 1.1.0 发布前验收
 
