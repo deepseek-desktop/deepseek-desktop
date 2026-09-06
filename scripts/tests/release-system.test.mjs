@@ -312,8 +312,11 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   // The workbench names moved into a variable so the first-run dismissal and the wait
   // share one list; assert the list and both uses, not one literal call site.
   assert.match(windowsAcceptance, /\$workbenchNames = @\("新建会话", "新会话", "新增對話", "New session"\)/u);
-  assert.match(windowsAcceptance, /Dismiss-FirstRunDialogs -RootProcessId \$appProcess\.Id -WorkbenchNames \$workbenchNames/u);
-  assert.match(windowsAcceptance, /Wait-AppUiElement -Names \$workbenchNames -RootProcessId \$appProcess\.Id/u);
+  assert.match(windowsAcceptance, /Wait-WorkbenchThroughFirstRun -RootProcessId \$appProcess\.Id -WorkbenchNames \$workbenchNames/u);
+  // Dismissal must be attempted before the readiness check each pass: the Harness
+  // paints the workbench briefly before a modal mounts over it, so checking readiness
+  // first lets a transient frame end the loop with a dialog still blocking.
+  assert.match(windowsAcceptance, /\$button = Find-UiElement -Names \$dismissNames[\s\S]{0,600}?\$workbench = Find-UiElement -Names \$WorkbenchNames/u);
   // Acceptance may skip onboarding but must never submit a credential.
   assert.doesNotMatch(windowsAcceptance, /\$dismissNames = @\([^)]*(?:保存并继续|Save and continue)/u);
   assert.match(windowsAcceptance, /Get-DescendantProcessIds -RootProcessId \$RootProcessId/u);

@@ -185,26 +185,28 @@ function Wait-AppUiElement {
 # each Windows matrix round costs half an hour. Report what the runner actually had.
 # First run walks through a sequence of Harness modals, each of which blocks the
 # workbench until acknowledged: the beta notice, then the API-key onboarding. Names
-# are the shipped welcomeContinue and onboardingLater strings. Acceptance must never
-# press onboardingSave ("保存并继续" / "Save and continue"), which asks for a real
-# credential. A machine that already completed onboarding shows none of these, so
-# finding nothing is a normal outcome rather than a failure.
-function Dismiss-FirstRunDialogs {
+# are the shipped welcomeContinue and onboardingLater strings. Acceptance may skip
+# onboarding but must never press onboardingSave ("保存并继续" / "Save and continue"),
+# which submits a real credential.
+#
+# Dismissal takes priority over the readiness check on purpose. The Harness paints the
+# workbench shell briefly before a modal mounts over it, so a single sighting of the
+# workbench proves nothing; checking it first lets a transient frame end the loop while
+# a dialog is still pending, which is exactly how v1.1.7 returned having dismissed
+# nothing. Note also that `continue` inside do/while exits the loop in PowerShell, so
+# this is written as a while loop with an explicit deadline.
+function Wait-WorkbenchThroughFirstRun {
   param(
     [Parameter(Mandatory = $true)][int]$RootProcessId,
-    [string[]]$WorkbenchNames,
-    [int]$TimeoutSeconds = 300
+    [Parameter(Mandatory = $true)][string[]]$WorkbenchNames,
+    [int]$TimeoutSeconds = 600
   )
 
   $dismissNames = @("继续", "Continue", "稍后配置", "Configure later")
   $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
   $dismissed = 0
-  do {
+  while ([DateTime]::UtcNow -lt $deadline) {
     $processIds = @($RootProcessId) + @(Get-DescendantProcessIds -RootProcessId $RootProcessId)
-    if ($null -ne (Find-UiElement -Names $WorkbenchNames -ProcessIds $processIds)) {
-      Write-Host "first-run dialogs dismissed: $dismissed"
-      return
-    }
     $button = Find-UiElement -Names $dismissNames -ProcessIds $processIds
     if ($null -ne $button) {
       $label = $button.Current.Name
@@ -212,11 +214,17 @@ function Dismiss-FirstRunDialogs {
       $dismissed++
       Write-Host "dismissed first-run dialog: $label"
       Start-Sleep -Milliseconds 1500
-      continue
+    } else {
+      $workbench = Find-UiElement -Names $WorkbenchNames -ProcessIds $processIds
+      if ($null -ne $workbench) {
+        Write-Host "workbench ready after dismissing $dismissed first-run dialog(s)"
+        return $workbench
+      }
+      Start-Sleep -Milliseconds 500
     }
-    Start-Sleep -Milliseconds 500
-  } while ([DateTime]::UtcNow -lt $deadline)
-  Write-Host "first-run dialogs dismissed: $dismissed (workbench still absent)"
+  }
+  Write-AppUiDiagnostic -RootProcessId $RootProcessId
+  throw "workbench did not become ready (dismissed $dismissed first-run dialog(s))"
 }
 
 function Write-AppUiDiagnostic {
@@ -327,8 +335,7 @@ try {
   # workbench from rendering until it is acknowledged. A fresh runner always hits it;
   # a machine that has already accepted it never will, so absence is not a failure.
   $workbenchNames = @("新建会话", "新会话", "新增對話", "New session")
-  Dismiss-FirstRunDialogs -RootProcessId $appProcess.Id -WorkbenchNames $workbenchNames
-  Wait-AppUiElement -Names $workbenchNames -RootProcessId $appProcess.Id -TimeoutSeconds 420 | Out-Null
+  Wait-WorkbenchThroughFirstRun -RootProcessId $appProcess.Id -WorkbenchNames $workbenchNames | Out-Null
   $fileMenu = Wait-AppUiElement -Names @("文件", "檔案", "File") -RootProcessId $appProcess.Id
   Open-UiMenu -Element $fileMenu
   $settingsMenu = Wait-AppUiElement -Names @(
