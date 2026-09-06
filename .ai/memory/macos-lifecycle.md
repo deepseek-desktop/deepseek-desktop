@@ -39,4 +39,4 @@ src-tauri/target/release/examples/native-view-lifecycle --check-ownership --with
 
 ## 剩余边界
 
-本机已知 contentView 过度释放缺陷闭环；继续完成安装包功能和候选更新验收，不把生命周期通过当作整体发布通过。Windows x64 原生验收仍需新 Tag 的官方矩阵通过。用户最新授权为 1.1.0 社区预发布、明确未签名且不占 Latest；可信发布者签名仍是正式 stable 的条件，不因本次社区授权放宽。
+本机已知 contentView 过度释放缺陷按上述因果对照闭环，不承诺不存在其他未知原生崩溃。后续 `v1.1.8` 已完成官方矩阵及 Windows x64 原生安装验收，范围见 [当前发布验收](verification.md#当前发布验收)；不把该结果记为每个发行包都重跑过全部生命周期压力测试。可信发布者签名仍是正式 stable 的条件，社区预发布授权不放宽该边界。

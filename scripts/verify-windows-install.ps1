@@ -193,8 +193,8 @@ function Wait-AppUiElement {
 # workbench shell briefly before a modal mounts over it, so a single sighting of the
 # workbench proves nothing; checking it first lets a transient frame end the loop while
 # a dialog is still pending, which is exactly how v1.1.7 returned having dismissed
-# nothing. Note also that `continue` inside do/while exits the loop in PowerShell, so
-# this is written as a while loop with an explicit deadline.
+# nothing. Keep the deadline separate from UI readiness, and only return after
+# checking the dismissal controls; continue is valid in PowerShell do/while loops.
 function Wait-WorkbenchThroughFirstRun {
   param(
     [Parameter(Mandatory = $true)][int]$RootProcessId,

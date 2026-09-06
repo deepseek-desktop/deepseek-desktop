@@ -2,6 +2,8 @@
 
 范围：F01–F24，另列全屏 SIGABRT。原始审计基线为 `b36a7d8`，实施基线为 `3b903df`。测试通过不代表真实平台或发布门禁通过。
 
+当前 `v1.1.8` 已通过官方原生矩阵并发布；发布与 Windows 安装证据统一见 [当前发布验收](verification.md#当前发布验收)。只据实更新对应缺陷，不把该结果泛化为所有平台全功能或真实供应商回归。
+
 | 缺陷 | 场景与修复 | 当前证据 / 状态 |
 | --- | --- | --- |
 | F01 | JSON / 大小写 Bearer 及带标点查询令牌完整脱敏，重复脱敏不泄漏 | Rust `redaction_removes_entire_credentials_and_is_idempotent` 通过；日志导出复用同一函数 |
@@ -13,8 +15,8 @@
 | F14 | 同源 popup 导航受管工作台；外链仅系统浏览器，禁止失管 WKWebView | 原生 Markdown 外链打开系统 Chrome，Desktop 保持单窗口；最新 WebKit 修复包再次点击当前受管 Origin 的 Markdown 链接后仍为原单窗口、同一 Desktop/Harness 进程，完整历史与当前模型保留，无白屏 |
 | F15 | 单实例查找实际 Window，解除最小化再显示聚焦 | macOS 安装包最小化后双启动恢复同一 PID、单窗口并聚焦；其他平台未验 |
 | F22 | 常驻原生快捷键，保留唯一可见窗口菜单 | 1.1.0 实际 DMG 聊天输入框 Cmd+A/C/X/V 及 Cmd+, / Cmd+W 通过；实际鼠标定位、每次新取 AX 引用，草稿和原剪贴板各类型数据恢复一致；Windows/Linux 未验 |
-| F02 / F03 | NSIS 外壳允许 x86；实际 deepseek-desktop.exe 必须 x64；规范化注册表安装路径 | 脚本已修复，Windows x64 原生安装验收仍阻塞，不能记为通过 |
-| F17 | 校验 annotated Tag / 版本 / HEAD / 构建 commit，矩阵传递 Tag 对象并在发布前重读远端 | Node `release identity rejects lightweight, moved, mismatched and replaced annotated tags` 通过；未改动真实 Tag |
+| F02 / F03 | NSIS 外壳允许 x86；实际 deepseek-desktop.exe 必须 x64；规范化注册表安装路径 | v1.1.8 的官方 Windows x64 Job 101406745444 实际安装、PE 校验、启动、双引导、菜单设置、关闭清理与卸载通过 |
+| F17 | 校验 annotated Tag / 版本 / HEAD / 构建 commit，矩阵传递 Tag 对象并在发布前重读远端 | 身份回归及 v1.1.8 完整发布链通过，远端 annotated Tag 对象与构建 commit 一致；旧失败 Tag 未移动。容器信任及发布变量配置冲突已修复 |
 | F18 | 用户字段级 CAS，后端时间戳原子修改，不接受前端快照覆盖 | Rust `user_field_patches_preserve_backend_state_and_reject_stale_revisions` 通过 |
 | F19 | 前后端合并在途更新检查，串行结果不倒退 | Rust `concurrent_checks_reuse_the_in_flight_result` 和 App 并发检查回归通过 |
 | F20 | 更新弹窗焦点进入、Tab 循环、背景 inert、关闭恢复焦点 | DOM/E2E 与原生 800x600 滚动通过；真实更新弹窗验证 20 次 Tab、12 次反向 Tab、背景 inert、Esc 后焦点返回检查更新按钮 |
@@ -26,7 +28,9 @@
 | F12 | 凭据写入失败成功回滚后更新表单 revision，保留草稿；冲突不重写 | 执行实际装配后的 createOnce 函数，成功回滚后重试与回滚冲突两个场景通过 |
 | SIGABRT | contentView 查询采用显式成对的局部引用，不泄漏、不修改 dealloc | 修改前两次独立启动查询失衡、隔离完整应用硬件监视定位过度释放；修改后 32 次查询平衡，实际 DMG 三次冷启动、20 轮混合操作与同一 PID 超过 30 分钟观察通过，见 [生命周期证据](macos-lifecycle.md) |
 
-安全、原生生命周期、设置和发布门禁三簇已提交本地，未推送。2026-09-05 搜索与装配改动通过完整 `desktop:package`：Node 105、Vue 32、搜索 40、Rust 93（1 个显式联网用例忽略）、E2E 5 项通过，另完成真实 Harness smoke、`app:sync --check`、`harness:sync --check`、`release:smoke`。本机默认版本 1.0.0 是验证包，不是已发布版本；不能替代目标平台验收。
+## 发行前证据与失败边界
+
+以下按当时的源码和包版本解读；“未完成”“不发布”等判断属于对应历史阶段，当前状态以上表及最新发布基线为准。2026-09-05 搜索与装配改动通过完整 `desktop:package`：Node 105、Vue 32、搜索 40、Rust 93（1 个显式联网用例忽略）、E2E 5 项通过，另完成真实 Harness smoke、`app:sync --check`、`harness:sync --check`、`release:smoke`。本机默认版本 1.0.0 是验证包，不是已发布版本；不能替代目标平台验收。
 
 真实供应商验证使用授权凭据经标准输入临时传入，不持久化或记录密钥。DeepSeek `deepseek-v4-pro` 与 Alibaba MaaS `qwen3.8-max` 各执行一次 Node.js 官方文档查询，均收到 HTTP 200 与结构化来源 `https://nodejs.org/en/docs/` / `https://nodejs.org/docs/latest/api/`。其他协议仍以隔离模拟响应回归为证据。
 

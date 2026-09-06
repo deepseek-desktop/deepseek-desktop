@@ -8,13 +8,13 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
-- 2026-09-05 macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地安装包和候选切换验收已完成；`v1.1.0` 的容器 Git 所有权问题已修复，`v1.1.1` 正式身份校验通过后在新增测试的 Linux 环境隔离处失败。两次均未进入原生矩阵或创建 Release，失败 Tag 保持不动；修复后按授权选择下一个未占用补丁版本，明确未签名且不占 Latest。以下旧版本记录不代表当前发布验收，逐缺陷证据见 [审计修复验收](memory/audit-remediation.md)。
+- 当前成功发行是 `v1.1.8`，commit `d56e3d910437a25912e48b012d69a7ca6d2cdd1b`；Run `34003134434` 的质量门禁、四平台原生构建、Windows x64 安装交互及汇总发布全部成功。六个公开资产齐全，保持未签名社区预发布、非 Latest；本机安装版本也已只读核对为 1.1.8。失败 Tag 保持不可变。证据范围见 [当前发布验收](memory/verification.md#当前发布验收)，防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
 
-- 1.1.0 本地 DMG 最终复验已通过，含 WebKit 历史恢复、同源链接、真实编辑快捷键、混合窗口交互、候选激活/拒绝/恢复与独立搜索设置。完整 `desktop:package`、七项 E2E、真实 Harness smoke 与同步检查通过。Alibaba MaaS Max / Flash 原生 GUI 并发搜索实际重叠 8067 毫秒，各有 8 条结构化来源；恢复内置后的 1.1.0 GUI 搜索再次成功。该实测不替代不同端点、不同凭据的并发验证。Windows x64 仍等待新 annotated Tag 的官方矩阵，全部通过才发布未签名、非 Latest 社区预发布。
+- macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地 DMG 已验证 WebKit 历史、同源链接、剪贴板、混合窗口操作、候选激活/拒绝/恢复和独立搜索设置；Alibaba MaaS Max / Flash GUI 并发各有 8 条来源，实际重叠 8067 毫秒。该实测为同端点同凭据，不扩大为所有 Provider 隔离或每个后续发行包均重测；逐缺陷范围见 [审计修复验收](memory/audit-remediation.md)。
 
-- 跟随模型搜索现为 Desktop 独立 host/client 扩展，通过公开 Agent 异步上下文、模型目录、搜索 Provider 注册和设置插槽接入。官方搜索源码、设置和启用状态遵循上游及用户配置；Desktop 的单一选择可以映射为 `follow-model`、已注册的独立搜索 Provider 或关闭搜索，不再补丁修改官方搜索卡片或 Harness 搜索核心。候选闭包验证扩展前后端及 Harness 依赖，详见 ADR-017。`1.0.32` macOS ARM64 安装候选已完成真实安装与交互验收，发布仍必须等待本次 Tag 的 Windows x64 原生安装门禁和四平台矩阵。
+- 跟随模型搜索现为 Desktop 独立 host/client 扩展，通过公开 Agent 异步上下文、模型目录、搜索 Provider 注册和设置插槽接入。官方搜索源码、设置和启用状态遵循上游及用户配置；Desktop 的单一选择可以映射为 `follow-model`、已注册的独立搜索 Provider 或关闭搜索，不再补丁修改官方搜索卡片或 Harness 搜索核心。候选闭包验证扩展前后端及 Harness 依赖，详见 ADR-017；平台和真实供应商的验收边界分别记账。
 
-- `v1.0.31` 已通过 GitHub 原生四平台矩阵并发布，六个公开资产下载校验一致。用户授权备份后，本机安装版已更新至 `1.0.31` 并通过原生交互验收；本机 Harness 已升级至 `0.1.2-rc.1` / `76fda729799f`。安装包内置基线仍以工具链 lock 为准，平台与测试边界见验证基线。
+- 安装包内置 Harness 基线以工具链 lock 为准；用户数据中的独立更新状态必须实际查询，不能从历史安装或升级记录推断。
 
 - Desktop 更新摘要的 API Markdown 使用锁定的 markdown-it 渲染；备用 Atom HTML 只重建排版白名单，不执行原始 HTML、不请求外部图片，也不允许非 HTTP(S) 链接。保留有界完整正文，不按字符截断 Markdown；网页链接走专用原生校验命令，同窗设置和原有官方下载入口不变。见 ADR-016。
 

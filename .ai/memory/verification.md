@@ -1,5 +1,27 @@
 # 验证基线
 
+## 当前发布验收
+
+2026-09-06 只读复核源码、GitHub 原始日志和 Release：当前成功发行是 [v1.1.8](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.8)，不是此前本地验证包 1.1.0 / 1.1.2。
+
+- [Run 34003134434](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/34003134434) 的质量门禁、四平台原生构建及汇总发布六个 Job 全部成功；commit 为 `d56e3d910437a25912e48b012d69a7ca6d2cdd1b`。
+- 远端 `v1.1.8` 是 annotated Tag，对象 `feddabb473377b03f75f029f85f73dfd64a0e86c` 指向同一 commit；Release 于 `2026-09-06T02:19:44Z` 发布，`prerelease=true`、`isLatest=false`。
+- Windows x64 Job `101406745444` 在官方 `windows-2022` 上执行实际 NSIS 安装、应用 x64 PE 校验、工作台与菜单设置交互、关闭取消/确认、子进程清理和卸载。日志依次出现 `dismissed first-run dialog: 继续`、`dismissed first-run dialog: 稍后配置`、`workbench ready after dismissing 2 first-run dialog(s)` 及 `Windows x64 installation acceptance passed for DeepSeek Desktop 1.1.8.`；整个步骤成功，不只是打包通过。
+- 公开资产恰好六个，均为 uploaded 且有 SHA-256 digest；不包含内部 BUILD-INFO。下面大小来自本次 GitHub 元数据复核，不表示本次重新下载了所有文件。
+
+| 公开文件 | 字节数 |
+| --- | ---: |
+| `DeepSeek.Desktop_1.1.8_aarch64.dmg` | 284593195 |
+| `DeepSeek.Desktop_1.1.8_x64.dmg` | 224777852 |
+| `DeepSeek.Desktop_1.1.8_x64-setup.exe` | 58661035 |
+| `DeepSeek.Desktop_1.1.8_amd64.AppImage` | 188611064 |
+| `DeepSeek.Desktop_1.1.8_amd64.deb` | 119500616 |
+| `SHA256SUMS` | 504 |
+
+Claude Code 的发布后记录包含 ARM64 DMG 实际下载校验、安装启动、五次设置往返及退出清理；该 DMG 摘要为 `215716106586de0fe7f7393ae37c829abb68d87a313a60ad0d7220304d914522`，与远端 digest 一致。本次只读复核另外确认本机安装版本为 1.1.8，未重新操作 GUI，也没有把对方报告的像素判据扩展为全功能验收或五包下载证明。
+
+已知 contentView 所有权缺陷的因果修复仍以 [生命周期验收](macos-lifecycle.md) 为准；聊天中沿用的“来源未知”旧结论不覆盖后来的对照证据。1.1.8 原生矩阵通过不新增真实供应商凭据测试、Linux 人工 GUI 或所有平台升级回滚证据；签名、公证和 stable 条件仍未具备。预防发布失败的方法、测试夹具陷阱及责任复盘统一维护在 [发布手册](../skills/release-workflow.md#最短反馈路径)。以下为各标注版本的历史验收范围，不作为当前发布阻塞。
+
 ## 容器发布身份检查
 
 2026-09-05：`v1.1.0` 的 Run `33969114177` 在 `shell-quality` 失败，未创建 Release。Checkout 日志确认其 `safe.directory` 只写入临时 HOME，后续 Playwright 容器步骤无法读取。工作流仅在该 Job 中登记实际 `GITHUB_WORKSPACE`；没有通配信任，也没有修改身份校验实现。

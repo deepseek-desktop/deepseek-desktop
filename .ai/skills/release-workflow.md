@@ -26,7 +26,7 @@
 
 ## 本地收口
 
-先读取 `AGENTS.md`、`.ai/context.md`、`.ai/todo.md`、`.ai/plan.md`、`.ai/conventions.md`，再检查：
+先读取 `AGENTS.md`、`.ai/context.md`、`.ai/todo.md`、`.ai/conventions.md` 和本手册；存在 `.ai/plan.md` 时再读取，不因可选文件不存在创建重复计划。再检查：
 
 ```bash
 git status --short --branch
@@ -55,6 +55,18 @@ macOS 本机至少检查：
 4. 应用退出后没有遗留 Harness 进程。
 
 用户已取消“每次发布都必须挂载 DMG 并启动 5 秒”的固定门禁，不要自行恢复；遇到安装包相关改动时仍应按风险做对应验证。
+
+## 最短反馈路径
+
+1. 先找到失败 Job 的第一处实际错误，记录 commit、命令、输入环境和阶段；区分产品、装配、测试夹具和 Runner 问题，不把所有失败归因于平台或网络。
+2. 新增发布输入时同时核对生产者、Job 传递、配置加载器及消费者。用真实变量名和值形态执行最小入口；本机 `desktop:package` 没有 CI 环境变量，不能证明 `package:community` 的发行身份契约可用。
+3. 在可控环境复现修改前失败、修改后通过。优先检查容器 HOME / Git 所有权、LF / CRLF、构建产物而非仓库文件、全新 profile 与已有 profile 的差异；不得清空用户真实数据模拟首次运行。
+4. 超时前后必须有可解释状态：受管进程树、窗口标题、相关 UIA 控件和有界脱敏日志。只有能证明准备仍在推进才调整时间预算；不能仅加等待或反复发 Tag 猜原因。
+5. 修复后先跑失败阶段及相邻契约，再按改动范围执行仓库规定的验证。仅修改打包后验收脚本时，不应为同一源码反复重建无关的本机 DMG；不得因此省略适用的发行回归、最终原生矩阵或安装验收。
+6. 修复与相关证据闭环后及时按 pathspec 提交，避免把可交付修复长期留作 WIP。跨 Agent 接手先读最新 diff 和 CI，复用已经通过的相同源码证据，不重复旧调查或夹带改动。
+7. 发布监视器超时不等于 Job 失败。重新查询原 Run 并继续跟踪；只有真实失败才修复、验证并选新 Tag。交付结束点是 Release 及下载包验收，不是推送成功或本机测试总数。
+
+这些规则来自 `v1.1.8` 发布复盘。Codex 的主要失误是引入发布变量却未验证配置入口、新增测试依赖本机行为、用已有用户状态设计首次安装验收，以及重复本机全量验证却延迟了发布关键路径。Claude Code 接手后的有效做法是沿用唯一工作流，补齐诊断，逐个复现并修复阻塞，再跟进矩阵与发布后安装；它并非一次成功，也曾引入首次弹窗提前返回回归。责任和原因应依据 diff / 失败日志记录，不以 Agent 的成功总结替代证据。
 
 ## Tag 与矩阵
 
@@ -98,6 +110,8 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 5. 等待质量检查、四平台矩阵和汇总发布全部完成。
 6. 重新读取 Release，核对 5 个安装包、`SHA256SUMS`、名称、大小、摘要、正文直接下载链接和 Tag/commit。
 
+核验摘要时区分 GitHub 返回的 digest、下载的 `SHA256SUMS` 与实际下载文件计算的 SHA-256；只查询元数据不能写成“全部下载校验通过”。下载后的最终本机包与先前本地构建包也必须分开记录。当前成功实例与证据边界见 [验证基线](../memory/verification.md#当前发布验收)。
+
 任何平台失败都不发布不完整版本。修复后使用下一个未占用 Tag；不能反复移动失败 Tag。
 
 ## 常见故障
@@ -105,6 +119,16 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 | 现象 | 处理 |
 | --- | --- |
 | 容器身份检查报 Git dubious ownership | Checkout 的临时 HOME 安全目录不会自动覆盖后续容器步骤；只在临时 CI Job 中登记实际 `GITHUB_WORKSPACE`，不得使用通配信任、修改本机全局 Git 或跳过 annotated Tag 校验 |
+| Git 回归本机通过，Linux 的本地 upload-pack 却报所有权错误 | `GIT_TEST_ASSUME_DIFFERENT_OWNER` 会被本地子进程继承，真实 GitHub 服务端不会继承它；先在模拟环境验证本地身份，再移除测试专用变量验证本地远端。保留未授权目录拒绝断言，不能修改生产校验迎合夹具。修复见 `b7e1731`，夹具为 `scripts/tests/release-identity.test.mjs` |
+| 四平台均报未知配置 `RELEASE_TAG_OBJECT` | 该变量是发行身份输入而非构建选项；配置加载器按名字识别，仍拒绝 `RELEASE_CHANEL` 等拼写错误。修复见 `f2e2431`；新增环境变量必须跑配置入口回归 |
+| Windows 单条 Provider 表单测试无法提取函数体 | 生成的 JavaScript 可为 CRLF，不受仓库 `.gitattributes` 控制；读入测试产物后归一化行尾，保留实际装配函数行为断言。修复见 `835afdc`；不能删除失败测试或改产品以迎合正则 |
+| NSIS 架构或安装后 EXE 检查失败 | NSIS 安装器外壳可以是 x86，实际 `deepseek-desktop.exe` 必须为 x64；规范化注册表安装路径，不按产品显示名称猜可执行文件名 |
+| Windows 首次安装后超时，已有用户机器却正常 | 先检查两层引导：“内测声明”后还有 API Key 引导；在隔离测试账户依次处理“继续”“稍后配置”，禁止点击“保存并继续”。`ccc6377` 加入诊断后定位，`60c6693` / `5039dde` 补齐流程，`d56e3d9` 修正检查顺序；安装验收入口为 `scripts/verify-windows-install.ps1` |
+| 日志显示关闭 0 个弹窗、短暂就绪，随后又找不到工作台 | 瞬时工作台外壳不是可交互就绪。每轮先检查已知引导按钮，再判断工作台；继续执行实际菜单和设置交互，不能以进程存活或一帧非白像素代替验收 |
+| WebView2 菜单找到但 Invoke 失败 | `aria-haspopup` 菜单使用公开 UIA ExpandCollapse，必要时后备 Invoke；根据控件实际模式操作，不因自动化失败修改产品菜单位置 |
+| 原生模块携带 node-gyp 构建路径 | 区分必要 `.node` 与开发中间产物；清理器和扫描器一致处理路径拼写及 UTF-8 / UTF-16LE，保持二进制偏移并复验实际加载，不扩大扫描白名单掩盖泄漏 |
+| 工作台白屏或 Failed to load plugins | 区分 bundle rev 失效的 404、旧会话 Cookie 累积的 431、脚本异常与服务未启动；检查实际响应及 Harness 启动代次，不靠清空用户数据或进程存活判定修复。现有生产链清理旧认证 Cookie 并按代次重新导航 |
+| Chromium 正常但 macOS 历史回放失败 | 检查 WebKit 实际异常及相同会话内容；不能依赖 V8 的内置函数字符串排版。现有修复及双引擎对照见 [ADR-020](../decisions/adr-020-webkit-json-intrinsics.md)，不要用 Chromium 通过替代 WebKit |
 | 普通提交出现发布构建记录 | 工作流只能监听完整 SemVer Tag；禁止添加 PR、分支 push 或手动触发入口 |
 | 已签名版本仍被标为 prerelease | 检查生成配置的 `release.signed` 是否为布尔 `true`；`ci-release-prerelease.mjs` 对缺失或非布尔的签名声明一律按未签名处理 |
 | Release 多出 BUILD-INFO | 只从五类安装包生成公开目录，发布前检查文件总数为 6 |
@@ -114,6 +138,13 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 | 汇总报 `release identity mismatch` | 报错已带字段名。`harness.sha256` 因平台而异属正常（native prebuild 由各主机编译），不参与跨平台比对；其余字段不一致说明四个目标并非同一次发布，必须查明来源而不是放宽比对 |
 | `harness:sync` 报 `hardlink different from source` | 本地 clone 默认硬链接 `.git/objects`，与镜像自身的 commit-graph 维护竞争。`harness-sync.mjs` 的缓存检出必须带 `--no-hardlinks`；该失败与平台无关，不要当作单个 Runner 的抖动重试了事 |
 | 上传失败 | 不修改已有 Tag；确认权限和资产后用新版本重新闭环 |
+
+## 防止错误经验固化
+
+- 成功提交中的解释也要核实。`d56e3d9` 的提交说明误称 PowerShell `continue` 在 `do/while` 中必然退出循环；[官方语义](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_continue)是终止当前迭代并继续循环，[do/while](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_do)仍按条件决定是否继续。已证实的失败是弹窗前的工作台瞬时帧触发提前返回，不应把错误语言规则复制到后续代码。
+- macOS AX 旧引用、断言类型错误、系统对话框属于独立进程，都可能使测试失败而产品正常；重新定位、刷新引用、核验实际行为。原生崩溃必须保留因果证据，不附加调试器暂停用户正在使用的实例；见 [生命周期验收](../memory/macos-lifecycle.md)。
+- 测试总数、构建成功、ARM64 上的 Windows x64 仿真、工作台像素非白，各自只能证明对应层。Windows 原生安装成功也不等于真实供应商搜索、所有菜单、高 DPI 和升级回滚全部验收。
+- 接手时更新当前状态，移除已解决的发布阻塞；历史失败由 Git / Actions 追溯。不能让 `.ai` 仍指向旧候选，也不能照抄聊天中的旧“SIGABRT 未闭环”覆盖后来的因果修复证据。
 
 ## 报告模板
 
