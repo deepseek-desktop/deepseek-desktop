@@ -309,7 +309,13 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   assert.match(windowsAcceptance, /Assert-Pe -Path \$installer.FullName -AllowedMachines @\(0x014c, 0x8664\)/u);
   assert.match(windowsAcceptance, /Assert-Pe -Path \$installedExecutable -AllowedMachines @\(0x8664\)/u);
   assert.match(windowsAcceptance, /Join-Path \$installLocation "deepseek-desktop\.exe"/u);
-  assert.match(windowsAcceptance, /Wait-AppUiElement -Names @\("新建会话", "新会话", "新增對話", "New session"\)/u);
+  // The workbench names moved into a variable so the first-run dismissal and the wait
+  // share one list; assert the list and both uses, not one literal call site.
+  assert.match(windowsAcceptance, /\$workbenchNames = @\("新建会话", "新会话", "新增對話", "New session"\)/u);
+  assert.match(windowsAcceptance, /Dismiss-FirstRunDialogs -RootProcessId \$appProcess\.Id -WorkbenchNames \$workbenchNames/u);
+  assert.match(windowsAcceptance, /Wait-AppUiElement -Names \$workbenchNames -RootProcessId \$appProcess\.Id/u);
+  // Acceptance may skip onboarding but must never submit a credential.
+  assert.doesNotMatch(windowsAcceptance, /\$dismissNames = @\([^)]*(?:保存并继续|Save and continue)/u);
   assert.match(windowsAcceptance, /Get-DescendantProcessIds -RootProcessId \$RootProcessId/u);
   assert.match(windowsAcceptance, /ProcessName -like "node\*"/u);
   assert.match(windowsAcceptance, /"设置…", "设置\.\.\."/u);

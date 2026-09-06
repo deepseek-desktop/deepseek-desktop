@@ -183,27 +183,40 @@ function Wait-AppUiElement {
 # A bare timeout cannot distinguish "the Harness never started", "it started but the
 # workbench failed to load" and "it is still preparing its profile on first run", and
 # each Windows matrix round costs half an hour. Report what the runner actually had.
-function Dismiss-FirstRunNotice {
+# First run walks through a sequence of Harness modals, each of which blocks the
+# workbench until acknowledged: the beta notice, then the API-key onboarding. Names
+# are the shipped welcomeContinue and onboardingLater strings. Acceptance must never
+# press onboardingSave ("保存并继续" / "Save and continue"), which asks for a real
+# credential. A machine that already completed onboarding shows none of these, so
+# finding nothing is a normal outcome rather than a failure.
+function Dismiss-FirstRunDialogs {
   param(
     [Parameter(Mandatory = $true)][int]$RootProcessId,
-    [int]$TimeoutSeconds = 180
+    [string[]]$WorkbenchNames,
+    [int]$TimeoutSeconds = 300
   )
 
+  $dismissNames = @("继续", "Continue", "稍后配置", "Configure later")
   $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  $dismissed = 0
   do {
     $processIds = @($RootProcessId) + @(Get-DescendantProcessIds -RootProcessId $RootProcessId)
-    $button = Find-UiElement -Names @("继续", "繼續", "Continue") -ProcessIds $processIds
-    if ($null -ne $button) {
-      Invoke-UiElement -Element $button
-      Write-Host "dismissed the first-run notice"
+    if ($null -ne (Find-UiElement -Names $WorkbenchNames -ProcessIds $processIds)) {
+      Write-Host "first-run dialogs dismissed: $dismissed"
       return
     }
-    if ($null -ne (Find-UiElement -Names @("新建会话", "新会话", "新增對話", "New session") -ProcessIds $processIds)) {
-      return
+    $button = Find-UiElement -Names $dismissNames -ProcessIds $processIds
+    if ($null -ne $button) {
+      $label = $button.Current.Name
+      Invoke-UiElement -Element $button
+      $dismissed++
+      Write-Host "dismissed first-run dialog: $label"
+      Start-Sleep -Milliseconds 1500
+      continue
     }
     Start-Sleep -Milliseconds 500
   } while ([DateTime]::UtcNow -lt $deadline)
-  Write-Host "no first-run notice appeared"
+  Write-Host "first-run dialogs dismissed: $dismissed (workbench still absent)"
 }
 
 function Write-AppUiDiagnostic {
@@ -313,8 +326,9 @@ try {
   # The Harness shows a one-time beta notice on first run, and its modal keeps the
   # workbench from rendering until it is acknowledged. A fresh runner always hits it;
   # a machine that has already accepted it never will, so absence is not a failure.
-  Dismiss-FirstRunNotice -RootProcessId $appProcess.Id
-  Wait-AppUiElement -Names @("新建会话", "新会话", "新增對話", "New session") -RootProcessId $appProcess.Id -TimeoutSeconds 420 | Out-Null
+  $workbenchNames = @("新建会话", "新会话", "新增對話", "New session")
+  Dismiss-FirstRunDialogs -RootProcessId $appProcess.Id -WorkbenchNames $workbenchNames
+  Wait-AppUiElement -Names $workbenchNames -RootProcessId $appProcess.Id -TimeoutSeconds 420 | Out-Null
   $fileMenu = Wait-AppUiElement -Names @("文件", "檔案", "File") -RootProcessId $appProcess.Id
   Open-UiMenu -Element $fileMenu
   $settingsMenu = Wait-AppUiElement -Names @(
