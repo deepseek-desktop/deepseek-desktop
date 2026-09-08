@@ -262,3 +262,16 @@ _objc_fatal <- weak_register_no_lock <- objc_initWeak
 没有稳定复现之前不要改代码：任何修复都无法验证，而过宽的 `tao_view_guard` swizzle
 曾正是以这条相同的 `objc_initWeak` 栈制造过新崩溃。优先做的应是让下一次真实发生可被诊断
 （记录析构对象的类名与当时的子 WebView 集合），而不是盲改。
+
+## Harness 0.1.5-alpha.1 升级验收
+
+由 `dsh-v0.1.3-alpha.1`（`d347e703`）升到 `dsh-v0.1.5-alpha.1`（`5dda764e`）。7 个补丁中 6 个原样适用，两个重做并按惯例改名：
+
+- `dsh-client-ui-chat`：上游给 `SystemPromptRow` 增加 `update` 属性，原第 4 个 hunk 上下文失配。重做后 4 个 hunk 全部适用，三条标记不变。
+- `dsh-client-connection`：新增一个 hunk，把 `webServer` 补回插件静态 `inject`。
+
+该连接回归由运行时探针定位而非推断：在插件注入回调内 `current.webServer` 与 `current.connection` 均为 object，但 `rpc.handle` 抛出「cannot get property "webServer" without inject」——说明 `register()` 用的是连接插件自身上下文。上游 `rpc-host.ts` 在两 tag 间无改动，唯一相关变更是 `connection/src/index.ts` 的 `inject` 由 `['webServer','credentials']` 变为 `['credentials']`。`dsh-v0.1.3-alpha.2` 仍为旧声明，可作安全中间档。
+
+修复后 `harness:smoke` 通过（独立搜索客户端、跟随模型默认值、持久保存/重置与小窗布局）。`test:config`、`app:sync --check`、`harness:sync --check`、`verify`、`test:e2e`、`desktop:package` 均通过；本机验收包启动、Harness sidecar 为子进程、工作台加载、退出无残留、0 崩溃报告。
+
+验收中一次误判值得记下：像素判据一度给出 47.43% 的「已加载」，实际画面是 Desktop 更新弹窗（本机构建 1.0.0 发现了已发布的 1.1.8），并非工作台。关掉弹窗后才确认工作台真实加载。像素占比只能证明界面在渲染，不能证明渲染的是哪一层。

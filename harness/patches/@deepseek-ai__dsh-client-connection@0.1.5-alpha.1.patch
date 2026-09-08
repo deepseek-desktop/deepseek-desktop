@@ -1,7 +1,7 @@
 diff --git a/lib/index.js b/lib/index.js
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -198,6 +198,7 @@
+@@ -221,6 +221,7 @@
  const SECRET_BYTES = 32;
  const TOKEN_QUERY = "token";
  const COOKIE_PREFIX = "dsh-auth-";
@@ -9,7 +9,7 @@ diff --git a/lib/index.js b/lib/index.js
  const COOKIE_PAYLOAD_VERSION = 1;
  const STORED_SECRET_VERSION = 1;
  const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/;
-@@ -264,7 +265,23 @@
+@@ -288,6 +289,22 @@
  		return segment.slice(at + 1).trim();
  	}
  }
@@ -32,8 +32,8 @@ diff --git a/lib/index.js b/lib/index.js
  /** Serialize the fixed browser-session attributes; generated names and values are cookie-safe base64url. */
  function sessionCookie(name, value, expiresAt, maxAgeSeconds) {
  	return `${name}=${value}; Max-Age=${String(maxAgeSeconds)}; Path=/; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; SameSite=Strict`;
- }
-@@ -375,10 +392,11 @@
+@@ -398,11 +415,12 @@
+ 					issuedAt,
  					expiresAt
  				}, this.secret);
 +				const name = cookieName(authority);
@@ -46,3 +46,12 @@ diff --git a/lib/index.js b/lib/index.js
  				});
  				res.end();
  				return false;
+@@ -733,7 +751,7 @@
+ 	if (maxRequestBodyBytes < requiredImageBodyBytes) throw new Error(`client-connection maxRequestBodyBytes (${String(maxRequestBodyBytes)}) must be at least ${String(requiredImageBodyBytes)} for the configured aggregate image limit`);
+ }
+ /** Services required before providing Connection. */
+-const inject = ["credentials"];
++const inject = ["credentials", "webServer"];
+ const Config = z.object({
+ 	recovery: ConnectionRecoveryConfigSchema.default({}),
+ 	trustedHosts: z.array(String).default([]),

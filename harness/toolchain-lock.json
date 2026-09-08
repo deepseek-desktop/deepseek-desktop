@@ -37,8 +37,8 @@
   },
   "harnessSource": {
     "repository": "https://github.com/deepseek-desktop/deepseek-harness.git",
-    "ref": "dsh-v0.1.3-alpha.1",
-    "commit": "d347e703908d0406b7a7ef80e3a0e594d86b2215"
+    "ref": "dsh-v0.1.5-alpha.1",
+    "commit": "5dda764ed3aa172535a7967b06ff95d9cbfe536a"
   },
   "bundledPackages": {
     "dshmarket": {
@@ -107,7 +107,7 @@
     },
     {
       "packageName": "@deepseek-ai/dsh-client-ui-chat",
-      "file": "@deepseek-ai__dsh-client-ui-chat@0.1.2-alpha.1.patch",
+      "file": "@deepseek-ai__dsh-client-ui-chat@0.1.5-alpha.1.patch",
       "moduleFile": "lib/client.js",
       "markers": [
         "Provider authentication failed. Verify the credential, endpoint, model access, and account permissions.",
@@ -125,13 +125,14 @@
     },
     {
       "packageName": "@deepseek-ai/dsh-client-connection",
-      "file": "@deepseek-ai__dsh-client-connection@0.1.2-alpha.1.patch",
+      "file": "@deepseek-ai__dsh-client-connection@0.1.5-alpha.1.patch",
       "moduleFile": "lib/index.js",
       "markers": [
         "function staleSessionCookies(headerValue, currentName)",
-        "...staleSessionCookies(header(req.headers, \"cookie\"), name)"
+        "...staleSessionCookies(header(req.headers, \"cookie\"), name)",
+        "const inject = [\"credentials\", \"webServer\"]"
       ],
-      "id": "loopback-cookie-migration"
+      "id": "loopback-cookie-and-channel-mount"
     },
     {
       "packageName": "@deepseek-ai/dsh-client-modules",

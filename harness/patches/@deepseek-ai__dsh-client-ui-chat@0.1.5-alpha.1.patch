@@ -1,7 +1,7 @@
 diff --git a/lib/client.js b/lib/client.js
 --- a/lib/client.js
 +++ b/lib/client.js
-@@ -793,6 +793,7 @@
+@@ -860,6 +860,7 @@
  		* @returns A collapsed context row with a bounded, form-specific body.
  		*/
  		function ContextInjectionRow({ content, source, provenance, form, t }) {
@@ -9,7 +9,7 @@ diff --git a/lib/client.js b/lib/client.js
  			const [open, setOpen] = (0, react.useState)(false);
  			const { rendered, summary, body } = contextBody(form, {
  				content,
-@@ -2403,7 +2404,7 @@
+@@ -2707,7 +2708,7 @@
  			"message.retry.status": "{label}（{retry}/{maximum}） · {seconds}s",
  			"message.retry.delay": "重试延迟：",
  			"message.retry.failure": "失败原因：",
@@ -18,7 +18,7 @@ diff --git a/lib/client.js b/lib/client.js
  			"message.turnError": "本轮运行失败",
  			"message.maxTokens": "已达到输出 token 上限",
  			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
-@@ -2512,7 +2513,7 @@
+@@ -2813,7 +2814,7 @@
  			"message.retry.status": "{label} ({retry}/{maximum}) · {seconds}s",
  			"message.retry.delay": "Retry delay: ",
  			"message.retry.failure": "Failure reason: ",
@@ -27,16 +27,18 @@ diff --git a/lib/client.js b/lib/client.js
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
-@@ -2978,10 +2979,7 @@
+@@ -3262,12 +3263,8 @@
  			});
  		}
  		/** System-prompt keyed Chat renderer. */
 -		const SystemPromptNodeView = (0, react.memo)(function SystemPromptNodeView({ node, t }) {
 -			return (0, react_jsx_runtime.jsx)(SystemPromptRow, {
 -				text: node.data.text,
+-				update: node.data.update === true,
 -				t
 -			});
 +		const SystemPromptNodeView = (0, react.memo)(function SystemPromptNodeView() {
 +			return null;
  		});
  		//#endregion
+ 		//#region \0dsh-css:/Users/Home/Codes/Java/spring-open/views/deepseek-desktop/target/harness-sync/source/5dda764ed3aa172535a7967b06ff95d9cbfe536a/packages/client/ui-chat/src/client/chat/TurnProcessNodeView.module.css.mjs

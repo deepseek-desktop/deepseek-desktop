@@ -60,6 +60,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - pnpm：`11.24.0`
 - Rust：`1.98.0`
 - Tauri CLI：`2.11.4`
+- Harness `0.1.5-alpha.1` 起，连接插件把 `webServer` 移出静态 `inject`，改为条件注入。`connection.rpc.handle` 仍是公开 API（`assertChannel` 只保留 `/api`），但其内部按连接插件自身上下文取 `webServer`，因而自定义频道注册抛出「cannot get property "webServer" without inject」并静默不挂载，请求落到静态兜底返回 405。桌面侧以补丁把 `webServer` 补回该插件的静态 `inject`，恢复自定义频道挂载；`/desktop-web-search` 的 RPC 契约与客户端调用保持不变。
 - Harness 固定来源、commit 和制品校验和以 `harness/toolchain-lock.json` 为准，不在本文件重复维护。
 
 ## 发行目标
