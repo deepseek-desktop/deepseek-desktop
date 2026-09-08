@@ -41,3 +41,26 @@ test("the cached Harness checkout is cloned without hardlinks", async () => {
   // commit-graph maintenance and aborts the clone on any platform.
   assert.match(source, /"clone",\s*"--no-hardlinks",\s*"--no-checkout"/u);
 });
+
+test("desktop patches never embed a build-machine path", async () => {
+  const { readFile, readdir } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  // The Harness build writes its own source directory into `#region` comments, so a
+  // patch generated with wide context can capture the authoring machine's absolute
+  // path as context. It then applies locally and fails on every other machine — the
+  // CI runner builds under a different root. Keep patch context free of them.
+  const directory = new URL("../../harness/patches/", import.meta.url);
+  const files = (await readdir(directory)).filter(name => name.endsWith(".patch"));
+  assert.ok(files.length > 0, "expected at least one desktop patch");
+  // Match anywhere in the line: the offending path sits behind a "\0dsh-css:" prefix,
+  // so anchoring on a leading delimiter misses it.
+  const machinePath = /\/Users\/|\/home\/|\/__w\/|\/root\/|[A-Za-z]:\\\\/u;
+  for (const file of files) {
+    const patch = await readFile(join(directory.pathname, file), "utf8");
+    const offending = patch
+      .split("\n")
+      .filter(line => machinePath.test(line))
+      .slice(0, 3);
+    assert.deepEqual(offending, [], `${file} embeds a build-machine path`);
+  }
+});
