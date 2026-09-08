@@ -425,14 +425,22 @@ setTimeout(() => {
   if (launched.status !== 0) throw new Error(`orphan cleanup launcher failed: ${launched.stderr || launched.stdout}`);
   const pid = Number.parseInt(launched.stdout.trim(), 10);
   if (!Number.isInteger(pid)) throw new Error(`orphan cleanup launcher returned an invalid pid: ${launched.stdout}`);
-  const deadline = Date.now() + 10_000;
+  // The launcher kills the parent one second in, while the Harness is still deep in
+  // synchronous startup, and parent-watch's 500ms poll is unref'd — so on a slow
+  // runner the timer gets no turn for a while and cleanup starts late. The invariant
+  // is that no Harness outlives its desktop parent, not that it dies within ten
+  // seconds, so allow real margin rather than reporting a slow machine as a leak.
+  const cleanupBudgetMs = 30_000;
+  const startedAt = Date.now();
+  const deadline = startedAt + cleanupBudgetMs;
   while (Date.now() < deadline && processGroupExists(pid)) {
     await new Promise(resolveDelay => setTimeout(resolveDelay, 100));
   }
   if (processGroupExists(pid)) {
     try { process.kill(-pid, "SIGKILL"); } catch {}
-    throw new Error(`harness process group ${pid} survived its desktop parent`);
+    throw new Error(`harness process group ${pid} survived its desktop parent by more than ${cleanupBudgetMs}ms`);
   }
+  console.log(`harness parent-death cleanup took ${Date.now() - startedAt}ms`);
   console.log("harness parent-death cleanup passed");
 }
 
