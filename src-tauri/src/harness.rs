@@ -408,6 +408,38 @@ impl HarnessSupervisor {
     /// Records a breadcrumb at most every 250ms. A live window drag emits relayout
     /// requests every frame; recording each one would push the rest of the trail out
     /// of the rotated log before a crash could be read from it.
+    /// Record a window geometry change that does not resize the window. Moving across
+    /// displays leaves no trace in the existing relayout breadcrumbs, because only
+    /// `Resized` and `ScaleFactorChanged` reach `sync_surface_layout`; a drag between
+    /// two same-scale screens fires neither. Without this the report "the window went
+    /// blank after I dragged it to the other screen" has no timeline to read.
+    pub fn note_window_moved(&self) {
+        self.breadcrumb_throttled(|| {
+            let window = self.app.get_window("main");
+            let position = window
+                .as_ref()
+                .and_then(|window| window.outer_position().ok())
+                .map(|position| format!("{},{}", position.x, position.y))
+                .unwrap_or_else(|| "unknown".to_owned());
+            let size = window
+                .as_ref()
+                .and_then(|window| window.inner_size().ok())
+                .map(|size| format!("{}x{}", size.width, size.height))
+                .unwrap_or_else(|| "unknown".to_owned());
+            let scale = window
+                .as_ref()
+                .and_then(|window| window.scale_factor().ok())
+                .map(|scale| format!("{scale}"))
+                .unwrap_or_else(|| "unknown".to_owned());
+            let surface = if self.workbench_visible.load(Ordering::Acquire) {
+                "workbench"
+            } else {
+                "settings"
+            };
+            format!("moved surface={surface} at={position} window={size} scale={scale}")
+        });
+    }
+
     fn breadcrumb_throttled(&self, message: impl FnOnce() -> String) {
         let mut last = self
             .last_layout_breadcrumb

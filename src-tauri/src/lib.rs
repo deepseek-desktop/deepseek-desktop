@@ -518,6 +518,12 @@ pub fn run() {
                             | tauri::WindowEvent::ScaleFactorChanged { .. }
                     ) {
                         let _ = surface.sync_surface_layout();
+                    } else if matches!(event, tauri::WindowEvent::Moved(_)) {
+                        // Observation only. A move keeps the child webview bounds valid
+                        // because they are relative to the window, so this must not
+                        // relayout on every drag frame; it only leaves a timeline for
+                        // blank-window reports that follow a drag between displays.
+                        surface.note_window_moved();
                     }
                 });
             }
