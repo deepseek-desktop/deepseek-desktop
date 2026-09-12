@@ -2,6 +2,11 @@
 
 DeepSeek Desktop 的重要变化记录如下。
 
+## 1.1.17 - 2026-09-13
+
+- Linux 托管发布在验证完成后清理不被 release profile 复用的 Cargo debug 产物与已完成使命的 Harness 同步缓存，避免 linuxdeploy 复制 AppDir 时耗尽 Runner 磁盘。
+- Linux Runner 会启用 Tauri 打包诊断；失败时同时输出 linuxdeploy 原始诊断与发布文件系统剩余空间，不再只留下泛化错误。
+
 ## 1.1.16 - 2026-09-13
 
 - 包含 `1.1.15` 的官方 Harness `0.1.5-rc.2` 升级、官方插件机制和新的本地 npm 装配路径。

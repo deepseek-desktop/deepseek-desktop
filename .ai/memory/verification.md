@@ -2,23 +2,26 @@
 
 ## 官方 Harness 0.1.5-rc.2 源码升级
 
-2026-09-12 至 2026-09-13：`v1.1.16` 当前候选使用官方 `https://github.com/deepseek-ai/deepseek-harness.git`，锁定 `c291e7961a515f6d7af9304e7fd1d257929aef26`（发布前再次核对为官方 master / HEAD）。首次切换该来源的 `v1.1.14` Tag 在 GitHub Run `34693095400` 的 shell-quality 失败，未进入原生矩阵、未创建 Release；该 Tag 保持不可变。
+2026-09-12 至 2026-09-13：`v1.1.17` 当前候选使用官方 `https://github.com/deepseek-ai/deepseek-harness.git`，锁定 `c291e7961a515f6d7af9304e7fd1d257929aef26`（发布前再次核对为官方 master / HEAD）。首次切换该来源的 `v1.1.14` Tag 在 GitHub Run `34693095400` 的 shell-quality 失败，未进入原生矩阵、未创建 Release；该 Tag 保持不可变。
 
 - 生产依赖改按官方 CLI 和桌面扩展的公开 peer 声明选择工作区闭包，经官方构建、递归打包和冻结安装生成；上游工作区闭包包含 241 个包，冻结安装新增 502 个依赖节点，最终 staging 递归清点为 644 个唯一包。macOS ARM64 为 25,566 个文件，本轮 Linux x64 为 25,576 个文件；核心 peer 必须来自同一官方源码并满足精确版本。Tag CI 从工具链 lock 导出仓库和 ref，解析后继续校验 commit。
 - 官方插件配置与只读插件列表替代强制 DSH Market；旧市场、模型表单、审批与展示覆盖及 RPC 注入补丁已移除。只保留真实回归仍需要的认证 Cookie 清理和 Responses 工具调用标识修正。旧受管 Bundle 仅在所有权与内容摘要一致且非用户依赖时撤下启用声明，保留文件及用户配置。
 - `v1.1.14` 的第一处实际错误是 Linux 官方平台包 prepack 缺少 `bin/landlock-run`：上游 `build:official` 只构建当前 libc 的 host addon，不会生成发布平台包声明的 glibc、musl 和静态 Landlock 三类载荷。修复改为按上游机制执行完整 `build:native`，Linux Runner 安装 `musl-tools`；平台包使用随固定 Node 归档提供的 npm `11.19.0` 打包，其余 workspace 包继续使用 pnpm。实测 pnpm `11.24.0 pack` 会把 `landlock-run` 的 `0755` 改成 `0644`，npm 保留 `0755`，因此不能用旧的统一 pnpm pack 路径替代。
 - `v1.1.15` annotated Tag 对象 `a2af17b8337cb66f1650a22c6d49bcd1a8a55244` 指向 commit `6b6fbc80937d20808b86d1b680be768007e7ceea`。[Run 34699902701](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/34699902701) 的 shell-quality `103569699162`、macOS ARM64 `103571323422` 和 macOS x64 `103571323515` 成功；Windows x64 `103571323456` 因宿主 `core.autocrlf` 使精确 Desktop 补丁产生 CRLF 而失败，Linux x64 `103571323420` 因 `linuxdeploy` 对官方 musl `system.node` 调用 glibc `ldd` 时把 `libc.so` 解析为 linker script 而失败，publish-release `103579496188` 跳过。Run 结论为 failure，无 Release 或公开资产；Tag 保持不可变。
+- `v1.1.16` annotated Tag 对象 `6f7fe2d9ba13bfe8d3a99788d69af45fdedfa2ac` 指向 commit `ef57f38393f4085c187e78515bda1df68358b360`。[Run 34706633055](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/34706633055) 的 shell-quality `103587750007`、macOS ARM64 `103589210261`、macOS x64 `103589210363` 和 Windows x64 `103589210263` 成功，确认 Windows LF 补丁修复及两套 macOS 构建；Linux x64 `103589210260` 在完成 release 编译并进入 AppImage 后因 `linuxdeploy` 非零退出失败，publish-release `103596212735` 跳过。Run 结论为 failure，Release API 返回 404；Tag 保持不可变。
+- Tauri 2.11.4 在默认错误日志级别会捕获并丢弃 linuxdeploy 的 stdout/stderr，因此该 Job 只留下泛化错误。Ubuntu 22.04 使用实际官方 musl `system.node` 的 `ldd` 输出精确符合受限 wrapper；当前 AppImage 输出插件也能对同一约 625 MiB AppDir 成功生成制品，排除这两项漂移。成功 Linux 全链工作区中 `src-tauri/target` 约 12 GiB（debug 6.3 GiB、release 5.0 GiB），另有 Harness 同步和 staging，复盘将失败定位到 14 GiB Runner 在 AppImage 压缩峰值耗尽磁盘。
+- `v1.1.17` 在所有测试、E2E 和 Harness smoke 完成后，仅于 GitHub Linux Runner 删除不被 release profile 复用的 `src-tauri/target/debug` 与不再消费的 `target/harness-sync`；保留 `harness/staging`、生成锁、release target 和工具链。实际完整 Linux 链在 Tauri build 前释放 6.74 GiB（单独现有构建树验证为 7.27 GiB），随后生成 AppImage 与 DEB、通过 77,036 文件 / 1,681,701,183 字节交付扫描和 SHA-256；两包均保留官方 musl `system.node` 且不含宿主 `libc.so`。GitHub Linux 同时启用 Tauri verbose，失败时另报告剩余磁盘。
 - 仓库候选与正式 staging 共用该装配机制。安装包携带锁定 npm 和四个最小 Node-API 头文件，更新器建立临时标准 Node 目录并按 `prebuilds.json` 预检 macOS `cc`、Linux `cc` / `musl-gcc`；安装后逐项比较原生元数据、二进制字节和执行位，并实际探测 Landlock 启动器。失败仍保留当前 Harness。
-- `app:sync --check`、固定来源的 `harness:sync --check`、`verify`、`test:e2e`、`harness:smoke` 和 `release:smoke` 的升级基线全部通过。加入跨平台打包修复后，最终源码覆盖 132 项配置/发行测试，其中受限 `ldd` wrapper 的目标匹配、普通委托、依赖漂移拒绝、清理和非 Linux 五项回归另在 Linux 容器全部通过；32 项前端测试、39 项搜索测试、101 项 macOS Rust 测试及 Clippy 的既有基线不变，1 项须显式启用的外部仓库测试保持忽略。隔离且标记为 dirty/local 的 Linux x64 `desktop:package` 诊断在补最后一项依赖漂移回归前通过 131 项配置/发行测试、32 项前端测试、39 项搜索测试、97 项 Rust 测试（另 1 项忽略）、Clippy、6 项 E2E 和 Harness smoke；同一 Tauri 调用生成 AppImage 与 DEB，扫描 77,036 个文件 / 1,681,705,231 字节并校验 SHA256SUMS。直接解包确认两个安装包均保留官方 musl `system.node`，且均未携带宿主 `libc.so`；临时 wrapper 已在打包结束后清理。
+- `app:sync --check`、固定来源的 `harness:sync --check`、`verify`、`test:e2e`、`harness:smoke` 和 `release:smoke` 的升级基线全部通过。加入 Linux 存储回收后，最终源码覆盖 137 项配置/发行测试，其中受限 `ldd` wrapper 五项及存储范围、平台条件、诊断和 Tauri verbose 五项回归通过；32 项前端测试、39 项搜索测试、101 项 macOS Rust 测试及 Clippy 的既有基线不变，1 项须显式启用的外部仓库测试保持忽略。
 - 7 项 E2E 覆盖 Shell、更新摘要、官方设置样式滚动及 Chromium/WebKit JSON 边界。真实 Harness 浏览器 smoke 确认官方插件列表中的搜索和凭据插件运行、搜索设置默认值及保存/恢复/重载/小窗口交互、Fetch API 认证与 Origin 拒绝、旧 Cookie 清理和父进程消亡后的子进程退出。
 - 使用随应用交付的 Node、pnpm、npm、Node-API 头和桌面扩展，从官方 c291 源码真实准备仓库候选成功；候选 CLI 为 `0.1.5-rc.2`，官方核心未被旧闭包覆盖，两个带 SHA-256 的桌面兼容契约均在最终包中命中，原生系统模块为 ARM64 Mach-O。该结果验证了仓库更新的构建与装配路径，不只是静态单元测试。
-- `v1.1.16` 本机社区安装包必须从提交后的干净工作树重新生成并完成 DMG、签名结构、架构和 LaunchServices 启停检查；四平台正式制品仍须由新 Tag 的官方 Runner 重新生成并汇总验收。在这些步骤完成前不沿用旧版本本地 DMG 作为新版本证据，也不宣称其他原生平台、真实供应商调用、签名或公证已通过。
+- `v1.1.16` 本机干净提交社区包完成 76,148 文件 / 1,221,241,711 字节扫描；ARM64 DMG SHA-256 为 `2fe4e7219769e1cfd20953ffc1a99cdaa141851f69029fcfeda83c2eced0122d`，`hdiutil verify`、应用严格签名结构、主程序及内置 Node ARM64、LaunchServices 启动、真实 Harness 子进程和退出清理通过。该包仍为 ad-hoc 签名，且不能替代 `v1.1.17` 的干净提交包和四平台新 Tag 验收。
 
 ## 当前发布验收
 
-2026-09-12 发布前复核 Git、GitHub Actions 和 Release：最近一次成功发行是 [v1.1.13](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.13)。
+2026-09-13 发布前复核 Git、GitHub Actions 和 Release：最近一次成功发行仍是 [v1.1.13](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.13)。
 
-- `v1.1.14` 与 `v1.1.15` 均为已失败且不可变的 annotated Tag，均未创建 Release。`v1.1.15` Run `34699902701` 最终为 failure：shell-quality 与两套 macOS 原生构建成功，Windows/Linux 原生构建失败，发布 Job 跳过。下一候选只能使用新 Tag `v1.1.16`。
+- `v1.1.14`、`v1.1.15` 与 `v1.1.16` 均为已失败且不可变的 annotated Tag，均未创建 Release。`v1.1.16` Run `34706633055` 最终为 failure：shell-quality、两套 macOS 和 Windows 原生构建成功，Linux 原生构建失败，发布 Job 跳过。下一候选只能使用新 Tag `v1.1.17`。
 
 - [Run 34316055136](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/34316055136) 的质量门禁、macOS ARM64/x64、Windows x64、Linux x64 和汇总发布六个 Job 全部成功；commit 为 `c23a2304f09e57520162796219d8d9f5a671f32e`。
 - 远端 `v1.1.13` 是 annotated Tag，对象 `aa69ce1a4e59d1256a252a0665960a62e15dbac2` 指向该 commit；Release 于 `2026-09-09T06:37:31Z` 发布，`prerelease=true`。

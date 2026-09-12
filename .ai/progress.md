@@ -1,6 +1,6 @@
 # 当前交付摘要
 
-- 当前已成功交付的版本为 `v1.1.13` 社区预发布，commit `c23a2304`；Run `34316055136` 的质量门禁、四平台原生构建和发布全部成功，六个公开资产齐全。`v1.1.14` 因官方原生平台包未完整构建而失败。`v1.1.15` 的 Run `34699902701` 中 shell-quality、macOS ARM64/x64 成功，Windows x64 因 CRLF/LF 补丁字节漂移失败，Linux x64 因 `linuxdeploy` 错误解析官方 musl 模块的 `libc.so` 失败，publish-release 跳过且无 Release；两个 Tag 均保持不可变。`v1.1.16` 候选已用命令级 `core.autocrlf=input` 和 Linux AppImage 受限 `ldd` 探测修复两个根因；Linux x64 容器已完成全链、AppImage + DEB 及交付扫描，仍须从干净提交完成本机安装包、新 Tag 原生矩阵和六项公开资产下载验收。最新证据与未验证边界见 [当前发布验收](memory/verification.md#当前发布验收)，后续必须重读远端，不将该版本硬编码为下一次发行基线。
+- 当前已成功交付的版本仍为 `v1.1.13` 社区预发布，commit `c23a2304`；Run `34316055136` 的质量门禁、四平台原生构建和发布全部成功，六个公开资产齐全。`v1.1.14`、`v1.1.15` 和 `v1.1.16` 均为不可变失败 Tag且未创建 Release；最新 Run `34706633055` 中 shell-quality、macOS ARM64/x64 与 Windows x64 成功，Linux x64 在 AppImage linuxdeploy 阶段因构建峰值耗尽 Runner 磁盘失败，publish-release 跳过。下一候选 `v1.1.17` 在所有验证结束后精确回收 Cargo debug 与 Harness 同步缓存，完整 Linux 全链实测释放 6.74 GiB 并成功生成、扫描 AppImage + DEB；仍需从干净提交完成本机安装包、新 Tag 原生矩阵和六项公开资产下载验收。最新证据与未验证边界见 [当前发布验收](memory/verification.md#当前发布验收)，后续必须重读远端，不将该版本硬编码为下一次发行基线。
 
 - 发布复盘已固化到 [唯一发布手册](skills/release-workflow.md#最短反馈路径)：完整 CI 输入契约、跨平台测试夹具、全新 profile 引导与 UIA 诊断、最短失败反馈、不可变 Tag 和下载包证据分层。容器 Git 信任、发布变量白名单、CRLF、双弹窗及瞬时就绪问题已有对应修复与成功原生矩阵；不把测试数量当作发行闭环。
 
