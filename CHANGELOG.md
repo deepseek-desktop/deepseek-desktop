@@ -2,6 +2,12 @@
 
 DeepSeek Desktop 的重要变化记录如下。
 
+## 1.1.16 - 2026-09-13
+
+- 包含 `1.1.15` 的官方 Harness `0.1.5-rc.2` 升级、官方插件机制和新的本地 npm 装配路径。
+- Linux AppImage 打包改用临时、受限的 `ldd` 探测，只放行官方 musl 原生模块已知的单一 libc 依赖；保留官方 glibc / musl 载荷且不把宿主 musl libc 复制进安装包。
+- 兼容补丁应用过程固定使用 LF，避免 Windows Runner 的 `core.autocrlf` 设置使精确补丁验证产生换行漂移。
+
 ## 1.1.15 - 2026-09-12
 
 - Harness 默认来源切换到官方仓库，基线锁定官方 master `c291e7961a51`（`0.1.5-rc.2`）。

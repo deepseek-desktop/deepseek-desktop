@@ -136,6 +136,8 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 | Windows 路径过长 | 保持 Windows Job 在短路径 detached clone 中打包 |
 | Windows 重试报 Harness 文件只读 | 恢复内容缓存后只把工作副本递归设为可写，缓存本体仍做哈希核验 |
 | Linux AppImage strip 失败 | `NO_STRIP=1` 只能设置在 GitHub Linux 原生打包步骤，不传播到其他平台 |
+| Linux AppImage 在检查 musl `system.node` 时报 `failed to run linuxdeploy` | 官方平台包同时携带 glibc 和 musl 原生模块；Ubuntu `ldd` 可能把 musl 的 `libc.so` 解析为 glibc linker script。仅在 Tauri 打包期间把临时 `ldd` wrapper 前置到 `PATH`：它只匹配 AppDir 中官方 musl `system.node` 的精确路径，用真实 `ldd` 和目标 musl 库目录验证依赖仍只有预期 `libc.so` 后隐藏该行；其他调用委托真实 `ldd`，依赖漂移必须失败，结束后清理 wrapper。复验 AppImage、DEB 与交付扫描均保留官方 musl 载荷且不携带宿主 `libc.so`。 |
+| Windows 精确补丁后只出现 CRLF 差异 | `git apply` 会继承 Runner 的 `core.autocrlf`。在单次补丁命令上固定 `core.autocrlf=input`，用实际字节回归 LF / CRLF 输入；不修改用户或 Runner 的全局 Git 配置。 |
 | 汇总报 `release identity mismatch` | 报错已带字段名。`harness.sha256` 因平台而异属正常（native prebuild 由各主机编译），不参与跨平台比对；其余字段不一致说明四个目标并非同一次发布，必须查明来源而不是放宽比对 |
 | `harness:sync` 报 `hardlink different from source` | 本地 clone 默认硬链接 `.git/objects`，与镜像自身的 commit-graph 维护竞争。`harness-sync.mjs` 的缓存检出必须带 `--no-hardlinks`；该失败与平台无关，不要当作单个 Runner 的抖动重试了事 |
 | Linux 原生平台包 prepack 报缺少 `landlock-run` 或安装后无法执行 | `build:official` 只生成当前 libc 的 host addon；在打包当前平台包前执行原生 workspace 的完整 `build:native`，Linux Runner 安装 `musl-tools`。平台包沿用官方 `npm pack` 保留执行位，其余 workspace 包使用 pnpm；安装后复核声明载荷与权限，不能跳过 prepack 或删除 optional 平台包。 |

@@ -4,7 +4,7 @@
 
 当前发布及已解决门禁见 [验证基线](memory/verification.md#当前发布验收)；本文件只列未验证范围与外部条件，不再保留旧失败版本为待发布候选。F01–F24 各自的实测、Mock 和平台边界以 [审计修复验收](memory/audit-remediation.md) 为准，不能用发行成功统一标记全平台全功能通过。
 
-官方 Harness `0.1.5-rc.2` 源码升级的本机验证范围见[升级验证](memory/verification.md#官方-harness-015-rc2-源码升级)；`v1.1.14` 已在 shell-quality 暴露原生平台包装配缺口且保持不可变。修复后的 `v1.1.15` 已通过本机全链、仓库候选构建与最终源码 Linux x64 容器预检，仍需从干净提交完成 macOS ARM64 安装包检查、Tag 四平台原生矩阵和六项公开资产验收。
+官方 Harness `0.1.5-rc.2` 源码升级的本机验证范围见[升级验证](memory/verification.md#官方-harness-015-rc2-源码升级)；`v1.1.14` 的原生平台包缺口和 `v1.1.15` 的 Windows 换行/Linux AppImage 问题均已使对应 Tag 失败且保持不可变，均未创建 Release。`v1.1.16` 已修复两个最新阻塞，Linux x64 容器全链、AppImage + DEB 和交付扫描通过；仍需从干净提交完成 macOS ARM64 安装包检查、Tag 四平台原生矩阵与六项公开资产下载验收。
 
 ## 独立搜索扩展的外部验收
 

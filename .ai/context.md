@@ -4,11 +4,11 @@
 
 DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用 Tauri 2 管理本地 Harness，在单个原生窗口中嵌入 Harness 工作台，并提供自动启动、模型凭据、诊断、关于和更新状态等桌面能力。
 
-本仓库是独立 Git 仓库。虽然当前目录位于 SpringOpen 的 `views/` 下，但不得从 SpringOpen 父仓库接管、暂存或提交本仓库文件，也不得修改相邻的 `views/deepseek-harness`。
+本仓库是独立 Git 仓库，不得从其他仓库接管、暂存或提交本仓库文件。生成的上游 Harness 检出只是临时构建输入，不作为相邻源码仓库管理。
 
 ## 当前边界
 
-- 发布前最近一次成功发行是 `v1.1.13`，commit `c23a2304f09e57520162796219d8d9f5a671f32e`；Run `34316055136` 的质量门禁、四平台原生构建、Windows x64 安装交互及汇总发布全部成功。六个公开资产齐全，保持未签名社区预发布、非 Latest。失败 Tag 保持不可变。证据范围见 [当前发布验收](memory/verification.md#当前发布验收)，防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
+- 发布前最近一次成功发行是 `v1.1.13`，commit `c23a2304f09e57520162796219d8d9f5a671f32e`；Run `34316055136` 的质量门禁、四平台原生构建、Windows x64 安装交互及汇总发布全部成功。六个公开资产齐全，保持未签名社区预发布、非 Latest。`v1.1.14` 和 `v1.1.15` 均为未发布的不可变失败 Tag；`v1.1.15` Run `34699902701` 的 shell-quality 与两套 macOS 构建成功，Windows 因 Git 自动换行导致精确补丁验证失败，Linux 因 `linuxdeploy` 检查官方 musl 模块时解析到 glibc linker script 失败，未创建 Release。两项修复后的下一候选为 `v1.1.16`。证据范围见 [当前发布验收](memory/verification.md#当前发布验收)，防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
 
 - macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地 DMG 已验证 WebKit 历史、同源链接、剪贴板、混合窗口操作、候选激活/拒绝/恢复和独立搜索设置；Alibaba MaaS Max / Flash GUI 并发各有 8 条来源，实际重叠 8067 毫秒。该实测为同端点同凭据，不扩大为所有 Provider 隔离或每个后续发行包均重测；逐缺陷范围见 [审计修复验收](memory/audit-remediation.md)。
 

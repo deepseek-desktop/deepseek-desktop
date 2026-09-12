@@ -6,6 +6,7 @@ import process from "node:process";
 import { createMacDmg } from "./macos-dmg.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
 import { artifactForbiddenRoots, scanArtifactPaths } from "./lib/artifact-scan.mjs";
+import { prepareLinuxAppImageLdd } from "./lib/linux-appimage.mjs";
 import { portableRustFlags, RUST_PATH_REMAP_VERSION } from "./lib/rust-flags.mjs";
 import { restorePreparedRelease } from "./release-system/prepared-release.mjs";
 
@@ -142,9 +143,32 @@ const rustFlags = portableRustFlags({
   cargoTargetDir,
   existing: process.env.RUSTFLAGS
 });
-timings.tauriBuildMs = run(process.execPath, ["scripts/with-rust.mjs", "tauri", "build", "--config", "target/generated/tauri.conf.json", "--bundles", target.bundles], {
-  env: { RUSTFLAGS: rustFlags }
+const appImageLdd = await prepareLinuxAppImageLdd({
+  muslSystemNode: join(
+    bundleRoot,
+    "appimage",
+    `${config.productName}.AppDir`,
+    "usr",
+    "lib",
+    config.productName,
+    "harness",
+    "staging",
+    target.triple,
+    "node_modules",
+    "@deepseek-ai",
+    "node-addon-system-linux-x64",
+    "bin",
+    "musl",
+    "system.node"
+  )
 });
+try {
+  timings.tauriBuildMs = run(process.execPath, ["scripts/with-rust.mjs", "tauri", "build", "--config", "target/generated/tauri.conf.json", "--bundles", target.bundles], {
+    env: { RUSTFLAGS: rustFlags, ...appImageLdd.environment }
+  });
+} finally {
+  await appImageLdd.cleanup();
+}
 if (target.dmgArch) {
   await createMacDmg({
     bundleRoot,
