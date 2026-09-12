@@ -52,7 +52,7 @@ v1.0.0+build.1
 1. `master` 指向待发行 commit，工作区干净。
 2. 本机规定的质量检查和当前 macOS 打包通过。
 3. 版本尚未被远程 Tag 或 Release 使用。
-4. Harness 来源、Node `24.20.0`、pnpm `11.24.0`、Rust `1.98.0` 和 Tauri CLI `2.11.4` 与仓库 lock 一致。
+4. Harness 来源、Node `24.20.0`、pnpm `11.24.0`、npm `11.19.0`、Rust `1.98.0` 和 Tauri CLI `2.11.4` 与仓库 lock 一致。
 5. 发布说明只描述本次实际交付内容。
 
 创建新的 annotated Tag 后推送：
@@ -78,7 +78,7 @@ git push origin v1.0.0
 
 各 Worker 上传的 `BUILD-INFO.<target>.json` 只供汇总任务核对来源和目标，不作为公开下载附件。Release 中缺少任一安装包、出现重复目标或多出内部文件时，发布任务必须失败。
 
-稳定 SemVer 创建正式 Release；带 prerelease 标识的 SemVer（例如 `v1.0.0-rc.1`）创建预发布 Release。
+未签名构建一律创建预发布 Release；只有完成签名且版本不带 prerelease 标识时才创建正式 Release。带 prerelease 标识的 SemVer（例如 `v1.0.0-rc.1`）始终创建预发布 Release。
 
 ## 签名与安全
 

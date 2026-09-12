@@ -100,8 +100,10 @@ if (preparedMode) {
   timings.preparedRestoreMs = Date.now() - restoredAt;
   timings.installMs = runPnpm(["install", "--frozen-lockfile"]);
   timings.appSyncCheckMs = runPnpm(["app:sync", "--check"]);
+  timings.harnessSyncMs = runPnpm(["harness:sync"]);
   timings.releaseGateMs = runPnpm(["release:check", channel]);
   timings.harnessStageMs = runPnpm(["harness:stage"]);
+  timings.harnessVerifyMs = runPnpm(["harness:verify"]);
   timings.harnessSmokeMs = runPnpm(["harness:smoke"]);
 } else {
   timings.installMs = runPnpm(["install", "--frozen-lockfile"]);
@@ -211,6 +213,7 @@ await writeFile(buildInfoPath, `${JSON.stringify({
     nodeModuleAbi: toolchainLock.node.moduleAbi,
     rustVersion: toolchainLock.toolchain?.rust,
     pnpmVersion: toolchainLock.toolchain?.pnpm,
+    npmVersion: toolchainLock.toolchain?.npm,
     tauriCliVersion: toolchainLock.toolchain?.tauriCli
   },
   harness: {

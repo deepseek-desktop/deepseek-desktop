@@ -4,9 +4,14 @@ import { spawnSync } from "node:child_process";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import process from "node:process";
 
-import { findInstalledPackages, listInstalledPackages } from "../../scripts/lib/installed-packages.mjs";
+import { findInstalledPackages, listInstalledPackages, packageInventory } from "../../scripts/lib/installed-packages.mjs";
 import { downloadVerified } from "../../scripts/lib/download-verified.mjs";
-import { artifactForbiddenRoots, scanArtifactPaths } from "../../scripts/lib/artifact-scan.mjs";
+import {
+  ARTIFACT_SCANNER_VERSION,
+  artifactForbiddenRoots,
+  scanArtifactPaths
+} from "../../scripts/lib/artifact-scan.mjs";
+import { verifyDesktopPatchAsset } from "../../scripts/lib/desktop-patches.mjs";
 import { atomicWriteJson } from "../../scripts/release-system/common.mjs";
 import {
   contentCacheKey,
@@ -62,24 +67,16 @@ async function collectFiles(root, current = root, output = []) {
   for (const entry of await readdir(current, { withFileTypes: true })) {
     const path = join(current, entry.name);
     if (entry.isDirectory()) await collectFiles(root, path, output);
-    else if (entry.isFile()) output.push({ path: relative(root, path).replaceAll("\\", "/"), sha256: await hashFile(path) });
+    else if (entry.isFile()) {
+      const info = await stat(path);
+      output.push({
+        path: relative(root, path).replaceAll("\\", "/"),
+        ...(process.platform === "win32" ? {} : { mode: info.mode & 0o777 }),
+        sha256: await hashFile(path)
+      });
+    }
   }
   return output;
-}
-
-async function packageInventory(nodeModules) {
-  const inventory = new Map();
-  for (const item of await listInstalledPackages([nodeModules])) {
-    const { name, version, license } = item.manifest;
-    if (!name || !version) continue;
-    inventory.set(`${name}@${version}`, {
-      name,
-      version,
-      license: typeof license === "string" ? license : "NOASSERTION"
-    });
-  }
-  return [...inventory.values()]
-    .sort((left, right) => left.name.localeCompare(right.name) || left.version.localeCompare(right.version));
 }
 
 async function retainDirectory(root, expected) {
@@ -177,7 +174,7 @@ async function pruneNativeArtifacts(nodeModules, target) {
   }
 }
 
-async function stageOfficialNode(target, sidecar, licenseDestination) {
+async function stageOfficialNode(target, sidecar, harnessDestination) {
   const artifact = lock.node.artifacts[target];
   if (!artifact) throw new Error(`Node artifact is not locked for ${target}`);
   const cacheRoot = resolve(desktopRoot, "target/deepseek-desktop-harness-cache/node", target);
@@ -205,20 +202,59 @@ async function stageOfficialNode(target, sidecar, licenseDestination) {
     await writeFile(marker, `${artifact.sha256}\n`);
   }
   const archiveRoot = artifact.archive.replace(/\.tar\.gz$|\.zip$/u, "");
+  const distribution = join(extracted, archiveRoot);
   const binary = process.platform === "win32"
-    ? join(extracted, archiveRoot, "node.exe")
-    : join(extracted, archiveRoot, "bin", "node");
-  const license = join(extracted, archiveRoot, "LICENSE");
-  await Promise.all([stat(binary), stat(license)]);
+    ? join(distribution, "node.exe")
+    : join(distribution, "bin", "node");
+  const license = join(distribution, "LICENSE");
+  const include = join(distribution, "include", "node");
+  const npm = process.platform === "win32"
+    ? join(distribution, "node_modules", "npm")
+    : join(distribution, "lib", "node_modules", "npm");
+  // The official Harness currently builds system binaries only on macOS and
+  // Linux. Node's Windows distribution does not guarantee development headers,
+  // and the win32 package set has no native platform package to compile.
+  const nodeApiHeaders = process.platform === "win32" ? [] : [
+    "node_api.h",
+    "js_native_api.h",
+    "node_api_types.h",
+    "js_native_api_types.h"
+  ];
+  const npmManifest = JSON.parse(await readFile(join(npm, "package.json"), "utf8"));
+  if (npmManifest.name !== "npm" || typeof npmManifest.version !== "string") {
+    throw new Error("verified Node distribution contains an invalid npm package");
+  }
+  if (npmManifest.version !== lock.toolchain?.npm) {
+    throw new Error(`verified Node distribution contains npm ${npmManifest.version}, expected ${String(lock.toolchain?.npm)}`);
+  }
+  await Promise.all([
+    stat(binary),
+    stat(license),
+    ...nodeApiHeaders.map(header => stat(join(include, header))),
+    stat(join(npm, "bin", "npm-cli.js")),
+    stat(join(npm, "LICENSE"))
+  ]);
   await mkdir(dirname(sidecar), { recursive: true });
   await cp(binary, sidecar);
-  await mkdir(dirname(licenseDestination), { recursive: true });
-  await cp(license, licenseDestination);
+  const buildToolchain = join(harnessDestination, "toolchain", "node");
+  if (nodeApiHeaders.length > 0) {
+    await mkdir(join(buildToolchain, "include", "node"), { recursive: true });
+  }
+  await mkdir(join(harnessDestination, "licenses"), { recursive: true });
+  await Promise.all([
+    ...nodeApiHeaders.map(header => cp(
+      join(include, header),
+      join(buildToolchain, "include", "node", header)
+    )),
+    cp(npm, join(buildToolchain, "npm"), { recursive: true }),
+    cp(license, join(harnessDestination, "licenses", "node-LICENSE.txt")),
+    cp(join(npm, "LICENSE"), join(harnessDestination, "licenses", "npm-LICENSE.txt"))
+  ]);
   const version = runCapture(sidecar, ["--version"], desktopRoot).replace(/^v/u, "");
   if (version !== lock.node.version) throw new Error(`staged Node version mismatch: expected ${lock.node.version}, got ${version}`);
   const moduleAbi = runCapture(sidecar, ["-p", "process.versions.modules"], desktopRoot);
   if (moduleAbi !== lock.node.moduleAbi) throw new Error(`staged Node ABI mismatch: expected ${lock.node.moduleAbi}, got ${moduleAbi}`);
-  return artifact.sha256;
+  return { archiveSha256: artifact.sha256, npmVersion: npmManifest.version };
 }
 
 function createSpdx(target, inventory, createdAt) {
@@ -261,14 +297,18 @@ const binarySuffix = process.platform === "win32" ? ".exe" : "";
 const sidecar = join(desktopRoot, "src-tauri", "binaries", `node-${target}${binarySuffix}`);
 const cacheIdentity = {
   schemaVersion: 2,
-  closurePolicy: "production-without-development-tests-v2",
+  closurePolicy: "production-without-development-tests-and-node-build-toolchain-v3",
+  artifactScannerVersion: ARTIFACT_SCANNER_VERSION,
   target,
+  desktopVersion: lock.desktopVersion,
+  release: lock.release,
   harness: lock.harness,
   patches: lock.patches,
   bundledPackages: lock.bundledPackages,
   node: { version: lock.node.version, moduleAbi: lock.node.moduleAbi, artifact: lock.node.artifacts[target] },
   nativeAssets: lock.nativeAssets[target],
-  toolchain: lock.toolchain
+  toolchain: lock.toolchain,
+  desktopPatches: lock.desktopPatches
 };
 const cacheKey = contentCacheKey(cacheIdentity);
 const cacheDirectory = join(harnessCacheRoot, target, cacheKey);
@@ -302,18 +342,28 @@ await pruneIncompatiblePackages(join(output, "node_modules"), target);
 await pruneDevelopmentFiles(join(output, "node_modules"));
 await pruneNativeArtifacts(join(output, "node_modules"), target);
 
-// Check the staged closure with the very scanner that gates the release, here where
-// the offending file is still the original rather than a copy. Without this the same
-// violation only surfaces after the Rust build and installer bundling — half an hour
-// later on a CI runner — which is how four consecutive Windows releases were lost.
-await scanArtifactPaths([output], { forbiddenRoots: artifactForbiddenRoots(desktopRoot) });
-
 const dshEntry = join(output, lock.harness.entry);
 await stat(dshEntry);
 
-const nodeArchiveSha256 = await stageOfficialNode(target, sidecar, join(output, "licenses", "node-LICENSE.txt"));
+const nodeToolchain = await stageOfficialNode(target, sidecar, output);
+const desktopPatchRoot = join(output, "toolchain", "desktop-patches");
+await mkdir(desktopPatchRoot, { recursive: true });
+for (const patch of lock.desktopPatches) {
+  const patchFile = await verifyDesktopPatchAsset(join(harnessRoot, "patches"), patch);
+  await cp(patchFile, join(desktopPatchRoot, patch.file));
+}
 
-const inventory = await packageInventory(join(output, "node_modules"));
+// The source-update path builds the selected official native platform package.
+// Keep only npm and Node-API headers from the already verified Node archive; the
+// Node executable remains the single Tauri sidecar and is copied to an ephemeral
+// standard layout by the Rust updater when a source build starts.
+await scanArtifactPaths([output], { forbiddenRoots: artifactForbiddenRoots(desktopRoot) });
+
+const inventory = await packageInventory([
+  join(output, "node_modules"),
+  join(output, "toolchain", "node", "npm"),
+  join(output, "toolchain", "node", "npm", "node_modules")
+]);
 inventory.push({ name: "Node.js", version: lock.node.version, license: lock.node.license });
 inventory.sort((left, right) => left.name.localeCompare(right.name) || left.version.localeCompare(right.version));
 const generatedAt = new Date(lock.sourceDateEpoch * 1_000).toISOString();
@@ -324,15 +374,16 @@ await cp(join(harnessRoot, "THIRD_PARTY_NOTICES.md"), join(output, "THIRD_PARTY_
 
 const files = await collectFiles(output);
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   target,
   generatedAt,
   node: {
     version: lock.node.version,
     moduleAbi: lock.node.moduleAbi,
+    npmVersion: nodeToolchain.npmVersion,
     binary: basename(sidecar),
     sha256: await hashFile(sidecar),
-    archiveSha256: nodeArchiveSha256
+    archiveSha256: nodeToolchain.archiveSha256
   },
   harness: lock.harness,
   packageCount: inventory.length,

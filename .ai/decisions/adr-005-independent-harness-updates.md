@@ -10,7 +10,7 @@ DeepSeek Desktop 将桌面安装包和 Harness 更新拆分。Desktop 是稳定�
 
 设置 schema 只公开 `harnessUpdateRepository` 覆盖值，不再让普通用户配置来源类型、清单 URL、发布者或公钥。覆盖值为空时使用构建默认仓库；保存其他仓库后，更新检查和候选准备立即绑定新仓库，旧候选失效。诊断导出剔除自定义仓库地址。
 
-仓库模式使用 Git 读取默认分支 `HEAD`，发现不同 commit 后在应用数据目录浅克隆源码，复用当前安装包内置的 Node 与 pnpm，执行锁定依赖安装和仓库 `build:official`。候选按官方包声明生成生产闭包，装配 Desktop 凭据代理、搜索扩展和 pnpm，并通过 Node 版本、ABI、CLI、包版本与真实 Harness 服务 smoke 后才写入待切换指针；失败删除 staging 并保留当前 Harness。Git 凭据由用户已有 Git 环境负责，Desktop 不复制、记录或跨仓库传递凭据。
+仓库模式使用 Git 读取默认分支 `HEAD`，发现不同 commit 后在应用数据目录浅克隆源码，复用当前安装包内置的 Node、pnpm、npm 与最小 Node-API 头，执行锁定依赖安装和仓库 `build:official`。当前平台存在官方原生包声明时，先预检系统编译器并执行其完整 `build:native`；平台包由 npm 打包以保留可执行位，其余 workspace 包继续由 pnpm 转换和打包。隔离安装后复核声明载荷、字节及执行权限，再装配 Desktop 凭据代理、搜索扩展和 pnpm，并通过 Node 版本、ABI、CLI、包版本与真实 Harness 服务 smoke 后才写入待切换指针；失败删除 staging 并保留当前 Harness。Git 凭据由用户已有 Git 环境负责，Desktop 不复制、记录或跨仓库传递凭据。
 
 发行维护者仍可通过 `HARNESS_UPDATE_MANIFEST_URL`、`HARNESS_UPDATE_CHANNEL`、`HARNESS_UPDATE_PUBLISHER` 和 `HARNESS_UPDATE_PUBLIC_KEY` 预置签名制品通道。它是可选的高保障默认分发路径，不出现在普通用户设置中；用户填写其他仓库后明确切换到仓库模式。构建期显式固定 `HARNESS_REF` 时默认关闭自动准备。
 
@@ -18,7 +18,7 @@ DeepSeek Desktop 将桌面安装包和 Harness 更新拆分。Desktop 是稳定�
 
 - 配置任意仓库表示用户信任该仓库的源码、依赖和安装脚本在本机执行；Desktop 不通过厂商名、域名或 Provider ID 判断仓库身份。
 - 仓库 URL 拒绝嵌入 HTTP 凭据、query 和 fragment；支持 HTTP(S)、SSH、Git 和本地 `file` Git 仓库。检查结果绑定规范化仓库身份和 commit，仓库变化后必须重新检查。
-- 候选只写应用数据目录，不修改 `.app`、Windows 安装目录或 Linux 应用映像。仓库构建使用安装包内置 Node/pnpm，但依赖系统可执行 Git。
+- 候选只写应用数据目录，不修改 `.app`、Windows 安装目录或 Linux 应用映像。仓库构建使用安装包内置 Node/pnpm/npm 与 Node-API 头，但依赖系统可执行 Git；macOS/Linux 还依赖当前原生包声明需要的 `cc`，Linux 同时需要 `musl-gcc`。
 - 当前、上一版、待安装和内置基线的指针与回滚语义在仓库模式和签名制品模式中保持一致。
 
 可选签名制品通道继续保留下列约束：

@@ -95,6 +95,7 @@ Rust Harness 管理器
 
 - Node.js `24.20.0`
 - pnpm `11.24.0`
+- npm `11.19.0`（随固定 Node 官方归档提供）
 - Rust `1.98.0`
 - Tauri CLI `2.11.4`
 - 本地开发默认选择 Harness 仓库最新的 SemVer 标签；社区版和正式发布只接受仓库内经过审计的固定提交
@@ -117,7 +118,7 @@ corepack pnpm@11.24.0 tauri:dev
 
 `harness/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Harness 来源。`HARNESS_REF` 留空时，本地 `harness:sync` 自动选择仓库中最新的 SemVer 版本标签；显式填写时则使用指定 tag、commit 或开发分支。两种方式都会解析并锁定不可变 commit，并把请求 ref、最终 ref、commit、动态 CLI 入口和 Harness 哈希写入不提交 Git 的 `target/generated/harness-lock.json`。社区版和正式发布额外要求解析结果匹配 `harness/toolchain-lock.json` 中经过审计的固定仓库与提交；上游出现新版本时必须先复核并更新固定来源，不能在无人审查时自动改变安装包内容。Harness staging 只消费该生成 lock，并且只保留当前原生目标。
 
-staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存，校验固定 SHA-256，移除安装期时间元数据和非目标平台原生制品，并输出确定性的 `harness-manifest.json`、`licenses.json` 与 `sbom.spdx.json`。各平台允许使用的 `node-pty` 和 Koffi 原生制品固定在 `harness/toolchain-lock.json`。
+staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存，校验固定 SHA-256，保留锁定的 npm 与当前平台构建所需的最小 Node-API 头文件，移除安装期时间元数据和非目标平台原生制品，并输出确定性的 `harness-manifest.json`、`licenses.json` 与 `sbom.spdx.json`。各平台允许使用的 `node-pty` 和 Koffi 原生制品固定在 `harness/toolchain-lock.json`。
 
 发布稳定性验证可设置 `DEEPSEEK_DESKTOP_SMOKE_CYCLES=100` 后执行 `harness:smoke`。`DEEPSEEK_DESKTOP_DATA_DIR` 只用于隔离验收数据；正式用户无需配置，应用会自动使用 Tauri 对应平台的数据目录。
 
@@ -149,7 +150,7 @@ Desktop 外壳启动后每天最多静默检查一次自身版本，也可以从
 
 DeepSeek Desktop 将稳定的桌面外壳与 Harness 分开。桌面版默认使用官方上游仓库 `https://github.com/deepseek-ai/deepseek-harness.git`，用户也可以换成自己的兼容 fork。更换仓库只会改变本机运行的 Harness，不会替换 Desktop、模型配置、对话或工作区数据。
 
-“设置 → 更新 → Harness 独立更新”只需要一个 **Harness 仓库** 地址，不需要填写更新清单、发布者或公钥。点击“检查 Harness”会读取该仓库默认分支的最新 commit；发现变化后，Desktop 使用安装包内置的 Node 和 pnpm 在应用数据目录拉取、安装依赖、构建并启动验证候选 Harness。系统需要能够执行 Git，私有仓库还需要用户自己的 Git 访问权限。
+“设置 → 更新 → Harness 独立更新”只需要一个 **Harness 仓库** 地址，不需要填写更新清单、发布者或公钥。点击“检查 Harness”会读取该仓库默认分支的最新 commit；发现变化后，Desktop 使用安装包内置的 Node、pnpm、npm 和 Node-API 头文件，在应用数据目录拉取、安装依赖、构建并启动验证候选 Harness。系统需要能够执行 Git；当前官方原生包还要求 macOS 提供可用的 C 编译器，Linux 提供 `cc` 与 `musl-gcc`（通常来自 `musl-tools`）。私有仓库还需要用户自己的 Git 访问权限。前置工具缺失或构建失败时保留当前 Harness。
 
 默认更新方式是“发现后提醒”；用户也可以选择自动准备、仅手动检查、固定当前 Harness 或恢复安装包内置 Harness。候选只有在构建成功并通过 Node 版本、CLI 入口、桌面辅助包和真实本地服务 readiness smoke 后才会进入待切换状态，下次启动再原子切换。任何拉取、构建或启动失败都只会删除候选并继续使用当前 Harness；上一版不可用时仍可恢复安装包内置基线。更新目录只位于系统应用数据目录，不修改应用安装目录。
 

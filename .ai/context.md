@@ -45,8 +45,8 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - Windows x64 矩阵在上传制品前必须实际安装 NSIS 包并验证 x64 PE、工作台、设置菜单、关闭确认、Harness 子进程退出与卸载；只构建成功不能进入汇总发布。
 - GitHub Release 正文根据当前 Tag 和已汇总的完整公开资产集合生成直接下载链接；站点自身的 `Assets` 折叠状态不作为用户下载入口前提。
 - 本机只执行源码验证、E2E、Harness smoke 和当前 macOS 架构打包/启动测试；不以 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 作为正式发布前提。
-- 四平台统一使用工具链 lock 中的 Node `24.20.0` / ABI `137`，Runner 不得依赖全局版本漂移；内部 BUILD-INFO 用于矩阵汇总核验但不公开发布。
-- Harness 更新只写入应用数据目录；仓库模式复用内置 Node/pnpm 拉取、构建并 smoke 候选，可选签名制品模式继续执行签名、兼容和受限解压校验，两者共用原子切换与自动回滚。安装包内置 Harness 始终作为最终恢复基线。设置 schema 只保存可选仓库覆盖值，切换仓库会使旧候选失效并清空界面中的候选/待安装版本和进度，当前运行版本不变；诊断导出不包含仓库地址。
+- 四平台统一使用工具链 lock 中的 Node `24.20.0` / ABI `137`、pnpm `11.24.0` 和随 Node 归档固定的 npm `11.19.0`，Runner 不得依赖全局版本漂移；内部 BUILD-INFO 用于矩阵汇总核验但不公开发布。
+- Harness 更新只写入应用数据目录；仓库模式复用内置 Node/pnpm/npm 和 Node-API 头拉取、按官方原生包流程构建并 smoke 候选，macOS/Linux 根据当前平台声明预检系统编译器；可选签名制品模式继续执行签名、兼容和受限解压校验，两者共用原子切换与自动回滚。安装包内置 Harness 始终作为最终恢复基线。设置 schema 只保存可选仓库覆盖值，切换仓库会使旧候选失效并清空界面中的候选/待安装版本和进度，当前运行版本不变；诊断导出不包含仓库地址。
 - 仓库候选与正式打包共用生产 deploy helper，不把完整源码 checkout 当作安装目录；CLI 入口和版本按 `bin.dsh` 声明识别。桌面扩展随传递依赖装配，核心 peer 由新 Harness 提供；插件列表与配置由官方实现，搜索扩展直接使用当前公开设置接口，未知模型路由不盲猜。工作台跨启动代次导航前仅重置受管 Harness 认证 Cookie，避免未经桌面补丁处理的仓库积累旧 Cookie；同代次设置切换不清理页面数据。详见 ADR-015。
 - macOS 仓库 HTTP(S) 检查和克隆在没有显式环境代理时，通过 CFNetwork 按仓库 URL 继承系统静态代理与绕过规则；不修改全局 Git 或网络设置。Git 配置优先，PAC、SSH 和 Windows/Linux 保持既有行为。仓库检查超时单独提示网络/代理原因，并终止 Git 辅助进程。
 - 清单反回放在检查阶段只做校验，接受记录直到制品真正暂存成功才落盘；「恢复内置 Harness」同时清除接受历史，使撤回后同版本换 commit 重新签发仍可安装。
@@ -60,6 +60,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 项目默认和文档示例版本：`1.0.0`；真实发行版本由 Git tag 或发布环境注入。
 - Node：`24.20.0`（四平台精确锁定，module ABI `137`）
 - pnpm：`11.24.0`
+- npm：`11.19.0`（随固定 Node 官方归档提供）
 - Rust：`1.98.0`
 - Tauri CLI：`2.11.4`
 - 当前 Harness 按官方 master 的不可变 commit 锁定（具体来源见工具链 lock）。独立搜索设置直接使用 `connection.fetch.register` / `connection.fetch` 的 `/api/desktop.web-search` GET/POST 接口，旧 RPC 通道与强制 `webServer` 注入补丁已移除。

@@ -3,6 +3,8 @@ import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promi
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import process from "node:process";
 
+import { ARTIFACT_SCANNER_VERSION } from "./lib/artifact-scan.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 
 const targetContracts = new Map([
@@ -151,11 +153,12 @@ export async function prepareCiReleaseAssets({ inputRoot, outputRoot, version, c
       || buildInfo.toolchain?.nodeModuleAbi !== toolchainLock.node.moduleAbi
       || buildInfo.toolchain?.rustVersion !== toolchainLock.toolchain.rust
       || buildInfo.toolchain?.pnpmVersion !== toolchainLock.toolchain.pnpm
+      || buildInfo.toolchain?.npmVersion !== toolchainLock.toolchain.npm
       || buildInfo.toolchain?.tauriCliVersion !== toolchainLock.toolchain.tauriCli) {
       throw new Error(`release toolchain mismatch for ${buildInfo.target}`);
     }
     if (buildInfo.artifactAudit?.schemaVersion !== 1
-      || buildInfo.artifactAudit?.scannerVersion !== 2
+      || buildInfo.artifactAudit?.scannerVersion !== ARTIFACT_SCANNER_VERSION
       || !Number.isSafeInteger(buildInfo.artifactAudit?.fileCount)
       || buildInfo.artifactAudit.fileCount <= 0
       || !Number.isSafeInteger(buildInfo.artifactAudit?.byteCount)

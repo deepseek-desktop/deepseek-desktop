@@ -483,6 +483,88 @@ function packedManifest(tarball) {
   return JSON.parse(result.stdout);
 }
 
+async function hostPlatformPackage(packages, sourceRoot) {
+  const host = `${process.platform}-${process.arch}`;
+  const candidates = [];
+  for (const item of packages) {
+    const metadata = join(item.directory, "prebuilds.json");
+    if (!await pathExists(metadata)) continue;
+    const prebuilds = JSON.parse(await readFile(metadata, "utf8"));
+    if (prebuilds.platform !== host) {
+      throw new Error(`Harness platform package ${item.manifest.name} declares ${prebuilds.platform ?? "no platform"}, expected ${host}`);
+    }
+    const nativeRoot = dirname(dirname(item.directory));
+    const nativeRelation = relative(sourceRoot, nativeRoot);
+    if (!nativeRelation || isAbsolute(nativeRelation) || nativeRelation === ".." || nativeRelation.startsWith(`..${sep}`)) {
+      throw new Error(`Harness platform package escapes its source: ${item.manifest.name}`);
+    }
+    const nativeManifest = JSON.parse(await readFile(join(nativeRoot, "package.json"), "utf8"));
+    if (typeof nativeManifest.scripts?.["build:native"] !== "string") {
+      throw new Error(`Harness native workspace does not provide build:native: ${nativeRelation}`);
+    }
+    candidates.push({ ...item, prebuilds, nativeRelation: nativeRelation.split(sep).join("/") });
+  }
+  if (candidates.length > 1) {
+    throw new Error(`Harness selected multiple platform packages for ${host}: ${candidates.map(item => item.manifest.name).join(", ")}`);
+  }
+  return candidates[0] ?? null;
+}
+
+function checkedPlatformPayload(root, value, packageName) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`Harness platform package ${packageName} declares an invalid binary path`);
+  }
+  const path = resolve(root, value);
+  const relation = relative(root, path);
+  if (!relation || isAbsolute(relation) || relation === ".." || relation.startsWith(`..${sep}`)) {
+    throw new Error(`Harness platform package ${packageName} binary escapes its package: ${value}`);
+  }
+  return path;
+}
+
+/** Verify npm preserved every upstream-validated native payload and executable mode after install. */
+export async function verifyInstalledPlatformPackage(platformPackage, installedDirectory) {
+  const sourceMetadata = await readFile(join(platformPackage.directory, "prebuilds.json"));
+  const installedMetadata = await readFile(join(installedDirectory, "prebuilds.json"));
+  if (!sourceMetadata.equals(installedMetadata)) {
+    throw new Error(`Installed Harness platform metadata differs from source: ${platformPackage.manifest.name}`);
+  }
+  const prebuilds = JSON.parse(sourceMetadata.toString("utf8"));
+  if (!Array.isArray(prebuilds.binaries) || prebuilds.binaries.length === 0) {
+    throw new Error(`Harness platform package has no declared binaries: ${platformPackage.manifest.name}`);
+  }
+  for (const binary of prebuilds.binaries) {
+    const source = checkedPlatformPayload(platformPackage.directory, binary.path, platformPackage.manifest.name);
+    const installed = checkedPlatformPayload(installedDirectory, binary.path, platformPackage.manifest.name);
+    const [sourceInfo, installedInfo, sourceBytes, installedBytes] = await Promise.all([
+      lstat(source), lstat(installed), readFile(source), readFile(installed)
+    ]);
+    if (!sourceInfo.isFile() || !installedInfo.isFile() || !sourceBytes.equals(installedBytes)) {
+      throw new Error(`Installed Harness platform binary differs from source: ${platformPackage.manifest.name}/${binary.path}`);
+    }
+    if (binary.kind === "static-musl") {
+      if ((sourceInfo.mode & 0o111) === 0 || (installedInfo.mode & 0o111) === 0) {
+        throw new Error(`Installed Harness platform launcher is not executable: ${platformPackage.manifest.name}/${binary.path}`);
+      }
+      const probe = spawnSync(installed, ["--probe"], {
+        encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5_000, windowsHide: true
+      });
+      if (probe.error) {
+        throw new Error(`Installed Harness platform launcher cannot execute: ${platformPackage.manifest.name}/${binary.path}: ${probe.error.message}`);
+      }
+      if (![0, 125].includes(probe.status) || probe.signal) {
+        throw new Error(`Installed Harness platform launcher probe failed: ${platformPackage.manifest.name}/${binary.path}`);
+      }
+      if (probe.status === 0 && !/^landlock: (?:fully enforced|partially enforced \(older ABI\))\n?$/u.test(probe.stdout)) {
+        throw new Error(`Installed Harness platform launcher returned an invalid probe result: ${platformPackage.manifest.name}/${binary.path}`);
+      }
+      if (probe.status === 125 && !/^landlock-run: /u.test(probe.stderr)) {
+        throw new Error(`Installed Harness platform launcher returned an invalid probe result: ${platformPackage.manifest.name}/${binary.path}`);
+      }
+    }
+  }
+}
+
 export function verifyHarnessPackageLock(lock, packages) {
   const importer = lock.importers?.["."];
   if (!importer) throw new Error("Harness runtime lock has no root importer");
@@ -507,6 +589,10 @@ export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, d
   const peers = await desktopHarnessPeers(options.desktopDeployment, desktopRoots, workspacePackages);
   const roots = [cli.manifest.name, ...peers];
   const { packages, excluded } = selectHarnessPackageClosure(workspacePackages, roots);
+  const platformPackage = await hostPlatformPackage(packages, sourceRoot);
+  if (platformPackage && typeof options.runHarnessNpm !== "function") {
+    throw new Error(`Harness platform package requires the official npm pack path: ${platformPackage.manifest.name}`);
+  }
   // js-yaml is a declared dependency of the official CLI, already installed by build:official.
   const yaml = createRequire(join(cli.directory, "package.json"))("js-yaml");
   const upstreamWorkspace = yaml.load(await readFile(join(sourceRoot, "pnpm-workspace.yaml"), "utf8"));
@@ -515,10 +601,22 @@ export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, d
   try {
     const tarballs = join(staging, "packages");
     await mkdir(tarballs);
-    await runHarnessPnpm([
-      ...packages.flatMap(item => ["--filter", item.manifest.name]),
-      "--recursive", "pack", "--workspace-concurrency=4", "--pack-destination", tarballs
-    ], sourceRoot);
+    if (platformPackage) {
+      // Upstream build:official intentionally creates only the current-libc host
+      // addon. A distributable platform package also needs its static launcher
+      // and every declared libc variant, so run the official full native build.
+      await runHarnessPnpm(["--dir", platformPackage.nativeRelation, "run", "build:native"], sourceRoot);
+      // Upstream deliberately uses npm for platform tarballs because pnpm pack
+      // has stripped the Linux launcher's executable bit in released versions.
+      await options.runHarnessNpm(["pack", "--pack-destination", tarballs], platformPackage.directory);
+    }
+    const portablePackages = packages.filter(item => item.manifest.name !== platformPackage?.manifest.name);
+    if (portablePackages.length) {
+      await runHarnessPnpm([
+        ...portablePackages.flatMap(item => ["--filter", item.manifest.name]),
+        "--recursive", "pack", "--workspace-concurrency=4", "--pack-destination", tarballs
+      ], sourceRoot);
+    }
     const records = [];
     const names = new Set(packages.map(item => item.manifest.name));
     for (const file of (await readdir(tarballs)).sort()) {
@@ -570,6 +668,12 @@ export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, d
       if (installed.name !== record.name || installed.version !== record.version) {
         throw new Error(`Installed Harness package differs from local package set: ${record.name}`);
       }
+    }
+    if (platformPackage) {
+      await verifyInstalledPlatformPackage(
+        platformPackage,
+        packagePath(join(staging, "node_modules"), platformPackage.manifest.name)
+      );
     }
     await stat(join(packagePath(join(staging, "node_modules"), cli.manifest.name), cli.entry));
     await rm(destination, { recursive: true, force: true });

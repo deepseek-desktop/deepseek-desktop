@@ -2,15 +2,16 @@
 
 ## 官方 Harness 0.1.5-rc.2 源码升级
 
-2026-09-12：`v1.1.14` 发布源码已切换至官方 `https://github.com/deepseek-ai/deepseek-harness.git`，锁定 `c291e7961a515f6d7af9304e7fd1d257929aef26`（本次开始与结束均核对为官方 master / HEAD）。本节记录发布前的本机源码验收；远端矩阵与发行结果必须另行核对。
+2026-09-12：`v1.1.15` 当前候选使用官方 `https://github.com/deepseek-ai/deepseek-harness.git`，锁定 `c291e7961a515f6d7af9304e7fd1d257929aef26`（本次开始与结束均核对为官方 master / HEAD）。首次切换该来源的 `v1.1.14` Tag 在 GitHub Run `34693095400` 的 shell-quality 失败，未进入原生矩阵、未创建 Release；该 Tag 保持不可变。
 
-- 生产依赖改按官方 CLI 和桌面扩展的公开 peer 声明选择工作区闭包，经官方构建、递归打包和冻结安装生成；实际校验 241 个官方包、502 个运行依赖，核心 peer 必须来自同一官方源码并满足精确版本。Tag CI 从工具链 lock 导出仓库和 ref，解析后继续校验 commit。
+- 生产依赖改按官方 CLI 和桌面扩展的公开 peer 声明选择工作区闭包，经官方构建、递归打包和冻结安装生成；上游工作区闭包包含 241 个包，冻结安装新增 502 个依赖节点，最终 staging 递归清点为 644 个唯一包。macOS ARM64 为 25,566 个文件，Linux x64 为 25,567 个文件；核心 peer 必须来自同一官方源码并满足精确版本。Tag CI 从工具链 lock 导出仓库和 ref，解析后继续校验 commit。
 - 官方插件配置与只读插件列表替代强制 DSH Market；旧市场、模型表单、审批与展示覆盖及 RPC 注入补丁已移除。只保留真实回归仍需要的认证 Cookie 清理和 Responses 工具调用标识修正。旧受管 Bundle 仅在所有权与内容摘要一致且非用户依赖时撤下启用声明，保留文件及用户配置。
-- `app:sync --check`、固定来源的 `harness:sync --check`、`verify`、`test:e2e`、`harness:smoke` 和 `release:smoke` 全部通过。本轮最终覆盖 112 项配置/发行测试、32 项前端测试、39 项搜索测试、99 项 Rust 测试及 Clippy；1 项须显式启用的外部仓库测试保持忽略。
+- `v1.1.14` 的第一处实际错误是 Linux 官方平台包 prepack 缺少 `bin/landlock-run`：上游 `build:official` 只构建当前 libc 的 host addon，不会生成发布平台包声明的 glibc、musl 和静态 Landlock 三类载荷。修复改为按上游机制执行完整 `build:native`，Linux Runner 安装 `musl-tools`；平台包使用随固定 Node 归档提供的 npm `11.19.0` 打包，其余 workspace 包继续使用 pnpm。实测 pnpm `11.24.0 pack` 会把 `landlock-run` 的 `0755` 改成 `0644`，npm 保留 `0755`，因此不能用旧的统一 pnpm pack 路径替代。
+- 仓库候选与正式 staging 共用该装配机制。安装包携带锁定 npm 和四个最小 Node-API 头文件，更新器建立临时标准 Node 目录并按 `prebuilds.json` 预检 macOS `cc`、Linux `cc` / `musl-gcc`；安装后逐项比较原生元数据、二进制字节和执行位，并实际探测 Landlock 启动器。失败仍保留当前 Harness。
+- `app:sync --check`、固定来源的 `harness:sync --check`、`verify`、`test:e2e`、`harness:smoke` 和 `release:smoke` 全部通过。本轮最终覆盖 127 项配置/发行测试、32 项前端测试、39 项搜索测试、101 项 macOS Rust 测试及 Clippy；1 项须显式启用的外部仓库测试保持忽略。最终源码另在 GitHub 兼容的 Linux x64 容器通过精确版本和来源变量的全链预检，包含完整 glibc、musl 与静态 Landlock 载荷。
 - 7 项 E2E 覆盖 Shell、更新摘要、官方设置样式滚动及 Chromium/WebKit JSON 边界。真实 Harness 浏览器 smoke 确认官方插件列表中的搜索和凭据插件运行、搜索设置默认值及保存/恢复/重载/小窗口交互、Fetch API 认证与 Origin 拒绝、旧 Cookie 清理和父进程消亡后的子进程退出。
-- `DESKTOP_APP_VERSION=1.1.14 corepack pnpm@11.24.0 desktop:package` 再次完成完整门禁和 macOS ARM64 打包，交付闭包为 72,264 个文件、1,202,063,280 字节。DMG 位于 `release/1.1.14/aarch64-apple-darwin/DeepSeek Desktop_1.1.14_aarch64.dmg`，SHA-256 为 `65d191dc6d6db93cb5fc94b012be79652c131fc687d1f097889da5c8b914bc5e`，`hdiutil verify` 通过。
-- 构建目录中的 release `.app` 通过 `codesign --verify --deep --strict`，主程序及内置 Node 均为原生 ARM64。经 LaunchServices 启动后标题为 `DeepSeek Desktop v1.1.14`，依次通过首次声明与稍后配置进入同窗工作台；Harness `0.1.5-rc.2` sidecar 在 loopback 监听并与工作台建立连接。确认关闭后 Desktop 与 Harness 进程均退出。
-- 当前成品证据来自 macOS ARM64，且为提交前 dirty 源码的本地包；正式制品必须由新 Tag 的干净官方 Runner 重新生成。它不替代其他原生平台矩阵、真实供应商调用、签名或公证验收。下方各发行记录保留各自的历史范围。
+- 使用随应用交付的 Node、pnpm、npm、Node-API 头和桌面扩展，从官方 c291 源码真实准备仓库候选成功；候选 CLI 为 `0.1.5-rc.2`，官方核心未被旧闭包覆盖，两个带 SHA-256 的桌面兼容契约均在最终包中命中，原生系统模块为 ARM64 Mach-O。该结果验证了仓库更新的构建与装配路径，不只是静态单元测试。
+- `v1.1.15` 本机社区安装包必须从提交后的干净工作树重新生成并完成 DMG、签名结构、架构和 LaunchServices 启停检查；四平台正式制品仍须由新 Tag 的官方 Runner 重新生成并汇总验收。在这些步骤完成前不沿用 `v1.1.14` 的本地 DMG 作为新版本证据，也不宣称其他原生平台、真实供应商调用、签名或公证已通过。
 
 ## 当前发布验收
 
@@ -162,7 +163,7 @@
 - `corepack pnpm@11.24.0 harness:smoke`：通过父进程退出清理与 Harness `0.1.2-alpha.1` 一次完整启停循环。
 - `corepack pnpm@11.24.0 release:smoke`：通过分布式发布 HTTP 制品流式传输、校验与发布协议回归。
 - Harness 仓库设置回归：默认使用构建仓库；用户只保存一个可选仓库覆盖值，切换时会使旧待安装候选失效。配置迁移、地址校验、诊断脱敏、三语文案、Vue 与 E2E 单字段表单均已验证；维护者可选签名制品通道不进入普通用户设置。
-- 当前源码最终门禁：`verify` 通过 85 项配置与发行协议测试、18 项 Vue 测试、19 项跟随模型搜索测试、81 项 macOS Rust 测试和 Clippy `-D warnings`；`app:sync --check`、`harness:sync --check`、`test:e2e` 2 项、`harness:smoke` 与 `release:smoke` 均通过。联网搜索协议未配置时继续按当前会话模型 `apiProtocol` 自动匹配，模型提供方表单不再要求用户选择协议。
+- 当时源码（`v1.0.28` 阶段）的最终门禁：`verify` 通过 85 项配置与发行协议测试、18 项 Vue 测试、19 项跟随模型搜索测试、81 项 macOS Rust 测试和 Clippy `-D warnings`；`app:sync --check`、`harness:sync --check`、`test:e2e` 2 项、`harness:smoke` 与 `release:smoke` 均通过。联网搜索协议未配置时继续按当前会话模型 `apiProtocol` 自动匹配，模型提供方表单不再要求用户选择协议。
 - `DESKTOP_APP_VERSION=1.0.28-test.2 corepack pnpm@11.24.0 desktop:package`：当前 macOS ARM64 主机重新同步锁定 Harness 并完成上述完整门禁、E2E、Harness smoke、Tauri release 编译和 DMG 构建；`DeepSeek Desktop_1.0.28-test.2_aarch64.dmg` 经 `hdiutil verify`、`codesign --verify --deep --strict` 与原生 ARM64 检查通过，SHA-256 为 `d21a67634ad7134cff1a34c272e98d4b0d99648c2d165d7afe28bc58aa7b31fd`。
 - macOS `1.0.28-test.2` 安装版通过 LaunchServices 从隔离安装目录启动并自动拉起内置 Harness。输入框实测粘贴、复制、剪切、撤销、重做与清空均得到预期值，聊天记录拖选“解决方案”后 `Cmd+C` 得到相同文字；窗口编辑菜单显示六项原生命令及快捷键。五组菜单共完成 100 次打开/关闭，Desktop 与 Harness 全程存活；同窗设置打开和关闭后仍返回原对话，关闭窗口先显示本地化确认，确认后两进程均无残留。本轮没有新增 DeepSeek Desktop `.ips` 崩溃报告。
 - `v1.0.28` GitHub Actions 原生矩阵成功，Run `33732293678` 绑定 commit `471101c86de43cc5629c7ddc5a52e436b4538e6a`：质量门禁 10 分 01 秒、Linux x64 17 分 44 秒、macOS ARM64 19 分 43 秒、Windows x64 25 分 23 秒、macOS x64 44 分 44 秒、聚合发布 32 秒，工作流总墙钟 55 分 23 秒。Release 标题为 `v1.0.28`，保持未签名 prerelease；公开资产严格为两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`。清单中的五项 SHA-256 与 GitHub 服务端资产 digest 逐项一致，六个公开下载地址均返回 HTTP 200。

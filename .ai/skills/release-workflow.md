@@ -19,6 +19,7 @@
 
 - Node `24.20.0`，module ABI `137`
 - pnpm `11.24.0`
+- npm `11.19.0`（来自同一份固定 Node 官方归档）
 - Rust `1.98.0`
 - Tauri CLI `2.11.4`
 
@@ -137,6 +138,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 | Linux AppImage strip 失败 | `NO_STRIP=1` 只能设置在 GitHub Linux 原生打包步骤，不传播到其他平台 |
 | 汇总报 `release identity mismatch` | 报错已带字段名。`harness.sha256` 因平台而异属正常（native prebuild 由各主机编译），不参与跨平台比对；其余字段不一致说明四个目标并非同一次发布，必须查明来源而不是放宽比对 |
 | `harness:sync` 报 `hardlink different from source` | 本地 clone 默认硬链接 `.git/objects`，与镜像自身的 commit-graph 维护竞争。`harness-sync.mjs` 的缓存检出必须带 `--no-hardlinks`；该失败与平台无关，不要当作单个 Runner 的抖动重试了事 |
+| Linux 原生平台包 prepack 报缺少 `landlock-run` 或安装后无法执行 | `build:official` 只生成当前 libc 的 host addon；在打包当前平台包前执行原生 workspace 的完整 `build:native`，Linux Runner 安装 `musl-tools`。平台包沿用官方 `npm pack` 保留执行位，其余 workspace 包使用 pnpm；安装后复核声明载荷与权限，不能跳过 prepack 或删除 optional 平台包。 |
 | 上传失败 | 不修改已有 Tag；确认权限和资产后用新版本重新闭环 |
 
 ## 防止错误经验固化

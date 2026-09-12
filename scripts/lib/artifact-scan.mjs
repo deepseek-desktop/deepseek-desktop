@@ -3,7 +3,7 @@ import { lstat, open, readdir, readlink, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
-const SCANNER_VERSION = 2;
+export const ARTIFACT_SCANNER_VERSION = 3;
 const CARRY_BYTES = 2048;
 const secretPatterns = [
   { pattern: /\bsk-(?!example|test|placeholder)[A-Za-z0-9._-]{20,}\b/iu, label: "API key" },
@@ -72,10 +72,22 @@ export function artifactForbiddenRoots(projectRoot, environment = process.env, u
   return normalizedRoots(roots);
 }
 
-function scanText(path, text, roots, textFile) {
+function scanText(path, text, roots, textFile, endOfInput = false) {
   const normalized = text.replaceAll("\\", "/");
   for (const root of roots) {
-    if (normalized.includes(root)) throw new Error(`${path} contains forbidden local path rooted at ${root}`);
+    let offset = normalized.indexOf(root);
+    while (offset >= 0) {
+      const following = normalized[offset + root.length];
+      // A forbidden root is a path prefix only when it ends here or the next
+      // character is a path/text boundary. For example, the Linux CI root
+      // `/workspace` must not reject npm's documented `/workspaces` route.
+      if ((following === undefined && endOfInput)
+        || following === "/"
+        || /[\0\s"'`,:;)}\]>]/u.test(following)) {
+        throw new Error(`${path} contains forbidden local path rooted at ${root}`);
+      }
+      offset = normalized.indexOf(root, offset + root.length);
+    }
   }
   for (const secret of secretPatterns) {
     if (secret.textOnly && !textFile) continue;
@@ -123,6 +135,14 @@ async function scanFile(path, roots) {
     }
     carry = window.subarray(Math.max(0, window.length - CARRY_BYTES));
   }
+  // Re-scan the final overlap as EOF-aware input. An occurrence ending exactly
+  // at an earlier stream boundary must wait for the next byte before deciding
+  // whether `/workspace` is a path or merely the prefix of `/workspaces`.
+  scanText(path, carry.toString("latin1"), roots, textFile, true);
+  for (const offset of [0, 1]) {
+    const length = carry.length - offset - ((carry.length - offset) % 2);
+    if (length >= 2) scanText(path, carry.subarray(offset, offset + length).toString("utf16le"), roots, textFile, true);
+  }
   return bytes;
 }
 
@@ -135,7 +155,7 @@ export async function scanArtifactPaths(paths, { forbiddenRoots = [] } = {}) {
   for (const file of uniqueFiles) byteCount += await scanFile(file, roots);
   return {
     schemaVersion: 1,
-    scannerVersion: SCANNER_VERSION,
+    scannerVersion: ARTIFACT_SCANNER_VERSION,
     fileCount: uniqueFiles.length,
     byteCount
   };

@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24.20.0
-      - run: apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - run: apt-get update && apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev musl-tools patchelf
       - run: corepack enable && corepack prepare pnpm@11.24.0 --activate
       - run: node scripts/ci-release-version.mjs
       - id: identity
@@ -65,7 +65,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ runner.arch }}-1.62.1
       - run: node scripts/ci-release-version.mjs
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev musl-tools patchelf
       - if: runner.os == 'Linux'
         run: corepack pnpm@11.24.0 package:community
         env:

@@ -22,7 +22,6 @@ import {
 import { ReleaseControllerService } from "./controller-service.mjs";
 import { ensureAdminToken, startReleaseServer } from "./http-server.mjs";
 import { createReleasePlan } from "./release-plan.mjs";
-import { prepareRelease } from "./prepared-release.mjs";
 import { ReleaseStateStore } from "./state-store.mjs";
 import { createLockedSourceBundle, resolveBundledTag } from "./git-source.mjs";
 
@@ -464,7 +463,6 @@ async function writeWindowsScripts(runRoot, settings) {
     "--node-id", settings.nodeId,
     "--token-stdin",
     "--work-root", settings.workRoot,
-    "--prepared-root", settings.preparedRoot,
     ...(settings.sourceBundle ? ["--source-bundle", settings.sourceBundle] : []),
     ...(settings.keepWork ? ["--keep-work"] : [])
   ];
@@ -642,7 +640,6 @@ export async function main() {
     nodeId: nodeId("windows-x64", "parallels"),
     share,
     workRoot: config.windows.workRoot,
-    preparedRoot: macPathToParallelsShared(join(root, "target", "local-release", "prepared"), share),
     sourceBundle: ""
   } : null;
   let windowsScripts = windows ? await writeWindowsScripts(runRoot, windowsSettings) : null;
@@ -684,9 +681,6 @@ export async function main() {
     const tag = requireOption(parsed, "tag");
     const channel = option(parsed, "channel", "community");
     const signed = flag(parsed, "signed");
-    const preparationStartedAt = Date.now();
-    const preparation = await prepareRelease({ root, tag, channel, signed, targetIds: requestedTargets });
-    const preparationDurationMs = Date.now() - preparationStartedAt;
     const runners = new Map([
       ["macos-arm64", "native"],
       ["macos-x64", "rosetta"],
@@ -701,8 +695,7 @@ export async function main() {
       signed,
       sourceRepository: option(parsed, "source"),
       requestedTargetIds: requestedTargets,
-      trustedNodes,
-      prepared: preparation.descriptor
+      trustedNodes
     });
     sourceBundle = await createLockedSourceBundle({
       repositoryRoot: root,
@@ -724,7 +717,6 @@ export async function main() {
         "--node-id", trustedNodes.get(targetId),
         "--token-stdin",
         "--work-root", join(root, "target", "local-release", "work", targetId),
-        "--prepared-root", join(root, "target", "local-release", "prepared"),
         "--source-bundle", sourceBundle,
         ...(keepWork ? ["--keep-work"] : [])
       ];
@@ -742,7 +734,6 @@ export async function main() {
         const args = [...dockerBaseArgs(config.docker, tls.caCert),
           "node", "/orchestrator/scripts/release-system/cli.mjs", "worker",
           "--controller", controllers[targetId], "--node-id", trustedNodes.get(targetId), "--token-stdin", "--work-root", "/local-release/work",
-          "--prepared-root", "/orchestrator/target/local-release/prepared",
           "--source-bundle", `/orchestrator/${relative(root, sourceBundle).replaceAll("\\", "/")}`,
           ...(keepWork ? ["--keep-work"] : [])];
         return run(docker, args, { input: `${tickets[targetId]}\n`, label: targetId });
@@ -785,12 +776,6 @@ export async function main() {
       status: release.status,
       startedAt: new Date(releaseStartedAt).toISOString(),
       concurrency,
-      preparation: {
-        durationMs: preparationDurationMs,
-        cacheHit: preparation.cacheHit,
-        receiptSha256: preparation.descriptor.receiptSha256,
-        timings: preparation.timings
-      },
       workersDurationMs: Date.now() - workersStartedAt,
       targets: requestedTargets.map((targetId, index) => ({
         targetId,

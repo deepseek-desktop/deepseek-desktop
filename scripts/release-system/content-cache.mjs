@@ -58,7 +58,12 @@ export async function collectContentFiles(root, current = root, output = [], ign
     const info = await lstat(path);
     if (info.isSymbolicLink()) throw new Error(`release cache cannot contain symbolic links: ${portablePath}`);
     if (info.isDirectory()) await collectContentFiles(root, path, output, ignored);
-    else if (info.isFile()) output.push({ path: portablePath, size: info.size, sha256: await sha256File(path) });
+    else if (info.isFile()) output.push({
+      path: portablePath,
+      size: info.size,
+      ...(process.platform === "win32" ? {} : { mode: info.mode & 0o777 }),
+      sha256: await sha256File(path)
+    });
     else throw new Error(`release cache contains an unsupported entry: ${portablePath}`);
   }
   return output;
@@ -67,7 +72,7 @@ export async function collectContentFiles(root, current = root, output = [], ign
 export async function createContentCacheManifest(directory, identity) {
   const files = await collectContentFiles(directory);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     identity: canonical(identity),
     files,
     treeSha256: contentCacheKey(files)
@@ -77,7 +82,7 @@ export async function createContentCacheManifest(directory, identity) {
 export async function verifyContentCache(directory, expectedIdentity) {
   const manifestPath = join(directory, "cache-manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  if (manifest.schemaVersion !== 1) throw new Error("unsupported release cache manifest");
+  if (manifest.schemaVersion !== 2) throw new Error("unsupported release cache manifest");
   if (JSON.stringify(manifest.identity) !== JSON.stringify(canonical(expectedIdentity))) {
     throw new Error("release cache identity does not match the requested build");
   }

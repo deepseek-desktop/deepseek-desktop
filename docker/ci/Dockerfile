@@ -13,6 +13,7 @@ RUN apt-get update \
         libappindicator3-dev \
         librsvg2-dev \
         libwebkit2gtk-4.1-dev \
+        musl-tools \
         patchelf \
         xdg-utils \
         xz-utils \

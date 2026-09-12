@@ -53,6 +53,7 @@ export async function createReleasePlan({
       nodeModuleAbi: lock.node.moduleAbi,
       rustVersion: lock.toolchain.rust,
       pnpmVersion: lock.toolchain.pnpm,
+      npmVersion: lock.toolchain.npm,
       tauriCliVersion: lock.toolchain.tauriCli
     },
     ...(prepared ? { prepared } : {}),

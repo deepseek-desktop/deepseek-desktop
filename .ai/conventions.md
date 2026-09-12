@@ -24,7 +24,7 @@
 - Pull Request 和普通分支 push 不触发发布工作流；只有带或不带 `v` 前缀的完整 SemVer Tag 才触发质量门禁与正式四平台构建。
 - macOS ARM64、macOS x64、Windows x64 和 Linux x64 必须分别由对应 GitHub 官方托管 Runner 原生打包，并统一复用 `package:community`。
 - 公开 Release 必须等待四个平台全部成功，只上传两份 DMG、一个 EXE、一个 AppImage、一个 DEB 和 `SHA256SUMS`；内部 BUILD-INFO 不作为公开资产。
-- Harness 更新不得写应用安装目录。仓库模式只能在应用数据目录浅克隆、使用安装包内置 Node/pnpm 准备候选并完成真实 smoke；失败必须保留当前 Harness。Windows 的 Git、构建、smoke、替换和重启进程必须保持无控制台窗口。
+- Harness 更新不得写应用安装目录。仓库模式只能在应用数据目录浅克隆，使用安装包内置 Node/pnpm/npm 与 Node-API 头准备候选；macOS/Linux 按当前原生声明预检系统编译器，完整构建平台包并完成真实 smoke，失败必须保留当前 Harness。Windows 的 Git、构建、smoke、替换和重启进程必须保持无控制台窗口。
 
 ## 验证
 

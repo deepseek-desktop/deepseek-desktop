@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import process from "node:process";
 
+import { dockerConfigEnvironmentArgs } from "./lib/docker-preflight.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 if (process.argv.length > 2) {
   throw new Error(`Unknown Docker preflight arguments: ${process.argv.slice(2).join(", ")}`);
@@ -40,6 +42,7 @@ run([
   "--platform", platform,
   "--env", "CI=true",
   "--env", "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
+  ...dockerConfigEnvironmentArgs(),
   ...(emulatedAmd64 ? ["--env", "DEEPSEEK_DESKTOP_SKIP_HARNESS_SMOKE=true"] : []),
   "--volume", `${cachePrefix}-target:/workspace/target`,
   "--volume", `${cachePrefix}-rust-target:/workspace/src-tauri/target`,

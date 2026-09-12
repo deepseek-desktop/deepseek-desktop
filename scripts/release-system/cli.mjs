@@ -319,6 +319,7 @@ async function workerCommand(parsed) {
       nodeModuleAbi: lock.node?.moduleAbi,
       rustVersion: lock.toolchain?.rust,
       pnpmVersion: lock.toolchain?.pnpm,
+      npmVersion: lock.toolchain?.npm,
       tauriCliVersion: lock.toolchain?.tauriCli
     };
     if (JSON.stringify(expectedToolchain) !== JSON.stringify(claim.plan.toolchain)) {

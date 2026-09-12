@@ -33,6 +33,7 @@ const releaseToolchain = Object.freeze({
   nodeModuleAbi: "137",
   rustVersion: "1.98.0",
   pnpmVersion: "11.24.0",
+  npmVersion: "11.19.0",
   tauriCliVersion: "2.11.4"
 });
 
@@ -218,7 +219,7 @@ test("artifact scanner rejects environment files, local paths, and secrets", asy
   await writeFile(clean, "portable artifact");
   assert.deepEqual(await scanArtifactPaths([clean], { forbiddenRoots: [directory] }), {
     schemaVersion: 1,
-    scannerVersion: 2,
+    scannerVersion: 3,
     fileCount: 1,
     byteCount: 17
   });
@@ -244,6 +245,21 @@ test("artifact scanner rejects environment files, local paths, and secrets", asy
   ]));
   await assert.rejects(() => scanArtifactPaths([secret]), /API key/u);
   await writeFile(secret, `${directory}/private`);
+  await assert.rejects(
+    () => scanArtifactPaths([secret], { forbiddenRoots: [directory] }),
+    /local path/u
+  );
+  await writeFile(secret, `${directory}s is a public documentation route`);
+  await scanArtifactPaths([secret], { forbiddenRoots: [directory] });
+  const chunkBoundaryPrefix = "x".repeat(65_536 - directory.length);
+  await writeFile(secret, `${chunkBoundaryPrefix}${directory}s remains a public documentation route`);
+  await scanArtifactPaths([secret], { forbiddenRoots: [directory] });
+  await writeFile(secret, `${chunkBoundaryPrefix}${directory}/private`);
+  await assert.rejects(
+    () => scanArtifactPaths([secret], { forbiddenRoots: [directory] }),
+    /local path/u
+  );
+  await writeFile(secret, `root=${directory}\n`);
   await assert.rejects(
     () => scanArtifactPaths([secret], { forbiddenRoots: [directory] }),
     /local path/u
@@ -405,7 +421,7 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
   await writeFile(join(directory, "harness", "toolchain-lock.json"), `${JSON.stringify({
     node: { version: process.versions.node, moduleAbi: process.versions.modules },
     harnessSource: { repository: harnessRepository, ref: "v1.0.0", commit: harnessCommit },
-    toolchain: { rust: "1.98.0", pnpm: "11.24.0" }
+    toolchain: { rust: "1.98.0", pnpm: "11.24.0", npm: "11.19.0" }
   })}\n`);
   await writeFile(join(directory, "target", "generated", "app-config.json"), "{}\n");
   await writeFile(join(directory, "target", "generated", "tauri.conf.json"), "{}\n");
@@ -420,6 +436,7 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
   git(directory, ["commit", "-m", "fixture"]);
   git(directory, ["tag", "v1.0.0"]);
   const cacheRoot = join(directory, "target", "prepared-cache");
+  const hostTarget = await detectHostTarget();
   const first = await prepareRelease({ root: directory, tag: "v1.0.0", cacheRoot, runChecks: false });
   assert.equal(first.cacheHit, false);
   await rm(join(directory, "target", "generated"), { recursive: true, force: true });
@@ -434,13 +451,37 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
     signed: false,
     source: { commit: git(directory, ["rev-parse", "HEAD"]) },
     harness: { commit: harnessCommit },
-    tasks: ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"].map(targetId => ({ targetId }))
+    tasks: [{ targetId: hostTarget.id }]
   };
-  assert.deepEqual(preparedPlanIdentity(plan).targetIds, ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"]);
+  assert.deepEqual(preparedPlanIdentity(plan).targetIds, [hostTarget.id]);
   await restorePreparedRelease({ root: directory, preparedRoot: cacheRoot, expectedDescriptor: first.descriptor, plan });
   const receipt = await readFile(first.receiptPath, "utf8");
   assert.equal(receipt.includes(directory), false, "prepared receipt must not contain a local path");
+  if (process.platform !== "win32") {
+    const cachedBranding = join(first.directory, "payload", "branding", "icon.txt");
+    const originalMode = (await stat(cachedBranding)).mode & 0o777;
+    await chmod(cachedBranding, originalMode === 0o755 ? 0o644 : 0o755);
+    await assert.rejects(
+      () => restorePreparedRelease({ root: directory, preparedRoot: cacheRoot, expectedDescriptor: first.descriptor, plan }),
+      /file manifest/u
+    );
+    await chmod(cachedBranding, originalMode);
+  }
+  const secondTarget = (await loadTargets()).targets.find(target => target.id !== hostTarget.id);
+  await assert.rejects(
+    () => prepareRelease({
+      root: directory,
+      tag: "v1.0.0",
+      cacheRoot,
+      runChecks: false,
+      targetIds: [hostTarget.id, secondTarget.id]
+    }),
+    /native-only/u
+  );
   await writeFile(join(first.directory, "payload", "app-config.json"), "corrupted\n");
+  await mkdir(join(directory, "target", "generated"), { recursive: true });
+  await writeFile(join(directory, "target", "generated", "harness-source.json"), `${JSON.stringify({ resolvedCommit: harnessCommit })}\n`);
+  await writeFile(join(directory, "target", "generated", "harness-lock.json"), `${JSON.stringify({ harness: { commit: harnessCommit, sha256: sha256("harness") } })}\n`);
   const rebuilt = await prepareRelease({ root: directory, tag: "v1.0.0", cacheRoot, runChecks: false });
   assert.equal(rebuilt.cacheHit, false);
   await writeFile(join(directory, "source.txt"), "drifted source\n");
@@ -465,6 +506,24 @@ test("content-addressed release cache rejects corruption, target drift, and link
   await assert.rejects(() => createContentCacheManifest(directory, identity), /symbolic links/u);
 });
 
+test("content-addressed release cache authenticates Unix executable modes", {
+  skip: process.platform === "win32"
+}, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-content-cache-mode-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const launcher = join(directory, "harness", "bin", "landlock-run");
+  await mkdir(join(directory, "harness", "bin"), { recursive: true });
+  await writeFile(launcher, "#!/bin/sh\nexit 0\n");
+  await chmod(launcher, 0o755);
+  const identity = { target: "x86_64-unknown-linux-gnu", harnessCommit, nodeVersion: "24.20.0", nodeAbi: "137" };
+  const manifest = await createContentCacheManifest(directory, identity);
+  assert.equal(manifest.files.find(entry => entry.path === "harness/bin/landlock-run")?.mode, 0o755);
+  await writeFile(join(directory, "cache-manifest.json"), `${JSON.stringify(manifest)}\n`);
+  await verifyContentCache(directory, identity);
+  await chmod(launcher, 0o644);
+  await assert.rejects(() => verifyContentCache(directory, identity), /file manifest|mode/u);
+});
+
 test("restored cache working trees make read-only Harness files writable", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deepseek-content-cache-writable-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -477,6 +536,14 @@ test("restored cache working trees make read-only Harness files writable", async
   assert.notEqual((await stat(file)).mode & 0o200, 0);
   await writeFile(file, "restaged\n");
   assert.equal(await readFile(file, "utf8"), "restaged\n");
+  if (process.platform !== "win32") {
+    const executable = join(harness, "landlock-run");
+    await writeFile(executable, "#!/bin/sh\nexit 0\n");
+    await chmod(executable, 0o555);
+    const executableBits = (await stat(executable)).mode & 0o111;
+    await makeContentTreeWritable(harness);
+    assert.equal((await stat(executable)).mode & 0o111, executableBits);
+  }
 });
 
 test("writable content trees reject symbolic links before changing permissions", async t => {
@@ -587,7 +654,7 @@ test("distributed release HTTP smoke streams, validates, and publishes artifacts
     target: "aarch64-apple-darwin",
     channel: "local",
     signed: false,
-    artifactAudit: { schemaVersion: 1, scannerVersion: 2, fileCount: 3, byteCount: 1024 }
+    artifactAudit: { schemaVersion: 1, scannerVersion: 3, fileCount: 3, byteCount: 1024 }
   }, null, 2)}\n`, "utf8");
   const checksum = Buffer.from(`${sha256(installer)}  ${installerName}\n${sha256(buildInfo)}  ${buildInfoName}\n`, "utf8");
   const fixtureFiles = new Map([
@@ -668,7 +735,7 @@ test("completion rejects source facts and local path leakage", async t => {
       target: "aarch64-apple-darwin",
       channel: "local",
       signed: false,
-      artifactAudit: { schemaVersion: 1, scannerVersion: 2, fileCount: 3, byteCount: 1024 },
+      artifactAudit: { schemaVersion: 1, scannerVersion: 3, fileCount: 3, byteCount: 1024 },
       leakedPath: "/Users/developer/private"
     })}\n`)]
   ]);
@@ -685,7 +752,7 @@ test("completion rejects a worker that did not use the bound prepared receipt", 
   t.after(() => rm(directory, { recursive: true, force: true }));
   const { store, service } = await createService(directory);
   const prepared = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     receiptSha256: "1".repeat(64),
     cacheKey: "2".repeat(64),
     trackedSourceSha256: "3".repeat(64),
@@ -716,7 +783,7 @@ test("completion rejects a worker that did not use the bound prepared receipt", 
     channel: "local",
     signed: false,
     prepared: { used: false, receiptSha256: null },
-    artifactAudit: { schemaVersion: 1, scannerVersion: 2, fileCount: 3, byteCount: 1024 }
+    artifactAudit: { schemaVersion: 1, scannerVersion: 3, fileCount: 3, byteCount: 1024 }
   })}\n`);
   const files = new Map([
     [installerName, installer],
@@ -730,13 +797,13 @@ test("completion rejects a worker that did not use the bound prepared receipt", 
   await assert.rejects(() => service.completeTask(claimed.taskId, claimed.lease), /prepared receipt/u);
 });
 
-test("release preparation and artifacts remain bound to targets and the exact Node toolchain", async t => {
+test("release preparation and artifacts remain bound to targets and the exact toolchain", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deepseek-release-toolchain-validation-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const { store, service } = await createService(directory);
   const now = Date.now();
   const prepared = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     receiptSha256: "1".repeat(64),
     cacheKey: "2".repeat(64),
     trackedSourceSha256: "3".repeat(64),
@@ -767,12 +834,12 @@ test("release preparation and artifacts remain bound to targets and the exact No
     application: { version: "1.0.0" },
     desktop: { commit: desktopCommit, dirty: false },
     harness: { repository: harnessRepository, commit: harnessCommit },
-    toolchain: { ...releaseToolchain, nodeVersion: "0.0.0" },
+    toolchain: { ...releaseToolchain, npmVersion: "0.0.0" },
     target: "aarch64-apple-darwin",
     channel: "local",
     signed: false,
     prepared: { used: true, receiptSha256: prepared.receiptSha256 },
-    artifactAudit: { schemaVersion: 1, scannerVersion: 2, fileCount: 3, byteCount: 1024 }
+    artifactAudit: { schemaVersion: 1, scannerVersion: 3, fileCount: 3, byteCount: 1024 }
   })}\n`);
   const files = new Map([[installerName, installer], [buildInfoName, buildInfo]]);
   files.set("SHA256SUMS", Buffer.from(`${sha256(installer)}  ${installerName}\n${sha256(buildInfo)}  ${buildInfoName}\n`));

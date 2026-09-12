@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, chmod, cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,6 +28,127 @@ async function packageAt(root, name, manifest = {}) {
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "package.json"), JSON.stringify({ name, version: "1.0.0", ...manifest }));
   return directory;
+}
+
+function tarballName(manifest) {
+  const name = manifest.name.startsWith("@")
+    ? manifest.name.slice(1).replace("/", "-")
+    : manifest.name;
+  return `${name}-${manifest.version}.tgz`;
+}
+
+function shellLiteral(value) {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+async function nativeDeploymentFixture(t, {
+  corruptInstalled = false,
+  probeExit = 0,
+  probeStderr = "",
+  stripExecutable = false
+} = {}) {
+  const root = await fixture(t);
+  const source = join(root, "source");
+  const destination = join(root, "deployment");
+  const platform = `${process.platform}-${process.arch}`;
+  const nativeName = `@deepseek-ai/node-addon-system-${platform}`;
+  const nativeDirectory = await packageAt(source, `native/system/packages/${platform}`, {
+    name: nativeName,
+    os: [process.platform],
+    cpu: [process.arch],
+    files: ["bin/", "prebuilds.json"]
+  });
+  await writeFile(join(nativeDirectory, "prebuilds.json"), JSON.stringify({
+    platform,
+    binaries: [{ tool: "fixture-launcher", kind: "static-musl", path: "bin/fixture-launcher" }]
+  }));
+  const cliDirectory = await packageAt(source, "apps/cli", {
+    name: "cli",
+    bin: { dsh: "lib/dsh.js" },
+    dependencies: { [nativeName]: "workspace:*" },
+    files: ["lib/"]
+  });
+  await mkdir(join(cliDirectory, "lib"));
+  await writeFile(join(cliDirectory, "lib/dsh.js"), "export default 1;\n");
+  const parser = await packageAt(join(cliDirectory, "node_modules"), "js-yaml", { main: "index.cjs" });
+  await writeFile(join(parser, "index.cjs"), "module.exports = { load: JSON.parse, dump: JSON.stringify };\n");
+  await writeFile(join(source, "native/system/package.json"), JSON.stringify({
+    private: true,
+    scripts: { "build:native": "fixture-build" }
+  }));
+  await writeFile(join(source, "pnpm-workspace.yaml"), JSON.stringify({
+    packages: ["apps/*", "native/system/packages/*"],
+    allowBuilds: {}
+  }));
+  const packages = await findWorkspacePackages(source);
+  const cli = findCliPackage(packages);
+  const calls = [];
+  let installs = 0;
+
+  function tar(args) {
+    const result = spawnSync("tar", args, { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  }
+
+  async function createTarball(item, output) {
+    const tree = join(root, "packed", `${calls.length}-${item.manifest.name.replaceAll("/", "-")}`);
+    const packed = join(tree, "package");
+    await mkdir(packed, { recursive: true });
+    await cp(join(item.directory, "package.json"), join(packed, "package.json"));
+    if (item.manifest.name === "cli") {
+      await cp(join(item.directory, "lib"), join(packed, "lib"), { recursive: true });
+    } else {
+      await cp(join(item.directory, "prebuilds.json"), join(packed, "prebuilds.json"));
+      await cp(join(item.directory, "bin"), join(packed, "bin"), { recursive: true });
+      if (stripExecutable) await chmod(join(packed, "bin/fixture-launcher"), 0o644);
+    }
+    tar(["-czf", join(output, tarballName(item.manifest)), "-C", tree, "package"]);
+  }
+
+  async function runHarnessPnpm(args, cwd) {
+    calls.push({ runner: "pnpm", args, cwd });
+    if (args.includes("build:native")) {
+      const launcher = join(nativeDirectory, "bin/fixture-launcher");
+      await mkdir(join(nativeDirectory, "bin"));
+      await writeFile(launcher, probeExit === 0
+        ? "#!/bin/sh\necho 'landlock: fully enforced'\n"
+        : `#!/bin/sh\n${probeStderr ? `printf '%s\\n' ${shellLiteral(probeStderr)} >&2\n` : ""}exit ${String(probeExit)}\n`, { mode: 0o755 });
+      return;
+    }
+    if (args.includes("pack")) {
+      const output = args[args.indexOf("--pack-destination") + 1];
+      const filters = args.flatMap((arg, index) => arg === "--filter" ? [args[index + 1]] : []);
+      for (const name of filters) await createTarball(packages.get(name), output);
+      return;
+    }
+    if (args.includes("--lockfile-only")) {
+      const manifest = JSON.parse(await readFile(join(cwd, "package.json"), "utf8"));
+      const dependencies = Object.fromEntries(Object.entries(manifest.dependencies).map(([name, specifier]) => [name, {
+        specifier, version: specifier.replace("file:./", "file:")
+      }]));
+      await writeFile(join(cwd, "pnpm-lock.yaml"), JSON.stringify({ importers: { ".": { dependencies } }, packages: {} }));
+      return;
+    }
+    installs += 1;
+    const manifest = JSON.parse(await readFile(join(cwd, "package.json"), "utf8"));
+    for (const [name, specifier] of Object.entries(manifest.dependencies)) {
+      const installed = join(cwd, "node_modules", name);
+      await mkdir(installed, { recursive: true });
+      tar(["-xzf", join(cwd, specifier.slice(5)), "--strip-components=1", "-C", installed]);
+      if (corruptInstalled && name === nativeName) {
+        await appendFile(join(installed, "bin/fixture-launcher"), "corrupt\n");
+      }
+    }
+  }
+
+  async function runHarnessNpm(args, cwd) {
+    calls.push({ runner: "npm", args, cwd });
+    assert.ok(args.includes("pack"));
+    const output = args[args.indexOf("--pack-destination") + 1];
+    await createTarball(packages.get(nativeName), output);
+  }
+
+  return { calls, cli, destination, installs: () => installs, nativeName, packages, runHarnessNpm, runHarnessPnpm, source };
 }
 
 test("browser JSON intrinsic correction is scoped and idempotent in candidate deployment", async t => {
@@ -154,7 +275,7 @@ test("runtime lock rejects registry core copies even alongside the expected loca
   assert.throws(() => verifyHarnessPackageLock(lock, packages), /outside its local package set/);
 });
 
-test("production deployment installs packed files and preserves source inputs without a Python workspace", async t => {
+test("production deployment without a native platform package needs no npm runner", async t => {
   const root = await fixture(t);
   const source = join(root, "source");
   const destination = join(root, "deployment");
@@ -230,6 +351,138 @@ test("production deployment installs packed files and preserves source inputs wi
   assert.equal(await readFile(join(cliDirectory, "package.json"), "utf8"), original);
   assert.equal(await readFile(lock, "utf8"), "original lock\n");
   assert.equal(await readFile(join(destination, "node_modules/peer/index.js"), "utf8"), "export default 1;");
+});
+
+test("native platform deployment builds every native payload and packs only that package with npm", {
+  skip: process.platform === "win32"
+}, async t => {
+  const fixture = await nativeDeploymentFixture(t);
+  const runtime = await deployHarnessClosure(
+    fixture.source,
+    fixture.packages,
+    fixture.cli,
+    fixture.destination,
+    fixture.runHarnessPnpm,
+    { runHarnessNpm: fixture.runHarnessNpm }
+  );
+
+  const buildIndex = fixture.calls.findIndex(call => call.runner === "pnpm" && call.args.includes("build:native"));
+  const pnpmPackIndex = fixture.calls.findIndex(call => call.runner === "pnpm" && call.args.includes("pack"));
+  const npmPackIndex = fixture.calls.findIndex(call => call.runner === "npm" && call.args.includes("pack"));
+  assert.ok(buildIndex >= 0, "selected native platform package must trigger the full native build");
+  assert.deepEqual(fixture.calls[buildIndex], {
+    runner: "pnpm",
+    args: ["--dir", "native/system", "run", "build:native"],
+    cwd: fixture.source
+  });
+  assert.ok(pnpmPackIndex > buildIndex, "ordinary workspace packages must be packed after the native build");
+  assert.ok(npmPackIndex > buildIndex, "the platform package must be packed with npm after the native build");
+  const pnpmPack = fixture.calls[pnpmPackIndex];
+  assert.ok(pnpmPack.args.includes("cli"));
+  assert.equal(pnpmPack.args.includes(fixture.nativeName), false);
+  const npmPack = fixture.calls[npmPackIndex];
+  assert.equal(npmPack.cwd, fixture.packages.get(fixture.nativeName).directory);
+  assert.deepEqual(new Set(runtime.packages.map(item => item.name)), new Set(["cli", fixture.nativeName]));
+  const launcher = join(fixture.destination, "node_modules", fixture.nativeName, "bin/fixture-launcher");
+  assert.notEqual((await stat(launcher)).mode & 0o111, 0, "installed launcher must retain an executable bit");
+});
+
+test("native platform deployment rejects a missing npm pack runner", {
+  skip: process.platform === "win32"
+}, async t => {
+  const fixture = await nativeDeploymentFixture(t);
+  await assert.rejects(
+    deployHarnessClosure(fixture.source, fixture.packages, fixture.cli, fixture.destination, fixture.runHarnessPnpm),
+    /npm/iu
+  );
+});
+
+test("native platform deployment rejects a launcher whose installed executable bit was stripped", {
+  skip: process.platform === "win32"
+}, async t => {
+  const fixture = await nativeDeploymentFixture(t, { stripExecutable: true });
+  await assert.rejects(
+    deployHarnessClosure(
+      fixture.source,
+      fixture.packages,
+      fixture.cli,
+      fixture.destination,
+      fixture.runHarnessPnpm,
+      { runHarnessNpm: fixture.runHarnessNpm }
+    ),
+    /executable|permission|mode/iu
+  );
+  assert.equal(fixture.installs(), 1, "payload validation must cover the installed package tree");
+});
+
+test("native platform deployment rejects an installed payload whose bytes changed", {
+  skip: process.platform === "win32"
+}, async t => {
+  const fixture = await nativeDeploymentFixture(t, { corruptInstalled: true });
+  await assert.rejects(
+    deployHarnessClosure(
+      fixture.source,
+      fixture.packages,
+      fixture.cli,
+      fixture.destination,
+      fixture.runHarnessPnpm,
+      { runHarnessNpm: fixture.runHarnessNpm }
+    ),
+    /binary differs/iu
+  );
+  assert.equal(fixture.installs(), 1, "byte validation must inspect the installed package tree");
+});
+
+test("native platform deployment rejects an unexpected launcher probe exit", {
+  skip: process.platform === "win32"
+}, async t => {
+  const fixture = await nativeDeploymentFixture(t, { probeExit: 126 });
+  await assert.rejects(
+    deployHarnessClosure(
+      fixture.source,
+      fixture.packages,
+      fixture.cli,
+      fixture.destination,
+      fixture.runHarnessPnpm,
+      { runHarnessNpm: fixture.runHarnessNpm }
+    ),
+    /probe failed/iu
+  );
+});
+
+test("native platform deployment accepts the documented unavailable-kernel probe exit", {
+  skip: process.platform === "win32"
+}, async t => {
+  const fixture = await nativeDeploymentFixture(t, {
+    probeExit: 125,
+    probeStderr: "landlock-run: landlock is not enforced by this kernel (ABI unsupported or disabled)"
+  });
+  await deployHarnessClosure(
+    fixture.source,
+    fixture.packages,
+    fixture.cli,
+    fixture.destination,
+    fixture.runHarnessPnpm,
+    { runHarnessNpm: fixture.runHarnessNpm }
+  );
+  assert.equal(fixture.installs(), 1);
+});
+
+test("native platform deployment rejects unavailable-kernel exit without a Landlock diagnostic", {
+  skip: process.platform === "win32"
+}, async t => {
+  const fixture = await nativeDeploymentFixture(t, { probeExit: 125 });
+  await assert.rejects(
+    deployHarnessClosure(
+      fixture.source,
+      fixture.packages,
+      fixture.cli,
+      fixture.destination,
+      fixture.runHarnessPnpm,
+      { runHarnessNpm: fixture.runHarnessNpm }
+    ),
+    /invalid probe result/iu
+  );
 });
 
 test("build path sanitization preserves binary offsets while shrinking text paths", async t => {

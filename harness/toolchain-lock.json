@@ -27,6 +27,7 @@
   "toolchain": {
     "rust": "1.98.0",
     "pnpm": "11.24.0",
+    "npm": "11.19.0",
     "tauriCli": "2.11.4",
     "tauriApi": "2.11.1",
     "tauriRust": "2.11.5",
@@ -79,7 +80,9 @@
   "desktopPatches": [
     {
       "packageName": "@deepseek-ai/dsh-client-connection",
+      "version": "0.1.5-rc.2",
       "file": "@deepseek-ai__dsh-client-connection@0.1.5-rc.2.patch",
+      "sha256": "f8d372212f49db5884fd6e886db74100577b28ded2f5276cd327e31a6146b23f",
       "moduleFile": "lib/index.js",
       "markers": [
         "function staleSessionCookies(headerValue, currentName)",
@@ -89,7 +92,9 @@
     },
     {
       "packageName": "@earendil-works/pi-ai",
+      "version": "0.85.1",
       "file": "@earendil-works__pi-ai@0.85.1.patch",
+      "sha256": "03011cebf7f7f136e191929f5893d3dbf66fae03ec1b2a6f4d5399db93f701b6",
       "moduleFile": "dist/api/openai-responses-shared.js",
       "markers": [
         "slot.block.id = `${item.call_id}|${item.id}`;",

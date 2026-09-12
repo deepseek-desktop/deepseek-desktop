@@ -4,7 +4,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
 import process from "node:process";
 
-import { atomicWriteJson, loadTargets, sha256File } from "./common.mjs";
+import { atomicWriteJson, detectHostTarget, loadTargets, sha256File } from "./common.mjs";
 import { loadBuildConfig } from "../lib/build-config.mjs";
 import { parseReleaseTag } from "../lib/release-tag.mjs";
 
@@ -13,10 +13,7 @@ const commitPattern = /^[0-9a-f]{40}$/u;
 const payloadEntries = Object.freeze([
   "app-config.json",
   "tauri.conf.json",
-  "branding",
-  "harness-source.json",
-  "harness-lock.json",
-  "harness/prepared"
+  "branding"
 ]);
 const receiptLifetimeMs = 24 * 60 * 60_000;
 
@@ -66,7 +63,12 @@ async function collectTree(root, current = root, output = []) {
     if (entry.isDirectory()) await collectTree(root, path, output);
     else if (entry.isFile()) {
       const info = await stat(path);
-      output.push({ path: portablePath, size: info.size, sha256: await sha256File(path) });
+      output.push({
+        path: portablePath,
+        size: info.size,
+        ...(process.platform === "win32" ? {} : { mode: info.mode & 0o777 }),
+        sha256: await sha256File(path)
+      });
     }
   }
   return output;
@@ -92,7 +94,7 @@ async function trackedSourceHash(root) {
 
 function assertPreparedDescriptor(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("prepared release descriptor must be an object");
-  if (value.schemaVersion !== 1) throw new Error("unsupported prepared release descriptor");
+  if (value.schemaVersion !== 2) throw new Error("unsupported prepared release descriptor");
   for (const key of ["receiptSha256", "cacheKey", "trackedSourceSha256", "generatedPayloadSha256"]) {
     if (!shaPattern.test(value[key] || "")) throw new Error(`prepared release ${key} must be SHA-256`);
   }
@@ -110,7 +112,7 @@ function assertPreparedDescriptor(value) {
 }
 
 export function verifyPreparedReceipt(receipt) {
-  if (!receipt || receipt.schemaVersion !== 1 || !receipt.payload || typeof receipt.signature !== "string" || typeof receipt.publicKey !== "string") {
+  if (!receipt || receipt.schemaVersion !== 2 || !receipt.payload || typeof receipt.signature !== "string" || typeof receipt.publicKey !== "string") {
     throw new Error("invalid prepared release receipt");
   }
   const publicKey = Buffer.from(receipt.publicKey, "base64");
@@ -140,7 +142,7 @@ async function restorePayload(payloadRoot, generatedRoot) {
 
 function preparationInput({ tag, version, channel, signed, desktopCommit, harness, trackedSourceSha256, configSha256, lock, targetIds }) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     tag,
     version,
     channel,
@@ -187,15 +189,6 @@ export function preparedPlanIdentity(plan) {
   };
 }
 
-async function readPreparedHarness(payloadRoot, expectedCommit) {
-  const generatedLock = JSON.parse(await readFile(join(payloadRoot, "harness-lock.json"), "utf8"));
-  const generatedSource = JSON.parse(await readFile(join(payloadRoot, "harness-source.json"), "utf8"));
-  if (generatedSource.resolvedCommit !== expectedCommit || generatedLock.harness?.commit !== expectedCommit) {
-    throw new Error("prepared Harness does not match harness/toolchain-lock.json");
-  }
-  return { generatedLock, generatedSource };
-}
-
 export async function prepareRelease({
   root,
   tag,
@@ -223,10 +216,14 @@ export async function prepareRelease({
     throw new Error("harness/toolchain-lock.json has no immutable Harness source");
   }
   const targetConfig = await loadTargets();
-  const selectedTargetIds = (targetIds.length > 0 ? targetIds : targetConfig.targets.map(target => target.id)).slice().sort();
+  const hostTarget = await detectHostTarget();
+  const selectedTargetIds = (targetIds.length > 0 ? targetIds : [hostTarget.id]).slice().sort();
   if (new Set(selectedTargetIds).size !== selectedTargetIds.length
     || selectedTargetIds.some(targetId => !targetConfig.byId.has(targetId))) {
     throw new Error("release preparation contains an unknown or duplicate target");
+  }
+  if (selectedTargetIds.length !== 1 || selectedTargetIds[0] !== hostTarget.id) {
+    throw new Error(`prepared release is native-only and must target ${hostTarget.id}`);
   }
   const environment = {
     ...process.env,
@@ -267,9 +264,8 @@ export async function prepareRelease({
     }
     const payloadRoot = join(destination, "payload");
     await verifyPayload(payloadRoot, existingPayload.files, existingPayload.generatedPayloadSha256);
-    await readPreparedHarness(payloadRoot, harness.commit);
     const existingDescriptor = assertPreparedDescriptor({
-      schemaVersion: 1,
+      schemaVersion: 2,
       receiptSha256: await sha256File(existingReceiptPath),
       cacheKey,
       trackedSourceSha256,
@@ -336,7 +332,7 @@ export async function prepareRelease({
   };
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const receipt = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     payload,
     publicKey: publicKey.export({ format: "der", type: "spki" }).toString("base64"),
     signature: sign(null, canonicalBytes(payload), privateKey).toString("base64")
@@ -348,7 +344,7 @@ export async function prepareRelease({
   await rm(destination, { recursive: true, force: true });
   await rename(temporary, destination);
   const descriptor = assertPreparedDescriptor({
-    schemaVersion: 1,
+    schemaVersion: 2,
     receiptSha256,
     cacheKey,
     trackedSourceSha256,
@@ -388,6 +384,10 @@ export async function restorePreparedRelease({ root, preparedRoot, expectedDescr
   if (JSON.stringify(payload.targetIds) !== JSON.stringify(planTargetIds)
     || JSON.stringify(descriptor.targetIds) !== JSON.stringify(planTargetIds)) {
     throw new Error("prepared release target set does not match controller plan");
+  }
+  const hostTarget = await detectHostTarget();
+  if (payload.targetIds.length !== 1 || payload.targetIds[0] !== hostTarget.id) {
+    throw new Error(`prepared release can only be restored by its native ${hostTarget.id} worker`);
   }
   const workspace = resolve(root);
   if (git(workspace, ["rev-parse", "HEAD"]) !== planIdentity.source.commit) throw new Error("prepared worker checkout commit changed");

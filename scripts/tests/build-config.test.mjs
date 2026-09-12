@@ -12,6 +12,7 @@ import {
   resolveBuildValues,
   resolveDesktopRepository
 } from "../lib/build-config.mjs";
+import { dockerConfigEnvironmentArgs } from "../lib/docker-preflight.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -51,6 +52,23 @@ test("environment values override env file values", () => {
   });
   assert.equal(values.DESKTOP_APP_NAME, "Environment Name");
   assert.equal(values.HARNESS_REF, "file-ref");
+});
+
+test("Docker preflight forwards every explicit public build input", () => {
+  assert.deepEqual(dockerConfigEnvironmentArgs({
+    PATH: "/usr/bin",
+    DESKTOP_APP_VERSION: "1.1.15",
+    HARNESS_REPOSITORY: "https://github.com/deepseek-ai/deepseek-harness.git",
+    HARNESS_REF: "c291e7961a515f6d7af9304e7fd1d257929aef26",
+    RELEASE_CHANNEL: "community",
+    RELEASE_SIGNED: "false"
+  }), [
+    "--env", "DESKTOP_APP_VERSION",
+    "--env", "HARNESS_REPOSITORY",
+    "--env", "HARNESS_REF",
+    "--env", "RELEASE_CHANNEL",
+    "--env", "RELEASE_SIGNED"
+  ]);
 });
 
 test("loads every declared value from an env file before applying environment overrides", async () => {

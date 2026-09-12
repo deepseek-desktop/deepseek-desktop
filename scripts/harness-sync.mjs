@@ -16,9 +16,8 @@ import {
 } from "./lib/harness-deployment.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
 import { artifactForbiddenRoots } from "./lib/artifact-scan.mjs";
+import { applyDesktopCompatibilityPatches } from "./lib/desktop-patches.mjs";
 import { selectLatestHarnessTag } from "./lib/harness-ref.mjs";
-import { findInstalledPackages } from "./lib/installed-packages.mjs";
-import { applyPackagePatch } from "./lib/package-patch.mjs";
 import { assertPinnedHarnessSource } from "./lib/harness-source-pin.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -62,6 +61,26 @@ function runGit(commandArgs, cwd, options = {}) {
 }
 
 let pinnedToolEnvironment;
+let pinnedNpmCli;
+
+async function resolveBundledNpmCli() {
+  const candidates = process.platform === "win32"
+    ? [join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")]
+    : [resolve(dirname(process.execPath), "../lib/node_modules/npm/bin/npm-cli.js")];
+  for (const candidate of candidates) {
+    let available = false;
+    try {
+      available = (await stat(candidate)).isFile();
+    } catch {}
+    if (!available) continue;
+    const version = run(process.execPath, [candidate, "--version"], root, { capture: true });
+    if (version !== toolchain.toolchain?.npm) {
+      throw new Error(`active Node distribution contains npm ${version}, expected ${String(toolchain.toolchain?.npm)}`);
+    }
+    return candidate;
+  }
+  throw new Error(`npm from the active Node distribution is unavailable: ${process.execPath}`);
+}
 
 async function preparePinnedPnpm() {
   const pnpmCli = process.env.npm_execpath;
@@ -101,6 +120,11 @@ function runHarnessPnpm(commandArgs, cwd) {
   // lock; this only disables pnpm's project-version refusal in the temporary
   // checkout and does not modify upstream source or its dependency lock.
   runPnpm(["--pm-on-fail=ignore", ...commandArgs], cwd);
+}
+
+function runHarnessNpm(commandArgs, cwd) {
+  if (!pinnedNpmCli || !pinnedToolEnvironment) throw new Error("pinned npm environment has not been initialized");
+  run(process.execPath, [pinnedNpmCli, ...commandArgs], cwd, { env: pinnedToolEnvironment });
 }
 
 async function writeJson(path, value) {
@@ -238,24 +262,10 @@ async function prepareLocal(path, ref) {
   return { sourceRoot, repository, requestedRef: ref.trim() || null, ref: ref.trim() || commit, commit, dirty, kind: "local", mode: "local" };
 }
 
-async function applyDesktopPatches(moduleRoots) {
-  const applied = [];
-  for (const patch of toolchain.desktopPatches) {
-    const directories = await findInstalledPackages(moduleRoots, patch.packageName);
-    if (directories.length === 0) throw new Error(`Desktop patch target is missing: ${patch.packageName}`);
-    for (const directory of directories) {
-      if (!patch.file) throw new Error(`Desktop patch file is missing for ${patch.packageName}:${patch.id}`);
-      const patchFile = join(harnessRoot, "patches", patch.file);
-      applyPackagePatch(directory, patchFile);
-    }
-    applied.push(`${patch.packageName}:${patch.id}:${directories.length}`);
-  }
-  return applied;
-}
-
 const config = await loadBuildConfig(root);
 await mkdir(cacheRoot, { recursive: true });
 pinnedToolEnvironment = await preparePinnedPnpm();
+pinnedNpmCli = await resolveBundledNpmCli();
 const releaseChannel = config.release.channel;
 const releaseBuild = releaseChannel === "community" || releaseChannel === "stable";
 const source = localPath
@@ -297,14 +307,18 @@ try {
     cli,
     harnessDeployment,
     runHarnessPnpm,
-    { desktopDeployment, desktopRoots: DESKTOP_EXTENSION_ROOTS }
+    { desktopDeployment, desktopRoots: DESKTOP_EXTENSION_ROOTS, runHarnessNpm }
   );
   const mergedDesktopPackages = await mergeDesktopClosure(desktopDeployment, harnessDeployment, DESKTOP_EXTENSION_ROOTS);
   await rm(desktopDeployment, { recursive: true, force: true });
   await rename(harnessDeployment, prepared);
 
   const finalModules = join(prepared, "node_modules");
-  const patches = await applyDesktopPatches([finalModules]);
+  const patches = await applyDesktopCompatibilityPatches(
+    [finalModules],
+    toolchain.desktopPatches,
+    join(harnessRoot, "patches")
+  );
   const prunedBuildIntermediates = await pruneNativeBuildIntermediates(prepared);
   const sanitizedPaths = await sanitizeBuildPaths(prepared, buildPathReplacements(source.sourceRoot));
   const entry = join("node_modules", ...cli.manifest.name.split("/"), cli.entry).split(sep).join("/");
@@ -343,6 +357,7 @@ try {
     bundledPackages: toolchain.bundledPackages,
     nativeAssets: toolchain.nativeAssets,
     targets: toolchain.targets,
+    desktopPatches: toolchain.desktopPatches,
     patches: [
       `deepseek-desktop-bundle@${bundleVersion}`,
       `deepseek-desktop-credentials-vault@${credentialVaultVersion}`,

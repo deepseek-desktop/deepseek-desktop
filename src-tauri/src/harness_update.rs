@@ -987,12 +987,28 @@ impl HarnessUpdateManager {
                     pnpm_cli.display().to_string(),
                 ));
             }
+            let node_build_tools = current.harness_dir.join("toolchain/node");
+            let npm_cli = node_build_tools.join("npm/bin/npm-cli.js");
+            let node_headers = node_build_tools.join("include/node");
             let tools = staging.join("tools");
-            prepare_repository_tool_wrappers(&tools, &current.node, &pnpm_cli)?;
+            let build_toolchain = prepare_repository_tool_wrappers(
+                &tools,
+                &current.node,
+                &pnpm_cli,
+                &npm_cli,
+                &node_headers,
+            )?;
+            verify_repository_build_tools(&source, &tools, &build_toolchain)?;
             let harness_dir = candidate.join("harness");
             fs::create_dir_all(&candidate)?;
-            let prepared =
-                deploy_repository_harness(&staging, &source, &harness_dir, current, &tools)?;
+            let prepared = deploy_repository_harness(
+                &staging,
+                &source,
+                &harness_dir,
+                current,
+                &tools,
+                &build_toolchain.node,
+            )?;
             let harness_version = prepared.version;
 
             let node_file = if cfg!(windows) { "node.exe" } else { "node" };
@@ -1733,9 +1749,14 @@ fn run_repository_command(
     }
     configure_hidden_process(&mut process);
     let mut child = process.spawn().map_err(|error| {
+        let hint = if command.file_name().and_then(|name| name.to_str()) == Some("git") {
+            "; install Git when using a source Harness repository"
+        } else {
+            ""
+        };
         DesktopError::Other(format!(
-            "unable to run {}; install Git when using a source Harness repository: {error}",
-            command.display()
+            "unable to run {}{hint}: {error}",
+            command.display(),
         ))
     })?;
     let deadline = Instant::now() + timeout;
@@ -1776,45 +1797,211 @@ fn run_repository_command(
     }
 }
 
+#[derive(Debug)]
+struct RepositoryBuildToolchain {
+    node: PathBuf,
+    npm_cli: PathBuf,
+}
+
+fn copy_repository_tool_directory(source: &Path, destination: &Path) -> DesktopResult<()> {
+    if !source.is_dir() {
+        return Err(DesktopError::HarnessArtifactMissing(
+            source.display().to_string(),
+        ));
+    }
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let target = destination.join(entry.file_name());
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            copy_repository_tool_directory(&entry.path(), &target)?;
+        } else if file_type.is_file() {
+            fs::copy(entry.path(), target)?;
+        } else {
+            return Err(DesktopError::InvalidConfiguration(format!(
+                "Harness build tool contains an unsupported entry: {}",
+                entry.path().display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn prepare_repository_tool_wrappers(
     tools: &Path,
     node: &Path,
     pnpm_cli: &Path,
-) -> DesktopResult<()> {
+    npm_cli: &Path,
+    node_headers: &Path,
+) -> DesktopResult<RepositoryBuildToolchain> {
+    let mut required = vec![
+        node.to_path_buf(),
+        pnpm_cli.to_path_buf(),
+        npm_cli.to_path_buf(),
+    ];
+    if !cfg!(windows) {
+        required.extend(
+            [
+                "node_api.h",
+                "js_native_api.h",
+                "node_api_types.h",
+                "js_native_api_types.h",
+            ]
+            .map(|header| node_headers.join(header)),
+        );
+    }
+    for required in required {
+        if !required.is_file() {
+            return Err(DesktopError::HarnessArtifactMissing(
+                required.display().to_string(),
+            ));
+        }
+    }
     fs::create_dir_all(tools)?;
+    let runtime = tools.join("node-runtime");
+    let runtime_node = runtime
+        .join("bin")
+        .join(if cfg!(windows) { "node.exe" } else { "node" });
+    fs::create_dir_all(runtime_node.parent().ok_or_else(|| {
+        DesktopError::Other("Harness build Node has no parent directory".to_owned())
+    })?)?;
+    fs::copy(node, &runtime_node)?;
+    if !cfg!(windows) {
+        copy_repository_tool_directory(node_headers, &runtime.join("include/node"))?;
+    }
     #[cfg(windows)]
     {
         let pnpm_wrapper = format!(
             "@echo off\r\n\"{}\" \"{}\" %*\r\n",
-            node.display(),
+            runtime_node.display(),
             pnpm_cli.display()
         );
-        let node_wrapper = format!("@echo off\r\n\"{}\" %*\r\n", node.display());
+        let npm_wrapper = format!(
+            "@echo off\r\n\"{}\" \"{}\" %*\r\n",
+            runtime_node.display(),
+            npm_cli.display()
+        );
+        let node_wrapper = format!("@echo off\r\n\"{}\" %*\r\n", runtime_node.display());
         fs::write(tools.join("node.cmd"), node_wrapper)?;
-        fs::write(tools.join("pnpm.cmd"), &pnpm_wrapper)?;
-        fs::write(tools.join("npm.cmd"), pnpm_wrapper)?;
+        fs::write(tools.join("pnpm.cmd"), pnpm_wrapper)?;
+        fs::write(tools.join("npm.cmd"), npm_wrapper)?;
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&runtime_node, fs::Permissions::from_mode(0o700))?;
         let pnpm_wrapper = format!(
             "#!/bin/sh\nexec \"{}\" \"{}\" \"$@\"\n",
-            node.display(),
+            runtime_node.display(),
             pnpm_cli.display()
+        );
+        let npm_wrapper = format!(
+            "#!/bin/sh\nexec \"{}\" \"{}\" \"$@\"\n",
+            runtime_node.display(),
+            npm_cli.display()
         );
         let wrappers = [
             (
                 "node",
-                format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", node.display()),
+                format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", runtime_node.display()),
             ),
-            ("pnpm", pnpm_wrapper.clone()),
-            ("npm", pnpm_wrapper),
+            ("pnpm", pnpm_wrapper),
+            ("npm", npm_wrapper),
         ];
         for (name, wrapper) in wrappers {
             let path = tools.join(name);
             fs::write(&path, &wrapper)?;
             fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
         }
+    }
+    Ok(RepositoryBuildToolchain {
+        node: runtime_node,
+        npm_cli: npm_cli.to_path_buf(),
+    })
+}
+
+fn repository_native_prebuild(source: &Path) -> Option<PathBuf> {
+    let platform = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => "darwin-arm64",
+        ("macos", "x86_64") => "darwin-x64",
+        ("linux", "aarch64") => "linux-arm64",
+        ("linux", "x86_64") => "linux-x64",
+        _ => return None,
+    };
+    let metadata = source
+        .join("native/system/packages")
+        .join(platform)
+        .join("prebuilds.json");
+    metadata.is_file().then_some(metadata)
+}
+
+fn repository_required_compilers(source: &Path) -> DesktopResult<Vec<&'static str>> {
+    let Some(metadata) = repository_native_prebuild(source) else {
+        return Ok(Vec::new());
+    };
+    let specification: serde_json::Value = serde_json::from_slice(&fs::read(metadata)?)?;
+    let binaries = specification
+        .get("binaries")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            DesktopError::InvalidConfiguration(
+                "Harness native platform package has no binary declarations".to_owned(),
+            )
+        })?;
+    let mut compilers = Vec::new();
+    if binaries
+        .iter()
+        .any(|binary| binary.get("kind").and_then(serde_json::Value::as_str) == Some("node-api"))
+    {
+        compilers.push("cc");
+    }
+    if cfg!(target_os = "linux")
+        && binaries.iter().any(|binary| {
+            binary.get("kind").and_then(serde_json::Value::as_str) == Some("static-musl")
+                || binary.get("libc").and_then(serde_json::Value::as_str) == Some("musl")
+        })
+    {
+        compilers.push("musl-gcc");
+    }
+    Ok(compilers)
+}
+
+fn verify_repository_build_tools(
+    source: &Path,
+    tools: &Path,
+    toolchain: &RepositoryBuildToolchain,
+) -> DesktopResult<()> {
+    let npm_cli = toolchain.npm_cli.to_string_lossy();
+    run_repository_command(
+        &toolchain.node,
+        &[npm_cli.as_ref(), "--version"],
+        Some(source),
+        SMOKE_TIMEOUT,
+        Some(tools),
+        true,
+        None,
+    )
+    .map_err(|error| {
+        DesktopError::InvalidConfiguration(format!(
+            "bundled npm cannot prepare a Harness source update: {error}"
+        ))
+    })?;
+    for compiler in repository_required_compilers(source)? {
+        run_repository_command(
+            Path::new(compiler),
+            &["--version"],
+            Some(source),
+            SMOKE_TIMEOUT,
+            Some(tools),
+            false,
+            None,
+        )
+        .map_err(|error| {
+            DesktopError::InvalidConfiguration(format!(
+                "Harness source update requires compiler `{compiler}`: {error}"
+            ))
+        })?;
     }
     Ok(())
 }
@@ -1842,12 +2029,23 @@ struct RepositoryDeployment {
     entry: String,
 }
 
+fn repository_preparation_failure(path: &Path) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    let message = value.get("error")?.as_str()?.trim();
+    if message.is_empty() {
+        None
+    } else {
+        Some(message.chars().take(4_000).collect())
+    }
+}
+
 fn deploy_repository_harness(
     staging: &Path,
     source: &Path,
     destination: &Path,
     current: &HarnessLocation,
     tools: &Path,
+    build_node: &Path,
 ) -> DesktopResult<RepositoryDeployment> {
     let scripts = staging.join("scripts");
     fs::create_dir_all(scripts.join("lib"))?;
@@ -1861,9 +2059,21 @@ fn deploy_repository_harness(
         scripts.join("lib/harness-deployment.mjs"),
         include_str!("../../scripts/lib/harness-deployment.mjs"),
     )?;
+    fs::write(
+        scripts.join("lib/desktop-patches.mjs"),
+        include_str!("../../scripts/lib/desktop-patches.mjs"),
+    )?;
+    fs::write(
+        scripts.join("lib/installed-packages.mjs"),
+        include_str!("../../scripts/lib/installed-packages.mjs"),
+    )?;
+    fs::write(
+        scripts.join("lib/package-patch.mjs"),
+        include_str!("../../scripts/lib/package-patch.mjs"),
+    )?;
     let result = staging.join("deployment.json");
-    run_repository_command(
-        &current.node,
+    let preparation = run_repository_command(
+        build_node,
         &[
             &entry.to_string_lossy(),
             &source.to_string_lossy(),
@@ -1876,7 +2086,13 @@ fn deploy_repository_harness(
         Some(tools),
         false,
         None,
-    )?;
+    );
+    if let Err(error) = preparation {
+        if let Some(message) = repository_preparation_failure(&result) {
+            return Err(DesktopError::InvalidConfiguration(message));
+        }
+        return Err(error);
+    }
     let deployment: RepositoryDeployment = serde_json::from_slice(&fs::read(result)?)?;
     Version::parse(&deployment.version)
         .map_err(|error| DesktopError::InvalidConfiguration(error.to_string()))?;
@@ -2423,24 +2639,122 @@ mod tests {
     }
 
     #[test]
-    fn repository_build_tools_pin_node_and_pnpm_to_the_bundled_harness() {
+    fn repository_build_tools_use_real_npm_and_a_standard_node_layout() {
         let directory = TempDir::new().unwrap();
         let tools = directory.path().join("tools");
         let node = directory
             .path()
             .join(if cfg!(windows) { "node.exe" } else { "node" });
         let pnpm = directory.path().join("pnpm.cjs");
+        let npm = directory.path().join("npm-cli.js");
+        let headers = directory.path().join("headers");
+        fs::create_dir_all(&headers).unwrap();
+        fs::write(&node, "node").unwrap();
+        fs::write(&pnpm, "pnpm").unwrap();
+        fs::write(&npm, "npm").unwrap();
+        for header in [
+            "node_api.h",
+            "js_native_api.h",
+            "node_api_types.h",
+            "js_native_api_types.h",
+        ] {
+            fs::write(headers.join(header), header).unwrap();
+        }
 
-        prepare_repository_tool_wrappers(&tools, &node, &pnpm).unwrap();
+        let toolchain =
+            prepare_repository_tool_wrappers(&tools, &node, &pnpm, &npm, &headers).unwrap();
 
         let suffix = if cfg!(windows) { ".cmd" } else { "" };
         let node_wrapper = fs::read_to_string(tools.join(format!("node{suffix}"))).unwrap();
         let pnpm_wrapper = fs::read_to_string(tools.join(format!("pnpm{suffix}"))).unwrap();
         let npm_wrapper = fs::read_to_string(tools.join(format!("npm{suffix}"))).unwrap();
-        assert!(node_wrapper.contains(node.to_string_lossy().as_ref()));
-        assert!(pnpm_wrapper.contains(node.to_string_lossy().as_ref()));
+        assert!(node_wrapper.contains(toolchain.node.to_string_lossy().as_ref()));
+        assert!(pnpm_wrapper.contains(toolchain.node.to_string_lossy().as_ref()));
+        assert!(npm_wrapper.contains(toolchain.node.to_string_lossy().as_ref()));
         assert!(pnpm_wrapper.contains(pnpm.to_string_lossy().as_ref()));
-        assert_eq!(pnpm_wrapper, npm_wrapper);
+        assert!(npm_wrapper.contains(npm.to_string_lossy().as_ref()));
+        assert_ne!(pnpm_wrapper, npm_wrapper);
+        assert_eq!(fs::read(&toolchain.node).unwrap(), b"node");
+        let copied_header = tools.join("node-runtime/include/node/node_api.h");
+        if cfg!(windows) {
+            assert!(!copied_header.exists());
+        } else {
+            assert_eq!(fs::read(copied_header).unwrap(), b"node_api.h");
+        }
+    }
+
+    #[test]
+    fn repository_build_tools_follow_the_native_platform_declarations() {
+        let directory = TempDir::new().unwrap();
+        let Some(platform) = (match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("macos", "aarch64") => Some("darwin-arm64"),
+            ("macos", "x86_64") => Some("darwin-x64"),
+            ("linux", "aarch64") => Some("linux-arm64"),
+            ("linux", "x86_64") => Some("linux-x64"),
+            _ => None,
+        }) else {
+            assert!(
+                repository_required_compilers(directory.path())
+                    .unwrap()
+                    .is_empty()
+            );
+            return;
+        };
+        let package = directory
+            .path()
+            .join("native/system/packages")
+            .join(platform);
+        fs::create_dir_all(&package).unwrap();
+        let binaries = if cfg!(target_os = "linux") {
+            serde_json::json!([
+                { "kind": "node-api", "libc": "glibc" },
+                { "kind": "node-api", "libc": "musl" },
+                { "kind": "static-musl" }
+            ])
+        } else {
+            serde_json::json!([{ "kind": "node-api" }])
+        };
+        fs::write(
+            package.join("prebuilds.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "platform": platform,
+                "binaries": binaries
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let required = repository_required_compilers(directory.path()).unwrap();
+        if cfg!(target_os = "linux") {
+            assert_eq!(required, ["cc", "musl-gcc"]);
+        } else {
+            assert_eq!(required, ["cc"]);
+        }
+    }
+
+    #[test]
+    fn repository_preparation_failure_reads_only_the_bounded_error_message() {
+        let directory = TempDir::new().unwrap();
+        let result = directory.path().join("deployment.json");
+        fs::write(
+            &result,
+            serde_json::to_vec(&serde_json::json!({
+                "error": "  native payload is missing  "
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            repository_preparation_failure(&result).as_deref(),
+            Some("native payload is missing")
+        );
+
+        fs::write(
+            &result,
+            serde_json::to_vec(&serde_json::json!({ "version": "1.0.0" })).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(repository_preparation_failure(&result), None);
     }
 
     #[test]

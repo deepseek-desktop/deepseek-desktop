@@ -11,7 +11,7 @@ const version = "1.0.0";
 const commit = "0123456789abcdef0123456789abcdef01234567";
 const toolchainLock = {
   node: { version: "24.20.0", moduleAbi: "137" },
-  toolchain: { rust: "1.98.0", pnpm: "11.24.0", tauriCli: "2.11.4" },
+  toolchain: { rust: "1.98.0", pnpm: "11.24.0", npm: "11.19.0", tauriCli: "2.11.4" },
   harnessSource: {
     repository: "https://example.invalid/harness.git",
     ref: "harness-v1.0.0",
@@ -51,6 +51,7 @@ async function fixture(root, mutate = value => value) {
         nodeModuleAbi: toolchainLock.node.moduleAbi,
         rustVersion: toolchainLock.toolchain.rust,
         pnpmVersion: toolchainLock.toolchain.pnpm,
+        npmVersion: toolchainLock.toolchain.npm,
         tauriCliVersion: toolchainLock.toolchain.tauriCli
       },
       harness: {
@@ -65,7 +66,7 @@ async function fixture(root, mutate = value => value) {
       target,
       channel: "community",
       signed: false,
-      artifactAudit: { schemaVersion: 1, scannerVersion: 2, fileCount: 1, byteCount: 1 }
+      artifactAudit: { schemaVersion: 1, scannerVersion: 3, fileCount: 1, byteCount: 1 }
     }, target);
     const buildInfoText = `${JSON.stringify(buildInfo)}\n`;
     await writeFile(join(directory, buildInfoName), buildInfoText);
@@ -149,6 +150,18 @@ test("rejects a target built with another toolchain identity", async t => {
   await assert.rejects(
     prepareCiReleaseAssets({ inputRoot: root, outputRoot: join(root, "publish"), version, commit, toolchainLock }),
     /release identity mismatch for x86_64-unknown-linux-gnu: application\.productName/u
+  );
+});
+
+test("rejects a target built with another npm toolchain", async t => {
+  const root = await mkdtemp(join(tmpdir(), "deepseek-ci-release-npm-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await fixture(root, (buildInfo, target) => target === "x86_64-unknown-linux-gnu"
+    ? { ...buildInfo, toolchain: { ...buildInfo.toolchain, npmVersion: "0.0.0" } }
+    : buildInfo);
+  await assert.rejects(
+    prepareCiReleaseAssets({ inputRoot: root, outputRoot: join(root, "publish"), version, commit, toolchainLock }),
+    /release toolchain mismatch/u
   );
 });
 

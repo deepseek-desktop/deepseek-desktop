@@ -125,7 +125,7 @@ corepack pnpm@11.24.0 harness:sync --local /absolute/path/to/deepseek-harness
 3. 按 Harness 约定构建桌面生产 Harness 制品。
 4. 校验主包、CLI 入口、Web 工作台和桌面兼容契约。
 
-Harness 内部依赖安装始终使用非交互模式，本机终端、Windows 虚拟机、Docker 和 GitHub Actions 执行同一套 pnpm 行为，不会等待目录清理确认。Windows 从本地 Git mirror 重建锁定提交的 checkout，避免 pnpm 目录链接干扰源码清理；该过程不重复下载远程仓库。
+Harness 内部依赖安装始终使用非交互模式。本机终端、Windows 虚拟机、Docker 和 GitHub Actions 使用锁定的 pnpm 安装依赖并打包普通 workspace 包；当前原生平台包完成完整 `build:native` 后，单独使用固定 Node 归档附带的 npm `11.19.0` 打包，以保留 Linux 启动器的执行权限。Linux 构建环境同时提供 `musl-tools`，隔离安装后复核原生载荷、字节和权限。Windows 从本地 Git mirror 重建锁定提交的 checkout，避免 pnpm 目录链接干扰源码清理；该过程不重复下载远程仓库。
 5. 计算制品 SHA-256、依赖完整性和许可证信息。
 6. 自动生成 `target/generated/harness-lock.json`。
 7. Harness staging 只消费经过校验的锁定制品。
@@ -187,7 +187,7 @@ corepack pnpm@11.24.0 tauri:build
 - `src-tauri/src/native_menu.rs` 中的应用名称、关于和退出文案。
 - `index.html` 标题。
 - 前端 Mock、单元测试和 Playwright 断言中的固定版本与名称。
-- `harness/toolchain-lock.json` 中的稳定 Node、原生依赖和桌面补丁事实，以及 `target/generated/harness-lock.json` 中的 Harness 来源、commit、入口和制品哈希。
+- `harness/toolchain-lock.json` 中的稳定 Node、pnpm、npm、Rust、原生依赖和桌面补丁事实，以及 `target/generated/harness-lock.json` 中的 Harness 来源、commit、入口和制品哈希。
 - `scripts/package-community.mjs`、发布门禁和 GitHub Actions 中的版本与产品名称读取方式。
 
 `app:sync` 不改写 README 或手写说明正文。动态发行事实写入生成配置、Harness lock 和 `BUILD-INFO.<target>.json`。
@@ -212,6 +212,14 @@ corepack pnpm@11.24.0 tauri:build
     "commit": "desktop repository commit",
     "dirty": false
   },
+  "toolchain": {
+    "nodeVersion": "24.20.0",
+    "nodeModuleAbi": "137",
+    "rustVersion": "1.98.0",
+    "pnpmVersion": "11.24.0",
+    "npmVersion": "11.19.0",
+    "tauriCliVersion": "2.11.4"
+  },
   "harness": {
     "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
     "requestedRef": null,
@@ -230,6 +238,7 @@ corepack pnpm@11.24.0 tauri:build
 
 - 桌面版本在 resolved config、Tauri bundle、Harness manifest 和 `BUILD-INFO.<target>.json` 中一致。
 - Git tag 与解析后的桌面版本一致。
+- Node、pnpm、npm、Rust 和 Tauri CLI 身份与工具链 lock 一致。
 - Harness commit 和 Harness hash 可追溯。
 - 安装包内不存在 `.env`、本地路径、访问令牌或本地 Harness 工作区。
 - 图标在 macOS 应用、DMG、Windows EXE、开始菜单、桌面快捷方式和 Linux 安装包中均可正常显示。

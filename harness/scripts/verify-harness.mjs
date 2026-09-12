@@ -5,7 +5,8 @@ import { join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
-import { findInstalledPackages, listInstalledPackages } from "../../scripts/lib/installed-packages.mjs";
+import { findInstalledPackages, listInstalledPackages, packageInventory } from "../../scripts/lib/installed-packages.mjs";
+import { verifyDesktopPatchAsset } from "../../scripts/lib/desktop-patches.mjs";
 import { assertPinnedHarnessSource } from "../../scripts/lib/harness-source-pin.mjs";
 
 const harnessRoot = resolve(import.meta.dirname, "..");
@@ -44,6 +45,75 @@ function supportsConstraint(constraint, value) {
   if (constraint.includes(`!${value}`)) return false;
   const allowed = constraint.filter(item => !item.startsWith("!"));
   return allowed.length === 0 || allowed.includes(value);
+}
+
+async function verifyStaticMuslExecutables(root, moduleRoots, manifest, platform) {
+  const manifestFiles = new Map(manifest.files.map(entry => [entry.path, entry]));
+  const portablePlatform = `${platform.os}-${platform.cpu}`;
+  const acceptedPlatforms = new Set([
+    portablePlatform,
+    ...(platform.os === "linux" ? [`${portablePlatform}-gnu`] : []),
+    ...(platform.os === "win32" ? [`${portablePlatform}-msvc`] : [])
+  ]);
+  let declarations = 0;
+  for (const item of await listInstalledPackages(moduleRoots)) {
+    let prebuilds;
+    try {
+      prebuilds = JSON.parse(await readFile(join(item.directory, "prebuilds.json"), "utf8"));
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw error;
+    }
+    if (!Array.isArray(prebuilds.binaries)) {
+      throw new Error(`native package has no binary declarations: ${item.manifest.name}`);
+    }
+    if (!acceptedPlatforms.has(prebuilds.platform)) {
+      throw new Error(
+        `native package platform mismatch: ${item.manifest.name} declares ${String(prebuilds.platform)}, expected one of ${[...acceptedPlatforms].join(", ")}`
+      );
+    }
+    for (const binary of prebuilds.binaries) {
+      if (binary.kind !== "static-musl") continue;
+      declarations += 1;
+      if (typeof binary.path !== "string" || binary.path.length === 0) {
+        throw new Error(`native package has an invalid static-musl path: ${item.manifest.name}`);
+      }
+      const filename = resolve(item.directory, binary.path);
+      const packageRelation = relative(item.directory, filename);
+      if (!packageRelation || packageRelation === ".." || packageRelation.startsWith(`..${sep}`)) {
+        throw new Error(`native package static-musl path escapes its package: ${item.manifest.name}`);
+      }
+      const info = await stat(filename);
+      if (!info.isFile() || (info.mode & 0o111) === 0) {
+        throw new Error(`native package static-musl launcher is not executable: ${item.manifest.name}/${binary.path}`);
+      }
+      const stagedPath = relative(root, filename).split(sep).join("/");
+      const record = manifestFiles.get(stagedPath);
+      if (!record || !Number.isInteger(record.mode) || (record.mode & 0o111) === 0) {
+        throw new Error(`Harness manifest omits the executable mode for static-musl launcher: ${stagedPath}`);
+      }
+      if (process.platform === "linux") {
+        const probe = spawnSync(filename, ["--probe"], {
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 5_000
+        });
+        if (probe.error || probe.signal) {
+          throw new Error(`native package static-musl launcher cannot execute: ${item.manifest.name}/${binary.path}: ${probe.error?.message || probe.signal}`);
+        }
+        if (probe.status === 0) {
+          if (!/^landlock: (?:fully enforced|partially enforced \(older ABI\))\n?$/u.test(probe.stdout)) {
+            throw new Error(`native package static-musl launcher returned an invalid probe result: ${item.manifest.name}/${binary.path}`);
+          }
+        } else if (probe.status !== 125 || !/^landlock-run: /u.test(probe.stderr)) {
+          throw new Error(`native package static-musl launcher probe failed unexpectedly: ${item.manifest.name}/${binary.path}`);
+        }
+      }
+    }
+  }
+  if (platform.os === "linux" && declarations === 0) {
+    throw new Error("Linux Harness contains no declared static-musl launcher");
+  }
 }
 
 async function hashTree(directory) {
@@ -295,6 +365,12 @@ if (lock.release.sourcePinned) {
   }, toolchain.harnessSource);
 }
 if (new Set(lock.targets).size !== lock.targets.length) throw new Error("harness targets contain duplicates");
+if (JSON.stringify(lock.desktopPatches) !== JSON.stringify(toolchain.desktopPatches)) {
+  throw new Error("generated Harness desktop patch metadata does not match the toolchain lock");
+}
+for (const patch of toolchain.desktopPatches) {
+  await verifyDesktopPatchAsset(join(harnessRoot, "patches"), patch);
+}
 for (const target of lock.targets) {
   if (!lock.nativeAssets[target]) throw new Error(`harness lock is missing native assets for ${target}`);
 }
@@ -335,6 +411,13 @@ if (requested) {
     }
   }
   const manifest = JSON.parse(await readFile(join(root, "harness-manifest.json"), "utf8"));
+  if (await readFile(join(root, "harness-lock.json"), "utf8") !== await readFile(join(generatedRoot, "harness-lock.json"), "utf8")) {
+    throw new Error("staged Harness lock does not exactly match the generated lock");
+  }
+  for (const patch of lock.desktopPatches) {
+    await verifyDesktopPatchAsset(join(root, "toolchain", "desktop-patches"), patch);
+  }
+  if (manifest.schemaVersion !== 2) throw new Error(`unsupported Harness manifest schema: ${manifest.schemaVersion}`);
   if (manifest.target !== requested) throw new Error(`manifest target mismatch: ${manifest.target}`);
   if (manifest.generatedAt !== new Date(lock.sourceDateEpoch * 1_000).toISOString()) {
     throw new Error(`manifest timestamp is not reproducible: ${manifest.generatedAt}`);
@@ -389,12 +472,40 @@ if (requested) {
   }
   for (const entry of manifest.files) {
     const filename = join(root, entry.path);
-    await stat(filename);
+    const info = await stat(filename);
+    if (platform.os === "win32") {
+      if (Object.hasOwn(entry, "mode")) throw new Error(`Windows Harness manifest contains a Unix mode: ${entry.path}`);
+    } else if (!Number.isInteger(entry.mode) || entry.mode !== (info.mode & 0o777)) {
+      throw new Error(`mode mismatch: ${entry.path}`);
+    }
     const actual = createHash("sha256").update(await readFile(filename)).digest("hex");
     if (actual !== entry.sha256) throw new Error(`checksum mismatch: ${entry.path}`);
   }
+  await verifyStaticMuslExecutables(root, stagedModuleRoots, manifest, platform);
+  const inventoryRoots = [
+    stagedNodeModules,
+    join(root, "toolchain", "node", "npm"),
+    join(root, "toolchain", "node", "npm", "node_modules")
+  ];
+  const expectedInventory = await packageInventory(inventoryRoots);
+  expectedInventory.push({ name: "Node.js", version: toolchain.node.version, license: toolchain.node.license });
+  expectedInventory.sort((left, right) => left.name.localeCompare(right.name) || left.version.localeCompare(right.version));
+  const declaredInventory = JSON.parse(await readFile(join(root, "licenses.json"), "utf8"));
+  if (JSON.stringify(declaredInventory) !== JSON.stringify(expectedInventory)) {
+    throw new Error("Harness license inventory does not exactly match installed packages");
+  }
   const sbom = JSON.parse(await readFile(join(root, "sbom.spdx.json"), "utf8"));
-  if (sbom.spdxVersion !== "SPDX-2.3" || sbom.packages.length !== manifest.packageCount) {
+  const expectedNamespace = `https://deepseek-desktop.local/${lock.desktopVersion}/sbom/${requested}/${lock.harness.commit}`;
+  const sbomInventory = sbom.packages?.map(item => ({
+    name: item.name,
+    version: item.versionInfo,
+    license: item.licenseDeclared
+  }));
+  if (sbom.spdxVersion !== "SPDX-2.3"
+    || sbom.documentNamespace !== expectedNamespace
+    || manifest.packageCount !== expectedInventory.length
+    || JSON.stringify(sbomInventory) !== JSON.stringify(expectedInventory)
+    || sbom.packages.some(item => item.licenseConcluded !== item.licenseDeclared)) {
     throw new Error("harness SPDX inventory does not match the manifest");
   }
   const suffix = requested === "x86_64-pc-windows-msvc" ? ".exe" : "";
@@ -412,6 +523,47 @@ if (requested) {
   const actualNode = JSON.parse(sidecarIdentity.stdout.trim());
   if (actualNode.version !== toolchain.node.version || actualNode.moduleAbi !== toolchain.node.moduleAbi) {
     throw new Error(`Node sidecar is ${actualNode.version} ABI ${actualNode.moduleAbi}, expected ${toolchain.node.version} ABI ${toolchain.node.moduleAbi}`);
+  }
+  const buildToolchain = join(root, "toolchain", "node");
+  const npmCli = join(buildToolchain, "npm", "bin", "npm-cli.js");
+  const npmManifest = JSON.parse(await readFile(join(buildToolchain, "npm", "package.json"), "utf8"));
+  const nodeApiHeaders = requested === "x86_64-pc-windows-msvc" ? [] : [
+    "js_native_api.h",
+    "js_native_api_types.h",
+    "node_api.h",
+    "node_api_types.h"
+  ];
+  await Promise.all([
+    ...nodeApiHeaders.map(header => stat(join(buildToolchain, "include", "node", header))),
+    stat(npmCli),
+    stat(join(root, "licenses", "npm-LICENSE.txt"))
+  ]);
+  if (nodeApiHeaders.length > 0) {
+    const stagedHeaders = (await readdir(join(buildToolchain, "include", "node"))).sort();
+    if (JSON.stringify(stagedHeaders) !== JSON.stringify(nodeApiHeaders)) {
+      throw new Error(`bundled Node-API headers are not minimal: ${stagedHeaders.join(", ")}`);
+    }
+  } else if (manifest.files.some(file => file.path.startsWith("toolchain/node/include/"))) {
+    throw new Error("Windows Harness carries unused Node-API headers");
+  }
+  for (const header of nodeApiHeaders) {
+    if (!manifest.files.some(file => file.path === `toolchain/node/include/node/${header}`)) {
+      throw new Error(`Harness manifest omits bundled Node-API header: ${header}`);
+    }
+  }
+  const npmIdentity = spawnSync(sidecar, [npmCli, "--version"], {
+    encoding: "utf8",
+    windowsHide: true
+  });
+  if (npmIdentity.error) throw npmIdentity.error;
+  if (npmIdentity.status !== 0) {
+    throw new Error(`bundled npm identity check failed: ${(npmIdentity.stderr || npmIdentity.stdout).trim()}`);
+  }
+  if (npmManifest.name !== "npm"
+    || npmIdentity.stdout.trim() !== npmManifest.version
+    || manifest.node.npmVersion !== npmManifest.version
+    || npmManifest.version !== toolchain.toolchain?.npm) {
+    throw new Error("bundled npm does not match the verified Node distribution metadata");
   }
   await verifyPatches(join(root, "node_modules"));
   console.log(`harness manifest verified: ${requested}, ${manifest.files.length} files`);

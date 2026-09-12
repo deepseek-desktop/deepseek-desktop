@@ -3,19 +3,28 @@ import { join } from "node:path";
 
 export async function listInstalledPackages(moduleRoots) {
   const found = new Map();
+  const inspectedPackages = new Set();
+  const inspectedModuleRoots = new Set();
 
   async function inspectPackage(directory) {
     try {
       const resolved = await realpath(directory);
+      if (inspectedPackages.has(resolved)) return;
+      inspectedPackages.add(resolved);
       const manifest = JSON.parse(await readFile(join(resolved, "package.json"), "utf8"));
       if (manifest.name) found.set(resolved, { directory: resolved, manifest });
+      await inspectModules(join(resolved, "node_modules"));
     } catch {}
   }
 
   async function inspectModules(directory) {
     let entries;
     try {
-      entries = await readdir(directory, { withFileTypes: true });
+      const resolved = await realpath(directory);
+      if (inspectedModuleRoots.has(resolved)) return;
+      inspectedModuleRoots.add(resolved);
+      entries = await readdir(resolved, { withFileTypes: true });
+      directory = resolved;
     } catch {
       return;
     }
@@ -41,6 +50,21 @@ export async function listInstalledPackages(moduleRoots) {
     await inspectModules(root);
   }
   return [...found.values()].sort((left, right) => left.directory.localeCompare(right.directory));
+}
+
+export async function packageInventory(moduleRoots) {
+  const inventory = new Map();
+  for (const item of await listInstalledPackages(moduleRoots)) {
+    const { name, version, license } = item.manifest;
+    if (!name || !version) continue;
+    inventory.set(`${name}@${version}`, {
+      name,
+      version,
+      license: typeof license === "string" ? license : "NOASSERTION"
+    });
+  }
+  return [...inventory.values()]
+    .sort((left, right) => left.name.localeCompare(right.name) || left.version.localeCompare(right.version));
 }
 
 export async function findInstalledPackages(moduleRoots, packageName) {

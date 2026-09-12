@@ -16,7 +16,7 @@ import {
 } from "./common.mjs";
 import { resolveRemoteTag } from "./git-source.mjs";
 import { publishWithProvider } from "./providers/index.mjs";
-import { scanArtifactPaths } from "../lib/artifact-scan.mjs";
+import { ARTIFACT_SCANNER_VERSION, scanArtifactPaths } from "../lib/artifact-scan.mjs";
 import { assertPreparedDescriptor } from "./prepared-release.mjs";
 
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
@@ -55,12 +55,13 @@ function assertToolchain(toolchain) {
     nodeModuleAbi: toolchain?.nodeModuleAbi?.trim(),
     rustVersion: toolchain?.rustVersion?.trim(),
     pnpmVersion: toolchain?.pnpmVersion?.trim(),
+    npmVersion: toolchain?.npmVersion?.trim(),
     tauriCliVersion: toolchain?.tauriCliVersion?.trim()
   };
   if (!/^\d+\.\d+\.\d+$/u.test(values.nodeVersion || "") || !/^\d+$/u.test(values.nodeModuleAbi || "")) {
     throw new Error("release toolchain requires an exact Node version and module ABI");
   }
-  for (const key of ["rustVersion", "pnpmVersion", "tauriCliVersion"]) {
+  for (const key of ["rustVersion", "pnpmVersion", "npmVersion", "tauriCliVersion"]) {
     if (!values[key]) throw new Error(`release toolchain is missing ${key}`);
   }
   return values;
@@ -324,6 +325,7 @@ export class ReleaseControllerService {
         || buildInfo.toolchain?.nodeModuleAbi !== release.toolchain.nodeModuleAbi
         || buildInfo.toolchain?.rustVersion !== release.toolchain.rustVersion
         || buildInfo.toolchain?.pnpmVersion !== release.toolchain.pnpmVersion
+        || buildInfo.toolchain?.npmVersion !== release.toolchain.npmVersion
         || buildInfo.toolchain?.tauriCliVersion !== release.toolchain.tauriCliVersion) {
         throw new Error("BUILD-INFO toolchain does not match release plan");
       }
@@ -337,7 +339,7 @@ export class ReleaseControllerService {
         throw new Error("BUILD-INFO prepared receipt does not match release plan");
       }
       if (buildInfo.artifactAudit?.schemaVersion !== 1
-        || buildInfo.artifactAudit?.scannerVersion !== 2
+        || buildInfo.artifactAudit?.scannerVersion !== ARTIFACT_SCANNER_VERSION
         || !Number.isSafeInteger(buildInfo.artifactAudit?.fileCount)
         || buildInfo.artifactAudit.fileCount <= 0
         || !Number.isSafeInteger(buildInfo.artifactAudit?.byteCount)
