@@ -1,6 +1,6 @@
 # 当前交付摘要
 
-- 当前已成功交付的版本仍为 `v1.1.13` 社区预发布，commit `c23a2304`；Run `34316055136` 的质量门禁、四平台原生构建和发布全部成功，六个公开资产齐全。`v1.1.14` 至 `v1.1.17` 均为不可变失败 Tag 且未创建 Release。`v1.1.17` Run `34710690243` 的 Linux x64 在仍有 78.28 GiB 可用空间时失败，verbose 日志把首错定位到旧 `ldd` wrapper 返回 125，否定了磁盘根因。下一候选 `v1.1.18` 已移除相应清理代码，并以同一 `patchelf` 预计算的修改前后精确 SHA-256、`readelf` 结构校验和单调阶段约束替代宿主 `ldd` 文本探测；Ubuntu 22.04 GTK 预演、Ubuntu 24.04 全量 AppImage/DEB 打包和最终主机发行门禁均已通过，仍需完成干净提交本机安装包、新 Tag 原生矩阵和六项公开资产下载验收。最新证据与未验证边界见 [当前发布验收](memory/verification.md#当前发布验收)，后续必须重读远端，不将该版本硬编码为下一次发行基线。
+- 当前已成功交付的版本为 [`v1.1.18`](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.18) 社区预发布，annotated Tag 对象 `9435257a8f2df79b08c04fb9b66e790911c9047f` 指向 commit `2fcee8c1a53f8dfdd5de613c998ba3dcd5147cbd`。Run `34716431077` 的质量门禁、macOS ARM64/x64、Windows x64、Linux x64 和汇总发布六个 Job 全部成功；五个安装包与 `SHA256SUMS` 已全部下载，实算 SHA-256 同时匹配清单和 GitHub digest，Release 正文六条直达链接与公开资产一致。内置 Harness 来自官方 `https://github.com/deepseek-ai/deepseek-harness.git` 的 `c291e7961a515f6d7af9304e7fd1d257929aef26`（`0.1.5-rc.2`）；官方 HEAD 在 Tag 前及发布完成后均保持该 commit。`v1.1.14` 至 `v1.1.17` 仍为不可变失败 Tag 且未创建 Release。最新证据与未验证边界见 [当前发布验收](memory/verification.md#当前发布验收)，后续必须重读远端，不将该版本硬编码为下一次发行基线。
 
 - 发布复盘已固化到 [唯一发布手册](skills/release-workflow.md#最短反馈路径)：完整 CI 输入契约、跨平台测试夹具、全新 profile 引导与 UIA 诊断、最短失败反馈、不可变 Tag 和下载包证据分层。容器 Git 信任、发布变量白名单、CRLF、双弹窗及瞬时就绪问题已有对应修复与成功原生矩阵；不把测试数量当作发行闭环。
 

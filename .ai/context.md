@@ -8,7 +8,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
-- 发布前最近一次成功发行是 `v1.1.13`，commit `c23a2304f09e57520162796219d8d9f5a671f32e`；Run `34316055136` 的质量门禁、四平台原生构建、Windows x64 安装交互及汇总发布全部成功。六个公开资产齐全，保持未签名社区预发布、非 Latest。`v1.1.14` 至 `v1.1.17` 均为未发布的不可变失败 Tag；`v1.1.17` Run `34710690243` 的 Linux x64 在 AppImage linuxdeploy 阶段失败。verbose 日志确认失败时仍有 78.28 GiB 可用空间，实际首错是旧 `ldd` wrapper 对官方 musl `system.node` 返回 125，磁盘归因已被否定。下一候选 `v1.1.18` 删除相应清理代码，以同一绝对 `patchelf` 预计算唯一 `$ORIGIN` RUNPATH 产物，并只允许 AppDir 模块从官方源 SHA-256 单调转换到该精确 SHA-256；Ubuntu 22.04 GTK 预演与 Ubuntu 24.04 全量 AppImage/DEB 打包均已通过。证据范围见 [当前发布验收](memory/verification.md#当前发布验收)，防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
+- 当前成功发行是 `v1.1.18` 社区预发布，annotated Tag 对象 `9435257a8f2df79b08c04fb9b66e790911c9047f` 指向 commit `2fcee8c1a53f8dfdd5de613c998ba3dcd5147cbd`；Run `34716431077` 的质量门禁、四平台原生构建、Windows x64 安装交互及汇总发布全部成功。内置 Harness 来自官方 `https://github.com/deepseek-ai/deepseek-harness.git` 的 `c291e7961a515f6d7af9304e7fd1d257929aef26`（`0.1.5-rc.2`）；Linux x64 原生 Job 已通过新的精确 SHA-256、`patchelf` / `readelf` 结构与单调阶段门禁。五个安装包和 `SHA256SUMS` 已全部下载并同时匹配清单、GitHub digest 与正文直达链接；公开包仍未使用可信发行签名，保持 prerelease 且不占据 Latest。`v1.1.14` 至 `v1.1.17` 仍为未发布的不可变失败 Tag。证据范围见 [当前发布验收](memory/verification.md#当前发布验收)，防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
 
 - macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地 DMG 已验证 WebKit 历史、同源链接、剪贴板、混合窗口操作、候选激活/拒绝/恢复和独立搜索设置；Alibaba MaaS Max / Flash GUI 并发各有 8 条来源，实际重叠 8067 毫秒。该实测为同端点同凭据，不扩大为所有 Provider 隔离或每个后续发行包均重测；逐缺陷范围见 [审计修复验收](memory/audit-remediation.md)。
 
