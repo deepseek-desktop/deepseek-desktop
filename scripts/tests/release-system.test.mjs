@@ -299,10 +299,7 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   for (const [, name, revision] of actions) {
     assert.match(revision, /^[a-f0-9]{40}$/u, `${name} must use a full commit SHA`);
   }
-  const noStripAssignments = [...workflow.matchAll(/NO_STRIP:\s+"1"/gu)];
-  const linuxPackageSteps = [...workflow.matchAll(/if: runner\.os == 'Linux'[^\n]*\n\s+run:[^\n]*\n\s+env:\n\s+NO_STRIP:\s+"1"/gu)];
-  assert.equal(noStripAssignments.length, 1, "NO_STRIP must only be assigned by the Linux tag build");
-  assert.equal(linuxPackageSteps.length, 1, "the Linux tag build must disable stripping");
+  assert.doesNotMatch(workflow, /NO_STRIP/u, "the workflow must leave Linux-only Tauri flags to the packaging boundary");
   assert.match(
     workflow,
     /^on:\n  push:\n    tags:\n      - "\*\.\*\.\*"\n      - "v\*\.\*\.\*"\n\npermissions:/mu,

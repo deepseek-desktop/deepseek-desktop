@@ -11,9 +11,9 @@
 - Desktop 独立搜索设置改用官方 Fetch API、模型目录和公开 peer 依赖，删除旧 RPC 通道、私有依赖列表和旧版路由兼容字段。
 - 打包与仓库更新统一采用当前官方的本地 npm 包、依赖闭包和隔离安装机制，不再修改 Python SDK 聚合包或补拷旧核心。
 - 原生平台包采用官方完整构建和 npm 打包路径，安装后校验声明载荷与 Linux 启动器执行权限；仓库更新复用内置 npm 与 Node-API 头文件。
-- Linux AppImage 打包会用受限探测核对官方 Harness musl 原生模块的已知 libc 依赖，保留该模块且不把宿主 musl libc 复制进安装包；DEB 和 AppImage 均继续执行完整性检查。
+- Linux AppImage 打包会先用选定的同一 `patchelf` 预计算官方 musl 模块写入唯一 `$ORIGIN` RUNPATH 后的精确 SHA-256，并以 `readelf` 核对修改前后结构；Linux Tauri 子进程禁用 strip，打包时只接受这两个身份的单调转换，完成后再次核验最终身份。
 - Windows 补丁应用隔离了宿主 Git 的自动换行设置，官方包内的兼容修正保持可重现的字节结果。
-- Linux 托管发布在验证后回收不会被 release 构建复用的 Cargo debug 产物与 Harness 同步缓存，为 AppImage 装配保留足够磁盘空间；失败时会保留 linuxdeploy 原始诊断并报告剩余空间。
+- Linux 托管发布保留 Tauri 与 linuxdeploy 的详细日志；`readelf` 或受限 `ldd` 包装器拒绝目标时会同时输出依赖、身份或 RUNPATH 诊断。
 - 模型设置、聊天展示、审批提示和插件分批加载沿用官方行为；保留经验证仍必要的桌面凭据隔离、Cookie 清理和工具调用身份修复。
 
 Node `24.20.0` / pnpm `11.24.0` / npm `11.19.0` 保持锁定。此更新需要新版 Desktop 外壳；Harness 候选通过构建、闭包校验和真实启动检查后才会切换，失败保留当前版本。

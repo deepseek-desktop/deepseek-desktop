@@ -7,11 +7,6 @@ import { createMacDmg } from "./macos-dmg.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
 import { artifactForbiddenRoots, scanArtifactPaths } from "./lib/artifact-scan.mjs";
 import { prepareLinuxAppImageLdd } from "./lib/linux-appimage.mjs";
-import {
-  reclaimHostedLinuxPackagingSpace,
-  reportPackagingStorage,
-  withHostedLinuxTauriDiagnostics
-} from "./lib/package-storage.mjs";
 import { portableRustFlags, RUST_PATH_REMAP_VERSION } from "./lib/rust-flags.mjs";
 import { restorePreparedRelease } from "./release-system/prepared-release.mjs";
 
@@ -125,9 +120,6 @@ if (preparedMode) {
 const config = JSON.parse(await readFile(join(root, "target/generated/app-config.json"), "utf8"));
 const harness = JSON.parse(await readFile(join(root, "target/generated/harness-lock.json"), "utf8"));
 const harnessSource = JSON.parse(await readFile(join(root, "target/generated/harness-source.json"), "utf8"));
-timings.packagingStorageCleanupMs = Date.now();
-await reclaimHostedLinuxPackagingSpace({ projectRoot: root });
-timings.packagingStorageCleanupMs = Date.now() - timings.packagingStorageCleanupMs;
 const cargoCacheRoot = resolve(process.env.DEEPSEEK_DESKTOP_CARGO_CACHE_ROOT?.trim() || join(root, "src-tauri", "target"));
 const cargoCacheKey = createHash("sha256").update(JSON.stringify({
   target: target.triple,
@@ -168,9 +160,21 @@ const appImageLdd = await prepareLinuxAppImageLdd({
     "bin",
     "musl",
     "system.node"
+  ),
+  muslSystemNodeSource: join(
+    root,
+    "harness",
+    "staging",
+    target.triple,
+    "node_modules",
+    "@deepseek-ai",
+    "node-addon-system-linux-x64",
+    "bin",
+    "musl",
+    "system.node"
   )
 });
-const tauriBuildArguments = withHostedLinuxTauriDiagnostics([
+const tauriBuildArguments = [
   "scripts/with-rust.mjs",
   "tauri",
   "build",
@@ -178,16 +182,18 @@ const tauriBuildArguments = withHostedLinuxTauriDiagnostics([
   "target/generated/tauri.conf.json",
   "--bundles",
   target.bundles
-]);
+];
+if (process.platform === "linux" && process.env.GITHUB_ACTIONS === "true") {
+  tauriBuildArguments.push("--verbose");
+}
 try {
-  try {
-    timings.tauriBuildMs = run(process.execPath, tauriBuildArguments, {
-      env: { RUSTFLAGS: rustFlags, ...appImageLdd.environment }
-    });
-  } catch (error) {
-    await reportPackagingStorage({ projectRoot: root, label: "Tauri packaging failed" });
-    throw error;
-  }
+  timings.tauriBuildMs = run(process.execPath, tauriBuildArguments, {
+    env: { RUSTFLAGS: rustFlags, ...appImageLdd.environment }
+  });
+  await appImageLdd.verifyFinal();
+} catch (error) {
+  await appImageLdd.reportFailure();
+  throw error;
 } finally {
   await appImageLdd.cleanup();
 }

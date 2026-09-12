@@ -1,6 +1,6 @@
 # 当前交付摘要
 
-- 当前已成功交付的版本仍为 `v1.1.13` 社区预发布，commit `c23a2304`；Run `34316055136` 的质量门禁、四平台原生构建和发布全部成功，六个公开资产齐全。`v1.1.14`、`v1.1.15` 和 `v1.1.16` 均为不可变失败 Tag且未创建 Release；最新 Run `34706633055` 中 shell-quality、macOS ARM64/x64 与 Windows x64 成功，Linux x64 在 AppImage linuxdeploy 阶段因构建峰值耗尽 Runner 磁盘失败，publish-release 跳过。下一候选 `v1.1.17` 在所有验证结束后精确回收 Cargo debug 与 Harness 同步缓存，完整 Linux 全链实测释放 6.74 GiB 并成功生成、扫描 AppImage + DEB；仍需从干净提交完成本机安装包、新 Tag 原生矩阵和六项公开资产下载验收。最新证据与未验证边界见 [当前发布验收](memory/verification.md#当前发布验收)，后续必须重读远端，不将该版本硬编码为下一次发行基线。
+- 当前已成功交付的版本仍为 `v1.1.13` 社区预发布，commit `c23a2304`；Run `34316055136` 的质量门禁、四平台原生构建和发布全部成功，六个公开资产齐全。`v1.1.14` 至 `v1.1.17` 均为不可变失败 Tag 且未创建 Release。`v1.1.17` Run `34710690243` 的 Linux x64 在仍有 78.28 GiB 可用空间时失败，verbose 日志把首错定位到旧 `ldd` wrapper 返回 125，否定了磁盘根因。下一候选 `v1.1.18` 已移除相应清理代码，并以同一 `patchelf` 预计算的修改前后精确 SHA-256、`readelf` 结构校验和单调阶段约束替代宿主 `ldd` 文本探测；Ubuntu 22.04 GTK 预演、Ubuntu 24.04 全量 AppImage/DEB 打包和最终主机发行门禁均已通过，仍需完成干净提交本机安装包、新 Tag 原生矩阵和六项公开资产下载验收。最新证据与未验证边界见 [当前发布验收](memory/verification.md#当前发布验收)，后续必须重读远端，不将该版本硬编码为下一次发行基线。
 
 - 发布复盘已固化到 [唯一发布手册](skills/release-workflow.md#最短反馈路径)：完整 CI 输入契约、跨平台测试夹具、全新 profile 引导与 UIA 诊断、最短失败反馈、不可变 Tag 和下载包证据分层。容器 Git 信任、发布变量白名单、CRLF、双弹窗及瞬时就绪问题已有对应修复与成功原生矩阵；不把测试数量当作发行闭环。
 
@@ -47,7 +47,7 @@
 - 当前功能簇已在 macOS ARM64 安装版和 Windows 11 ARM64 虚拟机的 x64 应用模拟环境完成真实窗口验收：工作台自动进入、五组窗口菜单可打开且不退出、长设置表单可滚动、关闭确认可取消并可确认清理 Desktop 与 Harness。Windows x64 Rust 测试、Clippy、E2E、Harness smoke 和 release 应用编译通过；NSIS 仅因 ARM64 虚拟机无法启动其 x86 子进程而未在该环境生成安装器，正式 Windows x64 与 Linux x64 安装包仍由 GitHub 官方原生 Runner 验收。
 - 本地打包和 CI 原生矩阵均扫描实际交付闭包，拒绝 `.env`、密钥、本机绝对路径及符号链接泄漏；CI 第三方 Action 使用不可变 commit。
 - Harness staging 在生成 manifest 前移除依赖包中的 `test`、`tests`、`__tests__` 及 `*.spec.*` / `*.test.*` 开发源码，闭包策略进入内容寻址缓存键；校验器会拒绝测试文件回流，避免上游测试凭据样本进入安装包。
-- CI 的 `NO_STRIP` 仅允许出现在 Linux AppImage 打包步骤；macOS 与 Windows 不继承该变量。制品扫描协议 v2 允许 AppImage 根目录内的可移植相对链接，同时拒绝绝对链接、根外逃逸和循环；CI 使用项目工作区与 Runner 临时目录等精确根路径。PEM 私钥检查覆盖 UTF-8/UTF-16 文本，不误判 `libgnutls` 等系统库内置的公开自检向量；二进制仍扫描令牌和本机路径。
+- `NO_STRIP` 由 AppImage 准备边界只注入单次 Linux Tauri 子进程，工作流和本地 worker 均不全局传递，macOS 与 Windows 不会继承。制品扫描协议 v2 允许 AppImage 根目录内的可移植相对链接，同时拒绝绝对链接、根外逃逸和循环；CI 使用项目工作区与 Runner 临时目录等精确根路径。PEM 私钥检查覆盖 UTF-8/UTF-16 文本，不误判 `libgnutls` 等系统库内置的公开自检向量；二进制仍扫描令牌和本机路径。
 - `v1.0.20` 已由 GitHub 官方 Runner 完成 macOS ARM64、macOS x64、Windows x64、Linux x64 原生矩阵并发布，Release 恰好包含五个安装制品和一份 `SHA256SUMS`，五个安装包下载后均通过统一清单校验，六个正文直达链接返回 HTTP 200，tag 指向 `d41fca2`。`v1.0.18` 与 `v1.0.19` 均在发布前门禁安全失败且未产生不完整 Release，恢复时使用新 Tag，没有移动旧 Tag。
 - 汇总门禁的跨平台身份比对排除 `harness.sha256`：Harness 生产闭包内的 native prebuild 由各构建主机编译，四平台必然得到不同摘要；四份实测 BUILD-INFO 确认这是唯一跨平台变化字段，其余字段仍精确比对。
 - 本机 macOS ARM64 验收包已按发布手册四项检查通过：DMG 校验和一致、包内应用启动且窗口标题为真实版本、Harness sidecar 作为应用子进程启动并仅监听 127.0.0.1 随机端口、工作台在同一原生窗口加载、退出后无残留进程与监听。启动令牌在 `desktop.log` 中以 `<redacted>` 记录。

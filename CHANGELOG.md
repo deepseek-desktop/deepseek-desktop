@@ -2,6 +2,11 @@
 
 DeepSeek Desktop 的重要变化记录如下。
 
+## 1.1.18 - 2026-09-13
+
+- Linux AppImage 在调用 `linuxdeploy` 前使用同一绝对 `patchelf` 预计算唯一 `$ORIGIN` RUNPATH 产物，并用 `readelf` 核对修改前后的动态结构；Linux Tauri 子进程禁用 strip，临时包装器只接受精确的“官方源 SHA-256 → 预计算 SHA-256”单调转换，其余文件继续委托系统 `ldd`，打包完成后再次核验最终身份。
+- 移除基于错误磁盘归因加入的托管 Runner 构建树清理；保留 Tauri verbose，并在受限 `ldd` 包装器拒绝目标时输出可定位的校验诊断。
+
 ## 1.1.17 - 2026-09-13
 
 - Linux 托管发布在验证完成后清理不被 release profile 复用的 Cargo debug 产物与已完成使命的 Harness 同步缓存，避免 linuxdeploy 复制 AppDir 时耗尽 Runner 磁盘。

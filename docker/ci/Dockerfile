@@ -8,6 +8,7 @@ LABEL dev.deepseek.desktop.release-image-contract="${BUILD_IMAGE_CONTRACT}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        binutils \
         curl \
         git \
         libappindicator3-dev \
