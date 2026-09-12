@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { createRequire } from "node:module";
 
-const providerUrl = pathToFileURL(resolve(import.meta.dirname, "../packages/credentials-vault/index.js")).href;
+const desktopRoot = resolve(import.meta.dirname, "../..");
+const preparedRoot = resolve(desktopRoot, process.env.DEEPSEEK_DESKTOP_TEST_HARNESS_DIR || "target/generated/harness/prepared");
+const providerUrl = pathToFileURL(resolve(preparedRoot, "node_modules/deepseek-desktop-credentials-vault/index.js")).href;
+const require = createRequire(providerUrl);
+const cordisUrl = pathToFileURL(require.resolve("@deepseek-ai/cordis")).href;
 const script = `
-  import { Context } from "@deepseek-ai/cordis";
+  import { Context } from ${JSON.stringify(cordisUrl)};
   process.env.DEEPSEEK_DESKTOP_HELPER_PATH = ${JSON.stringify(resolve(import.meta.dirname, "missing-vault-helper"))};
   process.env.DEEPSEEK_DESKTOP_HELPER_SCRIPT = ${JSON.stringify(resolve(import.meta.dirname, "missing-vault-helper.mjs"))};
   process.env.DEEPSEEK_DESKTOP_DATA_DIR = ${JSON.stringify(resolve(import.meta.dirname, "test-credential-data"))};

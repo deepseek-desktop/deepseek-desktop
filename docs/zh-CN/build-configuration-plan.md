@@ -37,7 +37,7 @@ DESKTOP_APP_REPOSITORY=
 DESKTOP_APP_ICON=src-tauri/icons/icon.png
 
 # Harness 来源
-HARNESS_REPOSITORY=https://github.com/deepseek-desktop/deepseek-harness.git
+HARNESS_REPOSITORY=https://github.com/deepseek-ai/deepseek-harness.git
 HARNESS_REF=
 
 # 可选预构建签名制品通道；留空时按 Harness 仓库准备源码候选
@@ -120,7 +120,7 @@ corepack pnpm@11.24.0 harness:sync --local /absolute/path/to/deepseek-harness
 
 `harness:sync` 让 `HARNESS_REPOSITORY` 真正决定打包内容，而不只是修改来源说明：
 
-1. 获取 `HARNESS_REPOSITORY` 指定仓库。`HARNESS_REF` 为空时从远程或本地镜像选择最新 SemVer 版本标签；显式填写时使用指定 tag、commit 或开发分支。远端暂时不可用时，只允许使用本地镜像中已经解析出的不可变来源。社区版和正式发布会在解析后校验仓库与 commit 是否匹配 `harness/toolchain-lock.json` 中的固定来源。
+1. 获取 `HARNESS_REPOSITORY` 指定仓库。`HARNESS_REF` 为空时从远程或本地镜像选择最新 SemVer 版本标签；显式填写时使用指定 tag、commit 或开发分支。远端暂时不可用时，只允许使用本地镜像中已经解析出的不可变来源。Tag CI 从 `harness/toolchain-lock.json` 导出固定仓库与 commit；社区版和正式发布会在解析后再次校验来源一致。
 2. 将自动选择或显式指定的 ref 解析为不可变 commit，并同时记录 requested ref 与 resolved ref。
 3. 按 Harness 约定构建桌面生产 Harness 制品。
 4. 校验主包、CLI 入口、Web 工作台和桌面兼容契约。
@@ -213,7 +213,7 @@ corepack pnpm@11.24.0 tauri:build
     "dirty": false
   },
   "harness": {
-    "repository": "https://github.com/deepseek-desktop/deepseek-harness.git",
+    "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
     "requestedRef": null,
     "resolvedRef": "dsh-v0.1.2-alpha.1",
     "commit": "resolved immutable commit",

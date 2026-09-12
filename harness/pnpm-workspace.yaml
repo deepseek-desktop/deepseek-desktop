@@ -4,7 +4,7 @@ packages:
 
 linkWorkspacePackages: true
 nodeLinker: hoisted
-autoInstallPeers: true
+autoInstallPeers: false
 
 supportedArchitectures:
   os:
@@ -22,6 +22,3 @@ allowBuilds:
   node-addon-require-builtin: false
   '@google/genai': false
   protobufjs: false
-
-minimumReleaseAgeExclude:
-  - dshmarket@1.28.1

@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { runInNewContext } from "node:vm";
 
 const desktopRoot = resolve(import.meta.dirname, "..", "..");
 const preparedRoot = resolve(desktopRoot, process.env.DEEPSEEK_DESKTOP_TEST_HARNESS_DIR || "target/generated/harness/prepared");
@@ -16,8 +15,8 @@ const selectionUrl = pathToFileURL(resolve(
   preparedRoot,
   "node_modules/@deepseek-ai/dsh-web-search-follow-model/selection.js"
 )).href;
-const { default: FollowModelWebSearch, FollowModelSearchEngine, declaredSearchRoutes, resolveConfiguredRoutes } = await import(moduleUrl);
-const { default: WebSearchSelection, validateSelection } = await import(selectionUrl);
+const { default: FollowModelWebSearch, FollowModelSearchEngine, configuredSearchRoutes, resolveConfiguredRoutes } = await import(moduleUrl);
+const { default: WebSearchSelection, validateSelection, SETTINGS_API_PATH } = await import(selectionUrl);
 const secretA = "secret-a-for-test";
 const secretB = "secret-b-for-test";
 
@@ -75,6 +74,7 @@ test("public Agent context routes concurrent WebRuntime searches without replaci
     constructor(ctx) { super(ctx, "llm"); }
     listProviders() { return [{ id: "provider-a" }, { id: "provider-b" }]; }
     listConfigurableProviders() { return this.listProviders().map(({ id }) => ({ provider: id, settingsNs: "llm-pi-ai", settingsPath: ["providers", id] })); }
+    async resolveModelInfo(provider, model) { return { provider, id: model, name: model }; }
   }
   class SearchSelection extends Service {
     constructor(ctx) {
@@ -296,7 +296,8 @@ test("native DeepSeek route uses its public connection resolver without borrowin
   const ctx = {
     get(name) { return name === "llm" ? {
       listProviders: () => [{ id: "deepseek-official" }],
-      listConfigurableProviders: () => [{ provider: "deepseek-official", settingsNs: "llm-deepseek", settingsPath: [] }]
+      listConfigurableProviders: () => [{ provider: "deepseek-official", settingsNs: "llm-deepseek", settingsPath: [] }],
+      resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model })
     } : undefined; },
     settings: { describe: () => [{ ns: "llm-deepseek", value }, { ns: "web-search-deepseek", value: { apiKeyEnv: "DO_NOT_USE" } }] }
   };
@@ -307,6 +308,71 @@ test("native DeepSeek route uses its public connection resolver without borrowin
   assert.equal((await resolveConfiguredRoutes(ctx, { provider: "deepseek-official", model: "deepseek-v4-pro" }))[0].webSearch.endpointPath, "/anthropic/v1");
   value = { baseURL: "https://custom.test", apiKeyEnv: "CUSTOM_KEY" };
   assert.deepEqual(await resolveConfiguredRoutes(ctx, { provider: "deepseek-official", model: "custom" }), []);
+});
+
+test("model catalog diagnostics reject only the current invalid model and use the directory settings address", async () => {
+  const good = { baseURL: "https://provider-a.test/v1", apiKeyEnv: "PROVIDER_A_KEY", api: "openai-responses" };
+  const selected = [];
+  const llm = {
+    listProviders: () => [{ id: "provider-a" }],
+    listConfigurableProviders: () => [{ provider: "provider-a", settingsNs: "llm-pi-ai", settingsPath: ["routes", "selected"], error: "another model needs repair" }],
+    async resolveModelInfo(provider, model, signal) {
+      signal?.throwIfAborted();
+      selected.push([provider, model]);
+      if (model === "removed") throw new Error("stored model no longer resolves");
+      return { provider, id: model, name: model };
+    },
+  };
+  const ctx = { get: () => llm, settings: { describe: () => [{ ns: "llm-pi-ai", value: {
+    providers: { "provider-a": { ...good, baseURL: "https://wrong.test", apiKeyEnv: "WRONG_KEY" } },
+    routes: { selected: good },
+  } }] } };
+  const routes = await resolveConfiguredRoutes(ctx, { provider: "provider-a", model: "model-a" });
+  assert.equal(routes[0].endpoint, good.baseURL);
+  assert.equal(routes[0].credentialRef, good.apiKeyEnv);
+  await assert.rejects(resolveConfiguredRoutes(ctx, { provider: "provider-a", model: "removed" }), { code: "WEB_FOLLOW_MODEL_MODEL_UNAVAILABLE" });
+  assert.deepEqual(selected, [["provider-a", "model-a"], ["provider-a", "removed"]]);
+  const canceled = new AbortController();
+  canceled.abort();
+  await assert.rejects(resolveConfiguredRoutes(ctx, { provider: "provider-a", model: "model-a" }, canceled.signal), { code: "WEB_FOLLOW_MODEL_CANCELED" });
+  llm.listConfigurableProviders = () => [{ provider: "provider-a", settingsNs: "llm-pi-ai", settingsPath: ["missing"] }];
+  assert.deepEqual(await resolveConfiguredRoutes(ctx, { provider: "provider-a", model: "model-a" }), []);
+});
+
+test("search settings uses the public shared Fetch route with revision checks and lifecycle cleanup", async () => {
+  const require = createRequire(moduleUrl);
+  const load = name => import(pathToFileURL(require.resolve(name)).href);
+  const { Context } = await load("@deepseek-ai/cordis");
+  const { default: Loader } = await load("@deepseek-ai/cordis-plugin-loader");
+  const { default: SettingsProvider } = await load("@deepseek-ai/dsh-settings");
+  const { HostConnectionService } = await load("@deepseek-ai/dsh-client-connection");
+  class MemorySettings extends SettingsProvider {
+    get writable() { return true; }
+    async load() { return {}; }
+    async persist() {}
+  }
+  const ctx = new Context();
+  try {
+    await ctx.plugin(Loader);
+    await ctx.plugin(MemorySettings);
+    await ctx.plugin(current => { new HostConnectionService(current, [], {}); });
+    const selection = ctx.plugin(WebSearchSelection);
+    await selection;
+    const transport = ctx.connection.createSharedFetchHandler("/api");
+    const url = `http://localhost${SETTINGS_API_PATH}`;
+    const current = await transport.fetch(new Request(url));
+    assert.equal(current.status, 200);
+    assert.equal(current.headers.get("cache-control"), "no-store");
+    const { revision } = await current.json();
+    const post = body => transport.fetch(new Request(url, { method: "POST", headers: { "content-type": "application/json" }, body }));
+    assert.equal((await post("invalid JSON")).status, 400);
+    assert.equal((await post(JSON.stringify({ revision: "0" }))).status, 400);
+    assert.equal((await post(JSON.stringify({ revision: revision + 1 }))).status, 409);
+    assert.equal((await post(JSON.stringify({ revision }))).status, 200);
+    assert.equal((await transport.fetch(new Request("http://localhost/desktop-web-search/status"))).status, 404);
+    await selection.dispose();
+    assert.equal((await transport.fetch(new Request(url))).status, 404);
+  } finally { await ctx.fiber.dispose(); }
 });
 
 test("ignored search requests and server tool errors are not accepted as successful search", async () => {
@@ -349,7 +415,7 @@ test("Harness provider settings own connection metadata; unknown model fields ca
   } } }];
   const observed = [];
   const engine = new FollowModelSearchEngine({
-    resolveDeclaredRoute: selection => declaredSearchRoutes(sections, selection),
+    resolveDeclaredRoute: selection => configuredSearchRoutes(sections[0].value.providers[selection.provider], selection),
     resolveCredential: ref => ({ PROVIDER_A_KEY: secretA, PROVIDER_B_KEY: secretB })[ref],
     fetch: async (url, options) => {
       observed.push([String(url), options.headers.authorization]);
@@ -377,7 +443,7 @@ test("audited endpoints resolve search independently of omitted or chat-only API
       const provider = { baseURL, api, apiKeyEnv: "PROVIDER_A_KEY", models: [{ id: "model-a" }] };
       const sections = [{ value: { providers: { "provider-a": provider } } }];
       const engine = new FollowModelSearchEngine({
-        resolveDeclaredRoute: selection => declaredSearchRoutes(sections, selection),
+        resolveDeclaredRoute: selection => configuredSearchRoutes(sections[0].value.providers[selection.provider], selection),
         resolveCredential: ref => { assert.equal(ref, "PROVIDER_A_KEY"); return secretA; },
         fetch: async (url, options) => {
           observed.push(String(url));
@@ -388,21 +454,23 @@ test("audited endpoints resolve search independently of omitted or chat-only API
       });
       await engine.search(agent(), { query: "search" });
       assert.equal(observed.at(-1), baseURL + "/responses");
+      // Unowned fields cannot override the adapter's public connection contract.
       provider.webSearch = false;
-      await assert.rejects(engine.search(agent(), { query: "disabled" }), { code: "WEB_FOLLOW_MODEL_CAPABILITY_MISSING" });
+      provider.capabilities = { webSearch: { protocol: "untrusted", endpointPath: "/other" } };
+      assert.equal(configuredSearchRoutes(provider, { provider: "provider-a", model: "model-a" })[0].webSearch.protocol, "openai-responses-web-search");
     }
   }
   assert.equal(observed.length, 6);
   for (const baseURL of ["https://api.deepseek.com.evil.test/v1", "https://api.deepseek.com/custom", "https://token-plan.cn-beijing.maas.aliyuncs.com/other"]) {
-    assert.deepEqual(declaredSearchRoutes([{ value: { providers: { deepseek: { baseURL, apiKeyEnv: "PROVIDER_A_KEY" } } } }], { provider: "deepseek", model: "model-a" }), []);
+    assert.deepEqual(configuredSearchRoutes({ baseURL, apiKeyEnv: "PROVIDER_A_KEY" }, { provider: "deepseek", model: "model-a" }), []);
   }
 });
 
 test("declared routes reject ambiguity and incomplete connection metadata", async () => {
   const selection = { provider: "provider-a", model: "model-a" };
-  assert.deepEqual(declaredSearchRoutes([{ value: { providers: { "provider-a": { baseURL: "https://provider-a.test" } } } }], selection), []);
-  const section = { value: { providers: { "provider-a": { baseURL: "https://provider-a.test", apiKeyEnv: "PROVIDER_A_KEY", api: "openai-responses" } } } };
-  const engine = new FollowModelSearchEngine({ resolveDeclaredRoute: route => declaredSearchRoutes([section, section], route) });
+  assert.deepEqual(configuredSearchRoutes({ baseURL: "https://provider-a.test" }, selection), []);
+  const profile = { baseURL: "https://provider-a.test", apiKeyEnv: "PROVIDER_A_KEY", api: "openai-responses" };
+  const engine = new FollowModelSearchEngine({ resolveDeclaredRoute: route => [profile, profile].flatMap(value => configuredSearchRoutes(value, route)) });
   await assert.rejects(engine.resolveRoute(agent()), { code: "WEB_FOLLOW_MODEL_ROUTE_AMBIGUOUS" });
 });
 
@@ -419,10 +487,6 @@ test("prepared Harness carries one public Provider selector without a duplicate 
   assert.match(pluginsSettingsUi, /"follow-model":\s*"跟随当前模型"/u);
   assert.match(pluginsSettingsUi, /"follow-model":\s*"跟隨目前模型"/u);
   assert.doesNotMatch(pluginsSettingsUi, /current model \(default\)|当前模型（默认）|目前模型（預設）/u);
-  assert.match(modelsSettingsUi, /Supports image input/u);
-  assert.match(modelsSettingsUi, /支持图片输入/u);
-  assert.match(modelsSettingsUi, /inputModalities", event\.target\.checked \? \["text", "image"\] : \["text"\]/u);
-  assert.match(modelsSettingsUi, /input: event\.target\.checked \? \["text", "image"\] : \["text"\]/u);
 });
 
 test("unset search capability automatically follows the active model API protocol", async t => {
@@ -769,38 +833,4 @@ test("third-party protocols register without vendor branches", async () => {
   assert.equal(result.content, `model-a:extension:${secretA.length}`);
   dispose();
   await assert.rejects(engine.search(agent(), { query: "extension" }), /protocol that is unavailable/u);
-});
-
-test("custom Provider credential rollback refreshes the form revision for retry", async t => {
-  // Build output, not a repository file, so .gitattributes does not normalize it and
-  // a Windows build can emit CRLF. This is the only assertion here whose pattern spans
-  // line boundaries, which is why it alone failed on the Windows runner.
-  const source = (await readFile(resolve(preparedRoot, "node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js"), "utf8"))
-    .replaceAll("\r\n", "\n");
-  const body = source.match(/const createOnce = async \(\) => \{([\s\S]*?)\n\s*\};\n\s*const create = async/u)?.[1];
-  assert.ok(body, `exercise the assembled Provider form, not a duplicate implementation (${source.length} bytes, createOnce=${source.includes("const createOnce = async")}, create=${source.includes("const create = async")}, crlf=${source.includes("\r")})`);
-  for (const rollbackConflict of [false, true]) await t.test(rollbackConflict ? "conflicting rollback" : "retry after successful rollback", async () => {
-    let revision = 1;
-    let attempts = 0;
-    const draft = [{ id: "test-model" }];
-    const state = {
-      openedAt: revision, committed: false, route: "test-provider", displayName: "Test", protocol: "openai-completions", baseURL: "https://test.example/v1",
-      models: draft, keyValue: "fixture-key", deriveKeyRef: () => "TEST_KEY", NS$1: "llm-pi-ai", t: key => key,
-      setOpenedAt(value) { state.openedAt = value; }, setCommitted(value) { state.committed = value; },
-      operations: {
-        async writeSettings(_ns, ops, expected) {
-          assert.equal(expected, revision);
-          if (rollbackConflict && ops[0].op === "unset") { revision++; return { kind: "conflict" }; }
-          return { kind: "written", view: { revision: ++revision } };
-        },
-        async storeCredential() { return ++attempts === 1 ? "fixture vault unavailable" : undefined; }
-      }
-    };
-    const create = runInNewContext(`(async () => {${body}\n})`, state);
-    assert.equal(await create(), rollbackConflict ? "conflict" : "fixture vault unavailable");
-    assert.equal(state.models, draft);
-    assert.equal(state.keyValue, "fixture-key");
-    assert.equal(await create(), rollbackConflict ? "conflict" : undefined);
-    assert.equal(attempts, rollbackConflict ? 1 : 2);
-  });
 });

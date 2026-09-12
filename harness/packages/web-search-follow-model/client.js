@@ -206,9 +206,16 @@ window.__ModuleLoader__.load({
         return () => style.remove();
       }, "web-search: settings styles");
       const controller = new SearchSettingsController(ctx.settingsScope.bind({ namespace }), async (apply, revision) => {
-        const result = await ctx.connection.rpc.call("/desktop-web-search", apply ? "apply" : "status", { revision }, AbortSignal.timeout(65_000));
-        if (!result.ok) throw new Error("Search activation could not be confirmed.");
-        return result.value;
+        const response = await fetch("/api/desktop.web-search", {
+          method: apply ? "POST" : "GET",
+          credentials: "same-origin",
+          redirect: "error",
+          cache: "no-store",
+          signal: AbortSignal.timeout(65_000),
+          ...(apply ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ revision }) } : {}),
+        });
+        if (!response.ok) throw new Error("Search activation could not be confirmed.");
+        return response.json();
       });
       ctx.effect(() => controller.dispose, "web-search: settings scope");
       ctx.slots.inject("settings.plugin.item", () => ctx.slots.register({
@@ -217,6 +224,6 @@ window.__ModuleLoader__.load({
       }, SearchSettingsCard));
     }
 
-    return { inject: ["slots", "locale", "settingsScope", "connection"], apply, SearchSettingsController, dictionaries };
+    return { inject: ["slots", "locale", "settingsScope"], apply, SearchSettingsController, dictionaries };
   }
 });

@@ -22,7 +22,8 @@ HARNESS_REPOSITORY / HARNESS_REF
 Harness 仓库地址（默认构建仓库或用户覆盖）
   -> Git 默认分支 HEAD -> 应用数据目录浅克隆
   -> 内置 Node / pnpm 安装锁定依赖并构建
-  -> 共用生产 deploy helper 收集 workspace / peer 依赖
+  -> 共用生产部署 helper 按 CLI / 扩展 peer 选择官方 npm 包
+  -> 本地 tarball + overrides + 隔离冻结安装，验证无核心包回落 registry
   -> 补齐 Desktop 扩展根包的传递依赖与 Node sidecar
   -> CLI / Node ABI / 包版本 / 真实服务 smoke
   -> 原子 current 指针 -> 失败回滚 previous / bundled

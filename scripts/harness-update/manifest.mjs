@@ -77,7 +77,6 @@ for (const descriptor of descriptors) {
     "harnessProtocolVersion",
     "credentialProtocolVersion",
     "credentialProviderVersion",
-    "marketVersion",
     "nodeVersion",
     "nodeModuleAbi"
   ]) {
@@ -141,7 +140,6 @@ const payload = {
   harnessRepository: first.harnessRepository,
   desktopCommit: first.desktopCommit,
   credentialProviderVersion: first.credentialProviderVersion,
-  marketVersion: first.marketVersion,
   nodeVersion: first.nodeVersion,
   nodeModuleAbi: first.nodeModuleAbi,
   allowedOrigins,

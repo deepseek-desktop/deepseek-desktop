@@ -133,8 +133,7 @@ const dsh = join(staging, options.entry ?? lock.harness.entry);
 const parentWatch = join(staging, "node_modules", "deepseek-desktop-bundle", "parent-watch.cjs");
 const localeSync = join(staging, "node_modules", "deepseek-desktop-bundle", "locale-sync.cjs");
 const pnpmCli = join(staging, "node_modules", "pnpm", "bin", "pnpm.cjs");
-const marketPackage = join(staging, "node_modules", "dshmarket", "package.json");
-await Promise.all([stat(node), stat(dsh), stat(parentWatch), stat(localeSync), stat(pnpmCli), stat(marketPackage)]);
+await Promise.all([stat(node), stat(dsh), stat(parentWatch), stat(localeSync), stat(pnpmCli)]);
 
 const smokeRoot = join(desktopRoot, "target", "deepseek-desktop-harness-smoke");
 const dshHome = join(smokeRoot, "home");
@@ -160,8 +159,7 @@ await writeFile(join(profile, "package.json"), `${JSON.stringify({
   dsh: { profile: { bundles: [
     "@deepseek-ai/dsh-base",
     "@deepseek-ai/dsh-web-app",
-    "deepseek-desktop-bundle",
-    "dshmarket"
+    "deepseek-desktop-bundle"
   ] } }
 }, null, 2)}\n`);
 await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
@@ -169,7 +167,6 @@ await writeFile(join(profile, "pnpm-workspace.yaml"), "packages:\n  - .\n\nnodeL
 for (const name of [
   "deepseek-desktop-bundle",
   "deepseek-desktop-credentials-vault",
-  "dshmarket",
   "@deepseek-ai/dsh-web-search-follow-model"
 ]) {
   await mkdir(dirname(join(desktopModules, name)), { recursive: true });
@@ -253,8 +250,9 @@ if (dump.status !== 0) throw new Error(`profile composition failed: ${dump.stder
 if (!dump.stdout.includes("deepseek-desktop-credentials-vault")) {
   throw new Error("desktop encrypted credential provider is absent from the composed profile");
 }
-if (!dump.stdout.includes("dshmarket")) {
-  throw new Error("DSH Market is absent from the composed profile");
+if (!dump.stdout.includes("@deepseek-ai/dsh-host-plugin-inventory")
+  || !dump.stdout.includes("@deepseek-ai/dsh-client-ui-settings-plugin-inventory")) {
+  throw new Error("official plugin inventory is absent from the composed profile");
 }
 if (!dump.stdout.includes("@deepseek-ai/dsh-web-search-follow-model")
   || !dump.stdout.includes("@deepseek-ai/dsh-web-search-follow-model/selection")

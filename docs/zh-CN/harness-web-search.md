@@ -22,7 +22,7 @@ Web 应用的 `tool-web` 由 Agent preset 按会话装配，上游明确不允�
 
 ## 自动匹配与边界
 
-通用模型配置由公开的模型提供方目录定位到 `llm-pi-ai` 设置，读取提供方实际配置的地址、API 协议和凭据引用；模型条目中的未知连接字段不会改变搜索端点。
+通用模型配置由公开模型目录和提供方的 `settingsPath` 精确定位，读取实际配置的地址、API 协议和凭据引用，并校验当前具体模型仍可解析。提供方中其他模型的可修复诊断不会屏蔽当前有效模型；模型条目中的未知连接字段不会改变搜索端点。旧的 `capabilities.webSearch` / Provider `webSearch` 字段不再作为路由来源，高级能力由受信任扩展显式注册。
 
 已验证的 DeepSeek 官方端点（`https://api.deepseek.com`、其 `/v1` 路径）及 Alibaba MaaS Token Plan 端点（`https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`）自动使用 Responses 搜索。即使聊天配置选择 Chat Completions，或内置提供方未填写 API 协议，也无需增加搜索配置。匹配依据是准确的端点，不是可编辑的提供方名称；仍使用当前会话模型及其凭据，成功仍需真实搜索证据。
 

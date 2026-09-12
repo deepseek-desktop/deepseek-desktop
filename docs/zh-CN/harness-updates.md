@@ -4,19 +4,13 @@ DeepSeek Desktop 把稳定桌面外壳与 Harness 分开。用户只需更换一
 
 ## 普通用户
 
-Harness 更新页始终显示当前桌面包的默认仓库。社区版默认使用：
-
-```text
-https://github.com/deepseek-desktop/deepseek-harness.git
-```
-
-用户可以直接替换成官方上游仓库：
+Harness 更新页始终显示当前桌面包的默认仓库。社区版默认使用官方上游仓库：
 
 ```text
 https://github.com/deepseek-ai/deepseek-harness.git
 ```
 
-也可以填写自己维护的兼容 fork。设置中只有一个“Harness 仓库”输入框，不需要另外填写更新清单、发布者或公钥。可用行为包括：
+用户也可以填写自己维护的兼容 fork。设置中只有一个“Harness 仓库”输入框，不需要另外填写更新清单、发布者或公钥。可用行为包括：
 
 - **自动下载，下次启动安装**：后台发现新 commit 后准备并验证，退出应用前不替换正在运行的 Harness。
 - **发现后提醒（默认）**：只提示版本，由用户决定是否下载。
@@ -24,7 +18,7 @@ https://github.com/deepseek-ai/deepseek-harness.git
 - **固定当前 Harness**：停止检查、下载和待安装切换，直到取消固定。
 - **恢复内置 Harness**：停止当前 Harness，并把下次启动恢复到安装包内置版本。
 
-点击“检查 Harness”后，Desktop 用 Git 读取所选仓库默认分支的 `HEAD`。发现 commit 变化后，用户确认准备，Desktop 会在应用数据目录中浅克隆仓库，复用内置的 Node `24.20.0` 和 pnpm 安装锁定依赖，优先执行仓库的 `build:official`，没有该命令时执行 `build`。随后复用桌面打包的生产依赖收集逻辑，补齐桌面凭据代理、搜索插件和市场组件及其依赖，保留新 Harness 自身的核心服务。用户不需要单独安装 Node 或 pnpm，但系统需要能够执行 Git；私有仓库的访问权限由用户自己的 Git 环境负责。
+点击“检查 Harness”后，Desktop 用 Git 读取所选仓库默认分支的 `HEAD`。发现 commit 变化后，用户确认准备，Desktop 会在应用数据目录中浅克隆仓库，复用内置的 Node `24.20.0` 和 pnpm 安装锁定依赖，执行仓库的 `build:official`。随后复用桌面打包的生产依赖收集逻辑，补齐桌面凭据代理、搜索插件及其依赖，保留新 Harness 自身的核心服务。用户不需要单独安装 Node 或 pnpm，但系统需要能够执行 Git；私有仓库的访问权限由用户自己的 Git 环境负责。
 
 填写仓库地址表示信任该仓库中的代码和依赖安装脚本在本机运行。建议只使用自己确认过的仓库，不要使用聊天消息或身份不明页面临时提供的地址。Desktop 不把仓库地址、Git 凭据、模型密钥或构建输出写入诊断包，也不会把一个仓库的凭据转发给另一个仓库。
 
@@ -38,7 +32,7 @@ https://github.com/deepseek-ai/deepseek-harness.git
 
 ### 自定义仓库契约
 
-兼容仓库应保留 Harness workspace 和 Python SDK 的部署聚合包，并且只暴露一个 `bin.dsh` CLI 入口。更新器从该入口读取实际路径和版本，不假定源码目录就是可运行安装目录。候选需要提供桌面扩展声明的核心 peer 服务；缺失服务时停止准备，不从旧内核补入另一份核心。
+兼容仓库应保留当前官方 Harness workspace、包发布契约和 `build:official`，并且只暴露一个 `bin.dsh` CLI 入口。更新器从该入口读取实际路径和版本，不假定源码目录就是可运行安装目录。候选需要提供桌面扩展声明的核心 peer 服务；缺失服务时停止准备，不从旧内核补入另一份核心。
 
 桌面扩展通过公共设置服务和凭据引用对接新 Harness。更新到未经桌面补丁加工的仓库时，功能细节以该仓库实现为准；未知模型协议仍不会盲目探测。关闭设置不会清理页面数据；只有 Harness 重启并重新导航工作台时，外壳才重置其本地会话认证 Cookie，避免多次更新积累请求头而导致插件加载失败。
 
@@ -94,7 +88,7 @@ corepack pnpm@11.24.0 harness:update:manifest -- \
   --base-url https://updates.example.com/harness/stable/
 ```
 
-默认要求四个平台目标齐全、Desktop 与 Harness 源码干净、四个描述的 Desktop commit、Harness commit、仓库、协议、Node ABI、凭据插件和 DSH Market 版本完全一致，并重新读取每个制品核对大小与 SHA-256。需要在单一平台做内部测试时可显式传入 `--targets <target>`；这不应冒充完整公开发布。
+默认要求四个平台目标齐全、Desktop 与 Harness 源码干净、四个描述的 Desktop commit、Harness commit、仓库、协议、Node ABI、凭据插件版本完全一致，并重新读取每个制品核对大小与 SHA-256。需要在单一平台做内部测试时可显式传入 `--targets <target>`；这不应冒充完整公开发布。
 
 清单和制品可以发布到静态文件服务器、filesystem/NAS、GitHub、GitLab、Gitee、Gitea 或自建服务。构建、签名和上传彼此解耦，不使用 GitHub Release API 作为运行前提。外部平台只承载已生成文件，不参与客户端信任判断。
 
@@ -119,7 +113,6 @@ corepack pnpm@11.24.0 harness:update:manifest -- \
   "harnessCommit": "<40 位 commit>",
   "harnessRepository": "https://example.com/harness.git",
   "credentialProviderVersion": "1.0.0",
-  "marketVersion": "1.0.0",
   "nodeVersion": "24.20.0",
   "nodeModuleAbi": "137",
   "allowedOrigins": [],

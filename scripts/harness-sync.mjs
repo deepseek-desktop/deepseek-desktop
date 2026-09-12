@@ -7,9 +7,10 @@ import process from "node:process";
 
 import {
   deployHarnessClosure,
+  DESKTOP_EXTENSION_ROOTS,
   findCliPackage,
   findWorkspacePackages,
-  mergeDesktopPackages,
+  mergeDesktopClosure,
   pruneNativeBuildIntermediates,
   sanitizeBuildPaths
 } from "./lib/harness-deployment.mjs";
@@ -18,7 +19,6 @@ import { artifactForbiddenRoots } from "./lib/artifact-scan.mjs";
 import { selectLatestHarnessTag } from "./lib/harness-ref.mjs";
 import { findInstalledPackages } from "./lib/installed-packages.mjs";
 import { applyPackagePatch } from "./lib/package-patch.mjs";
-import { applyPackageTextReplacements } from "./lib/package-text-replacement.mjs";
 import { assertPinnedHarnessSource } from "./lib/harness-source-pin.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -244,17 +244,6 @@ async function applyDesktopPatches(moduleRoots) {
     const directories = await findInstalledPackages(moduleRoots, patch.packageName);
     if (directories.length === 0) throw new Error(`Desktop patch target is missing: ${patch.packageName}`);
     for (const directory of directories) {
-      if (patch.operation === "add-dependency") {
-        const manifestPath = join(directory, "package.json");
-        const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-        manifest.dependencies = { ...manifest.dependencies, [patch.dependency]: patch.version };
-        await writeJson(manifestPath, manifest);
-        continue;
-      }
-      if (patch.operation === "replace-text") {
-        applyPackageTextReplacements(directory, patch.moduleFile, patch.replacements);
-        continue;
-      }
       if (!patch.file) throw new Error(`Desktop patch file is missing for ${patch.packageName}:${patch.id}`);
       const patchFile = join(harnessRoot, "patches", patch.file);
       applyPackagePatch(directory, patchFile);
@@ -302,14 +291,15 @@ try {
     "--filter", "deepseek-desktop-harness", "deploy", "--prod", "--legacy",
     "--config.node-linker=hoisted", desktopDeployment
   ], harnessRoot);
-  const restoredHarnessPackages = await deployHarnessClosure(
+  const harnessPackageSet = await deployHarnessClosure(
     source.sourceRoot,
     workspacePackages,
     cli,
     harnessDeployment,
-    runHarnessPnpm
+    runHarnessPnpm,
+    { desktopDeployment, desktopRoots: DESKTOP_EXTENSION_ROOTS }
   );
-  const mergedDesktopPackages = await mergeDesktopPackages(desktopDeployment, harnessDeployment);
+  const mergedDesktopPackages = await mergeDesktopClosure(desktopDeployment, harnessDeployment, DESKTOP_EXTENSION_ROOTS);
   await rm(desktopDeployment, { recursive: true, force: true });
   await rename(harnessDeployment, prepared);
 
@@ -341,7 +331,7 @@ try {
       sourceDirty: source.dirty,
       sanitizedPaths,
       prunedBuildIntermediates,
-      restoredWorkspacePackages: restoredHarnessPackages,
+      packageSet: harnessPackageSet,
       mergedDesktopPackages,
       packageName: cli.manifest.name,
       entry,

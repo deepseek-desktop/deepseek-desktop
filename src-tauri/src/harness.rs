@@ -31,7 +31,7 @@ const HARNESS_WORK_DIR_NAME: &str = concat!("harness", "-workdir");
 /// ESM cascaded loader through `internal/modules/esm/loader` and gates that on
 /// `process.execArgv.includes("--expose-internals")`, so dropping the flag breaks
 /// plugin loading and HMR outright. It widens Node's internal surface for
-/// everything the Harness loads, third-party market plugins included.
+/// everything the Harness loads, external plugins included.
 const NODE_EXPOSE_INTERNALS_ARGUMENT: &str = "--expose-internals";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
@@ -1294,7 +1294,7 @@ fn prepare_harness_profile(paths: &AppPaths, harness_dir: &Path, node: &Path) ->
     let modules = profile.join("node_modules");
     fs::create_dir_all(&modules)?;
     let manifest_path = profile.join("package.json");
-    prepare_profile_manifest(&manifest_path)?;
+    prepare_profile_manifest(&manifest_path, &harness_dir.join("node_modules"))?;
     if !profile.join("cordis.patch.yml").exists() {
         fs::write(profile.join("cordis.patch.yml"), "[]\n")?;
     }
@@ -1307,7 +1307,6 @@ fn prepare_harness_profile(paths: &AppPaths, harness_dir: &Path, node: &Path) ->
     for package in [
         "deepseek-desktop-bundle",
         "deepseek-desktop-credentials-vault",
-        "dshmarket",
     ] {
         sync_profile_package(
             &harness_dir.join("node_modules").join(package),
@@ -1758,7 +1757,7 @@ fn collect_directory_files(
     Ok(())
 }
 
-fn prepare_profile_manifest(path: &Path) -> DesktopResult<()> {
+fn prepare_profile_manifest(path: &Path, bundled_modules: &Path) -> DesktopResult<()> {
     let existing = match fs::read(path) {
         Ok(bytes) => {
             let manifest: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
@@ -1789,15 +1788,119 @@ fn prepare_profile_manifest(path: &Path) -> DesktopResult<()> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(error.into()),
     };
-    write_json_atomic(path, &merge_profile_manifest(existing))
+    let mut manifest = merge_profile_manifest(existing);
+    if let Some(profile) = path.parent() {
+        retire_managed_profile_bundles(
+            &mut manifest,
+            &profile.join("node_modules"),
+            bundled_modules,
+        );
+    }
+    write_json_atomic(path, &manifest)
+}
+
+fn ordinary_package_name(name: &str) -> bool {
+    fn part(value: &str) -> bool {
+        value
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+            && value.bytes().all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'-' | b'_' | b'.')
+            })
+    }
+    if name.len() > 214 {
+        return false;
+    }
+    if let Some(scoped) = name.strip_prefix('@') {
+        scoped
+            .split_once('/')
+            .is_some_and(|(scope, name)| part(scope) && part(name))
+    } else {
+        part(name)
+    }
+}
+
+fn regular_package_tree(path: &Path) -> bool {
+    let Ok(mut entries) = fs::read_dir(path) else {
+        return false;
+    };
+    entries.all(|entry| {
+        let Ok(entry) = entry else { return false };
+        let Ok(kind) = entry.file_type() else {
+            return false;
+        };
+        kind.is_file() || (kind.is_dir() && regular_package_tree(&entry.path()))
+    })
+}
+
+fn retired_managed_bundle(name: &str, profile_modules: &Path, bundled_modules: &Path) -> bool {
+    if !ordinary_package_name(name) || !bundled_modules.is_dir() {
+        return false;
+    }
+    // An inaccessible or still-present current package is not proof of retirement.
+    if !matches!(fs::symlink_metadata(bundled_modules.join(name)), Err(error)
+        if error.kind() == std::io::ErrorKind::NotFound)
+    {
+        return false;
+    }
+    let mut package = profile_modules.to_path_buf();
+    if !fs::symlink_metadata(&package).is_ok_and(|metadata| metadata.file_type().is_dir()) {
+        return false;
+    }
+    for part in name.split('/') {
+        package.push(part);
+        if !fs::symlink_metadata(&package).is_ok_and(|metadata| metadata.file_type().is_dir()) {
+            return false;
+        }
+    }
+    // Do not follow user-created links while checking ownership, including the marker.
+    let marker = package.join(PROFILE_PACKAGE_DIGEST_FILE);
+    if !fs::symlink_metadata(&marker).is_ok_and(|metadata| metadata.file_type().is_file()) {
+        return false;
+    }
+    let Ok(expected) = fs::read_to_string(marker) else {
+        return false;
+    };
+    let expected = expected.trim();
+    if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return false;
+    }
+    regular_package_tree(&package)
+        && directory_digest(&package).is_ok_and(|actual| actual == expected)
+}
+
+fn retire_managed_profile_bundles(
+    manifest: &mut serde_json::Value,
+    profile_modules: &Path,
+    bundled_modules: &Path,
+) {
+    let retired: HashSet<String> = manifest
+        .pointer("/dsh/profile/bundles")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|name| manifest["dependencies"].get(*name).is_none())
+        .filter(|name| retired_managed_bundle(name, profile_modules, bundled_modules))
+        .map(str::to_owned)
+        .collect();
+    if let Some(bundles) = manifest
+        .pointer_mut("/dsh/profile/bundles")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        // Retire only the enabled declaration; package files and user configuration stay intact.
+        bundles.retain(|bundle| bundle.as_str().is_none_or(|name| !retired.contains(name)));
+    }
 }
 
 fn merge_profile_manifest(existing: Option<serde_json::Value>) -> serde_json::Value {
-    const BUILT_IN_BUNDLES: [&str; 4] = [
+    const BUILT_IN_BUNDLES: [&str; 3] = [
         "@deepseek-ai/dsh-base",
         "@deepseek-ai/dsh-web-app",
         "deepseek-desktop-bundle",
-        "dshmarket",
     ];
 
     let mut manifest = existing
@@ -1944,13 +2047,15 @@ mod tests {
             r#"{"dsh":{"profile":{"bundles":[42]}}}"#,
         ] {
             std::fs::write(&path, original).unwrap();
-            assert!(super::prepare_profile_manifest(&path).is_err());
+            assert!(
+                super::prepare_profile_manifest(&path, &directory.path().join("bundled")).is_err()
+            );
             assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
         }
         std::fs::remove_file(&path).unwrap();
-        super::prepare_profile_manifest(&path).unwrap();
+        super::prepare_profile_manifest(&path, &directory.path().join("bundled")).unwrap();
         std::fs::write(&path, r#"{"custom":"preserved","dependencies":{"my-plugin":"1.0.0"},"dsh":{"profile":{"bundles":["my-bundle"]}}}"#).unwrap();
-        super::prepare_profile_manifest(&path).unwrap();
+        super::prepare_profile_manifest(&path, &directory.path().join("bundled")).unwrap();
         let value: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(value["custom"], "preserved");
@@ -1962,7 +2067,7 @@ mod tests {
                 .contains(&serde_json::json!("my-bundle"))
         );
         let once = std::fs::read(&path).unwrap();
-        super::prepare_profile_manifest(&path).unwrap();
+        super::prepare_profile_manifest(&path, &directory.path().join("bundled")).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), once);
     }
 
@@ -2137,10 +2242,146 @@ mod tests {
                 "@deepseek-ai/dsh-base",
                 "@deepseek-ai/dsh-web-app",
                 "deepseek-desktop-bundle",
-                "dshmarket",
                 "custom-plugin"
             ])
         );
+    }
+
+    fn managed_bundle_fixture(name: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+        let directory = tempfile::TempDir::new().unwrap();
+        let profile = directory.path().join("profile");
+        let source = directory.path().join("previous-package");
+        let bundled_modules = directory.path().join("current/node_modules");
+        let package = profile.join("node_modules").join(name);
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir_all(&bundled_modules).unwrap();
+        fs::write(source.join("index.js"), "export default {};").unwrap();
+        sync_profile_package(&source, &package).unwrap();
+        let path = profile.join("package.json");
+        write_json_atomic(
+            &path,
+            &serde_json::json!({
+                "dependencies": {}, "custom": { "keep": true },
+                "dsh": { "profile": { "bundles": [name, "user-bundle"], "custom": "keep" } }
+            }),
+        )
+        .unwrap();
+        (directory, path, package, bundled_modules)
+    }
+
+    fn profile_has_bundle(path: &Path, name: &str) -> bool {
+        let manifest: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        manifest["dsh"]["profile"]["bundles"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(name))
+    }
+
+    #[test]
+    fn profile_retires_unmodified_removed_managed_bundle_without_deleting_files() {
+        let (_directory, path, package, bundled) = managed_bundle_fixture("@desktop/retired");
+        let original_digest = directory_digest(&package).unwrap();
+        let original_marker = fs::read(package.join(PROFILE_PACKAGE_DIGEST_FILE)).unwrap();
+        prepare_profile_manifest(&path, &bundled).unwrap();
+        assert!(!profile_has_bundle(&path, "@desktop/retired"));
+        assert!(profile_has_bundle(&path, "user-bundle"));
+        assert!(profile_has_bundle(&path, "deepseek-desktop-bundle"));
+        assert_eq!(directory_digest(&package).unwrap(), original_digest);
+        assert_eq!(
+            fs::read(package.join(PROFILE_PACKAGE_DIGEST_FILE)).unwrap(),
+            original_marker
+        );
+        let manifest: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(manifest["custom"]["keep"], true);
+        assert_eq!(manifest["dsh"]["profile"]["custom"], "keep");
+    }
+
+    #[test]
+    fn profile_preserves_user_modified_or_installed_managed_bundle() {
+        for modification in ["content", "dependency"] {
+            let (_directory, path, package, bundled) = managed_bundle_fixture("retired-plugin");
+            if modification == "content" {
+                fs::write(package.join("index.js"), "user changes").unwrap();
+            } else {
+                let mut manifest: serde_json::Value =
+                    serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                manifest["dependencies"]["retired-plugin"] = serde_json::json!("2.0.0");
+                write_json_atomic(&path, &manifest).unwrap();
+            }
+            prepare_profile_manifest(&path, &bundled).unwrap();
+            assert!(
+                profile_has_bundle(&path, "retired-plugin"),
+                "{modification}"
+            );
+            if modification == "dependency" {
+                let manifest: serde_json::Value =
+                    serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+                assert_eq!(manifest["dependencies"]["retired-plugin"], "2.0.0");
+            }
+        }
+    }
+
+    #[test]
+    fn profile_preserves_bundle_without_valid_marker_or_with_current_package() {
+        for condition in ["no-marker", "invalid-marker", "current-package"] {
+            let (_directory, path, package, bundled) = managed_bundle_fixture("retired-plugin");
+            match condition {
+                "no-marker" => fs::remove_file(package.join(PROFILE_PACKAGE_DIGEST_FILE)).unwrap(),
+                "invalid-marker" => {
+                    fs::write(package.join(PROFILE_PACKAGE_DIGEST_FILE), "invalid").unwrap()
+                }
+                _ => fs::create_dir_all(bundled.join("retired-plugin")).unwrap(),
+            }
+            prepare_profile_manifest(&path, &bundled).unwrap();
+            assert!(profile_has_bundle(&path, "retired-plugin"), "{condition}");
+        }
+    }
+
+    #[test]
+    fn profile_retirement_accepts_only_ordinary_package_names() {
+        for name in ["retired-plugin", "@desktop/retired-plugin", "plugin.js"] {
+            assert!(ordinary_package_name(name), "{name}");
+        }
+        for name in [
+            "",
+            ".",
+            "..",
+            "../outside",
+            "@scope/../outside",
+            "@scope/..",
+            "@scope/name/child",
+            "/outside",
+            "C:\\outside",
+            "file:plugin",
+            "plugin\\child",
+        ] {
+            assert!(!ordinary_package_name(name), "{name}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn profile_retirement_does_not_follow_package_or_content_links() {
+        use std::os::unix::fs::symlink;
+        for linked in ["package", "content", "marker"] {
+            let (directory, path, package, bundled) = managed_bundle_fixture("retired-plugin");
+            let target = directory.path().join("outside");
+            if linked == "package" {
+                fs::rename(&package, &target).unwrap();
+                symlink(&target, &package).unwrap();
+            } else {
+                let file = package.join(if linked == "content" {
+                    "index.js"
+                } else {
+                    PROFILE_PACKAGE_DIGEST_FILE
+                });
+                fs::rename(&file, &target).unwrap();
+                symlink(&target, file).unwrap();
+            }
+            prepare_profile_manifest(&path, &bundled).unwrap();
+            assert!(profile_has_bundle(&path, "retired-plugin"), "{linked}");
+            assert!(target.exists());
+        }
     }
 
     #[test]

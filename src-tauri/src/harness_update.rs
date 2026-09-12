@@ -73,7 +73,6 @@ struct HarnessPointer {
     harness_protocol_version: u32,
     credential_protocol_version: u32,
     credential_provider_version: String,
-    market_version: String,
     artifact_sha256: String,
 }
 
@@ -103,7 +102,6 @@ struct HarnessReleaseManifest {
     harness_repository: String,
     desktop_commit: String,
     credential_provider_version: String,
-    market_version: String,
     node_version: String,
     node_module_abi: String,
     #[serde(default)]
@@ -143,7 +141,6 @@ struct HarnessPackageMetadata {
     harness_protocol_version: u32,
     credential_protocol_version: u32,
     credential_provider_version: String,
-    market_version: String,
 }
 
 #[derive(Clone, Debug)]
@@ -917,7 +914,6 @@ impl HarnessUpdateManager {
                 harness_protocol_version: metadata.harness_protocol_version,
                 credential_protocol_version: metadata.credential_protocol_version,
                 credential_provider_version: metadata.credential_provider_version,
-                market_version: metadata.market_version,
                 artifact_sha256: release.artifact.sha256.clone(),
             };
             let candidate = HarnessLocation {
@@ -1018,8 +1014,6 @@ impl HarnessUpdateManager {
             let credential_provider_version = read_package_version(
                 &harness_dir.join("node_modules/deepseek-desktop-credentials-vault/package.json"),
             )?;
-            let market_version =
-                read_package_version(&harness_dir.join("node_modules/dshmarket/package.json"))?;
             let directory = version_directory(&harness_version, &release.commit)?;
             let mut identity = Sha256::new();
             identity.update(release.repository.as_bytes());
@@ -1038,7 +1032,6 @@ impl HarnessUpdateManager {
                 harness_protocol_version: self.config.harness_protocol_version,
                 credential_protocol_version: self.config.credential_protocol_version,
                 credential_provider_version,
-                market_version,
                 artifact_sha256: format!("{:x}", identity.finalize()),
             };
             let location = HarnessLocation {
@@ -1406,7 +1399,6 @@ fn validate_manifest_payload_at(
         ));
     }
     if payload.credential_provider_version.trim().is_empty()
-        || payload.market_version.trim().is_empty()
         || payload.node_version.trim().is_empty()
         || payload.node_module_abi.trim().is_empty()
     {
@@ -1430,7 +1422,6 @@ fn validate_package_metadata(
         || metadata.harness_protocol_version != payload.harness_protocol_version
         || metadata.credential_protocol_version != payload.credential_protocol_version
         || metadata.credential_provider_version != payload.credential_provider_version
-        || metadata.market_version != payload.market_version
     {
         return Err(DesktopError::InvalidConfiguration(
             "Harness package metadata does not match its signed manifest".to_owned(),
@@ -1449,10 +1440,7 @@ fn validate_harness_files(
     let credential = location
         .harness_dir
         .join("node_modules/deepseek-desktop-credentials-vault/package.json");
-    let market = location
-        .harness_dir
-        .join("node_modules/dshmarket/package.json");
-    for path in [&entry, &location.node, &credential, &market] {
+    for path in [&entry, &location.node, &credential] {
         if !path.is_file() {
             return Err(DesktopError::HarnessArtifactMissing(
                 path.display().to_string(),
@@ -1460,15 +1448,10 @@ fn validate_harness_files(
         }
     }
     let credential_manifest: serde_json::Value = serde_json::from_slice(&fs::read(credential)?)?;
-    let market_manifest: serde_json::Value = serde_json::from_slice(&fs::read(market)?)?;
     if credential_manifest
         .get("version")
         .and_then(serde_json::Value::as_str)
         != Some(pointer.credential_provider_version.as_str())
-        || market_manifest
-            .get("version")
-            .and_then(serde_json::Value::as_str)
-            != Some(pointer.market_version.as_str())
     {
         return Err(DesktopError::InvalidConfiguration(
             "Harness package versions do not match metadata".to_owned(),
@@ -2204,7 +2187,6 @@ fn validate_pointer(pointer: &HarnessPointer) -> DesktopResult<()> {
         || Version::parse(&pointer.node_version).is_err()
         || pointer.node_module_abi.parse::<u32>().is_err()
         || Version::parse(&pointer.credential_provider_version).is_err()
-        || Version::parse(&pointer.market_version).is_err()
     {
         return Err(DesktopError::InvalidConfiguration(
             "installed Harness pointer is incompatible or inconsistent".to_owned(),
@@ -2591,7 +2573,6 @@ mod tests {
             harness_repository: "https://example.invalid/harness.git".to_owned(),
             desktop_commit: "b".repeat(40),
             credential_provider_version: "1.0.0".to_owned(),
-            market_version: "1.0.0".to_owned(),
             node_version: "24.20.0".to_owned(),
             node_module_abi: "137".to_owned(),
             allowed_origins: Vec::new(),
@@ -2784,7 +2765,6 @@ mod tests {
             harness_protocol_version: 1,
             credential_protocol_version: 1,
             credential_provider_version: "1.0.0".to_owned(),
-            market_version: "1.0.0".to_owned(),
             artifact_sha256: "a".repeat(64),
         };
         assert!(validate_node_identity("v24.20.0\n", "137\n", &pointer).is_ok());
@@ -2852,7 +2832,6 @@ mod tests {
             harness_protocol_version: 1,
             credential_protocol_version: 1,
             credential_provider_version: "1.0.0".to_owned(),
-            market_version: "1.0.0".to_owned(),
             artifact_sha256: "a".repeat(64),
         };
         fs::create_dir_all(store.versions.join(&pointer.directory)).unwrap();
@@ -2926,7 +2905,6 @@ mod tests {
             harness_protocol_version: 1,
             credential_protocol_version: 1,
             credential_provider_version: "1.0.0".to_owned(),
-            market_version: "1.0.0".to_owned(),
             artifact_sha256: "a".repeat(64),
         };
         fs::create_dir_all(store.versions.join(&pointer.directory)).unwrap();

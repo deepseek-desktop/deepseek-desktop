@@ -21,6 +21,7 @@ const DEFAULT_PROTOCOL_BY_MODEL_API = new Map([
 const messages = {
   "en-US": {
     routeMissing: "The current model route is unavailable, so web search cannot follow it.",
+    modelUnavailable: "The current model configuration is unavailable. Repair this model in Models settings before using web search.",
     capabilityMissing: "The current model API protocol does not support automatic web search. Normal chat remains available.",
     protocolUnavailable: "The current model Provider declares a web search protocol that is unavailable in this Harness.",
     credentialMissing: "The current model Provider credential is not configured. Save that Provider's API key in Models settings.",
@@ -33,6 +34,7 @@ const messages = {
   },
   "zh-CN": {
     routeMissing: "当前会话没有可用的模型路由，无法跟随当前模型联网搜索。",
+    modelUnavailable: "当前模型配置不可用，请在模型设置中修复该模型后再使用联网搜索。",
     capabilityMissing: "当前模型的 API 协议暂不支持自动联网搜索，正常对话仍可继续。",
     protocolUnavailable: "当前模型提供方声明的联网搜索协议在此 Harness 中不可用。",
     credentialMissing: "当前模型提供方的凭据尚未配置，请在模型设置中保存该提供方的 API 密钥。",
@@ -45,6 +47,7 @@ const messages = {
   },
   "zh-TW": {
     routeMissing: "目前工作階段沒有可用的模型路由，無法跟隨目前模型進行聯網搜尋。",
+    modelUnavailable: "目前模型設定無法使用，請在模型設定中修復該模型後再使用聯網搜尋。",
     capabilityMissing: "目前模型的 API 協定暫不支援自動聯網搜尋，正常對話仍可繼續。",
     protocolUnavailable: "目前模型提供方宣告的聯網搜尋協定在此 Harness 中無法使用。",
     credentialMissing: "目前模型提供方的憑據尚未設定，請在模型設定中儲存該提供方的 API 金鑰。",
@@ -471,15 +474,15 @@ export class FollowModelSearchEngine {
     return () => this.routeResolvers.delete(resolver);
   }
 
-  async resolveRoute(agent) {
+  async resolveRoute(agent, signal) {
     const selection = activeRoute(agent);
     const matches = [];
     for (const resolver of this.routeResolvers) {
-      const match = await resolver(selection);
+      const match = await resolver(selection, signal);
       if (match !== undefined && match !== null) matches.push(match);
     }
     if (matches.length === 0 && this.resolveDeclaredRoute) {
-      matches.push(...await this.resolveDeclaredRoute(selection));
+      matches.push(...await this.resolveDeclaredRoute(selection, signal));
     }
     if (matches.length === 0) {
       fail(copy("capabilityMissing"), "WEB_FOLLOW_MODEL_CAPABILITY_MISSING");
@@ -510,7 +513,7 @@ export class FollowModelSearchEngine {
   }
 
   async search(agent, request, signal) {
-    const { route, capability } = await this.resolveRoute(agent);
+    const { route, capability } = await this.resolveRoute(agent, signal);
     const adapter = this.protocols.get(capability.protocol);
     if (adapter === undefined) {
       fail(copy("protocolUnavailable"), "WEB_FOLLOW_MODEL_PROTOCOL_UNAVAILABLE");
@@ -544,43 +547,55 @@ function endpointSearchCapability(endpoint) {
   return undefined;
 }
 
-export function declaredSearchRoutes(sections, selection) {
-  return sections.flatMap(section => {
-    const provider = section.value?.providers?.[selection.provider];
-    if (!provider || typeof provider.baseURL !== "string" || typeof provider.apiKeyEnv !== "string") return [];
-    const apiProtocol = provider.api;
-    const webSearch = provider.capabilities?.webSearch ?? provider.webSearch ?? endpointSearchCapability(provider.baseURL);
-    if (typeof apiProtocol !== "string" && webSearch === undefined) return [];
-    return [{
-      ...selection,
-      endpoint: provider.baseURL,
-      credentialRef: provider.apiKeyEnv,
-      apiProtocol,
-      webSearch,
-    }];
-  });
+export function configuredSearchRoutes(profile, selection) {
+  if (!profile || typeof profile.baseURL !== "string" || typeof profile.apiKeyEnv !== "string") return [];
+  const apiProtocol = profile.api;
+  // Only read fields owned by the public PiAiProviderProfile contract.
+  // Trusted extensions declare additional search capabilities through route resolvers.
+  const webSearch = endpointSearchCapability(profile.baseURL);
+  if (typeof apiProtocol !== "string" && webSearch === undefined) return [];
+  return [{ ...selection, endpoint: profile.baseURL, credentialRef: profile.apiKeyEnv, apiProtocol, webSearch }];
 }
 
-export async function resolveConfiguredRoutes(ctx, selection) {
+function profileAt(section, path) {
+  if (!Array.isArray(path)) return undefined;
+  let profile = section.value;
+  for (const key of path) {
+    if (typeof key !== "string" || profile === null || typeof profile !== "object" || !Object.hasOwn(profile, key)) return undefined;
+    profile = profile[key];
+  }
+  return profile;
+}
+
+export async function resolveConfiguredRoutes(ctx, selection, signal) {
   const llm = ctx.get("llm");
   if (!llm.listProviders().some(provider => provider.id === selection.provider)) return [];
   const addresses = llm.listConfigurableProviders().filter(entry => entry.provider === selection.provider);
+  // A directory diagnostic may concern only one model after a catalog upgrade.
+  // Ask the owning adapter about this exact model instead of rejecting the provider.
+  try { await llm.resolveModelInfo(selection.provider, selection.model, signal); }
+  catch (error) {
+    if (signal?.aborted) fail(copy("requestCanceled"), "WEB_FOLLOW_MODEL_CANCELED", error);
+    fail(copy("modelUnavailable"), "WEB_FOLLOW_MODEL_MODEL_UNAVAILABLE", error);
+  }
   const sections = ctx.settings.describe();
   const matches = [];
   for (const address of addresses) {
     const section = sections.find(item => item.ns === address.settingsNs);
     if (!section) continue;
+    const profile = profileAt(section, address.settingsPath);
+    if (!profile) continue;
     if (address.settingsNs === "llm-deepseek" && selection.provider === "deepseek-official") {
       // Resolve the same launch snapshot as the model adapter, never the search plugin's credentials.
       const { resolveAdapterOptions } = await import("@deepseek-ai/dsh-llm-deepseek");
       const { launchEnvironmentOf } = await import("@deepseek-ai/dsh-launch-environment");
-      const connection = resolveAdapterOptions(section.value, launchEnvironmentOf(ctx));
+      const connection = resolveAdapterOptions(profile, launchEnvironmentOf(ctx));
       const endpoint = endpointUrl(connection.baseURL);
       if (endpoint.origin !== "https://api.deepseek.com" || !["", "/v1"].includes(endpoint.pathname.replace(/\/+$/u, ""))) continue;
       matches.push({ ...selection, endpoint: connection.baseURL, credentialRef: connection.apiKeyEnv,
         webSearch: { protocol: "anthropic-messages-web-search", credential: "inherit", endpointPath: "/anthropic/v1" } });
     } else if (address.settingsNs === "llm-pi-ai") {
-      matches.push(...declaredSearchRoutes([section], selection));
+      matches.push(...configuredSearchRoutes(profile, selection));
     }
   }
   return matches;
@@ -591,14 +606,14 @@ export default class FollowModelWebSearch extends Service {
 
   constructor(ctx) {
     super(ctx, "webSearchProtocols");
-    for (const [service, method] of [["agents", "currentInitiator"], ["llm", "listConfigurableProviders"], ["web", "registerSearchProvider"]]) {
+    for (const [service, method] of [["agents", "currentInitiator"], ["llm", "listConfigurableProviders"], ["llm", "resolveModelInfo"], ["web", "registerSearchProvider"]]) {
       if (typeof ctx.get(service)?.[method] !== "function") {
         fail(`Harness extension API is incompatible: ${service}.${method}`, "WEB_FOLLOW_MODEL_HARNESS_INCOMPATIBLE");
       }
     }
     this.engine = new FollowModelSearchEngine({
       resolveCredential: async (ref) => (await ctx.get("credentials")?.resolve(ref))?.value,
-      resolveDeclaredRoute: selection => resolveConfiguredRoutes(ctx, selection),
+      resolveDeclaredRoute: (selection, signal) => resolveConfiguredRoutes(ctx, selection, signal),
     });
     ctx.web.registerSearchProvider({
       id: PROVIDER_ID,

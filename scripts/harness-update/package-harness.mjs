@@ -44,7 +44,6 @@ try {
   if (nodeAbiResult.error) throw nodeAbiResult.error;
   if (nodeAbiResult.status !== 0) throw new Error(`could not inspect Node module ABI: ${nodeAbiResult.stderr}`);
   const credential = JSON.parse(await readFile(join(harness, "node_modules/deepseek-desktop-credentials-vault/package.json"), "utf8"));
-  const market = JSON.parse(await readFile(join(harness, "node_modules/dshmarket/package.json"), "utf8"));
   const metadata = {
     schemaVersion: 1,
     target,
@@ -57,7 +56,6 @@ try {
     harnessProtocolVersion: app.harnessUpdate.harnessProtocolVersion,
     credentialProtocolVersion: app.harnessUpdate.credentialProtocolVersion,
     credentialProviderVersion: credential.version,
-    marketVersion: market.version
   };
   await writeFile(join(archiveRoot, "harness-package.json"), `${JSON.stringify(metadata, null, 2)}\n`);
   const filename = artifactName(lock.harness.version, target);
@@ -81,7 +79,6 @@ try {
     harnessProtocolVersion: metadata.harnessProtocolVersion,
     credentialProtocolVersion: metadata.credentialProtocolVersion,
     credentialProviderVersion: metadata.credentialProviderVersion,
-    marketVersion: metadata.marketVersion,
     nodeVersion: metadata.nodeVersion,
     nodeModuleAbi: metadata.nodeModuleAbi,
     artifact: {

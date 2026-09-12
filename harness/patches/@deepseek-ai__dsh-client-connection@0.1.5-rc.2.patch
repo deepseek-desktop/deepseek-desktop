@@ -46,12 +46,3 @@ diff --git a/lib/index.js b/lib/index.js
  				});
  				res.end();
  				return false;
-@@ -733,7 +751,7 @@
- 	if (maxRequestBodyBytes < requiredImageBodyBytes) throw new Error(`client-connection maxRequestBodyBytes (${String(maxRequestBodyBytes)}) must be at least ${String(requiredImageBodyBytes)} for the configured aggregate image limit`);
- }
- /** Services required before providing Connection. */
--const inject = ["credentials"];
-+const inject = ["credentials", "webServer"];
- const Config = z.object({
- 	recovery: ConnectionRecoveryConfigSchema.default({}),
- 	trustedHosts: z.array(String).default([]),

@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import { deployHarnessClosure, findCliPackage, findWorkspacePackages, mergeDesktopClosure } from "../lib/harness-deployment.mjs";
+import { deployHarnessClosure, DESKTOP_EXTENSION_ROOTS, findCliPackage, findWorkspacePackages, mergeDesktopClosure } from "../lib/harness-deployment.mjs";
 
 const [source, destination, desktop, resultFile] = process.argv.slice(2).map(value => resolve(value));
 if (!source || !destination || !desktop || !resultFile) throw new Error("Repository preparation requires four paths");
@@ -16,15 +16,15 @@ function runPnpm(args, cwd = source) {
 
 runPnpm(["install", "--frozen-lockfile"]);
 const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
-runPnpm(["run", manifest.scripts?.["build:official"] ? "build:official" : "build"]);
+if (!manifest.scripts?.["build:official"]) throw new Error("Harness repository does not provide build:official");
+runPnpm(["run", "build:official"]);
 const workspace = await findWorkspacePackages(source);
 const cli = findCliPackage(workspace);
 await stat(join(cli.directory, cli.entry));
-await deployHarnessClosure(source, workspace, cli, destination, runPnpm);
-await mergeDesktopClosure(desktop, destination, [
-  "deepseek-desktop-bundle", "deepseek-desktop-credentials-vault",
-  "@deepseek-ai/dsh-web-search-follow-model", "dshmarket", "pnpm"
-]);
+await deployHarnessClosure(source, workspace, cli, destination, runPnpm, {
+  desktopDeployment: desktop, desktopRoots: DESKTOP_EXTENSION_ROOTS
+});
+await mergeDesktopClosure(desktop, destination, DESKTOP_EXTENSION_ROOTS);
 const entry = join("node_modules", ...cli.manifest.name.split("/"), cli.entry).split(sep).join("/");
 await stat(join(destination, entry));
 await writeFile(resultFile, `${JSON.stringify({ version: cli.manifest.version, entry })}\n`);

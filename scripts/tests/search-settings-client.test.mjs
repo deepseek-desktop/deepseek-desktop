@@ -7,9 +7,10 @@ import vm from "node:vm";
 const root = resolve(import.meta.dirname, "../..");
 const packageRoot = resolve(root, "harness/packages/web-search-follow-model");
 let client;
+let fetchHandler = async () => Response.json({ phase: "active", selection: { mode: "follow-model", independentProvider: "deepseek-official" } });
 const document = { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } };
 vm.runInNewContext(await readFile(resolve(packageRoot, "client.js"), "utf8"), {
-  document, AbortSignal,
+  document, AbortSignal, fetch: (...args) => fetchHandler(...args),
   window: { __ModuleLoader__: { load: entry => { client = entry.factory(() => ({})); } } }
 });
 
@@ -50,6 +51,9 @@ test("search owns its browser entry and locales without patching the official se
   assert.equal(manifest.exports["./client"], "./client.js");
   assert.ok(manifest.files.includes("client.js"));
   assert.equal(manifest.dsh.client.platform, "web");
+  for (const dependency of [...manifest.dsh.client.inject, ...manifest.dsh.client.external]) {
+    assert.ok(manifest.peerDependencies[dependency], `the runtime must provide shared client dependency ${dependency}`);
+  }
   assert.ok(!toolchain.desktopPatches.some(patch => patch.packageName === "@deepseek-ai/dsh-client-ui-settings-plugins"));
   for (const locale of ["en", "zh", "zh-TW"]) {
     assert.deepEqual(Object.keys(client.dictionaries[locale]).sort(), Object.keys(client.dictionaries.en).sort());
@@ -130,7 +134,6 @@ test("slot registration is owned by follow-model and cleans subscriptions on unl
   const registrations = [];
   const disposers = [];
   const context = {
-    connection: { rpc: { call: async () => ({ ok: true, value: { phase: "active", selection: scope.getSnapshot().value } }) } },
     locale: { register: () => () => {} },
     settingsScope: { bind: ({ namespace }) => { assert.equal(namespace, "web-search-follow-model"); return scope; } },
     effect: callback => { disposers.push(callback()); },
@@ -144,6 +147,53 @@ test("slot registration is owned by follow-model and cleans subscriptions on unl
   assert.equal(listeners.size, 1);
   for (const dispose of disposers.reverse()) dispose?.();
   assert.equal(listeners.size, 0);
+});
+
+test("the browser uses the shared Fetch API and preserves drafts when activation is rejected", async () => {
+  const { scope, controller, state } = setup();
+  controller.dispose();
+  const requests = [];
+  const disposers = [];
+  let mounted;
+  let conflict = false;
+  const originalFetch = fetchHandler;
+  fetchHandler = async (url, options) => {
+    requests.push({ url, options });
+    if (conflict && options.method === "POST") return Response.json({ error: "conflict" }, { status: 409 });
+    return Response.json({ phase: "active", revision: state.revision, selection: state.value });
+  };
+  try {
+    client.apply({
+      locale: { register: () => () => {} },
+      settingsScope: { bind: () => scope },
+      effect: callback => { disposers.push(callback()); },
+      slots: { inject: (_name, callback) => callback(), register: options => { mounted = options.inject().hooks.searchSettings; } },
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests[0].url, "/api/desktop.web-search");
+    assert.equal(requests[0].options.method, "GET");
+    assert.equal(requests[0].options.body, undefined);
+    mounted.edit("mode", "disabled");
+    await mounted.save();
+    const post = requests.find(request => request.options.method === "POST");
+    assert.deepEqual(JSON.parse(post.options.body), { revision: state.revision });
+    assert.equal(mounted.getSnapshot().dirty, false);
+    for (const { options } of requests) {
+      assert.equal(options.credentials, "same-origin");
+      assert.equal(options.redirect, "error");
+      assert.equal(options.cache, "no-store");
+      assert.ok(options.signal instanceof AbortSignal);
+    }
+    conflict = true;
+    mounted.edit("mode", "follow-model");
+    await mounted.save();
+    assert.equal(mounted.getSnapshot().failed, true);
+    assert.equal(mounted.getSnapshot().activationPhase, "failed");
+    assert.equal(mounted.drafts.size, 1);
+  } finally {
+    for (const dispose of disposers.reverse()) dispose?.();
+    fetchHandler = originalFetch;
+  }
 });
 
 test("saved settings are not reported active until the backend confirms activation", async () => {

@@ -125,6 +125,29 @@ async function verifyFinalToolCallIdentity(nodeModules) {
       }
     },
     {
+      type: "response.output_item.added",
+      output_index: 1,
+      item: {
+        type: "custom_tool_call",
+        id: "ctc_stale",
+        call_id: "custom_stale",
+        name: "read",
+        input: "stale input",
+        namespace: "stale"
+      }
+    },
+    {
+      type: "response.output_item.done",
+      output_index: 1,
+      item: {
+        type: "custom_tool_call",
+        id: "ctc_final",
+        call_id: "custom_final",
+        name: "apply_patch",
+        input: "*** Begin Patch\n*** End Patch"
+      }
+    },
+    {
       type: "response.completed",
       response: { id: "resp_final", status: "completed", output: [] }
     }
@@ -162,12 +185,20 @@ async function verifyFinalToolCallIdentity(nodeModules) {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
   };
   await processResponsesStream(streamProviderEvents(), output, { push: event => emitted.push(event) }, model);
-  const completed = emitted.find(event => event.type === "toolcall_end")?.toolCall;
+  const calls = emitted.filter(event => event.type === "toolcall_end").map(event => event.toolCall);
+  const [completed, custom] = calls;
   if (completed?.id !== "call_final|fc_final"
     || completed?.name !== "glob"
     || completed?.arguments?.pattern !== "**/*.yml"
     || "namespace" in completed) {
     throw new Error("pi-ai did not use the authoritative final tool-call identity");
+  }
+  if (calls.length !== 2
+    || custom?.id !== "custom_final|ctc_final"
+    || custom?.name !== "apply_patch"
+    || custom?.arguments?.input !== "*** Begin Patch\n*** End Patch"
+    || "namespace" in custom) {
+    throw new Error("pi-ai did not use the authoritative final custom tool-call identity");
   }
 }
 

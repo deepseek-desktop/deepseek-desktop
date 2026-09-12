@@ -1,7 +1,7 @@
 const expectedParent = Number.parseInt(process.env.DEEPSEEK_DESKTOP_PARENT_PID || "", 10);
 delete process.env.DEEPSEEK_DESKTOP_PARENT_PID;
 
-// DSH Market re-invokes the current CLI with process.execArgv. Desktop-only
+// Harness plugin commands may re-invoke the CLI with process.execArgv. Desktop-only
 // preloads must not cross that process boundary: the child is no longer a
 // direct child of the Tauri process, so parent-watch would reject it before
 // the plugin command can start.

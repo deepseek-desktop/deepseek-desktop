@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { cp, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, sep } from "node:path";
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { createRequire } from "node:module";
 import process from "node:process";
 import { createHash } from "node:crypto";
 
@@ -221,43 +222,6 @@ async function copyPackage(source, destination) {
   });
 }
 
-function harnessDependencies(manifest) {
-  return new Set([
-    ...Object.keys(manifest.dependencies || {}),
-    ...Object.keys(manifest.optionalDependencies || {}),
-    ...Object.keys(manifest.peerDependencies || {})
-  ]);
-}
-
-async function restoreWorkspaceClosure(deploymentRoot, workspacePackages) {
-  const nodeModules = join(deploymentRoot, "node_modules");
-  const restored = [];
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const manifests = [join(deploymentRoot, "package.json")];
-    for (const item of await packageDirectories(nodeModules)) {
-      const manifest = join(item.path, "package.json");
-      if (await pathExists(manifest)) manifests.push(manifest);
-    }
-    const dependencies = new Set();
-    for (const manifestPath of manifests) {
-      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-      for (const dependency of harnessDependencies(manifest)) dependencies.add(dependency);
-    }
-    for (const dependency of [...dependencies].sort()) {
-      const workspacePackage = workspacePackages.get(dependency);
-      if (!workspacePackage) continue;
-      const destination = packagePath(nodeModules, dependency);
-      if (await pathExists(destination)) continue;
-      await copyPackage(workspacePackage.directory, destination);
-      restored.push(dependency);
-      changed = true;
-    }
-  }
-  return restored;
-}
-
 async function findSymlink(directory) {
   let entries;
   try {
@@ -293,37 +257,6 @@ async function materializePackageLinks(nodeModules) {
   }
 }
 
-async function packageDirectories(nodeModules) {
-  const packages = [];
-  for (const entry of await readdir(nodeModules, { withFileTypes: true })) {
-    if (entry.name === ".bin" || entry.name === ".pnpm" || entry.name === ".modules.yaml") continue;
-    const path = join(nodeModules, entry.name);
-    if (entry.name.startsWith("@") && entry.isDirectory()) {
-      for (const child of await readdir(path, { withFileTypes: true })) {
-        if (child.isDirectory() || child.isSymbolicLink()) {
-          packages.push({ name: `${entry.name}/${child.name}`, path: join(path, child.name) });
-        }
-      }
-    } else if (entry.isDirectory() || entry.isSymbolicLink()) {
-      packages.push({ name: entry.name, path });
-    }
-  }
-  return packages.sort((left, right) => left.name.localeCompare(right.name));
-}
-
-export async function mergeDesktopPackages(desktopDeployment, harnessDeployment) {
-  const sourceModules = join(desktopDeployment, "node_modules");
-  const destinationModules = join(harnessDeployment, "node_modules");
-  const merged = [];
-  for (const item of await packageDirectories(sourceModules)) {
-    const destination = packagePath(destinationModules, item.name);
-    if (await pathExists(destination)) continue;
-    await copyPackage(item.path, destination);
-    merged.push(item.name);
-  }
-  return merged;
-}
-
 export async function mergeDesktopClosure(desktopDeployment, harnessDeployment, roots) {
   const sourceModules = join(desktopDeployment, "node_modules");
   const destinationModules = join(harnessDeployment, "node_modules");
@@ -341,15 +274,19 @@ export async function mergeDesktopClosure(desktopDeployment, harnessDeployment, 
     }
     visited.add(name);
     const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
-    for (const peer of manifest.dsh?.desktop?.harnessPackages ?? []) {
-      if (!await pathExists(join(packagePath(destinationModules, peer), "package.json"))) {
-        throw new Error(`Candidate Harness extension dependency is missing: ${peer}`);
+    // Official peer services must come from the candidate Harness. External
+    // browser peers such as React come from the audited Desktop dependency set.
+    for (const [peer, expected] of Object.entries(manifest.peerDependencies || {})) {
+      if (!await pathExists(packagePath(destinationModules, peer)) && !peer.startsWith("@deepseek-ai/")) {
+        await visit(peer, !manifest.peerDependenciesMeta?.[peer]?.optional);
       }
-    }
-    // Peer services must come from the new Harness, never an older bundled core.
-    for (const peer of Object.keys(manifest.peerDependencies || {})) {
-      if (!await pathExists(packagePath(destinationModules, peer)) && !manifest.peerDependenciesMeta?.[peer]?.optional) {
+      const peerManifest = join(packagePath(destinationModules, peer), "package.json");
+      if (!await pathExists(peerManifest) && !manifest.peerDependenciesMeta?.[peer]?.optional) {
         throw new Error(`Candidate Harness peer is missing: ${peer}`);
+      }
+      if (roots.includes(name) && await pathExists(peerManifest)) {
+        const installed = JSON.parse(await readFile(peerManifest, "utf8"));
+        assertDesktopPeerVersion(name, peer, expected, installed.version);
       }
     }
     await rm(destination, { recursive: true, force: true });
@@ -369,9 +306,7 @@ export async function mergeDesktopClosure(desktopDeployment, harnessDeployment, 
         || !await pathExists(join(destination, entry))) {
         throw new Error(`Desktop client entry is missing: ${name}`);
       }
-      // Only Desktop-owned extensions declare these as hard requirements;
-      // third-party manifests may also name optional, legacy client services.
-      for (const dependency of manifest.dsh.desktop ? manifest.dsh.client.inject ?? [] : []) {
+      for (const dependency of manifest.dsh.client.inject ?? []) {
         const peer = packagePath(destinationModules, dependency);
         if (!await pathExists(join(peer, "package.json"))) {
           throw new Error(`Candidate Harness client dependency is missing: ${dependency}`);
@@ -405,32 +340,250 @@ async function packageDigest(root) {
   return hash.digest("hex");
 }
 
-export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, destination, runHarnessPnpm) {
-  const manifestPath = join(sourceRoot, "python", "sdk-runtime", "package.json");
-  const lockPath = join(sourceRoot, "pnpm-lock.yaml");
-  const originalManifest = await readFile(manifestPath);
-  const originalLock = await readFile(lockPath);
-  try {
-    const manifest = JSON.parse(originalManifest.toString("utf8"));
-    if (typeof manifest.name !== "string" || manifest.name.trim() === "") {
-      throw new Error("Python SDK deployment manifest must declare a package name");
+export const DESKTOP_EXTENSION_ROOTS = Object.freeze([
+  "deepseek-desktop-bundle", "deepseek-desktop-credentials-vault",
+  "@deepseek-ai/dsh-web-search-follow-model", "pnpm"
+]);
+
+function assertDesktopPeerVersion(extension, peer, expected, actual) {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(expected) || actual !== expected) {
+    throw new Error(`Desktop extension ${extension} requires peer ${peer}@${expected}; candidate provides ${actual}`);
+  }
+}
+
+function supportsTarget(manifest, target) {
+  const accepts = (values, value) => !Array.isArray(values)
+    || (!values.includes(`!${value}`) && (values.every(item => item.startsWith("!")) || values.includes(value)));
+  return accepts(manifest.os, target.platform) && accepts(manifest.cpu, target.arch);
+}
+
+function dependencyEdges(manifest) {
+  const optional = manifest.optionalDependencies ?? {};
+  return [
+    ...Object.keys(manifest.dependencies ?? {}).filter(name => !(name in optional)).map(name => [name, true]),
+    ...Object.keys(manifest.peerDependencies ?? {}).map(name => [name, !manifest.peerDependenciesMeta?.[name]?.optional]),
+    ...Object.keys(optional).map(name => [name, false])
+  ];
+}
+
+/** Select the same dependency/peer closure as the official npm package-set build. */
+export function selectHarnessPackageClosure(workspacePackages, roots, target = process) {
+  const selected = new Map();
+  const excluded = {};
+  function visit(name, required = true, parent) {
+    if (selected.has(name)) return;
+    const item = workspacePackages.get(name);
+    if (!item) {
+      if (required) throw new Error(`Harness source package is missing: ${name}`);
+      return;
     }
-    manifest.dependencies = { ...manifest.dependencies, [cli.manifest.name]: "workspace:^" };
-    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-    runHarnessPnpm(["install", "--lockfile-only", "--ignore-scripts", "--config.auto-install-peers=false"], sourceRoot);
-    runHarnessPnpm(["install", "--frozen-lockfile", "--ignore-scripts", "--config.auto-install-peers=false"], sourceRoot);
-    await rm(destination, { recursive: true, force: true });
-    runHarnessPnpm([
-      "--filter", manifest.name, "deploy", "--legacy", "--prod",
-      "--config.node-linker=hoisted", "--config.auto-install-peers=false",
-      "--config.link-workspace-packages=true", destination
+    if (!supportsTarget(item.manifest, target)) {
+      if (required) throw new Error(`Harness package does not support ${target.platform}/${target.arch}: ${name}`);
+      excluded[`${parent}>${name}`] = "-";
+      return;
+    }
+    if (item.manifest.private) throw new Error(`Harness runtime requires an unpublished package: ${name}`);
+    selected.set(name, item);
+    for (const [dependency, requiredDependency] of dependencyEdges(item.manifest)) {
+      if (workspacePackages.has(dependency)) visit(dependency, requiredDependency, name);
+      else if (requiredDependency && dependency.startsWith("@deepseek-ai/")) {
+        throw new Error(`Harness source package ${name} requires an unpacked internal package: ${dependency}`);
+      }
+    }
+  }
+  for (const root of roots) visit(root);
+  return { packages: [...selected.values()].sort((a, b) => a.manifest.name.localeCompare(b.manifest.name)), excluded };
+}
+
+async function desktopHarnessPeers(desktopDeployment, roots, workspacePackages) {
+  if (!desktopDeployment) return [];
+  const peers = new Set();
+  const visited = new Set();
+  async function visit(name, required = true) {
+    if (visited.has(name)) return;
+    if (workspacePackages.has(name)) { peers.add(name); return; }
+    const path = join(packagePath(join(desktopDeployment, "node_modules"), name), "package.json");
+    if (!await pathExists(path)) {
+      if (required) throw new Error(`Desktop dependency is missing: ${name}`);
+      return;
+    }
+    visited.add(name);
+    const manifest = JSON.parse(await readFile(path, "utf8"));
+    for (const [peer, expected] of Object.entries(manifest.peerDependencies ?? {})) {
+      if (workspacePackages.has(peer)) {
+        if (roots.includes(name)) assertDesktopPeerVersion(name, peer, expected, workspacePackages.get(peer).manifest.version);
+        peers.add(peer);
+      }
+      else if (peer.startsWith("@deepseek-ai/") && !manifest.peerDependenciesMeta?.[peer]?.optional) {
+        throw new Error(`Desktop extension requires a missing Harness source package: ${peer}`);
+      }
+    }
+    for (const dependency of Object.keys(manifest.dependencies ?? {})) await visit(dependency);
+    for (const dependency of Object.keys(manifest.optionalDependencies ?? {})) await visit(dependency, false);
+  }
+  for (const root of roots) await visit(root);
+  return [...peers].sort();
+}
+
+async function installedDependency(directory, name) {
+  for (let current = await realpath(directory); ; current = dirname(current)) {
+    const candidate = packagePath(join(current, "node_modules"), name);
+    if (await pathExists(join(candidate, "package.json"))) return realpath(candidate);
+    if (dirname(current) === current) return null;
+  }
+}
+
+/** Only carry upstream patches whose exact targets occur in the selected production graph. */
+async function selectRuntimePatches(sourceRoot, packages, workspacePackages, workspace, staging) {
+  const visited = new Set();
+  const identities = new Set();
+  async function visit(item) {
+    const directory = await realpath(item.directory);
+    if (visited.has(directory)) return;
+    visited.add(directory);
+    identities.add(`${item.manifest.name}@${item.manifest.version}`);
+    for (const [name, required] of dependencyEdges(item.manifest)) {
+      if (workspacePackages.has(name)) continue;
+      const dependency = await installedDependency(directory, name);
+      if (!dependency) {
+        if (required) throw new Error(`Built Harness dependency is missing: ${item.manifest.name} -> ${name}`);
+        continue;
+      }
+      const manifest = JSON.parse(await readFile(join(dependency, "package.json"), "utf8"));
+      if (!supportsTarget(manifest, process) && !required) continue;
+      await visit({ directory: dependency, manifest });
+    }
+  }
+  for (const item of packages) await visit(item);
+  const patches = {};
+  const records = [];
+  for (const [identity, file] of Object.entries(workspace.patchedDependencies ?? {})) {
+    if (!identities.has(identity)) continue;
+    const source = resolve(sourceRoot, file);
+    const relation = relative(sourceRoot, source);
+    if (isAbsolute(relation) || relation === ".." || relation.startsWith(`..${sep}`)) {
+      throw new Error(`Harness patch escapes its source: ${identity}`);
+    }
+    const bytes = await readFile(source);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const patch = `patches/${sha256}.patch`;
+    await mkdir(join(staging, "patches"), { recursive: true });
+    await writeFile(join(staging, patch), bytes);
+    patches[identity] = patch;
+    records.push({ package: identity, sha256 });
+  }
+  return { patches, records };
+}
+
+function packedManifest(tarball) {
+  const result = spawnSync("tar", ["-xOzf", tarball, "package/package.json"], {
+    encoding: "utf8", windowsHide: true, maxBuffer: 2 * 1024 * 1024
+  });
+  if (result.error || result.status !== 0) throw new Error(`Harness package manifest cannot be read: ${basename(tarball)}`);
+  return JSON.parse(result.stdout);
+}
+
+export function verifyHarnessPackageLock(lock, packages) {
+  const importer = lock.importers?.["."];
+  if (!importer) throw new Error("Harness runtime lock has no root importer");
+  for (const record of packages) {
+    const spec = `file:packages/${record.file}`;
+    const resolved = importer.dependencies?.[record.name];
+    const specifier = resolved?.specifier?.replace(/^file:\.\//u, "file:");
+    if (specifier !== spec || !(resolved?.version === spec || resolved?.version?.startsWith(`${spec}(`))) {
+      throw new Error(`Harness runtime lock resolved ${record.name} outside its local package set`);
+    }
+    for (const key of Object.keys(lock.packages ?? {})) {
+      if (key.startsWith(`${record.name}@`) && !key.startsWith(`${record.name}@file:packages/${record.file}`)) {
+        throw new Error(`Harness runtime lock contains an external core package: ${key}`);
+      }
+    }
+  }
+}
+
+/** Package the official CLI closure, then install only immutable local core tarballs. */
+export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, destination, runHarnessPnpm, options = {}) {
+  const desktopRoots = options.desktopRoots ?? DESKTOP_EXTENSION_ROOTS;
+  const peers = await desktopHarnessPeers(options.desktopDeployment, desktopRoots, workspacePackages);
+  const roots = [cli.manifest.name, ...peers];
+  const { packages, excluded } = selectHarnessPackageClosure(workspacePackages, roots);
+  // js-yaml is a declared dependency of the official CLI, already installed by build:official.
+  const yaml = createRequire(join(cli.directory, "package.json"))("js-yaml");
+  const upstreamWorkspace = yaml.load(await readFile(join(sourceRoot, "pnpm-workspace.yaml"), "utf8"));
+  await mkdir(dirname(destination), { recursive: true });
+  const staging = await mkdtemp(join(dirname(destination), "harness-package-set-"));
+  try {
+    const tarballs = join(staging, "packages");
+    await mkdir(tarballs);
+    await runHarnessPnpm([
+      ...packages.flatMap(item => ["--filter", item.manifest.name]),
+      "--recursive", "pack", "--workspace-concurrency=4", "--pack-destination", tarballs
     ], sourceRoot);
-    const restored = await restoreWorkspaceClosure(destination, workspacePackages);
-    await materializePackageLinks(join(destination, "node_modules"));
+    const records = [];
+    const names = new Set(packages.map(item => item.manifest.name));
+    for (const file of (await readdir(tarballs)).sort()) {
+      if (!file.endsWith(".tgz")) throw new Error(`Unexpected Harness package-set file: ${file}`);
+      const manifest = packedManifest(join(tarballs, file));
+      const expected = workspacePackages.get(manifest.name);
+      if (!names.delete(manifest.name) || manifest.version !== expected?.manifest.version) {
+        throw new Error(`Harness packed identity differs from selected source: ${file}`);
+      }
+      for (const [dependency, required] of dependencyEdges(manifest)) {
+        if (required && dependency.startsWith("@deepseek-ai/") && !packages.some(item => item.manifest.name === dependency)) {
+          throw new Error(`Harness packed package requires an unpacked internal package: ${dependency}`);
+        }
+      }
+      const bytes = await readFile(join(tarballs, file));
+      records.push({ name: manifest.name, version: manifest.version, file, bytes: bytes.length,
+        integrity: `sha512-${createHash("sha512").update(bytes).digest("base64")}` });
+    }
+    if (names.size) throw new Error(`Harness pack omitted source packages: ${[...names].join(", ")}`);
+    records.sort((a, b) => a.name.localeCompare(b.name));
+    const overrides = Object.fromEntries(records.map(record => [record.name, `file:./packages/${record.file}`]));
+    const { patches, records: patchRecords } = await selectRuntimePatches(sourceRoot, packages, workspacePackages, upstreamWorkspace, staging);
+    const allowBuilds = { ...(upstreamWorkspace.allowBuilds ?? {}) };
+    for (const record of records) {
+      const scripts = workspacePackages.get(record.name).manifest.scripts ?? {};
+      if (!scripts.install && !scripts.postinstall && !scripts.preinstall) continue;
+      const approved = Object.entries(allowBuilds).some(([name, allowed]) => allowed
+        && (name === record.name || name.startsWith(`${record.name}@`)));
+      if (!approved) throw new Error(`Harness runtime install script is not approved upstream: ${record.name}`);
+      allowBuilds[`${record.name}@${overrides[record.name].replace("file:./", "file:")}`] = true;
+    }
+    await writeFile(join(staging, "package.json"), `${JSON.stringify({
+      name: "deepseek-desktop-harness-runtime", private: true, version: cli.manifest.version,
+      type: "module", dependencies: overrides
+    }, null, 2)}\n`);
+    await writeFile(join(staging, "pnpm-workspace.yaml"), yaml.dump({
+      packages: ["."], nodeLinker: "hoisted", autoInstallPeers: false, strictDepBuilds: true,
+      overrides: { ...overrides, ...excluded }, allowBuilds,
+      minimumReleaseAgeExclude: upstreamWorkspace.minimumReleaseAgeExclude ?? [],
+      ...(Object.keys(patches).length ? { patchedDependencies: patches } : {})
+    }));
+    await runHarnessPnpm(["install", "--lockfile-only"], staging);
+    const lock = yaml.load(await readFile(join(staging, "pnpm-lock.yaml"), "utf8"));
+    verifyHarnessPackageLock(lock, records);
+    await runHarnessPnpm(["install", "--prod", "--frozen-lockfile", "--trust-lockfile"], staging);
+    await materializePackageLinks(join(staging, "node_modules"));
+    for (const record of records) {
+      const installed = JSON.parse(await readFile(join(packagePath(join(staging, "node_modules"), record.name), "package.json"), "utf8"));
+      if (installed.name !== record.name || installed.version !== record.version) {
+        throw new Error(`Installed Harness package differs from local package set: ${record.name}`);
+      }
+    }
+    await stat(join(packagePath(join(staging, "node_modules"), cli.manifest.name), cli.entry));
+    await rm(destination, { recursive: true, force: true });
+    await mkdir(destination, { recursive: true });
+    await cp(join(staging, "node_modules"), join(destination, "node_modules"), { recursive: true });
+    await writeFile(join(destination, "package.json"), `${JSON.stringify({
+      name: "deepseek-desktop-harness-runtime", private: true, version: cli.manifest.version,
+      type: "module", dependencies: Object.fromEntries(records.map(record => [record.name, record.version]))
+    }, null, 2)}\n`);
+    const packageSet = { schemaVersion: 1, roots, packages: records, upstreamPatches: patchRecords };
+    await writeFile(join(destination, "harness-packages.json"), `${JSON.stringify(packageSet, null, 2)}\n`);
     await patchBrowserJsonIntrinsics(destination);
-    return restored;
+    return packageSet;
   } finally {
-    await writeFile(manifestPath, originalManifest);
-    await writeFile(lockPath, originalLock);
+    await rm(staging, { recursive: true, force: true });
   }
 }

@@ -6,23 +6,35 @@ export async function verifySearchSettings(url, cookies, outputDirectory) {
   try {
     const context = await browser.newContext({ viewport: { width: 1120, height: 720 } });
     await context.addCookies([...cookies].map(([name, value]) => ({ name, value, url: url.origin })));
-    const statusUrl = new URL("/desktop-web-search/status", url).href;
-    const request = { headers: { origin: url.origin }, data: { type: "client-request", rpcId: "search-auth-smoke", method: "status", payload: {} } };
+    const statusUrl = new URL("/api/desktop.web-search", url).href;
+    const request = { headers: { origin: url.origin } };
     const unauthenticated = await browser.newContext();
     try {
-      expect((await unauthenticated.request.post(statusUrl, request)).status()).toBe(401);
-      expect((await context.request.post(statusUrl, { ...request, headers: { origin: "https://untrusted.test" } })).status()).toBe(403);
+      expect((await unauthenticated.request.get(statusUrl, request)).status()).toBe(401);
+      expect((await context.request.get(statusUrl, { headers: { origin: "https://untrusted.test" } })).status()).toBe(403);
     } finally { await unauthenticated.close(); }
     const page = await context.newPage();
     const errors = [];
     const activationResponses = [];
     page.on("pageerror", error => errors.push(error.message));
     page.on("response", async response => {
-      if (!new URL(response.url()).pathname.startsWith("/desktop-web-search/")) return;
-      const result = (await response.json().catch(() => ({}))).result;
-      activationResponses.push({ status: response.status(), ok: result?.ok, phase: result?.value?.phase, error: result?.error?.code });
+      if (new URL(response.url()).pathname !== "/api/desktop.web-search") return;
+      const result = await response.json().catch(() => ({}));
+      activationResponses.push({ status: response.status(), phase: result.phase, error: result.error });
     });
     await page.goto(url.href);
+    const pluginBoot = await page.evaluate(() => ({
+      mode: window.__ModuleLoader__?.mode,
+      entry: window.__DSH_BOOT__?.entries?.find(entry => entry.id === "@deepseek-ai/dsh-web-search-follow-model"),
+    }));
+    expect(pluginBoot.entry?.external).toContain("react");
+    expect(pluginBoot.entry?.inject).toContain("@deepseek-ai/dsh-client-ui-settings-plugins");
+    await expect.poll(() => page.evaluate(() => window.__ModuleLoader__?.mode)).toBe("live");
+    async function expandSearchSettings() {
+      const details = page.locator(".desktop-search-card details");
+      if (!await details.evaluate(element => element.open)) await details.locator("summary").click();
+      await expect(details).toHaveJSProperty("open", true);
+    }
     async function openSettings() {
       const onboarding = page.getByRole("button", { name: /^(继续|繼續|Continue)$/u });
       await onboarding.waitFor({ state: "visible", timeout: 5000 }).catch(error => {
@@ -38,10 +50,22 @@ export async function verifySearchSettings(url, cookies, outputDirectory) {
       if (await later.isVisible()) await later.click();
       await page.getByText(/^(设置|設定|Settings)$/u).first().click();
       await page.getByText(/^(插件|外掛|Plugins)$/u).first().click();
-      await page.locator(".desktop-search-card summary").click();
+      await expandSearchSettings();
     }
     try {
       await openSettings();
+      await page.getByText(/^(插件列表|Plugin list)$/u).click();
+      const search = page.getByPlaceholder(/^(搜索插件|Search plugins)$/u);
+      await expect(search).toBeVisible();
+      for (const name of ["@deepseek-ai/dsh-web-search-follow-model", "deepseek-desktop-credentials-vault"]) {
+        await search.fill(name);
+        const entry = page.locator(`[data-plugin-module="${name}"]`).first();
+        await expect(entry).toBeVisible();
+        await expect(entry.getByRole("img", { name: /^(运行中|Running)$/u })).toBeVisible();
+      }
+      await page.screenshot({ path: join(outputDirectory, "official-plugin-list.png") });
+      await page.getByText(/^(插件配置|Plugin configuration)$/u).click();
+      await expandSearchSettings();
       const card = page.locator(".desktop-search-card");
       await expect(card).toHaveCount(1);
       const expectActive = () => expect(card.getByRole("status")).toHaveText(/^(已生效|Active)$/u, { timeout: 10_000 });
@@ -82,7 +106,7 @@ export async function verifySearchSettings(url, cookies, outputDirectory) {
       expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
       await page.screenshot({ path: join(outputDirectory, "search-settings.png") });
       expect(errors).toEqual([]);
-      console.log("Harness search settings: independent client, follow-model default, durable save/reset and small-window layout passed");
+      console.log("Harness plugin inventory and search settings: active Desktop plugins, follow-model default, durable save/reset and small-window layout passed");
     } catch (error) {
       await page.screenshot({ path: join(outputDirectory, "search-settings-failure.png") });
       throw new Error(`${error.message}\nSearch activation responses: ${JSON.stringify(activationResponses)}`);

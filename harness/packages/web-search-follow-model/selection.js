@@ -3,6 +3,7 @@ import z from "@deepseek-ai/schemastery";
 import { WebError } from "@deepseek-ai/dsh-web";
 
 const SETTINGS_NS = "web-search-follow-model";
+const SETTINGS_API_PATH = "/api/desktop.web-search";
 const FOLLOW_MODEL_PROVIDER_ID = "follow-model";
 const DEFAULT_INDEPENDENT_PROVIDER_ID = "deepseek-official";
 const MAX_PROVIDER_ID_LENGTH = 128;
@@ -68,18 +69,29 @@ export default class WebSearchSelection extends Service {
       current.tools.guard(exec => exec.name === "web_search" ? this.admissionFailure() : undefined);
       current.on("tools/execute", (exec, next) => exec.name === "web_search" ? this.runSearch(next) : next());
     });
-    ctx.inject(["connection", "webServer"], current => {
-      current.connection.rpc.handle("/desktop-web-search", async (endpoint, payload) => {
-        if (!["status", "apply"].includes(endpoint)) return { ok: false, error: { code: "not-found", message: "Unknown search settings operation.", details: {} } };
-        if (endpoint === "apply") {
-          if (!ctx.settings.writable || payload?.revision !== this.section(ctx).revision) {
-            return { ok: false, error: { code: "conflict", message: "Search settings changed or are read-only.", details: {} } };
+    ctx.inject(["connection"], current => {
+      // The shared /api carrier owns authentication, authority checks and body limits.
+      current.effect(() => current.connection.fetch.register({
+        path: SETTINGS_API_PATH,
+        methods: ["GET", "POST"],
+        requestBody: "buffered",
+        fetch: async request => {
+          if (request.method === "POST") {
+            let payload;
+            try { payload = await request.json(); }
+            catch { return Response.json({ error: "invalid-request" }, { status: 400 }); }
+            if (!Number.isSafeInteger(payload?.revision) || payload.revision < 0) {
+              return Response.json({ error: "invalid-request" }, { status: 400 });
+            }
+            if (!ctx.settings.writable || payload.revision !== this.section(ctx).revision) {
+              return Response.json({ error: "conflict" }, { status: 409 });
+            }
+            if (this.phase === "failed") this.enqueue(ctx, scope.get());
           }
-          if (this.phase === "failed") this.enqueue(ctx, scope.get());
-        }
-        await this.applyQueue;
-        return { ok: true, value: this.activationStatus(ctx) };
-      });
+          await this.applyQueue;
+          return Response.json(this.activationStatus(ctx), { headers: { "cache-control": "no-store" } });
+        },
+      }), "web-search-selection: settings API");
     });
   }
 
@@ -184,6 +196,7 @@ export {
   DEFAULT_INDEPENDENT_PROVIDER_ID,
   FOLLOW_MODEL_PROVIDER_ID,
   SETTINGS_NS,
+  SETTINGS_API_PATH,
   normalizedSelection,
   validateSelection,
 };

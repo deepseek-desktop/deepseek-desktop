@@ -3,23 +3,17 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
-const toolchain = JSON.parse(readFileSync(resolve(root, "harness/toolchain-lock.json"), "utf8")) as {
-  desktopPatches: Array<{
-    id: string;
-    operation?: string;
-    replacements?: Array<{ before: string; after: string }>;
-  }>;
-};
-
-const settingsPatch = toolchain.desktopPatches.find(patch => patch.id === "settings-scroll-container");
-if (!settingsPatch?.replacements) throw new Error("settings layout replacements are missing from the toolchain lock");
-const settingsCss = [
-  ".settings-overlay{justify-content:center;align-items:center;display:flex;position:fixed;inset:0}",
-  ".settings-panel{width:800px;max-width:calc(100vw - 48px);height:min(800px,calc(100vh - 48px));display:flex;overflow:hidden}",
-  ".settings-nav{flex:none;width:188px}",
-  ".settings-header{box-sizing:border-box;flex:none;height:54px}",
-  ...settingsPatch.replacements.map(replacement => `.fixture${replacement.after}`)
-].join("");
+const settingsClient = readFileSync(resolve(
+  root,
+  "target/generated/harness/prepared/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js"
+), "utf8");
+// Exercise the stylesheet shipped in the prepared Harness, including upstream
+// layout changes. No Desktop patch or hand-written replacement supplies CSS.
+const stylesheet = settingsClient.match(
+  /const css(?:\$\d+)? = ("(?:[^"\\]|\\.)*");\s*const tagId(?:\$\d+)? = "@deepseek-ai\/dsh-client-ui-settings-general\/SettingsRoot\.module\.css"/u
+)?.[1];
+if (!stylesheet) throw new Error("prepared Harness SettingsRoot stylesheet is missing");
+const settingsCss = JSON.parse(stylesheet) as string;
 
 const className = (localName: string): string => {
   const match = settingsCss.match(new RegExp(`\\.([A-Za-z0-9_-]+_${localName})\\{`, "u"));
@@ -27,10 +21,7 @@ const className = (localName: string): string => {
   return match[1];
 };
 
-test("long Harness settings forms remain scrollable to their final action on Windows-sized viewports", async ({ page }) => {
-  expect(settingsPatch.operation).toBe("replace-text");
-  expect(settingsPatch.replacements).toHaveLength(2);
-
+test("prepared Harness settings forms scroll to their final action", async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 700 });
   await page.setContent(`
     <style>
@@ -38,11 +29,11 @@ test("long Harness settings forms remain scrollable to their final action on Win
       body { margin: 0; }
       .regression-form { height: 1400px; }
     </style>
-    <div class="settings-overlay">
-      <div class="settings-panel">
-        <nav class="settings-nav"></nav>
+    <div class="${className("overlay")}">
+      <div class="${className("panel")}">
+        <nav class="${className("nav")}"></nav>
         <main class="${className("content")}">
-          <header class="settings-header"></header>
+          <header class="${className("header")}"></header>
           <section class="${className("options")}" data-testid="settings-scroll-region">
             <div class="regression-form"></div>
             <button type="button" data-testid="last-action">保存</button>
@@ -52,11 +43,7 @@ test("long Harness settings forms remain scrollable to their final action on Win
     </div>
   `);
 
-  const content = page.locator(`.${className("content")}`);
   const scrollRegion = page.getByTestId("settings-scroll-region");
-  await expect(content).toHaveCSS("min-height", "0px");
-  await expect(content).toHaveCSS("overflow", "hidden");
-  await expect(scrollRegion).toHaveCSS("height", /\d+(?:\.\d+)?px/u);
 
   const dimensions = await scrollRegion.evaluate(element => ({
     clientHeight: element.clientHeight,

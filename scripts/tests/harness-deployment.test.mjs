@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,7 +12,9 @@ import {
   mergeDesktopClosure,
   patchBrowserJsonIntrinsics,
   pruneNativeBuildIntermediates,
-  sanitizeBuildPaths
+  sanitizeBuildPaths,
+  selectHarnessPackageClosure,
+  verifyHarnessPackageLock
 } from "../lib/harness-deployment.mjs";
 
 async function fixture(t) {
@@ -62,9 +65,24 @@ test("desktop closure includes transitive dependencies but preserves the new Har
 
 test("missing candidate peer fails instead of copying an old core", async t => {
   const root = await fixture(t);
-  await packageAt(join(root, "old/node_modules"), "desktop", { peerDependencies: { core: "1" } });
-  await packageAt(join(root, "old/node_modules"), "core");
-  await assert.rejects(mergeDesktopClosure(join(root, "old"), join(root, "new"), ["desktop"]), /Candidate Harness peer is missing: core/);
+  await packageAt(join(root, "old/node_modules"), "desktop", { peerDependencies: { "@deepseek-ai/core": "1.0.0" } });
+  await packageAt(join(root, "old/node_modules"), "@deepseek-ai/core");
+  await assert.rejects(mergeDesktopClosure(join(root, "old"), join(root, "new"), ["desktop"]), /Candidate Harness peer is missing: @deepseek-ai\/core/);
+});
+
+test("Desktop extension peers reject old Harness versions and include declared external browser peers", async t => {
+  const root = await fixture(t);
+  const desktop = join(root, "desktop");
+  const candidate = join(root, "candidate");
+  await packageAt(join(desktop, "node_modules"), "extension", {
+    peerDependencies: { "@deepseek-ai/core": "0.1.5-rc.2", react: "18.3.1" }
+  });
+  await packageAt(join(desktop, "node_modules"), "react", { version: "18.3.1" });
+  await packageAt(join(candidate, "node_modules"), "@deepseek-ai/core", { version: "0.1.3-alpha.1" });
+  await assert.rejects(mergeDesktopClosure(desktop, candidate, ["extension"]), /requires peer @deepseek-ai\/core@0.1.5-rc.2; candidate provides 0.1.3-alpha.1/);
+  await packageAt(join(candidate, "node_modules"), "@deepseek-ai/core", { version: "0.1.5-rc.2" });
+  await mergeDesktopClosure(desktop, candidate, ["extension"]);
+  assert.equal(JSON.parse(await readFile(join(candidate, "node_modules/react/package.json"))).version, "18.3.1");
 });
 
 test("desktop client and its Harness dependencies survive replacement and reject incomplete candidates", async t => {
@@ -73,10 +91,11 @@ test("desktop client and its Harness dependencies survive replacement and reject
   const next = join(root, "next");
   const extension = await packageAt(join(old, "node_modules"), "extension", {
     exports: { "./client": "./client.js" },
-    dsh: { client: { inject: ["settings-ui"] }, desktop: { harnessPackages: ["agent"] } }
+    peerDependencies: { "@deepseek-ai/agent": "1.0.0" },
+    dsh: { client: { platform: "web", inject: ["settings-ui"] } }
   });
-  await assert.rejects(mergeDesktopClosure(old, next, ["extension"]), /extension dependency is missing: agent/);
-  await packageAt(join(next, "node_modules"), "agent");
+  await assert.rejects(mergeDesktopClosure(old, next, ["extension"]), /peer is missing: @deepseek-ai\/agent/);
+  await packageAt(join(next, "node_modules"), "@deepseek-ai/agent");
   await assert.rejects(mergeDesktopClosure(old, next, ["extension"]), /Desktop client entry is missing/);
   await writeFile(join(extension, "client.js"), "independent-settings");
   await assert.rejects(mergeDesktopClosure(old, next, ["extension"]), /client dependency is missing: settings-ui/);
@@ -104,39 +123,113 @@ test("missing required desktop dependency fails preparation", async t => {
   await assert.rejects(mergeDesktopClosure(join(root, "old"), join(root, "new"), ["optional-first", "desktop"]), /Desktop dependency is missing: missing/);
 });
 
-test("production deployment restores workspace peers and original input files", async t => {
+test("production package selection includes peers and only compatible optional native packages", () => {
+  const packages = new Map([
+    ["cli", { manifest: { name: "cli", dependencies: { service: "*" }, devDependencies: { electron: "*" } } }],
+    ["service", { manifest: { name: "service", peerDependencies: { peer: "*" }, optionalDependencies: { darwin: "*", linux: "*" } } }],
+    ["peer", { manifest: { name: "peer", peerDependencies: { service: "*" } } }],
+    ["darwin", { manifest: { name: "darwin", os: ["darwin"], cpu: ["arm64"] } }],
+    ["linux", { manifest: { name: "linux", os: ["linux"], cpu: ["x64"] } }]
+  ]);
+  const closure = selectHarnessPackageClosure(packages, ["cli"], { platform: "darwin", arch: "arm64" });
+  assert.deepEqual(closure.packages.map(item => item.manifest.name), ["cli", "darwin", "peer", "service"]);
+  assert.deepEqual(closure.excluded, { "service>linux": "-" });
+  assert.throws(() => selectHarnessPackageClosure(packages, ["linux"], { platform: "darwin", arch: "arm64" }), /does not support/);
+  packages.get("service").manifest.dependencies = { "@deepseek-ai/missing": "1" };
+  assert.throws(() => selectHarnessPackageClosure(packages, ["cli"]), /unpacked internal package/);
+});
+
+test("runtime lock rejects registry core copies even alongside the expected local tarball", () => {
+  const packages = [{ name: "@deepseek-ai/cli", version: "1.0.0", file: "cli-1.0.0.tgz" }];
+  const lock = { importers: { ".": { dependencies: { "@deepseek-ai/cli": {
+    specifier: "file:packages/cli-1.0.0.tgz", version: "file:packages/cli-1.0.0.tgz"
+  } } } }, packages: { "@deepseek-ai/cli@file:packages/cli-1.0.0.tgz": {} } };
+  assert.doesNotThrow(() => verifyHarnessPackageLock(lock, packages));
+  lock.importers["."].dependencies["@deepseek-ai/cli"].specifier = "file:./packages/cli-1.0.0.tgz";
+  assert.doesNotThrow(() => verifyHarnessPackageLock(lock, packages));
+  lock.packages["@deepseek-ai/cli@1.0.0"] = {};
+  assert.throws(() => verifyHarnessPackageLock(lock, packages), /external core package/);
+  delete lock.packages["@deepseek-ai/cli@1.0.0"];
+  lock.importers["."].dependencies["@deepseek-ai/cli"].version = "1.0.0";
+  assert.throws(() => verifyHarnessPackageLock(lock, packages), /outside its local package set/);
+});
+
+test("production deployment installs packed files and preserves source inputs without a Python workspace", async t => {
   const root = await fixture(t);
   const source = join(root, "source");
   const destination = join(root, "deployment");
-  await packageAt(source, "python/sdk-runtime", { name: "closure" });
-  await packageAt(source, "apps/cli", { name: "cli", bin: { dsh: "lib/custom.js" } });
+  const cliDirectory = await packageAt(source, "apps/cli", { name: "cli", bin: { dsh: "lib/custom.js" }, dependencies: { vendor: "1.0.0" }, peerDependencies: { peer: "*" }, files: ["lib"] });
+  await mkdir(join(cliDirectory, "lib"));
+  await writeFile(join(cliDirectory, "lib/custom.js"), "export default 1;\n");
+  await writeFile(join(cliDirectory, "unpublished-source.ts"), "must not ship\n");
+  // A tiny JSON-only YAML implementation keeps this orchestration fixture independent
+  // of the real upstream install. JSON is valid YAML; production uses CLI's js-yaml.
+  const parser = await packageAt(join(cliDirectory, "node_modules"), "js-yaml", { main: "index.cjs" });
+  await writeFile(join(parser, "index.cjs"), "module.exports = { load: JSON.parse, dump: JSON.stringify };\n");
+  await packageAt(join(cliDirectory, "node_modules"), "vendor");
   const peer = await packageAt(source, "packages/peer", { name: "peer" });
   await writeFile(join(peer, "index.js"), "export default 1;");
   const lock = join(source, "pnpm-lock.yaml");
   await writeFile(lock, "original lock\n");
-  const original = await readFile(join(source, "python/sdk-runtime/package.json"), "utf8");
+  await mkdir(join(source, "patches"));
+  await writeFile(join(source, "patches/vendor.patch"), "selected runtime patch\n");
+  await writeFile(join(source, "patches/electron.patch"), "unrelated desktop patch\n");
+  await writeFile(join(source, "pnpm-workspace.yaml"), JSON.stringify({ packages: ["apps/*", "packages/*"], allowBuilds: {},
+    patchedDependencies: { "vendor@1.0.0": "patches/vendor.patch", "electron@1.0.0": "patches/electron.patch" } }));
+  const original = await readFile(join(cliDirectory, "package.json"), "utf8");
   const packages = await findWorkspacePackages(source);
   const cli = findCliPackage(packages);
   assert.equal(cli.entry, "lib/custom.js");
   const calls = [];
-  // The callback models pnpm's deployment, which can omit workspace peers.
-  const { mkdirSync, writeFileSync } = await import("node:fs");
-  const restored = await deployHarnessClosure(source, packages, cli, destination, args => {
-    calls.push(args);
-    if (args.includes("deploy")) {
-      mkdirSync(join(destination, "node_modules"), { recursive: true });
-      writeFileSync(join(destination, "package.json"), JSON.stringify({ peerDependencies: { peer: "*" } }));
+  function tar(args) {
+    const result = spawnSync("tar", args, { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const runtime = await deployHarnessClosure(source, packages, cli, destination, async (args, cwd) => {
+    calls.push({ args, cwd });
+    if (args.includes("pack")) {
+      const output = args.at(-1);
+      for (const item of packages.values()) {
+        const tree = join(root, "packed", item.manifest.name);
+        await mkdir(join(tree, "package"), { recursive: true });
+        await cp(join(item.directory, "package.json"), join(tree, "package/package.json"));
+        const entry = item.manifest.name === "cli" ? "lib" : "index.js";
+        await cp(join(item.directory, entry), join(tree, "package", entry), { recursive: true });
+        tar(["-czf", join(output, `${item.manifest.name}-1.0.0.tgz`), "-C", tree, "package"]);
+      }
+    } else if (args.includes("--lockfile-only")) {
+      const manifest = JSON.parse(await readFile(join(cwd, "package.json"), "utf8"));
+      const settings = JSON.parse(await readFile(join(cwd, "pnpm-workspace.yaml"), "utf8"));
+      assert.deepEqual(Object.keys(settings.patchedDependencies), ["vendor@1.0.0"]);
+      assert.equal(await readFile(join(cwd, settings.patchedDependencies["vendor@1.0.0"]), "utf8"), "selected runtime patch\n");
+      const dependencies = Object.fromEntries(Object.entries(manifest.dependencies).map(([name, specifier]) => [name, {
+        specifier, version: specifier.replace("file:./", "file:")
+      }]));
+      await writeFile(join(cwd, "pnpm-lock.yaml"), JSON.stringify({ importers: { ".": { dependencies } }, packages: {} }));
+    } else {
+      const manifest = JSON.parse(await readFile(join(cwd, "package.json"), "utf8"));
+      for (const [name, specifier] of Object.entries(manifest.dependencies)) {
+        const installed = join(cwd, "node_modules", name);
+        await mkdir(installed, { recursive: true });
+        tar(["-xzf", join(cwd, specifier.slice(5)), "--strip-components=1", "-C", installed]);
+      }
     }
   });
-  assert.deepEqual(restored, ["peer"]);
+  assert.deepEqual(runtime.packages.map(item => item.name), ["cli", "peer"]);
+  assert.deepEqual(runtime.upstreamPatches.map(item => item.package), ["vendor@1.0.0"]);
+  assert.ok(runtime.packages.every(item => item.integrity.startsWith("sha512-") && item.bytes > 0));
   assert.equal(await readFile(join(destination, "node_modules/peer/index.js"), "utf8"), "export default 1;");
-  assert.equal(await readFile(join(source, "python/sdk-runtime/package.json"), "utf8"), original);
+  await assert.rejects(readFile(join(destination, "node_modules/cli/unpublished-source.ts")), { code: "ENOENT" });
+  assert.equal(await readFile(join(cliDirectory, "package.json"), "utf8"), original);
   assert.equal(await readFile(lock, "utf8"), "original lock\n");
   assert.equal(calls.length, 3);
-  assert.ok(calls[2].includes("--prod"));
+  assert.equal(calls[0].cwd, source);
+  assert.notEqual(calls[1].cwd, source);
+  assert.deepEqual(calls[2].args, ["install", "--prod", "--frozen-lockfile", "--trust-lockfile"]);
   await assert.rejects(deployHarnessClosure(source, packages, cli, destination, () => { throw new Error("pnpm failed"); }), /pnpm failed/);
-  assert.equal(await readFile(join(source, "python/sdk-runtime/package.json"), "utf8"), original);
+  assert.equal(await readFile(join(cliDirectory, "package.json"), "utf8"), original);
   assert.equal(await readFile(lock, "utf8"), "original lock\n");
+  assert.equal(await readFile(join(destination, "node_modules/peer/index.js"), "utf8"), "export default 1;");
 });
 
 test("build path sanitization preserves binary offsets while shrinking text paths", async t => {

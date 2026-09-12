@@ -2,6 +2,13 @@
 
 DeepSeek Desktop 的重要变化记录如下。
 
+## 1.1.14 - 2026-09-12
+
+- Harness 默认来源切换到官方仓库，基线锁定官方 master `c291e7961a51`（`0.1.5-rc.2`）。
+- 插件配置与只读清单沿用官方机制，删除强制 DSH Market 装配及旧 UI/审批覆盖。
+- 独立搜索扩展改用官方 Fetch API、模型目录与公开 peer 依赖，移除旧 RPC 和非官方路由字段。
+- 打包和仓库候选采用本地 npm 包闭包及隔离安装，移除旧 Python SDK 聚合部署兼容路径。
+
 ## 0.1.0-community.15 - 2026-08-27
 
 - 修复 Windows 短路径构建副本把本机 Git `origin` 误当公开仓库地址的问题；GitHub Actions 现在使用当前工作流仓库上下文，本地文件型 `origin` 会安全回退。

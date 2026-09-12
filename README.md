@@ -15,7 +15,6 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 ![DeepSeek Desktop 模型接入](docs/assets/model-provider.png)
 
-![DeepSeek Desktop 插件市场](docs/assets/plugin-market.png)
 
 ## 快速使用
 
@@ -23,14 +22,14 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 2. 应用会自动启动本地 Harness 并进入工作台，无需点击启动或预先选择目录；项目目录在工作台中按会话需要添加和切换。
 3. 进入工作台的“设置 → 模型”，添加官方或自定义 Provider，填写 API 地址和密钥，并获取可用模型。
 4. 在对话输入区切换模型，创建会话后即可进行对话、代码修改和项目文件操作。
-5. 在“设置 → 插件”中打开 DSH Market，浏览、安装、更新或卸载插件；桌面版已内置所需包管理器。
+5. 在“设置 → 插件”中使用官方插件配置与插件列表，查看全局及 Agent 预设的插件状态；插件列表为只读清单。
 6. 应用默认停留在工作台；窗口顶部固定提供“文件 / 编辑 / 视图 / 窗口 / 帮助”菜单，需要运行状态、更新、诊断或关于信息时可从这里打开“设置”。关闭设置会回到原来的对话和工作区，不会重启 Harness。
 
 模型密钥会加密保存在本机，不进入日志、诊断包或浏览器存储。完整安装、配置和故障排查说明见[中文使用文档](docs/zh-CN/getting-started.md)。
 
 联网搜索默认“跟随当前模型”：Desktop 独立扩展与官方搜索插件共存，不强制禁用或修改官方插件。用户仍按原流程配置模型 Provider，不需要选择联网搜索协议或重复输入密钥；也可以在独立设置卡片中指定已经注册的搜索 Provider，或关闭联网搜索。切换会话模型后，下一次跟随模型搜索同步切换。独立设置入口随扩展一起装配到兼容的 Harness 更新中，保存失败会恢复之前实际生效的选择。服务不支持搜索或只返回普通模型回答时明确提示，不会冒充联网结果或改用其他提供方。使用与兼容边界见[跟随当前模型的联网搜索](docs/zh-CN/harness-web-search.md)。
 
-图片输入能力按具体模型和 API 地址判断，不按 Provider 品牌统一开启。已声明视觉能力的模型可以直接添加图片；自定义模型可在“设置 → 模型 → 更多设置”中开启“支持图片输入”，但仅应在该模型及当前端点确实接受图片时启用。普通文本模型保持关闭，避免提交后才收到含糊的协议错误。
+图片输入能力以上游模型目录及当前模型配置的声明为准，按具体模型和 API 地址判断，不按 Provider 品牌统一开启。已声明视觉能力的模型可以添加图片；自定义模型同样使用官方模型配置契约，Desktop 不再追加独立的“支持图片输入”表单控件。
 
 ### macOS 提示“Apple 无法验证”怎么办
 
@@ -148,7 +147,7 @@ corepack pnpm@11.24.0 desktop:package
 
 Desktop 外壳启动后每天最多静默检查一次自身版本，也可以从“帮助 → 检查 Desktop 更新”随时手动检查。社区版从构建时固定的官方 GitHub 仓库读取 Release 列表，按完整 SemVer、发布时间和五个平台安装包是否齐全筛选，不依赖可能指向旧正式版的 `latest`。发现新版时会在当前窗口显示版本、发布时间和摘要，并提供“前往下载 / 稍后提醒 / 忽略此版本”；未签名社区版只打开固定官方 Release 页面，不自动下载安装，也不接受远端返回的任意下载地址。Desktop 版本提醒与下面的 Harness 独立更新是两条不同链路。
 
-DeepSeek Desktop 将稳定的桌面外壳与 Harness 分开。桌面版默认使用 `https://github.com/deepseek-desktop/deepseek-harness.git`，用户也可以换成 `https://github.com/deepseek-ai/deepseek-harness.git` 或自己的兼容 fork。更换仓库只会改变本机运行的 Harness，不会替换 Desktop、模型配置、对话或工作区数据。
+DeepSeek Desktop 将稳定的桌面外壳与 Harness 分开。桌面版默认使用官方上游仓库 `https://github.com/deepseek-ai/deepseek-harness.git`，用户也可以换成自己的兼容 fork。更换仓库只会改变本机运行的 Harness，不会替换 Desktop、模型配置、对话或工作区数据。
 
 “设置 → 更新 → Harness 独立更新”只需要一个 **Harness 仓库** 地址，不需要填写更新清单、发布者或公钥。点击“检查 Harness”会读取该仓库默认分支的最新 commit；发现变化后，Desktop 使用安装包内置的 Node 和 pnpm 在应用数据目录拉取、安装依赖、构建并启动验证候选 Harness。系统需要能够执行 Git，私有仓库还需要用户自己的 Git 访问权限。
 

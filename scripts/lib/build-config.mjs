@@ -32,7 +32,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   DESKTOP_APP_AUTHORS: "DeepSeek Desktop Contributors",
   DESKTOP_APP_REPOSITORY: "",
   DESKTOP_APP_ICON: "src-tauri/icons/icon.png",
-  HARNESS_REPOSITORY: "https://github.com/deepseek-desktop/deepseek-harness.git",
+  HARNESS_REPOSITORY: "https://github.com/deepseek-ai/deepseek-harness.git",
   HARNESS_REF: "",
   HARNESS_UPDATE_MANIFEST_URL: "",
   HARNESS_UPDATE_CHANNEL: "stable",

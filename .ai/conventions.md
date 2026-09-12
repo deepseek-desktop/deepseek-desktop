@@ -5,7 +5,7 @@
 - 优先级固定为：命令行环境变量 > `.env` > 内置默认值。
 - 只接受构建配置加载器声明的变量；未知项、非法格式和必填空值应直接失败。
 - Harness 来源变量统一使用 `HARNESS_REPOSITORY` / `HARNESS_REF`，按全新配置契约开发，不提供历史别名与迁移分支。
-- `HARNESS_REF` 本地为空时可解析最新 SemVer；社区版和正式发布必须命中 `harness/toolchain-lock.json` 的审计 commit。
+- `HARNESS_REF` 本地为空时可解析最新 SemVer；社区版和正式发布必须命中 `harness/toolchain-lock.json` 的审计 commit。Tag CI 入口从该 lock 显式导出仓库与 ref，解析结果继续校验 commit；质量门禁及原生构建使用同一份来源，包括直接按 commit 锁定的官方 master 提交。
 - 默认和示例版本使用 `1.0.0`，真实版本由发布流程注入，避免文档散落维护发行号。
 - 原生窗口和浏览器标题显示真实桌面版本；显示值有 `v` 时保持不变，没有时自动补齐，构建元数据中的 SemVer 本身不增加前缀。
 - 发行标签接受带或不带 `v` 前缀的完整 SemVer，例如 `1.0.0`、`v1.0.0` 和 `v0.1.0-community.13`；工作流入口必须执行严格 SemVer 校验。

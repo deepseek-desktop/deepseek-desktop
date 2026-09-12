@@ -1,26 +1,27 @@
 # 验证基线
 
+## 官方 Harness 0.1.5-rc.2 源码升级
+
+2026-09-12：`v1.1.14` 发布源码已切换至官方 `https://github.com/deepseek-ai/deepseek-harness.git`，锁定 `c291e7961a515f6d7af9304e7fd1d257929aef26`（本次开始与结束均核对为官方 master / HEAD）。本节记录发布前的本机源码验收；远端矩阵与发行结果必须另行核对。
+
+- 生产依赖改按官方 CLI 和桌面扩展的公开 peer 声明选择工作区闭包，经官方构建、递归打包和冻结安装生成；实际校验 241 个官方包、502 个运行依赖，核心 peer 必须来自同一官方源码并满足精确版本。Tag CI 从工具链 lock 导出仓库和 ref，解析后继续校验 commit。
+- 官方插件配置与只读插件列表替代强制 DSH Market；旧市场、模型表单、审批与展示覆盖及 RPC 注入补丁已移除。只保留真实回归仍需要的认证 Cookie 清理和 Responses 工具调用标识修正。旧受管 Bundle 仅在所有权与内容摘要一致且非用户依赖时撤下启用声明，保留文件及用户配置。
+- `app:sync --check`、固定来源的 `harness:sync --check`、`verify`、`test:e2e`、`harness:smoke` 和 `release:smoke` 全部通过。本轮最终覆盖 112 项配置/发行测试、32 项前端测试、39 项搜索测试、99 项 Rust 测试及 Clippy；1 项须显式启用的外部仓库测试保持忽略。
+- 7 项 E2E 覆盖 Shell、更新摘要、官方设置样式滚动及 Chromium/WebKit JSON 边界。真实 Harness 浏览器 smoke 确认官方插件列表中的搜索和凭据插件运行、搜索设置默认值及保存/恢复/重载/小窗口交互、Fetch API 认证与 Origin 拒绝、旧 Cookie 清理和父进程消亡后的子进程退出。
+- `DESKTOP_APP_VERSION=1.1.14 corepack pnpm@11.24.0 desktop:package` 再次完成完整门禁和 macOS ARM64 打包，交付闭包为 72,264 个文件、1,202,063,280 字节。DMG 位于 `release/1.1.14/aarch64-apple-darwin/DeepSeek Desktop_1.1.14_aarch64.dmg`，SHA-256 为 `65d191dc6d6db93cb5fc94b012be79652c131fc687d1f097889da5c8b914bc5e`，`hdiutil verify` 通过。
+- 构建目录中的 release `.app` 通过 `codesign --verify --deep --strict`，主程序及内置 Node 均为原生 ARM64。经 LaunchServices 启动后标题为 `DeepSeek Desktop v1.1.14`，依次通过首次声明与稍后配置进入同窗工作台；Harness `0.1.5-rc.2` sidecar 在 loopback 监听并与工作台建立连接。确认关闭后 Desktop 与 Harness 进程均退出。
+- 当前成品证据来自 macOS ARM64，且为提交前 dirty 源码的本地包；正式制品必须由新 Tag 的干净官方 Runner 重新生成。它不替代其他原生平台矩阵、真实供应商调用、签名或公证验收。下方各发行记录保留各自的历史范围。
+
 ## 当前发布验收
 
-2026-09-06 只读复核源码、GitHub 原始日志和 Release：当前成功发行是 [v1.1.8](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.8)，不是此前本地验证包 1.1.0 / 1.1.2。
+2026-09-12 发布前复核 Git、GitHub Actions 和 Release：最近一次成功发行是 [v1.1.13](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.13)。
 
-- [Run 34003134434](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/34003134434) 的质量门禁、四平台原生构建及汇总发布六个 Job 全部成功；commit 为 `d56e3d910437a25912e48b012d69a7ca6d2cdd1b`。
-- 远端 `v1.1.8` 是 annotated Tag，对象 `feddabb473377b03f75f029f85f73dfd64a0e86c` 指向同一 commit；Release 于 `2026-09-06T02:19:44Z` 发布，`prerelease=true`、`isLatest=false`。
-- Windows x64 Job `101406745444` 在官方 `windows-2022` 上执行实际 NSIS 安装、应用 x64 PE 校验、工作台与菜单设置交互、关闭取消/确认、子进程清理和卸载。日志依次出现 `dismissed first-run dialog: 继续`、`dismissed first-run dialog: 稍后配置`、`workbench ready after dismissing 2 first-run dialog(s)` 及 `Windows x64 installation acceptance passed for DeepSeek Desktop 1.1.8.`；整个步骤成功，不只是打包通过。
-- 公开资产恰好六个，均为 uploaded 且有 SHA-256 digest；不包含内部 BUILD-INFO。下面大小来自本次 GitHub 元数据复核，不表示本次重新下载了所有文件。
+- [Run 34316055136](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/34316055136) 的质量门禁、macOS ARM64/x64、Windows x64、Linux x64 和汇总发布六个 Job 全部成功；commit 为 `c23a2304f09e57520162796219d8d9f5a671f32e`。
+- 远端 `v1.1.13` 是 annotated Tag，对象 `aa69ce1a4e59d1256a252a0665960a62e15dbac2` 指向该 commit；Release 于 `2026-09-09T06:37:31Z` 发布，`prerelease=true`。
+- 公开资产恰好为两份 DMG、EXE、AppImage、DEB 和 `SHA256SUMS`，六项均为 uploaded 且带 GitHub SHA-256 digest，不包含内部 BUILD-INFO。本次只读取元数据，没有把它表述为全部重新下载校验。
+- Windows x64 原生 Job `102354634371` 成功，包含 `package:community` 和仓库规定的安装交互验收；其他平台 Job 同样使用官方托管 Runner 完成各自原生构建。该矩阵不新增真实供应商凭据、Linux 人工 GUI、签名、公证或升级回滚证据。
 
-| 公开文件 | 字节数 |
-| --- | ---: |
-| `DeepSeek.Desktop_1.1.8_aarch64.dmg` | 284593195 |
-| `DeepSeek.Desktop_1.1.8_x64.dmg` | 224777852 |
-| `DeepSeek.Desktop_1.1.8_x64-setup.exe` | 58661035 |
-| `DeepSeek.Desktop_1.1.8_amd64.AppImage` | 188611064 |
-| `DeepSeek.Desktop_1.1.8_amd64.deb` | 119500616 |
-| `SHA256SUMS` | 504 |
-
-Claude Code 的发布后记录包含 ARM64 DMG 实际下载校验、安装启动、五次设置往返及退出清理；该 DMG 摘要为 `215716106586de0fe7f7393ae37c829abb68d87a313a60ad0d7220304d914522`，与远端 digest 一致。本次只读复核另外确认本机安装版本为 1.1.8，未重新操作 GUI，也没有把对方报告的像素判据扩展为全功能验收或五包下载证明。
-
-已知 contentView 所有权缺陷的因果修复仍以 [生命周期验收](macos-lifecycle.md) 为准；聊天中沿用的“来源未知”旧结论不覆盖后来的对照证据。1.1.8 原生矩阵通过不新增真实供应商凭据测试、Linux 人工 GUI 或所有平台升级回滚证据；签名、公证和 stable 条件仍未具备。预防发布失败的方法、测试夹具陷阱及责任复盘统一维护在 [发布手册](../skills/release-workflow.md#最短反馈路径)。以下为各标注版本的历史验收范围，不作为当前发布阻塞。
+已知 contentView 所有权缺陷的因果修复仍以 [生命周期验收](macos-lifecycle.md) 为准；预防发布失败的方法、测试夹具陷阱及责任复盘统一维护在 [发布手册](../skills/release-workflow.md#最短反馈路径)。以下为各标注版本的历史验收范围，不作为当前发布阻塞。
 
 ## 容器发布身份检查
 
