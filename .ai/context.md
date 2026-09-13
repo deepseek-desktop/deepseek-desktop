@@ -53,7 +53,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 待安装 Harness 的激活 smoke 与自动检查在后台线程串行执行，不占用驱动窗口的线程；激活期间对外发布 `applying` 状态。工作台首次启动与后台维护共享一次性激活门闩，确保完成 pending 校验和原子切换后才拉起服务，避免实际运行版本与 current 指针不一致。
 - 签名清单请求使用 30 秒预算，与制品下载的 20 分钟预算分离，避免更新服务停滞长时间占用更新操作锁。
 
-- 插件配置和只读插件清单由当前官方 Harness 提供，Desktop 不再强制装配 DSH Market。受管 Bundle 撤出内置包时，只对所有权标记和实际内容摘要一致且非用户显式依赖的项撤下启用声明，保留文件及其他用户配置。
+- 插件配置和只读插件清单由当前官方 Harness 提供，Desktop 不再强制装配 DSH Market。需要市场时，使用当前桌面 Harness 与内置 pnpm，以应用自己的 `DSH_HOME` 执行官方 `dsh plugin --profile desktop-web add dshmarket`，由官方 CLI 管理用户依赖与 Bundle 声明，不改写市场代码。市场文档的普通 `web` profile 不是本桌面版使用的配置。受管 Bundle 撤出内置包时，只对所有权标记和实际内容摘要一致且非用户显式依赖的项撤下启用声明，保留文件及其他用户配置。
 
 ## 版本基线
 

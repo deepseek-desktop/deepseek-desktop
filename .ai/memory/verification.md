@@ -1,5 +1,13 @@
 # 验证基线
 
+## 搜索标题与 DSH Market 官方安装
+
+2026-09-13：未发布源码将搜索卡片标题统一为“联网搜索 / 聯網搜尋 / Web search”，模式仍在卡片内选择。现有搜索设置单元测试 7 项、三语言键检查、E2E 7 项、固定官方 `c291e7961a515f6d7af9304e7fd1d257929aef26` 的重新装配、`harness:smoke` 与 `harness:verify` 均通过。
+
+- 市场按上游 `dsh plugin --profile <name> add dshmarket` 安装；本桌面目标是应用自己的 `DSH_HOME` 与 `desktop-web` profile，不使用普通 Web 部署的 `web`。官方 CLI 负责依赖和 Bundle 声明，仓库未新增市场依赖、市场源码补丁或强制内置逻辑。
+- 本机现有 `v1.1.18` 的用户 profile 已按此方式安装 `dshmarket@1.45.1`，安装前保留 profile 备份。市场 Host 与 Client 入口同 npm 原始制品逐字节一致；这是本机用户插件状态，不是新的发行默认能力。
+- 使用实际安装包的 Harness，在隔离 profile 中再次执行官方安装命令，确认市场侧栏入口、真实目录的 3,627 个条目及搜索设置保存/恢复正常。新源码暂存包再以相同方式验证，确认简化后的搜索标题和市场入口同时显示，退出后的 Harness 子进程清理通过。验证未安装目录中的其他第三方插件，不代表所有市场插件均兼容。
+
 ## 官方 Harness 0.1.5-rc.2 源码升级
 
 2026-09-12 至 2026-09-13：已发布的 `v1.1.18` 使用官方 `https://github.com/deepseek-ai/deepseek-harness.git`，锁定 `c291e7961a515f6d7af9304e7fd1d257929aef26`；创建 Tag 前及 Release 完成后均重新读取官方 master / HEAD，仍为该 commit。首次切换该来源的 `v1.1.14` Tag 在 GitHub Run `34693095400` 的 shell-quality 失败，未进入原生矩阵、未创建 Release；该 Tag 保持不可变。

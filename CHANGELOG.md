@@ -2,6 +2,11 @@
 
 DeepSeek Desktop 的重要变化记录如下。
 
+## 未发布
+
+- “联网搜索”设置卡片标题移除模式后缀；模式继续在卡片内选择，简体中文、繁体中文和英文同步调整。
+- 补充 DSH Market 官方安装说明，明确桌面版使用 `desktop-web` profile，由官方 CLI 管理市场插件，不改写上游代码。
+
 ## 1.1.18 - 2026-09-13
 
 - Linux AppImage 在调用 `linuxdeploy` 前使用同一绝对 `patchelf` 预计算唯一 `$ORIGIN` RUNPATH 产物，并用 `readelf` 核对修改前后的动态结构；Linux Tauri 子进程禁用 strip，临时包装器只接受精确的“官方源 SHA-256 → 预计算 SHA-256”单调转换，其余文件继续委托系统 `ldd`，打包完成后再次核验最终身份。

@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
     const modes = ["follow-model", "disabled", "independent"];
     const dictionaries = {
       en: {
-        title: "Web search (follow model)", description: "Search follows the model used by each conversation.",
+        title: "Web search", description: "Search follows the model used by each conversation.",
         mode: "Search routing", "follow-model": "Follow current model", disabled: "Disable web search",
         independent: "Independent search service", provider: "Independent search Provider",
         providerHint: "Enter a Harness search Provider ID, for example deepseek-official.",
@@ -19,7 +19,7 @@ window.__ModuleLoader__.load({
         readOnly: "These settings are read-only."
       },
       zh: {
-        title: "联网搜索（跟随模型）", description: "联网搜索跟随每个会话使用的模型。",
+        title: "联网搜索", description: "联网搜索跟随每个会话使用的模型。",
         mode: "联网搜索", "follow-model": "跟随当前模型", disabled: "禁用联网搜索",
         independent: "独立搜索服务", provider: "独立搜索提供方",
         providerHint: "填写 Harness 搜索 Provider ID，例如 deepseek-official。",
@@ -30,7 +30,7 @@ window.__ModuleLoader__.load({
         readOnly: "这些设置为只读。"
       },
       "zh-TW": {
-        title: "聯網搜尋（跟隨模型）", description: "聯網搜尋跟隨每個工作階段使用的模型。",
+        title: "聯網搜尋", description: "聯網搜尋跟隨每個工作階段使用的模型。",
         mode: "聯網搜尋", "follow-model": "跟隨目前模型", disabled: "停用聯網搜尋",
         independent: "獨立搜尋服務", provider: "獨立搜尋提供方",
         providerHint: "填寫 Harness 搜尋 Provider ID，例如 deepseek-official。",
