@@ -31,23 +31,25 @@
 
 ## 当前发布验收
 
-2026-09-13 发布后复核 Git、GitHub Actions、Release 与下载制品：当前成功发行是 [v1.1.18](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.18)。
+2026-09-15 发布后复核 Git、GitHub Actions、Release 与下载制品：当前成功发行是 [v1.1.19](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.19)。
 
-- 远端 `v1.1.18` 是 annotated Tag，对象 `9435257a8f2df79b08c04fb9b66e790911c9047f` 指向 commit `2fcee8c1a53f8dfdd5de613c998ba3dcd5147cbd`；发布时的 `master`、远端 Tag peeled commit 与 GitHub Run head SHA 三者一致。发布后的验证记录提交不会移动该 Tag。`v1.1.14` 至 `v1.1.17` 仍是不可变失败 Tag，均未创建 Release。
-- [Run 34716431077](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/34716431077) 的六个 Job 全部成功：shell-quality `103614403003`、macOS x64 `103615906859`、macOS ARM64 `103615906872`、Linux x64 `103615906889`、Windows x64 `103615906909`、publish-release `103624051843`。Linux 日志确认外层与 GTK 内层 linuxdeploy 均处理官方 musl 模块并成功生成 AppImage/DEB；Windows 日志确认 x64 NSIS、两层首次引导、工作台、设置、关闭与卸载验收通过。
-- Release ID `387709178` 于 `2026-09-12T21:28:27Z` 发布，`draft=false`、`prerelease=true`；发布命令显式使用 `--latest=false`，GitHub `/releases/latest` 未指向该版本。公开资产恰好为两份 DMG、EXE、AppImage、DEB 与 `SHA256SUMS`，不包含内部 BUILD-INFO。
+- 远端 `v1.1.19` 是 annotated Tag，对象 `cb0125d8539b578a1b5ce556c5ca5eb840c58fac` 指向 commit `594dd750627a0a086803fe8526c23ec1fcdbefc1`；本地 Tag、远端 Tag peeled commit 与 GitHub Run head SHA 三者一致。发布后的验证记录提交不会移动该 Tag。`v1.1.14` 至 `v1.1.17` 仍是不可变失败 Tag，均未创建 Release。
+- [Run 34863036761](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/34863036761) 的六个 Job 全部成功：shell-quality `104039843630`、macOS x64 `104044190003`、Windows x64 `104044190060`、macOS ARM64 `104044190200`、Linux x64 `104044190229`、publish-release `104064467258`。
+- Release ID `388556111` 于 `2026-09-14T16:43:56Z` 发布，`draft=false`、`prerelease=true`；GitHub `/releases/latest` 返回 404，未签名制品未占据 Latest。公开资产恰好为两份 DMG、EXE、AppImage、DEB 与 `SHA256SUMS`，不包含内部 BUILD-INFO。
 
 | 公开资产 | 字节 | 下载后 SHA-256 |
 | --- | ---: | --- |
-| `DeepSeek.Desktop_1.1.18_aarch64.dmg` | 272,911,036 | `fa8f3e846db8e3567588810fa08a3de63bac5c668f1a4e2dee22a3192d44cbaf` |
-| `DeepSeek.Desktop_1.1.18_x64.dmg` | 203,903,965 | `5a78c8e27d1835ad4669a6345c8aa0f91e17ebdd11a45d980d6ff6a0ddbe21ce` |
-| `DeepSeek.Desktop_1.1.18_x64-setup.exe` | 59,341,189 | `e20859b1c0711e64b2707822cb2eac5aca90a0bd821c24a03823c0ffdc9bdb72` |
-| `DeepSeek.Desktop_1.1.18_amd64.AppImage` | 177,830,392 | `1e4884e2da5e2ba7e675e12b807b81e8aa8ea20f0afa162649e66e9ae13b6f2b` |
-| `DeepSeek.Desktop_1.1.18_amd64.deb` | 109,258,106 | `884ce6ea466c4d68c6bec4121eeaea862e61386f09b24528f7744ac5e65f5e90` |
-| `SHA256SUMS` | 509 | `2f351a629d212a6f79cab3a7e599118773058b7d968be5183f876ceae321606f` |
+| `DeepSeek.Desktop_1.1.19_aarch64.dmg` | 266,244,508 | `3e96b4e0315ad53419405952cd06c68ee877dbe229fb9b9c48388a5c760e6b57` |
+| `DeepSeek.Desktop_1.1.19_x64.dmg` | 210,745,058 | `b0ee008ed6a363c25c27490808496ccb76cb4e26b97c86e2b17fe1e7544ef533` |
+| `DeepSeek.Desktop_1.1.19_x64-setup.exe` | 59,344,858 | `afede533f1efc781aa58c1776974549c8f46f836c0c871882967beb357804e26` |
+| `DeepSeek.Desktop_1.1.19_amd64.AppImage` | 177,834,488 | `b7ea9df3ce3b3162819b19f5d785a595542be9c21651679e5b690c21273a9d21` |
+| `DeepSeek.Desktop_1.1.19_amd64.deb` | 109,290,238 | `3be8dc66b504de14878337938809e8d7ef31a4bc831c799d518039640533efc5` |
+| `SHA256SUMS` | 509 | `805f2bae228bb5da57823238b73df50f2543e9e5057a6454a060f824688ad5f8` |
 
-- 六个公开文件已全部下载；五个安装包逐项通过 `SHA256SUMS`，六项实算摘要与 GitHub asset digest、大小完全一致，Release 正文六条直达链接逐项命中对应资产。两份公开 DMG 均通过 `hdiutil verify` 与 `codesign --verify --deep --strict`；主程序和内置 Node 分别为原生 ARM64 / x86_64，两个版本字段均为 `1.1.18`。
-- 本机 ARM64 包与 GitHub ARM64 包分别构建并分别记录摘要，不宣称二进制可重现。公开 macOS 包仍为 ad-hoc 签名且无 TeamIdentifier，Windows 也未接入可信发布者签名；本次矩阵不新增真实供应商凭据、Linux 人工 GUI、签名、公证、目标平台仓库更新切换或升级回滚证据。
+- 六个公开文件已全部下载；五个安装包逐项通过 `SHA256SUMS`，且 GitHub asset digest、`SHA256SUMS` 记录值与下载后实算摘要三者逐项一致，大小与元数据相符，Release 正文六条直达链接逐项命中对应资产。两份公开 DMG 均通过 `hdiutil verify`；挂载后 `codesign --verify --deep --strict` 通过，主程序与内置 Node 分别为原生 ARM64 / x86_64，内置 Node 为 `v24.20.0`，两个版本字段均为 `1.1.19`。
+- 本机 ARM64 验收包（`desktop:package`，SHA-256 `35980b30292d8a2456d5d7468d88aa8645a3ea173efc599fbf4acb5b5f249589`）与下载的 GitHub ARM64 包分别构建、分别记录摘要，不宣称二进制可重现。本机验收包已实测启动、Harness sidecar 为子进程、工作台同窗加载、退出无残留且无崩溃报告。
+- `harness:smoke` 以 `--settings-ui` 运行，覆盖本次改动的搜索设置卡片标题；Harness 为 `0.1.5-rc.2`。
+- 公开 macOS 包仍为 ad-hoc 签名且无 TeamIdentifier，Windows 也未接入可信发布者签名；本次矩阵不新增真实供应商凭据、Linux 人工 GUI、签名、公证、目标平台仓库更新切换或升级回滚证据。
 
 已知 contentView 所有权缺陷的因果修复仍以 [生命周期验收](macos-lifecycle.md) 为准；预防发布失败的方法、测试夹具陷阱及责任复盘统一维护在 [发布手册](../skills/release-workflow.md#最短反馈路径)。以下为各标注版本的历史验收范围，不作为当前发布阻塞。
 
