@@ -1,16 +1,13 @@
 diff --git a/lib/index.js b/lib/index.js
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -221,6 +221,7 @@
- const SECRET_BYTES = 32;
+@@ -222,4 +222,5 @@
  const TOKEN_QUERY = "token";
  const COOKIE_PREFIX = "dsh-auth-";
 +const COOKIE_NAME_PATTERN = new RegExp(`^${COOKIE_PREFIX}[A-Za-z0-9_-]{43}$`, "u");
  const COOKIE_PAYLOAD_VERSION = 1;
  const STORED_SECRET_VERSION = 1;
- const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/;
-@@ -288,6 +289,22 @@
- 		return segment.slice(at + 1).trim();
+@@ -289,4 +290,20 @@
  	}
  }
 +/** Expire one generated browser-session cookie without reflecting arbitrary cookie names. */
@@ -31,9 +28,7 @@ diff --git a/lib/index.js b/lib/index.js
 +}
  /** Serialize the fixed browser-session attributes; generated names and values are cookie-safe base64url. */
  function sessionCookie(name, value, expiresAt, maxAgeSeconds) {
- 	return `${name}=${value}; Max-Age=${String(maxAgeSeconds)}; Path=/; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; SameSite=Strict`;
-@@ -398,11 +415,12 @@
- 					issuedAt,
+@@ -399,9 +416,10 @@
  					expiresAt
  				}, this.secret);
 +				const name = cookieName(authority);
@@ -45,4 +40,3 @@ diff --git a/lib/index.js b/lib/index.js
 +					"set-cookie": [...staleSessionCookies(header(req.headers, "cookie"), name), sessionCookie(name, value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1e3))]
  				});
  				res.end();
- 				return false;

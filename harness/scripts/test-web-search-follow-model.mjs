@@ -142,12 +142,18 @@ test("public Settings and Loader APIs apply independent, disabled and restored s
     async load() { return {}; }
     async persist() {}
   }
-  class GuardedWebRuntime extends WebRuntime {
-    constructor(ctx, config) {
-      super(ctx, config);
-      if (config.searchProvider === "broken-apply") throw new Error("fixture rejects this Provider");
-    }
-  }
+  // Leave the web service absent instead of throwing from the constructor. Harness
+  // 0.1.6 no longer routes a construction failure back through entry.update(), so a
+  // throw here would only surface as an unhandled rejection; the coordinator's real
+  // detection path is its own "web service did not become active" guard, which this
+  // exercises directly.
+  const GuardedWebRuntime = {
+    name: "guarded-web",
+    apply(ctx, config) {
+      if (config.searchProvider === "broken-apply") return;
+      ctx.plugin(WebRuntime, config);
+    },
+  };
   const ctx = new Context();
   try {
     await ctx.plugin(Loader);
@@ -305,6 +311,9 @@ test("native DeepSeek route uses its public connection resolver without borrowin
   assert.equal(routes[0].credentialRef, "MODEL_KEY");
   assert.equal(routes[0].webSearch.endpointPath, "/anthropic/v1");
   value = { baseURL: "https://api.deepseek.com/v1", apiKeyEnv: "MODEL_KEY" };
+  assert.equal((await resolveConfiguredRoutes(ctx, { provider: "deepseek-official", model: "deepseek-v4-pro" }))[0].webSearch.endpointPath, "/anthropic/v1");
+  // 0.1.6 默认改到 /anthropic，显式写出该地址也必须被接受。
+  value = { baseURL: "https://api.deepseek.com/anthropic", apiKeyEnv: "MODEL_KEY" };
   assert.equal((await resolveConfiguredRoutes(ctx, { provider: "deepseek-official", model: "deepseek-v4-pro" }))[0].webSearch.endpointPath, "/anthropic/v1");
   value = { baseURL: "https://custom.test", apiKeyEnv: "CUSTOM_KEY" };
   assert.deepEqual(await resolveConfiguredRoutes(ctx, { provider: "deepseek-official", model: "custom" }), []);

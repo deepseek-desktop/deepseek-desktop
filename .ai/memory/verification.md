@@ -8,6 +8,19 @@
 - 本机现有 `v1.1.18` 的用户 profile 已按此方式安装 `dshmarket@1.45.1`，安装前保留 profile 备份。市场 Host 与 Client 入口同 npm 原始制品逐字节一致；这是本机用户插件状态，不是新的发行默认能力。
 - 使用实际安装包的 Harness，在隔离 profile 中再次执行官方安装命令，确认市场侧栏入口、真实目录的 3,627 个条目及搜索设置保存/恢复正常。新源码暂存包再以相同方式验证，确认简化后的搜索标题和市场入口同时显示，退出后的 Harness 子进程清理通过。验证未安装目录中的其他第三方插件，不代表所有市场插件均兼容。
 
+## 官方 Harness 0.1.6-alpha.1 源码升级
+
+由 `c291e7961a51`（`0.1.5-rc.2`）升级到 `0a15e36e7f82`（`dsh-v0.1.6-alpha.1`）。本机四道门禁全部通过：`test:config`、`verify`、`test:e2e`、`harness:smoke`（`Harness 0.1.6-alpha.1, 1 cycle(s)`）。升级需要处理的上游变化：
+
+- 13 个桌面扩展 peer 由 `0.1.5-rc.2` 提升到 `0.1.6-alpha.1`；版本取自上游检出的真实 `package.json`，不逐个推测。
+- `dsh-client-connection` 的 loopback 陈旧会话 Cookie 补丁在 `0.1.6-alpha.1` 中仍未被上游自行采纳，按新版本重做并改名，`toolchain-lock` 的 `version`、`file` 与 `sha256` 同步更新。补丁不含构建机绝对路径。
+- 官方 DeepSeek 适配器默认 `baseURL` 由 `/v1` 改为 `/anthropic`，独立搜索的官方端点白名单相应接受 `/anthropic`；`capabilityEndpoint` 整体替换 pathname，不会产生重复前缀。
+- 部署闭包校验此前按字面路径判断包入口，`function-bind@1.1.2` 声明 `"main": "index"` 而文件为 `index.js`，被误报缺失。改为按 Node 的扩展名与目录索引规则解析后再判定缺失。
+- `settings.replace` 在 `0.1.6` 起要求纯对象；协调器的 `activeUser` 在无用户覆盖时为 `undefined`，导致失败回滚抛 `TypeError` 而**持久化设置未被回滚**。探针实测确认：修复前运行时路由恢复但持久值仍是失败选择，修复后持久值正确回滚。同时把「任何异常都记为 rollback-conflict」改为区分真实冲突与其他故障，避免同类问题再被掩盖。
+- `0.1.6` 不再把插件构造失败经 `entry.update()` 回传，而是变成未处理拒绝。协调器真正的检测路径是自身的「web 服务未激活」守卫，测试夹具相应改为不提供该服务，直接覆盖该守卫。
+
+该升级为本机验证；四平台原生矩阵结果以发行记录为准。
+
 ## 官方 Harness 0.1.5-rc.2 源码升级
 
 2026-09-12 至 2026-09-13：已发布的 `v1.1.18` 使用官方 `https://github.com/deepseek-ai/deepseek-harness.git`，锁定 `c291e7961a515f6d7af9304e7fd1d257929aef26`；创建 Tag 前及 Release 完成后均重新读取官方 master / HEAD，仍为该 commit。首次切换该来源的 `v1.1.14` Tag 在 GitHub Run `34693095400` 的 shell-quality 失败，未进入原生矩阵、未创建 Release；该 Tag 保持不可变。

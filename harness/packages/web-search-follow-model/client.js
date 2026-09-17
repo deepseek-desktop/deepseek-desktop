@@ -54,7 +54,9 @@ window.__ModuleLoader__.load({
     };
     const css = `
       .desktop-search-card{min-width:0;list-style:none;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-primary)}
-      .desktop-search-card summary{cursor:pointer;padding:14px 16px;font-size:15px;font-weight:600;overflow-wrap:anywhere}
+      .desktop-search-card summary{cursor:pointer;padding:14px 16px;font-size:15px;font-weight:600;overflow-wrap:anywhere;list-style:none}
+      /* Drop the native disclosure triangle; list-style covers Firefox, the pseudo-element covers WebKit and Blink. */
+      .desktop-search-card summary::marker,.desktop-search-card summary::-webkit-details-marker{display:none;content:""}
       .desktop-search-card summary small{display:block;margin-top:4px;color:var(--dsw-alias-label-tertiary);font-size:13px;font-weight:400}
       .desktop-search-body{margin:0 16px;padding:12px 0;border-top:1px solid var(--dsw-alias-border-l2);display:grid;gap:12px;min-width:0}
       .desktop-search-body label{display:grid;gap:6px;font-size:13px;min-width:0}

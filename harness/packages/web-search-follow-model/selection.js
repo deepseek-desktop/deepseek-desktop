@@ -59,7 +59,9 @@ export default class WebSearchSelection extends Service {
       validate: validateSelection,
     });
     this.active = normalizedSelection(scope.get());
-    this.activeUser = this.section(ctx).user;
+    // Settings 0.1.6 requires a plain object for replace(); an unset user section
+    // reads as undefined and would make the rollback throw instead of restoring.
+    this.activeUser = this.section(ctx).user ?? {};
     this.pending = undefined;
     this.phase = "saved";
     this.failure = undefined;
@@ -145,7 +147,7 @@ export default class WebSearchSelection extends Service {
         await this.reloadWebProvider(ctx, this.providerFor(target));
         await this.applyOfficialSearchPlugin(ctx, target.officialSearchPlugin === "enabled");
         this.active = target;
-        this.activeUser = user;
+        this.activeUser = user ?? {};
         this.failure = undefined;
         this.phase = sameSelection(target, normalizedSelection(this.section(ctx).value)) ? "active" : "saved";
       } catch {
@@ -159,8 +161,12 @@ export default class WebSearchSelection extends Service {
         this.failure = restored ? "apply-failed" : "restore-failed";
         // CAS prevents an older failed application from overwriting a newer save.
         this.rollbackSelection = previous;
-        try { await ctx.settings.replace(SETTINGS_NS, previousUser, revision); }
-        catch { this.failure = "rollback-conflict"; }
+        try { await ctx.settings.replace(SETTINGS_NS, previousUser ?? {}, revision); }
+        catch (error) {
+          // A conflict means a newer save already won and must not be overwritten;
+          // anything else is a genuine rollback fault and must not hide behind that name.
+          this.failure = error?.code === "SETTINGS_CONFLICT" ? "rollback-conflict" : "rollback-failed";
+        }
         finally { this.rollbackSelection = undefined; }
         this.phase = "failed";
         ctx.logger.error("web-search-selection: routing activation failed (%s)", this.failure);

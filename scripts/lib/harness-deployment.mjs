@@ -203,6 +203,27 @@ export function findCliPackage(workspacePackages) {
   return candidates[0];
 }
 
+/**
+ * Resolve a package `main` the way Node does before reporting it as missing.
+ * Manifests such as function-bind@1.1.2 declare `"main": "index"` and ship
+ * `index.js`; requiring the literal path reports a healthy package as broken.
+ */
+async function backendEntryExists(destination, backend) {
+  const candidate = join(destination, backend);
+  if (await pathExists(candidate)) {
+    const stats = await stat(candidate).catch(() => null);
+    if (!stats?.isDirectory()) return true;
+    for (const index of ["index.js", "index.cjs", "index.mjs", "index.json", "index.node"]) {
+      if (await pathExists(join(candidate, index))) return true;
+    }
+    return false;
+  }
+  for (const extension of [".js", ".cjs", ".mjs", ".json", ".node"]) {
+    if (await pathExists(`${candidate}${extension}`)) return true;
+  }
+  return false;
+}
+
 async function pathExists(path) {
   try {
     await stat(path);
@@ -294,7 +315,7 @@ export async function mergeDesktopClosure(desktopDeployment, harnessDeployment, 
     const digest = await packageDigest(source);
     if (digest !== await packageDigest(destination)) throw new Error(`Desktop extension copy failed verification: ${name}`);
     const backend = manifest.main ?? manifest.exports?.["."];
-    if (typeof backend === "string" && !await pathExists(join(destination, backend))) {
+    if (typeof backend === "string" && !await backendEntryExists(destination, backend)) {
       throw new Error(`Desktop backend entry is missing: ${name}`);
     }
     identities.push({ name, version: manifest.version, sha256: digest, backend,

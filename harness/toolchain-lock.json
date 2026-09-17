@@ -38,8 +38,8 @@
   },
   "harnessSource": {
     "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
-    "ref": "c291e7961a515f6d7af9304e7fd1d257929aef26",
-    "commit": "c291e7961a515f6d7af9304e7fd1d257929aef26"
+    "ref": "0a15e36e7f82b6ed45af6fa9759f29b40dcd965d",
+    "commit": "0a15e36e7f82b6ed45af6fa9759f29b40dcd965d"
   },
   "bundledPackages": {
     "pnpm": {
@@ -80,9 +80,9 @@
   "desktopPatches": [
     {
       "packageName": "@deepseek-ai/dsh-client-connection",
-      "version": "0.1.5-rc.2",
-      "file": "@deepseek-ai__dsh-client-connection@0.1.5-rc.2.patch",
-      "sha256": "f8d372212f49db5884fd6e886db74100577b28ded2f5276cd327e31a6146b23f",
+      "version": "0.1.6-alpha.1",
+      "file": "@deepseek-ai__dsh-client-connection@0.1.6-alpha.1.patch",
+      "sha256": "33013badfd1ea123178db0320add399b2ddc0239c37f74d07f91c35d5add6993",
       "moduleFile": "lib/index.js",
       "markers": [
         "function staleSessionCookies(headerValue, currentName)",

@@ -591,7 +591,12 @@ export async function resolveConfiguredRoutes(ctx, selection, signal) {
       const { launchEnvironmentOf } = await import("@deepseek-ai/dsh-launch-environment");
       const connection = resolveAdapterOptions(profile, launchEnvironmentOf(ctx));
       const endpoint = endpointUrl(connection.baseURL);
-      if (endpoint.origin !== "https://api.deepseek.com" || !["", "/v1"].includes(endpoint.pathname.replace(/\/+$/u, ""))) continue;
+      // Harness 0.1.6 moved the official adapter's default base URL to /anthropic;
+      // /v1 and the bare origin remain valid for profiles that set it explicitly.
+      // capabilityEndpoint replaces the whole pathname, so accepting /anthropic here
+      // cannot produce a doubled prefix.
+      if (endpoint.origin !== "https://api.deepseek.com"
+        || !["", "/v1", "/anthropic"].includes(endpoint.pathname.replace(/\/+$/u, ""))) continue;
       matches.push({ ...selection, endpoint: connection.baseURL, credentialRef: connection.apiKeyEnv,
         webSearch: { protocol: "anthropic-messages-web-search", credential: "inherit", endpointPath: "/anthropic/v1" } });
     } else if (address.settingsNs === "llm-pi-ai") {
