@@ -70,8 +70,12 @@ export async function verifySearchSettings(url, cookies, outputDirectory) {
       await expect(card).toHaveCount(1);
       const expectActive = () => expect(card.getByRole("status")).toHaveText(/^(已生效|Active)$/u, { timeout: 10_000 });
       await expectActive();
-      const mode = card.locator("select");
+      // The card now carries two selects (routing and the upstream plugin toggle), so
+      // address them by id instead of by tag.
+      const mode = card.locator("#plugin-config-web-search-mode");
       await expect(mode).toHaveValue("follow-model");
+      const officialPlugin = card.locator("#plugin-config-web-search-official");
+      await expect(officialPlugin).toHaveValue("disabled");
       await expect(card.locator("input")).toHaveCount(0);
       await mode.selectOption("independent");
       const provider = card.locator("#plugin-config-web-search-provider");

@@ -6,6 +6,8 @@ window.__ModuleLoader__.load({
     const namespace = "web-search-follow-model";
     const localeNamespace = "desktop.webSearch";
     const modes = ["follow-model", "disabled", "independent"];
+    const officialStates = ["disabled", "enabled"];
+    const editableFields = ["mode", "independentProvider", "officialSearchPlugin"];
     const dictionaries = {
       en: {
         title: "Web search", description: "Search follows the model used by each conversation.",
@@ -16,7 +18,10 @@ window.__ModuleLoader__.load({
         failed: "Changes could not be completed. Review the settings and try again.",
         active: "Active", saved: "Saved; applying", applying: "Applying", activationFailed: "Search settings are not active. Retry or choose another service.",
         invalid: "Enter a valid independent search Provider ID.",
-        readOnly: "These settings are read-only."
+        readOnly: "These settings are read-only.",
+        officialPlugin: "DeepSeek search plugin",
+        officialDisabled: "Disabled", officialEnabled: "Enabled",
+        officialHint: "The official web-search-deepseek plugin registers its own search tool. Keep it disabled unless you want to use it instead of the settings above."
       },
       zh: {
         title: "联网搜索", description: "联网搜索跟随每个会话使用的模型。",
@@ -27,7 +32,10 @@ window.__ModuleLoader__.load({
         failed: "修改未能完成，请检查设置后重试。",
         active: "已生效", saved: "已保存，等待生效", applying: "应用中", activationFailed: "搜索设置尚未生效，请重试或选择其他服务。",
         invalid: "请填写有效的独立搜索 Provider ID。",
-        readOnly: "这些设置为只读。"
+        readOnly: "这些设置为只读。",
+        officialPlugin: "DeepSeek 搜索插件",
+        officialDisabled: "禁用", officialEnabled: "启用",
+        officialHint: "官方 web-search-deepseek 插件会注册自己的搜索工具。除非你要改用它，否则保持禁用。"
       },
       "zh-TW": {
         title: "聯網搜尋", description: "聯網搜尋跟隨每個工作階段使用的模型。",
@@ -38,7 +46,10 @@ window.__ModuleLoader__.load({
         failed: "修改未能完成，請檢查設定後重試。",
         active: "已生效", saved: "已儲存，等待生效", applying: "套用中", activationFailed: "搜尋設定尚未生效，請重試或選擇其他服務。",
         invalid: "請填寫有效的獨立搜尋 Provider ID。",
-        readOnly: "這些設定為唯讀。"
+        readOnly: "這些設定為唯讀。",
+        officialPlugin: "DeepSeek 搜尋外掛程式",
+        officialDisabled: "停用", officialEnabled: "啟用",
+        officialHint: "官方 web-search-deepseek 外掛程式會註冊自己的搜尋工具。除非你要改用它，否則請保持停用。"
       }
     };
     const css = `
@@ -88,15 +99,16 @@ window.__ModuleLoader__.load({
       }
       publish() {
         const current = this.scope.getSnapshot();
-        const value = { mode: "follow-model", independentProvider: "deepseek-official", ...current.value };
-        const base = { mode: "follow-model", independentProvider: "deepseek-official", ...current.base };
+        const defaults = { mode: "follow-model", independentProvider: "deepseek-official", officialSearchPlugin: "disabled" };
+        const value = { ...defaults, ...current.value };
+        const base = { ...defaults, ...current.base };
         for (const [field, draft] of this.drafts) value[field] = draft === null ? base[field] : draft;
         this.snapshot = {
           ...value, available: current.status === "ready", writable: current.writable,
-          overridden: Object.keys(current.user ?? {}).some(key => key === "mode" || key === "independentProvider"),
+          overridden: Object.keys(current.user ?? {}).some(key => editableFields.includes(key)),
           dirty: this.operations().length > 0, saving: this.saving, failed: this.failed,
           activationPhase: this.activationPhase,
-          invalid: !modes.includes(value.mode) || (value.mode === "independent" && (
+          invalid: !modes.includes(value.mode) || !officialStates.includes(value.officialSearchPlugin) || (value.mode === "independent" && (
             typeof value.independentProvider !== "string" || value.independentProvider.length === 0
             || value.independentProvider.length > 128 || /[\s\u0000-\u001f\u007f]/u.test(value.independentProvider)
             || value.independentProvider === "follow-model"
@@ -112,7 +124,7 @@ window.__ModuleLoader__.load({
         });
       }
       edit = (field, value) => {
-        if (this.saving || !this.snapshot.writable || !["mode", "independentProvider"].includes(field)) return;
+        if (this.saving || !this.snapshot.writable || !editableFields.includes(field)) return;
         if (this.drafts.size === 0) this.revision = this.scope.getSnapshot().revision;
         this.drafts.set(field, value);
         this.failed = false;
@@ -121,7 +133,7 @@ window.__ModuleLoader__.load({
       reset = () => {
         if (this.saving || !this.snapshot.writable) return;
         this.revision = this.scope.getSnapshot().revision;
-        this.drafts = new Map([["mode", null], ["independentProvider", null]]);
+        this.drafts = new Map(editableFields.map(field => [field, null]));
         this.failed = false;
         this.publish();
       };
@@ -134,7 +146,11 @@ window.__ModuleLoader__.load({
       save = async () => {
         if (!this.snapshot.available || !this.snapshot.writable || this.saving || this.snapshot.invalid || (!this.snapshot.dirty && this.activationPhase !== "failed")) return;
         const ops = this.operations();
-        const desired = { mode: this.snapshot.mode, independentProvider: this.snapshot.independentProvider };
+        const desired = {
+          mode: this.snapshot.mode,
+          independentProvider: this.snapshot.independentProvider,
+          officialSearchPlugin: this.snapshot.officialSearchPlugin,
+        };
         this.saving = true;
         this.failed = false;
         this.publish();
@@ -146,6 +162,7 @@ window.__ModuleLoader__.load({
           const user = this.scope.getSnapshot().user ?? {};
           this.failed = activation?.phase !== "active" || activation.selection?.mode !== desired.mode
             || activation.selection?.independentProvider !== desired.independentProvider
+            || activation.selection?.officialSearchPlugin !== desired.officialSearchPlugin
             || !ops.every(op => op.op === "unset" ? !Object.hasOwn(user, op.path[0]) : user[op.path[0]] === op.value);
           if (!this.failed) this.drafts.clear();
           else this.revision = this.scope.getSnapshot().revision;
@@ -184,6 +201,13 @@ window.__ModuleLoader__.load({
             ),
             h("p", null, t("providerHint"))
           ) : null,
+          h("label", null, t("officialPlugin"), h("select", {
+            id: "plugin-config-web-search-official", value: state.officialSearchPlugin, disabled,
+            onChange: event => props.edit("officialSearchPlugin", event.target.value)
+          }, officialStates.map(item => h("option", { key: item, value: item },
+            t(item === "enabled" ? "officialEnabled" : "officialDisabled")))),
+            h("p", null, t("officialHint"))
+          ),
           !state.writable ? h("p", null, t("readOnly")) : null,
           h("p", { role: state.activationPhase === "failed" ? "alert" : "status" }, t(state.activationPhase === "failed" ? "activationFailed" : state.activationPhase)),
           state.invalid || state.failed ? h("p", { role: "alert" }, t(state.invalid ? "invalid" : "failed")) : null,

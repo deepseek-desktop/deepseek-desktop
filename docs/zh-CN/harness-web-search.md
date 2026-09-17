@@ -1,6 +1,6 @@
 # 跟随当前模型的联网搜索
 
-Desktop 独立管理 `@deepseek-ai/dsh-web-search-follow-model`，与 Harness 官方的 `@deepseek-ai/dsh-web-search-deepseek` 共存。官方插件的源码、名称、设置界面和配置保持原样，Desktop 不再强制禁用它，也不会覆盖用户手动禁用它的选择。
+Desktop 独立管理 `@deepseek-ai/dsh-web-search-follow-model`。官方 `@deepseek-ai/dsh-web-search-deepseek` 启用时会注册自己的搜索工具，与该扩展在同一会话里形成两条竞争的搜索路径，因此桌面版**默认停用官方插件**。官方插件的源码、名称、设置界面和配置仍保持原样，只是默认不参与桌面 profile；在「联网搜索」设置卡片的「DeepSeek 搜索插件」开关中可以随时改回启用，用户在 profile 中的主动启停也不会被覆盖。
 
 **启用插件不等于选择搜索 Provider。** 官方 Provider 和 follow-model Provider 可以同时注册；`web.searchProvider` 在任一时刻只选择其中一个执行搜索，`web_search` 工具仍只注册一次，不会重复搜索。
 

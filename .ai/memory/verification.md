@@ -83,7 +83,7 @@
 
 日期：2026-09-05
 
-- Desktop 不再强制停用或补丁修改官方 `@deepseek-ai/dsh-web-search-deepseek`；官方 Provider 与独立 `@deepseek-ai/dsh-web-search-follow-model` 可以同时注册，`web.searchProvider` 只选择一个 Provider 执行搜索，不重复注册工具。用户主动启用或停用官方插件的 profile 状态保持原样。
+- Desktop 不补丁修改官方 `@deepseek-ai/dsh-web-search-deepseek` 的源码或设置界面，但桌面 profile 默认停用它（见 ADR-021）：该插件启用时会注册自己的 `web_search` 工具，与独立扩展在同一会话形成两条竞争路径。默认停用写在 `deepseek-desktop-bundle` 的 bundle 补丁中，`web-search-follow-model` 的 `officialSearchPlugin` 设置在每次激活时把状态重新应用到 Loader 条目。用户在 profile 中主动改回启用仍然有效。
 - 独立选择协调器通过公开 Settings 与 Loader API 提供“跟随当前模型 / 独立搜索 Provider / 关闭搜索”三种模式。单一用户设置映射到 `web.searchProvider`，独立 Provider 的 fixture 搜索实际返回独立结果；关闭后 follow-model Provider 明确返回 `WEB_FOLLOW_MODEL_DISABLED`，恢复默认后重新执行 follow-model。无效值在保存前拒绝，宿主重载失败会恢复先前的持久化值和实际路由。
 - 公共 Agent 上下文集成回归同时加载官方和 follow-model 插件，验证两个并发会话、切换模型、端点/模型/凭据隔离及用户主动停用官方插件后 follow-model 仍可用。未知协议、普通模型回答、无结构化搜索证据、取消和超时均明确失败，不跨 Provider 降级。
 - Web 应用的 `tool-web` 由 Agent preset 按会话装配且不出现在宿主 Loader entries 中；此前尝试热重载该条目的真实 Harness smoke 失败并揭示该边界。最终实现不访问会话私有 Loader，只在 Provider 调用边界执行关闭检查；因此保留当前会话和 `web_fetch`，已开始的请求按既有完成/取消语义收口。

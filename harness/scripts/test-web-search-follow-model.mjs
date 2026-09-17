@@ -16,7 +16,7 @@ const selectionUrl = pathToFileURL(resolve(
   "node_modules/@deepseek-ai/dsh-web-search-follow-model/selection.js"
 )).href;
 const { default: FollowModelWebSearch, FollowModelSearchEngine, configuredSearchRoutes, resolveConfiguredRoutes } = await import(moduleUrl);
-const { default: WebSearchSelection, validateSelection, SETTINGS_API_PATH } = await import(selectionUrl);
+const { default: WebSearchSelection, validateSelection, SETTINGS_API_PATH, OFFICIAL_SEARCH_ENTRY_ID } = await import(selectionUrl);
 const secretA = "secret-a-for-test";
 const secretB = "secret-b-for-test";
 
@@ -833,4 +833,61 @@ test("third-party protocols register without vendor branches", async () => {
   assert.equal(result.content, `model-a:extension:${secretA.length}`);
   dispose();
   await assert.rejects(engine.search(agent(), { query: "extension" }), /protocol that is unavailable/u);
+});
+
+test("the official search plugin entry follows the Desktop setting and defaults to disabled", async () => {
+  const require = createRequire(moduleUrl);
+  const load = name => import(pathToFileURL(require.resolve(name)).href);
+  const { Context } = await load("@deepseek-ai/cordis");
+  const { default: Loader } = await load("@deepseek-ai/cordis-plugin-loader");
+  const { default: WebRuntime } = await load("@deepseek-ai/dsh-web");
+  const { default: ToolRuntime } = await load("@deepseek-ai/dsh-tools");
+  const { default: SystemPrompt } = await load("@deepseek-ai/dsh-system-prompt");
+  const { default: SettingsProvider } = await load("@deepseek-ai/dsh-settings");
+  class MemorySettings extends SettingsProvider {
+    get writable() { return true; }
+    async load() { return {}; }
+    async persist() {}
+  }
+  const ctx = new Context();
+  try {
+    await ctx.plugin(Loader);
+    await ctx.plugin(MemorySettings);
+    await ctx.plugin(SystemPrompt, {});
+    await ctx.plugin(ToolRuntime);
+    await ctx.plugin(WebSearchSelection);
+    ctx.loader.builtins["plain-web"] = WebRuntime;
+    ctx.loader.builtins["official-search"] = class OfficialSearchFixture {
+      static reusable = true;
+      constructor() {}
+    };
+    await ctx.loader.create({
+      id: "web",
+      name: "cordis:plain-web",
+      inject: ["webSearchSelection"],
+      config: { searchProvider: { __jsExpr: "ctx.get('webSearchSelection').searchProvider" }, fetchProvider: "http" },
+    });
+    // The desktop bundle composes the upstream entry disabled; the setting owns it afterwards.
+    await ctx.loader.create({ id: OFFICIAL_SEARCH_ENTRY_ID, name: "cordis:official-search", disabled: true });
+    const officialEntry = () => [...ctx.loader.entries()].find(entry => entry.options.id === OFFICIAL_SEARCH_ENTRY_ID);
+    await ctx.webSearchSelection.applyQueue;
+
+    assert.equal(ctx.webSearchSelection.active.officialSearchPlugin, "disabled", "the setting must default to disabled");
+    assert.equal(officialEntry()?.options.disabled, true, "a default Desktop profile must keep the upstream entry disabled");
+
+    await ctx.settings.update("web-search-follow-model", { officialSearchPlugin: "enabled" });
+    await eventually(() => (officialEntry()?.options.disabled ?? null) === null,
+      "enabling the setting did not clear the upstream entry's disabled override");
+    // `active` is published after the loader work completes, so settle the queue first.
+    await ctx.webSearchSelection.applyQueue;
+    assert.equal(ctx.webSearchSelection.active.officialSearchPlugin, "enabled");
+
+    await ctx.settings.update("web-search-follow-model", { officialSearchPlugin: "disabled" });
+    await eventually(() => officialEntry()?.options.disabled === true,
+      "disabling the setting did not disable the upstream entry again");
+    await ctx.webSearchSelection.applyQueue;
+    assert.equal(ctx.webSearchSelection.active.officialSearchPlugin, "disabled");
+  } finally {
+    await ctx.fiber.dispose();
+  }
 });

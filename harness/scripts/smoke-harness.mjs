@@ -264,16 +264,19 @@ function officialSearchRow(text) {
   return parseYaml(text, { customTags: [{ tag: "tag:yaml.org,2002:js", resolve: value => value }] }).find(row => row.id === "web-search-deepseek");
 }
 const official = officialSearchRow(dump.stdout);
-if (official?.name !== "@deepseek-ai/dsh-web-search-deepseek" || official.disabled === true) {
-  throw new Error("the upstream search plugin must remain enabled in a fresh Desktop profile");
+// The official plugin registers a competing web_search tool, so a fresh Desktop profile
+// composes it disabled; the entry itself must still be present and unmodified so the
+// setting can turn it back on.
+if (official?.name !== "@deepseek-ai/dsh-web-search-deepseek" || official.disabled !== true) {
+  throw new Error("a fresh Desktop profile must compose the upstream search plugin as disabled");
 }
-await writeFile(join(profile, "cordis.patch.yml"), "- id: web-search-deepseek\n  disabled: true\n");
-const userDisabledDump = spawnSync(node, harnessArguments("--profile", "desktop-web", "--dump-config"), {
+await writeFile(join(profile, "cordis.patch.yml"), "- id: web-search-deepseek\n  disabled: false\n");
+const userEnabledDump = spawnSync(node, harnessArguments("--profile", "desktop-web", "--dump-config"), {
   cwd: smokeRoot, env: environment, input: "smoke-credential-session\n", encoding: "utf8", windowsHide: true
 });
-if (userDisabledDump.status !== 0 || officialSearchRow(userDisabledDump.stdout)?.disabled !== true
-  || !userDisabledDump.stdout.includes("webSearchSelection")) {
-  throw new Error("Desktop must preserve the user's official-plugin disable choice without changing search routing");
+if (userEnabledDump.status !== 0 || officialSearchRow(userEnabledDump.stdout)?.disabled === true
+  || !userEnabledDump.stdout.includes("webSearchSelection")) {
+  throw new Error("Desktop must let the user re-enable the official plugin without changing search routing");
 }
 await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
 if (!/locale:\s+preference: zh/u.test(await readFile(join(dshHome, "settings.yaml"), "utf8"))) {

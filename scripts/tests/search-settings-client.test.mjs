@@ -7,7 +7,8 @@ import vm from "node:vm";
 const root = resolve(import.meta.dirname, "../..");
 const packageRoot = resolve(root, "harness/packages/web-search-follow-model");
 let client;
-let fetchHandler = async () => Response.json({ phase: "active", selection: { mode: "follow-model", independentProvider: "deepseek-official" } });
+// The backend's normalizedSelection always reports every field, so the double must too.
+let fetchHandler = async () => Response.json({ phase: "active", selection: { mode: "follow-model", independentProvider: "deepseek-official", officialSearchPlugin: "disabled" } });
 const document = { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } };
 vm.runInNewContext(await readFile(resolve(packageRoot, "client.js"), "utf8"), {
   document, AbortSignal, fetch: (...args) => fetchHandler(...args),
@@ -19,7 +20,7 @@ function setup(user = {}, writable = true) {
   const listeners = new Set();
   const state = {
     status: "ready", writable,
-    base: { mode: "follow-model", independentProvider: "deepseek-official" },
+    base: { mode: "follow-model", independentProvider: "deepseek-official", officialSearchPlugin: "disabled" },
     user, revision: 1
   };
   function publish() {
@@ -212,5 +213,37 @@ test("saved settings are not reported active until the backend confirms activati
   controller.activation = async () => ({ phase: "active", selection: state.value });
   await controller.save();
   assert.equal(controller.getSnapshot().failed, false);
+  controller.dispose();
+});
+
+test("the official search plugin toggle is editable, saved and reset like the other fields", async () => {
+  const { controller, calls, state } = setup();
+  assert.equal(controller.getSnapshot().officialSearchPlugin, "disabled");
+  assert.equal(controller.getSnapshot().overridden, false);
+
+  controller.edit("officialSearchPlugin", "enabled");
+  assert.equal(controller.getSnapshot().dirty, true);
+  assert.equal(controller.getSnapshot().invalid, false);
+  await controller.save();
+  assert.deepEqual(state.user, { officialSearchPlugin: "enabled" });
+  assert.equal(controller.getSnapshot().failed, false);
+  assert.equal(controller.getSnapshot().overridden, true);
+
+  // Reset clears this field too, so the card cannot leave a stale override behind.
+  controller.reset();
+  assert.equal(controller.getSnapshot().officialSearchPlugin, "disabled");
+  await controller.save();
+  assert.deepEqual(state.user, {});
+  assert.equal(calls.at(-1).ops.length, 1);
+  assert.equal(calls.at(-1).ops[0].op, "unset");
+  controller.dispose();
+});
+
+test("an unknown official search plugin value is rejected before saving", async () => {
+  const { controller, calls } = setup();
+  controller.edit("officialSearchPlugin", "sometimes");
+  assert.equal(controller.getSnapshot().invalid, true);
+  await controller.save();
+  assert.equal(calls.length, 0);
   controller.dispose();
 });

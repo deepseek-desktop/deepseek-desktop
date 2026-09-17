@@ -1,6 +1,14 @@
 - id: credentials
   disabled: true
 
+# The official plugin registers its own web_search tool. Running it next to the Desktop
+# extension gives one conversation two competing search paths, so the desktop profile
+# starts with it off. This bundle patch composes after dsh-base, which declares the
+# entry; the web-search-follow-model setting owns the state afterwards and re-applies it
+# to the loader on every activation.
+- id: web-search-deepseek
+  disabled: true
+
 - id: web
   inject:
     - webSearchSelection

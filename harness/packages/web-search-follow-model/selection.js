@@ -6,11 +6,17 @@ const SETTINGS_NS = "web-search-follow-model";
 const SETTINGS_API_PATH = "/api/desktop.web-search";
 const FOLLOW_MODEL_PROVIDER_ID = "follow-model";
 const DEFAULT_INDEPENDENT_PROVIDER_ID = "deepseek-official";
+const OFFICIAL_SEARCH_ENTRY_ID = "web-search-deepseek";
 const MAX_PROVIDER_ID_LENGTH = 128;
 
 export const Config = z.object({
   mode: z.union(["follow-model", "disabled", "independent"]).default("follow-model"),
   independentProvider: z.string().default(DEFAULT_INDEPENDENT_PROVIDER_ID),
+  // The official plugin registers its own web_search tool, so running it alongside the
+  // Desktop extension gives one conversation two competing search paths. Desktop keeps
+  // it off by default and lets this setting turn it back on; the setting is the single
+  // source of truth and is applied to the loader entry on every activation.
+  officialSearchPlugin: z.union(["disabled", "enabled"]).default("disabled"),
 });
 
 function normalizedSelection(value = {}) {
@@ -19,6 +25,7 @@ function normalizedSelection(value = {}) {
     independentProvider: typeof value.independentProvider === "string"
       ? value.independentProvider.trim()
       : DEFAULT_INDEPENDENT_PROVIDER_ID,
+    officialSearchPlugin: value.officialSearchPlugin === "enabled" ? "enabled" : "disabled",
   };
 }
 
@@ -35,7 +42,9 @@ function validateSelection(value) {
 }
 
 function sameSelection(left, right) {
-  return left.mode === right.mode && left.independentProvider === right.independentProvider;
+  return left.mode === right.mode
+    && left.independentProvider === right.independentProvider
+    && left.officialSearchPlugin === right.officialSearchPlugin;
 }
 
 export default class WebSearchSelection extends Service {
@@ -134,6 +143,7 @@ export default class WebSearchSelection extends Service {
       this.pending = target;
       try {
         await this.reloadWebProvider(ctx, this.providerFor(target));
+        await this.applyOfficialSearchPlugin(ctx, target.officialSearchPlugin === "enabled");
         this.active = target;
         this.activeUser = user;
         this.failure = undefined;
@@ -141,7 +151,11 @@ export default class WebSearchSelection extends Service {
       } catch {
         this.pending = previous;
         let restored = false;
-        try { await this.reloadWebProvider(ctx, this.providerFor(previous)); restored = true; } catch { /* Admission remains closed on failed restoration. */ }
+        try {
+          await this.reloadWebProvider(ctx, this.providerFor(previous));
+          await this.applyOfficialSearchPlugin(ctx, previous.officialSearchPlugin === "enabled");
+          restored = true;
+        } catch { /* Admission remains closed on failed restoration. */ }
         this.failure = restored ? "apply-failed" : "restore-failed";
         // CAS prevents an older failed application from overwriting a newer save.
         this.rollbackSelection = previous;
@@ -172,6 +186,26 @@ export default class WebSearchSelection extends Service {
       : FOLLOW_MODEL_PROVIDER_ID;
   }
 
+  /**
+   * Drive the upstream search plugin from this extension's setting. The setting is the
+   * only persisted state: the loader entry is re-derived from it on every activation,
+   * so a profile recomposed from bundle patches cannot silently resurrect the plugin.
+   * Passing null clears the override instead of writing an explicit false, which leaves
+   * the upstream default in place when the user turns it back on.
+   */
+  async applyOfficialSearchPlugin(ctx, enabled) {
+    const entries = [...ctx.loader.entries()].filter(entry => entry.options.id === OFFICIAL_SEARCH_ENTRY_ID);
+    if (entries.length === 0) return;
+    if (entries.length !== 1) {
+      throw new Error(`Harness extension API is incompatible: expected at most one loader entry named ${OFFICIAL_SEARCH_ENTRY_ID}, found ${entries.length}.`);
+    }
+    const entry = entries[0];
+    const desired = enabled ? null : true;
+    if ((entry.options.disabled ?? null) === desired) return;
+    await entry.update({ disabled: desired });
+    await ctx.loader.await();
+  }
+
   async reloadWebProvider(ctx, provider) {
     const id = "web";
     const entries = [...ctx.loader.entries()].filter((entry) => entry.options.id === id && entry.fiber?.uid && !entry.disabled);
@@ -194,6 +228,7 @@ export default class WebSearchSelection extends Service {
 
 export {
   DEFAULT_INDEPENDENT_PROVIDER_ID,
+  OFFICIAL_SEARCH_ENTRY_ID,
   FOLLOW_MODEL_PROVIDER_ID,
   SETTINGS_NS,
   SETTINGS_API_PATH,
