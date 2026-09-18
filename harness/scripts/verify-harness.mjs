@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { findInstalledPackages, listInstalledPackages, packageInventory } from "../../scripts/lib/installed-packages.mjs";
 import { verifyDesktopPatchAsset } from "../../scripts/lib/desktop-patches.mjs";
 import { assertPinnedHarnessSource } from "../../scripts/lib/harness-source-pin.mjs";
-import { nativeExecutableDeclarations } from "../../scripts/lib/native-prebuilds.mjs";
+import { assertPrebuildPlatform, prebuildArtifactDeclarations } from "../../scripts/lib/native-prebuilds.mjs";
 
 const harnessRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(harnessRoot, "..");
@@ -65,31 +65,34 @@ async function verifyStaticMuslExecutables(root, moduleRoots, manifest, platform
       if (error?.code === "ENOENT") continue;
       throw error;
     }
-    if (!acceptedPlatforms.has(prebuilds.platform)) {
-      throw new Error(
-        `native package platform mismatch: ${item.manifest.name} declares ${String(prebuilds.platform)}, expected one of ${[...acceptedPlatforms].join(", ")}`
-      );
-    }
-    for (const binary of nativeExecutableDeclarations(prebuilds, item.manifest.name)) {
-      if (binary.kind !== "static-musl" && binary.kind !== "native-engine") continue;
+    const artifacts = prebuildArtifactDeclarations(prebuilds, item.manifest.name);
+    assertPrebuildPlatform(prebuilds, artifacts, acceptedPlatforms, item.manifest.name);
+    for (const binary of artifacts) {
+      if (binary.kind !== "static-musl" && binary.kind !== "native-engine" && binary.kind !== "wasm-engine-file") continue;
       const filename = resolve(item.directory, binary.path);
       const packageRelation = relative(item.directory, filename);
       if (!packageRelation || packageRelation === ".." || packageRelation.startsWith(`..${sep}`)) {
         throw new Error(`native package executable path escapes its package: ${item.manifest.name}`);
       }
       const info = await stat(filename);
-      if (!info.isFile() || (info.mode & 0o111) === 0) {
+      if (!info.isFile()) {
+        throw new Error(`native package artifact is not a file: ${item.manifest.name}/${binary.path}`);
+      }
+      if (binary.kind !== "wasm-engine-file" && (info.mode & 0o111) === 0) {
         throw new Error(`native package launcher is not executable: ${item.manifest.name}/${binary.path}`);
       }
       const stagedPath = relative(root, filename).split(sep).join("/");
       const record = manifestFiles.get(stagedPath);
-      if (!record || !Number.isInteger(record.mode) || (record.mode & 0o111) === 0) {
+      if (!record || !Number.isInteger(record.mode)) {
+        throw new Error(`Harness manifest omits the native artifact: ${stagedPath}`);
+      }
+      if (binary.kind !== "wasm-engine-file" && (record.mode & 0o111) === 0) {
         throw new Error(`Harness manifest omits the executable mode for native launcher: ${stagedPath}`);
       }
-      if (binary.kind === "native-engine") {
+      if (binary.kind === "native-engine" || binary.kind === "wasm-engine-file") {
         const actual = createHash("sha256").update(await readFile(filename)).digest("hex");
         if (actual !== binary.sha256 || record.sha256 !== binary.sha256) {
-          throw new Error(`native package engine executable checksum mismatch: ${item.manifest.name}/${binary.path}`);
+          throw new Error(`native package engine artifact checksum mismatch: ${item.manifest.name}/${binary.path}`);
         }
         continue;
       }

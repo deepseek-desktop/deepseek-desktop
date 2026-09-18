@@ -16,6 +16,7 @@
 - 官方可配置插件已进入工作台侧栏的 `plugins.item` 插件管理器；跟随模型搜索扩展删除旧 `settings.plugin.item` 注册，改用官方插件管理器插槽。设置内的“内置插件”保持只读清单，烟测按官方 `aria-label` 的“已启用”状态断言，不再寻找新版明确取消的“运行中”圆点。
 - macOS 大型缓存检出清理期间若 `.DS_Store` 被 Finder 重建，第一次 `git clean -ffdx` 失败会重试；重复失败则删除并从本地镜像重建该不可变 commit。回归分别覆盖重试成功、重建和非法重试参数。
 - 完整本地 `desktop:package` 通过：配置/发行测试 149 项、三语 153 个 key、前端 32 项、搜索 45 项、Rust 101 项通过且 1 项外部仓库测试按设计忽略、Clippy、E2E 7 项、29,262 个 Harness 文件校验、真实插件管理器/搜索设置/模型流空闲超时/父进程清理 smoke 均成功。生成的 local channel ARM64 DMG 为 405,491,978 字节，SHA-256 `0106063774328011e8f648caea3779e8b8858ba63af175409d0d893f87ca51b8`；`SHA256SUMS`、`hdiutil verify` 与 `codesign --verify --deep --strict` 通过。该包记录源码 `dirty=true`、版本 `1.0.0` 且仅为本地修复验收，不替代干净候选和四平台 Tag 矩阵。
+- `v1.1.21` annotated Tag 对象 `ef412805e1b8641f164e8819508703711ea5dcb6` 指向 `683477e985011551658074791c6c07e85cfcd074`。本机同一干净 commit 的 `1.1.21` ARM64 完整打包和 DMG 校验通过；GitHub Run `35336467768` 的 shell-quality 在 Linux 暂存 27,253 个文件后失败，第一处错误是把官方 `@deepseek-ai/libreoffice-kit-wasm` 的 `platform: wasm` 当作错误的 Linux 原生平台。原生矩阵未启动、Release 未创建；该 Tag 保持不可变，修复转入 `v1.1.22`。
 
 ## 官方 Harness 0.1.6-alpha.1 源码升级
 

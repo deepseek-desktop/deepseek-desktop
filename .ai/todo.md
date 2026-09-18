@@ -4,7 +4,7 @@
 
 当前发布及已解决门禁见 [验证基线](memory/verification.md#当前发布验收)；本文件只列未验证范围与外部条件，不再保留旧失败版本为待发布候选。F01–F24 各自的实测、Mock 和平台边界以 [审计修复验收](memory/audit-remediation.md) 为准，不能用发行成功统一标记全平台全功能通过。
 
-官方 Harness `0.1.6-alpha.2` 源码升级的本机验证范围见[升级验证](memory/verification.md#官方-harness-016-alpha2-源码升级)。`v1.1.20` 已发布且不再作为活跃待办；`v1.1.21` 候选已完成 macOS ARM64 本地完整打包，仍须以新 Tag 的四平台原生矩阵、Windows 安装交互、汇总发布及六项公开资产下载校验作为发行结论。`v1.1.14` 至 `v1.1.17` 均已失败且保持不可变，均未创建 Release。
+官方 Harness `0.1.6-alpha.2` 源码升级的本机验证范围见[升级验证](memory/verification.md#官方-harness-016-alpha2-源码升级)。`v1.1.20` 已发布且不再作为活跃待办；`v1.1.21` 在 Linux shell-quality 发现官方 WASM 回退被原生平台校验误拒，保持不可变且未创建 Release。修复后的 `v1.1.22` 须完成本机门禁、四平台原生矩阵、Windows 安装交互、汇总发布及六项公开资产下载校验。`v1.1.14` 至 `v1.1.17` 同样保持不可变且未创建 Release。
 
 ## 独立搜索扩展的外部验收
 
