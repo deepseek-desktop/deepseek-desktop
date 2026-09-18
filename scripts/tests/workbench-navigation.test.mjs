@@ -1,58 +1,19 @@
+// Two tripwires for constraints that nothing else can catch.
+//
+// This file used to grep 15 Rust and Vue sources for 45 exact substrings — menu call
+// shapes, a literal `38.0`, the body of `start()`. None of it ran any code, `cargo fmt`
+// could break any of it, and the two cases that mattered most were already covered by real
+// unit tests: `harness.rs` exercises the navigation allowlist (five tests) and
+// `tao_view_guard.rs` exercises the AppKit guard (three). Those were removed.
+//
+// What remains is what a compiler and a unit test cannot express: two *negative*
+// constraints, each with a crash or a data-loss incident behind it, and neither reachable
+// from a test harness. They are cheap. Do not grow this file back into a source scanner —
+// a behaviour worth pinning belongs in a Rust test that executes it.
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { test } from "node:test";
-
-const root = resolve(import.meta.dirname, "../..");
-
-test("workbench startup waits for one candidate activation before starting a process", async () => {
-  const harness = await readFile(resolve(root, "src-tauri/src/harness.rs"), "utf8");
-  const updater = await readFile(resolve(root, "src-tauri/src/harness_update.rs"), "utf8");
-  assert.match(harness, /pub fn start\(&self\)[^{]*\{\s*self\.harness_updates\.ensure_startup_activation\(\);\s*let _operation/u);
-  assert.match(updater, /startup_activation: Once/u);
-  assert.match(updater, /startup_activation\.call_once\(\|\| \{[\s\S]*?apply_pending_on_startup\(\)/u);
-  assert.match(updater, /thread::spawn\(move \|\| \{\s*manager\.ensure_startup_activation\(\);\s*manager\.check_automatically\(\)/u);
-});
-
-test("isolated workbench links reach the Rust navigation allowlist", async () => {
-  const [app, lib, menu, harness] = await Promise.all([
-    readFile(resolve(root, "src/App.vue"), "utf8"),
-    readFile(resolve(root, "src-tauri/src/lib.rs"), "utf8"),
-    readFile(resolve(root, "src-tauri/src/native_menu.rs"), "utf8"),
-    readFile(resolve(root, "src-tauri/src/harness.rs"), "utf8")
-  ]);
-  assert.match(lib, /open_js_links_on_click\(false\)/u);
-  assert.match(harness, /\.on_navigation\(/u);
-  assert.match(harness, /\.on_new_window\(/u);
-  assert.match(harness, /\.opener\(\)\s*\.open_url\(/u);
-  assert.doesNotMatch(harness, /WORKBENCH_MENU_SCRIPT|__deepseek_desktop_menu__/u);
-  assert.match(app, /DesktopMenuBar/u);
-  assert.match(lib, /desktop_menu_popup/u);
-  assert.match(menu, /WINDOW_MENU_HEIGHT_LOGICAL/u);
-  assert.match(menu, /popup_below_title\(&menu, &window, anchor_x\)/u);
-  assert.match(menu, /#\[cfg\(not\(target_os = "macos"\)\)\][\s\S]*?menu\.popup_at\(/u);
-  assert.match(harness, /DESKTOP_MENU_WEBVIEW_LABEL/u);
-  assert.match(harness, /__DEEPSEEK_DESKTOP_MENU_ONLY__/u);
-  assert.match(harness, /WebviewUrl::App\("index\.html"\.into\(\)\)/u);
-  assert.match(harness, /Position::Logical/u);
-  assert.match(harness, /window_size\.to_logical::<f64>\(scale_factor\)/u);
-  assert.match(harness, /\.hide\(\)/u);
-  assert.match(harness, /should_navigate_workbench/u);
-});
-
-test("macOS anchors the native popup without moving the shared window menu", async () => {
-  const menu = await readFile(resolve(root, "src-tauri/src/native_menu.rs"), "utf8");
-  const app = await readFile(resolve(root, "src/App.vue"), "utf8");
-  assert.match(menu, /WINDOW_MENU_HEIGHT_LOGICAL: f64 = 38\.0/u);
-  assert.match(app, /<DesktopMenuBar @open="showDesktopMenu"/u);
-  assert.doesNotMatch(app, /usesWindowMenu|windowMenuVisible/u);
-  assert.match(menu, /anchor_x\.clamp\(0\.0, logical_width\)/u);
-  assert.match(menu, /convertPoint_toView\(NSPoint::new\(anchor_x, y\), None\)/u);
-  assert.match(menu, /convertPointToScreen\(point\)/u);
-  assert.match(menu, /popUpMenuPositioningItem_atLocation_inView\(None, screen_point, None\)/u);
-  assert.match(menu, /NativeMenuPopupGuard::try_acquire/u);
-  assert.doesNotMatch(menu, /menu\.popup\(window\)|set_as_windows_menu_for_nsapp/u);
-});
 
 test("closing a view never shares the quit path", async () => {
   const lib = await readFile(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
@@ -66,30 +27,9 @@ test("closing a view never shares the quit path", async () => {
   assert.match(menu, /close_settings/u);
 });
 
-test("the TaoView Objective-C guard tracks the macOS window state", async () => {
-  const [lib, guard] = await Promise.all([
-    readFile(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8"),
-    readFile(new URL("../../src-tauri/src/tao_view_guard.rs", import.meta.url), "utf8")
-  ]);
-  assert.match(
-    lib,
-    /#\[cfg\(target_os = "macos"\)\]\s*mod tao_view_guard;/u
-  );
-  assert.match(lib, /tao_view_guard::install\(&window\)\?/u);
-  assert.match(guard, /LIVE_VIEW_STATES/u);
-  assert.match(guard, /state != registered_state/u);
-  assert.match(guard, /msg_send!\[view, window\]/u);
-});
-
-test("macOS keeps native editing shortcuts available to the focused webview", async () => {
-  const menu = await readFile(new URL("../../src-tauri/src/native_menu.rs", import.meta.url), "utf8");
-  for (const action of ["undo", "redo", "cut", "copy", "paste", "select_all"]) {
-    assert.match(menu, new RegExp(`PredefinedMenuItem::${action}\\(`, "u"));
-  }
-  assert.match(menu, /setAllowsKeyEquivalentWhenHidden\(true\)/u);
-  assert.match(menu, /setHidden\(true\)/u);
-});
-
+// ADR-019: macOS 26 kept delivering input to a TaoView whose window was already going
+// away, and making a responder first during that transition aborted the process. Nothing
+// observable distinguishes the safe path from the crashing one until it crashes.
 test("menus and surface switches do not force focus during AppKit transitions", async () => {
   const [menu, harness] = await Promise.all([
     readFile(new URL("../../src-tauri/src/native_menu.rs", import.meta.url), "utf8"),
