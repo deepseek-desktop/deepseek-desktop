@@ -24,6 +24,12 @@
 - 同一函数连续三轮在 Windows 失败（wasm 平台、执行位、manifest mode），原因是每轮只修一处 POSIX 假设。已逐条清点并把三处模式判断抽成 `scripts/lib/native-prebuilds.mjs` 的 `assertNativeArtifactModes`，POSIX / Windows / WASM 三种形状均有回归，不再依赖发布矩阵试错。
 - 桌面 sidecar 的出站代理实测：净化环境启动（等同 Finder 场景）时桌面进程无任何代理变量，sidecar 收到 `HTTP_PROXY`/`HTTPS_PROXY` 及小写共四项，值为 `http://127.0.0.1:7897/`（带尾斜杠，可据此区分 CFNetwork 解析与环境透传）；`http://127.0.0.1:8888/` 解析为 None，本机模型服务保持直连。带 shell 环境启动时走白名单透传，两条路径均验证。
 
+- `v1.1.24` 发布成功。GitHub Run `35354931923` 四平台原生矩阵与汇总发布全部通过，Release 含五个安装包与 `SHA256SUMS` 共六个公开资产，未签名故标记 prerelease 且不占 Latest。这是 `v1.1.21` 至 `v1.1.23` 连续三次失败后第一次 Windows 通过，原因是该轮把 `verifyStaticMuslExecutables` 的 POSIX 假设一次清完而非逐个试错。
+- `1.1.25` 本机安装验收（`DeepSeek Desktop_1.1.25_aarch64.dmg`，SHA-256 `dc09e5cc676fe2e4f9bcbf690ecee3bdc29355958268955d03195cb6fdc80a5f`，DMG checksum VALID、arm64、安装前后 `codesign --verify --deep --strict` 均通过）：
+  - 代理：以净化环境启动（等同 Finder 场景），桌面进程自身 0 个代理变量，sidecar 收到 `HTTP_PROXY`/`HTTPS_PROXY` 及小写共四项，值 `http://127.0.0.1:7897/` 带尾斜杠可据此区分 CFNetwork 解析与环境透传。
+  - 环境不过滤：桌面进程 13 个环境变量全部到达 sidecar，差集为空；sidecar 共 25 项，多出的是桌面自身注入的名字。
+  - 联网搜索：用装机包内实际发运的扩展代码实测，白名单声明为 undefined、探测命中 `plain-web-search`/`credential: none`/`/v1/web/search`、返回 3 条真实来源。模型是否主动调用 `web_search` 不属于该链路，未验证。
+
 ## 官方 Harness 0.1.6-alpha.1 源码升级
 
 由 `c291e7961a51`（`0.1.5-rc.2`）升级到 `0a15e36e7f82`（`dsh-v0.1.6-alpha.1`）。本机四道门禁全部通过：`test:config`、`verify`、`test:e2e`、`harness:smoke`（`Harness 0.1.6-alpha.1, 1 cycle(s)`）。升级需要处理的上游变化：
