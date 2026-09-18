@@ -20,6 +20,10 @@
 
 - `v1.1.22` annotated Tag 指向 `710310aa6c898cb3d6405db3ac879f2845fa3c80`。GitHub Run `35339962806`：shell-quality、macos-arm64、macos-x64、linux-x64 四个 Job 成功，证明官方 WASM 回退校验修复在真实 Linux 上生效；windows-x64 失败，第一处错误是 `native package launcher is not executable: @deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe`——NTFS 无 POSIX 执行位，该断言在 Windows 上恒失败。原生矩阵未全绿、Release 未创建；该 Tag 保持不可变，修复转入 `v1.1.23`。
 
+- `v1.1.23` annotated Tag 指向 `afe15f2`。GitHub Run `35345188191`：shell-quality、macos-arm64、macos-x64、linux-x64 四个 Job 成功，windows-x64 失败。第一处错误是 `Harness manifest omits the native artifact: node_modules/@deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe`——`stage-harness.mjs:74` 在 Windows 上本就不记录 `mode`，而校验无条件要求其为整数。该 Tag 保持不可变，未创建 Release，修复转入 `v1.1.24`。
+- 同一函数连续三轮在 Windows 失败（wasm 平台、执行位、manifest mode），原因是每轮只修一处 POSIX 假设。已逐条清点并把三处模式判断抽成 `scripts/lib/native-prebuilds.mjs` 的 `assertNativeArtifactModes`，POSIX / Windows / WASM 三种形状均有回归，不再依赖发布矩阵试错。
+- 桌面 sidecar 的出站代理实测：净化环境启动（等同 Finder 场景）时桌面进程无任何代理变量，sidecar 收到 `HTTP_PROXY`/`HTTPS_PROXY` 及小写共四项，值为 `http://127.0.0.1:7897/`（带尾斜杠，可据此区分 CFNetwork 解析与环境透传）；`http://127.0.0.1:8888/` 解析为 None，本机模型服务保持直连。带 shell 环境启动时走白名单透传，两条路径均验证。
+
 ## 官方 Harness 0.1.6-alpha.1 源码升级
 
 由 `c291e7961a51`（`0.1.5-rc.2`）升级到 `0a15e36e7f82`（`dsh-v0.1.6-alpha.1`）。本机四道门禁全部通过：`test:config`、`verify`、`test:e2e`、`harness:smoke`（`Harness 0.1.6-alpha.1, 1 cycle(s)`）。升级需要处理的上游变化：
