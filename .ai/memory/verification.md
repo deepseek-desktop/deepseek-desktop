@@ -18,6 +18,8 @@
 - 完整本地 `desktop:package` 通过：配置/发行测试 149 项、三语 153 个 key、前端 32 项、搜索 45 项、Rust 101 项通过且 1 项外部仓库测试按设计忽略、Clippy、E2E 7 项、29,262 个 Harness 文件校验、真实插件管理器/搜索设置/模型流空闲超时/父进程清理 smoke 均成功。生成的 local channel ARM64 DMG 为 405,491,978 字节，SHA-256 `0106063774328011e8f648caea3779e8b8858ba63af175409d0d893f87ca51b8`；`SHA256SUMS`、`hdiutil verify` 与 `codesign --verify --deep --strict` 通过。该包记录源码 `dirty=true`、版本 `1.0.0` 且仅为本地修复验收，不替代干净候选和四平台 Tag 矩阵。
 - `v1.1.21` annotated Tag 对象 `ef412805e1b8641f164e8819508703711ea5dcb6` 指向 `683477e985011551658074791c6c07e85cfcd074`。本机同一干净 commit 的 `1.1.21` ARM64 完整打包和 DMG 校验通过；GitHub Run `35336467768` 的 shell-quality 在 Linux 暂存 27,253 个文件后失败，第一处错误是把官方 `@deepseek-ai/libreoffice-kit-wasm` 的 `platform: wasm` 当作错误的 Linux 原生平台。原生矩阵未启动、Release 未创建；该 Tag 保持不可变，修复转入 `v1.1.22`。
 
+- `v1.1.22` annotated Tag 指向 `710310aa6c898cb3d6405db3ac879f2845fa3c80`。GitHub Run `35339962806`：shell-quality、macos-arm64、macos-x64、linux-x64 四个 Job 成功，证明官方 WASM 回退校验修复在真实 Linux 上生效；windows-x64 失败，第一处错误是 `native package launcher is not executable: @deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe`——NTFS 无 POSIX 执行位，该断言在 Windows 上恒失败。原生矩阵未全绿、Release 未创建；该 Tag 保持不可变，修复转入 `v1.1.23`。
+
 ## 官方 Harness 0.1.6-alpha.1 源码升级
 
 由 `c291e7961a51`（`0.1.5-rc.2`）升级到 `0a15e36e7f82`（`dsh-v0.1.6-alpha.1`）。本机四道门禁全部通过：`test:config`、`verify`、`test:e2e`、`harness:smoke`（`Harness 0.1.6-alpha.1, 1 cycle(s)`）。升级需要处理的上游变化：

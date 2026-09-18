@@ -78,7 +78,11 @@ async function verifyStaticMuslExecutables(root, moduleRoots, manifest, platform
       if (!info.isFile()) {
         throw new Error(`native package artifact is not a file: ${item.manifest.name}/${binary.path}`);
       }
-      if (binary.kind !== "wasm-engine-file" && (info.mode & 0o111) === 0) {
+      // NTFS carries no POSIX execute bit, so this assertion can only ever fail on Windows:
+      // the official win32 engine is a .exe the product does run. Identity there rests on the
+      // SHA-256 check below, which covers every engine artifact on every platform.
+      const executableBitIsMeaningful = process.platform !== "win32";
+      if (binary.kind !== "wasm-engine-file" && executableBitIsMeaningful && (info.mode & 0o111) === 0) {
         throw new Error(`native package launcher is not executable: ${item.manifest.name}/${binary.path}`);
       }
       const stagedPath = relative(root, filename).split(sep).join("/");
@@ -86,7 +90,7 @@ async function verifyStaticMuslExecutables(root, moduleRoots, manifest, platform
       if (!record || !Number.isInteger(record.mode)) {
         throw new Error(`Harness manifest omits the native artifact: ${stagedPath}`);
       }
-      if (binary.kind !== "wasm-engine-file" && (record.mode & 0o111) === 0) {
+      if (binary.kind !== "wasm-engine-file" && executableBitIsMeaningful && (record.mode & 0o111) === 0) {
         throw new Error(`Harness manifest omits the executable mode for native launcher: ${stagedPath}`);
       }
       if (binary.kind === "native-engine" || binary.kind === "wasm-engine-file") {
