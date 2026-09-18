@@ -8,7 +8,11 @@ import { pathToFileURL } from "node:url";
 import { findInstalledPackages, listInstalledPackages, packageInventory } from "../../scripts/lib/installed-packages.mjs";
 import { verifyDesktopPatchAsset } from "../../scripts/lib/desktop-patches.mjs";
 import { assertPinnedHarnessSource } from "../../scripts/lib/harness-source-pin.mjs";
-import { assertPrebuildPlatform, prebuildArtifactDeclarations } from "../../scripts/lib/native-prebuilds.mjs";
+import {
+  assertNativeArtifactModes,
+  assertPrebuildPlatform,
+  prebuildArtifactDeclarations
+} from "../../scripts/lib/native-prebuilds.mjs";
 
 const harnessRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(harnessRoot, "..");
@@ -78,21 +82,14 @@ async function verifyStaticMuslExecutables(root, moduleRoots, manifest, platform
       if (!info.isFile()) {
         throw new Error(`native package artifact is not a file: ${item.manifest.name}/${binary.path}`);
       }
-      // NTFS carries no POSIX execute bit, so this assertion can only ever fail on Windows:
-      // the official win32 engine is a .exe the product does run. Identity there rests on the
-      // SHA-256 check below, which covers every engine artifact on every platform.
-      const executableBitIsMeaningful = process.platform !== "win32";
-      if (binary.kind !== "wasm-engine-file" && executableBitIsMeaningful && (info.mode & 0o111) === 0) {
-        throw new Error(`native package launcher is not executable: ${item.manifest.name}/${binary.path}`);
-      }
       const stagedPath = relative(root, filename).split(sep).join("/");
       const record = manifestFiles.get(stagedPath);
-      if (!record || !Number.isInteger(record.mode)) {
-        throw new Error(`Harness manifest omits the native artifact: ${stagedPath}`);
-      }
-      if (binary.kind !== "wasm-engine-file" && executableBitIsMeaningful && (record.mode & 0o111) === 0) {
-        throw new Error(`Harness manifest omits the executable mode for native launcher: ${stagedPath}`);
-      }
+      // NTFS carries no POSIX execute bit: Node reports none and the stager records none, so
+      // on Windows the artifact's identity rests on the SHA-256 check below instead.
+      assertNativeArtifactModes(binary, info.mode, record, {
+        stagedPath,
+        executableBitIsMeaningful: process.platform !== "win32"
+      });
       if (binary.kind === "native-engine" || binary.kind === "wasm-engine-file") {
         const actual = createHash("sha256").update(await readFile(filename)).digest("hex");
         if (actual !== binary.sha256 || record.sha256 !== binary.sha256) {

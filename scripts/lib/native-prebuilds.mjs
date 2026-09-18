@@ -62,3 +62,31 @@ export function assertPrebuildPlatform(prebuilds, artifacts, acceptedPlatforms, 
     `native package platform mismatch: ${packageName} declares ${String(prebuilds.platform)}, expected one of ${[...acceptedPlatforms].join(", ")}`
   );
 }
+
+/**
+ * Check one staged native artifact's file mode and manifest record.
+ *
+ * Split out of the Harness verifier because the POSIX execute bit has no NTFS equivalent and
+ * the assertions kept failing on Windows for reasons that had nothing to do with the artifact:
+ * Node reports no execute bit there, and the stager records no mode at all. Both platforms are
+ * covered by tests here so the next platform difference is caught before a release matrix.
+ * @param artifact - one declaration from {@link prebuildArtifactDeclarations}.
+ * @param fileMode - the staged file's mode, or undefined where the filesystem carries none.
+ * @param record - the Harness manifest entry for the staged path.
+ * @param context - `stagedPath` for messages and `executableBitIsMeaningful` for the platform.
+ * @throws Error naming the artifact and what is missing.
+ */
+export function assertNativeArtifactModes(artifact, fileMode, record, context) {
+  const { stagedPath, executableBitIsMeaningful } = context;
+  if (record === undefined) {
+    throw new Error(`Harness manifest omits the native artifact: ${stagedPath}`);
+  }
+  // A WASM module is loaded, never executed, so it carries no execute bit on any platform.
+  if (artifact.kind === "wasm-engine-file" || !executableBitIsMeaningful) return;
+  if (!Number.isInteger(fileMode) || (fileMode & 0o111) === 0) {
+    throw new Error(`native package launcher is not executable: ${stagedPath}`);
+  }
+  if (!Number.isInteger(record.mode) || (record.mode & 0o111) === 0) {
+    throw new Error(`Harness manifest omits the executable mode for native launcher: ${stagedPath}`);
+  }
+}

@@ -4,6 +4,8 @@ DeepSeek Desktop 的重要变化记录如下。
 
 ## 未发布
 
+- 修复 Windows 因 NTFS 不携带 POSIX 执行位而无法通过 Harness 校验：文件模式与 Harness manifest 记录两处断言只在有该语义的平台生效，且暂存器在 Windows 上本就不记录 mode。原生引擎与 WASM 制品在所有平台仍逐项核对 SHA-256。该判断已抽入可测 lib，POSIX 与 Windows 两种形状都有回归。
+
 - 联网功能现在遵循系统代理，无需任何配置。此前桌面版用显式白名单构造 Harness 子进程环境且不含代理变量，内核的代理支持拿不到任何策略，网页获取只能直连；在需要代理的网络下表现为连接失败，或被 SSRF 护栏拦下的污染 DNS 解析。现在两条路径都通：显式导出的 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`（含小写形式）会传递给 Harness；从 Finder 或 Dock 启动因而没有 shell 环境时，改为读取系统代理配置。
 - 系统代理解析复用仓库拉取已有的 CFNetwork 路径，启用开关、例外列表和 PAC 脚本都被遵守，本机模型服务等环回地址保持直连。显式导出的变量优先于系统配置。凭据仍只经保险库传递，白名单有回归断言不得包含任何 KEY / TOKEN / SECRET 名称。当前只实现 macOS：Windows 的策略在注册表，Linux 桌面通常已导出环境变量，未经实测不做支持声明。
 

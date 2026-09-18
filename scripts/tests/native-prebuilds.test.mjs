@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assertPrebuildPlatform, prebuildArtifactDeclarations } from "../lib/native-prebuilds.mjs";
+import {
+  assertNativeArtifactModes,
+  assertPrebuildPlatform,
+  prebuildArtifactDeclarations
+} from "../lib/native-prebuilds.mjs";
 
 test("normalizes the Harness binary declaration format", () => {
   assert.deepEqual(prebuildArtifactDeclarations({
@@ -62,4 +66,46 @@ test("rejects an undeclared or unhashed native engine executable", () => {
     files: {}
   }, "@deepseek-ai/libreoffice-kit-darwin-arm64"), /no SHA-256 declaration/u);
   assert.throws(() => prebuildArtifactDeclarations({ platform: "darwin-arm64" }, "unknown-native"), /no supported executable declarations/u);
+});
+
+test("a POSIX launcher must carry the execute bit in both the file and the manifest", () => {
+  const artifact = { kind: "native-engine", path: "bin/engine", sha256: "a".repeat(64) };
+  const context = { stagedPath: "node_modules/pkg/bin/engine", executableBitIsMeaningful: true };
+  assert.doesNotThrow(() => assertNativeArtifactModes(artifact, 0o755, { mode: 0o755 }, context));
+  assert.throws(
+    () => assertNativeArtifactModes(artifact, 0o644, { mode: 0o755 }, context),
+    /launcher is not executable/u
+  );
+  assert.throws(
+    () => assertNativeArtifactModes(artifact, 0o755, { mode: 0o644 }, context),
+    /omits the executable mode/u
+  );
+  // The stager records a mode on POSIX, so its absence there is a real gap.
+  assert.throws(
+    () => assertNativeArtifactModes(artifact, 0o755, {}, context),
+    /omits the executable mode/u
+  );
+});
+
+test("a Windows launcher is accepted without any mode, which NTFS does not carry", () => {
+  const artifact = { kind: "native-engine", path: "bin/engine.exe", sha256: "a".repeat(64) };
+  const context = {
+    stagedPath: "node_modules/@deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe",
+    executableBitIsMeaningful: false
+  };
+  // Node reports no execute bit on Windows and the stager records no mode at all.
+  assert.doesNotThrow(() => assertNativeArtifactModes(artifact, 0o666, {}, context));
+  assert.doesNotThrow(() => assertNativeArtifactModes(artifact, 0o666, { sha256: "b".repeat(64) }, context));
+});
+
+test("a WASM module needs no execute bit and a missing manifest record always fails", () => {
+  const wasm = { kind: "wasm-engine-file", path: "assets/soffice.wasm", sha256: "c".repeat(64) };
+  for (const executableBitIsMeaningful of [true, false]) {
+    const context = { stagedPath: "node_modules/pkg/assets/soffice.wasm", executableBitIsMeaningful };
+    assert.doesNotThrow(() => assertNativeArtifactModes(wasm, 0o644, { mode: 0o644 }, context));
+    assert.throws(
+      () => assertNativeArtifactModes(wasm, 0o644, undefined, context),
+      /omits the native artifact/u
+    );
+  }
 });
