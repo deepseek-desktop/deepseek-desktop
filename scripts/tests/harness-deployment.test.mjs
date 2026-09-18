@@ -260,6 +260,22 @@ test("production package selection includes peers and only compatible optional n
   assert.throws(() => selectHarnessPackageClosure(packages, ["cli"]), /unpacked internal package/);
 });
 
+test("production package selection accepts only an exact audited external Harness package", () => {
+  const packages = new Map([
+    ["cli", { manifest: { name: "cli", dependencies: { "@deepseek-ai/libreoffice-kit": "0.0.1" } } }]
+  ]);
+  const externalPackages = {
+    "@deepseek-ai/libreoffice-kit": { version: "0.0.1", integrity: "sha512-fixture" }
+  };
+
+  assert.doesNotThrow(() => selectHarnessPackageClosure(packages, ["cli"], process, externalPackages));
+  packages.get("cli").manifest.dependencies["@deepseek-ai/libreoffice-kit"] = "^0.0.1";
+  assert.throws(
+    () => selectHarnessPackageClosure(packages, ["cli"], process, externalPackages),
+    /unpacked internal package/u
+  );
+});
+
 test("runtime lock rejects registry core copies even alongside the expected local tarball", () => {
   const packages = [{ name: "@deepseek-ai/cli", version: "1.0.0", file: "cli-1.0.0.tgz" }];
   const lock = { importers: { ".": { dependencies: { "@deepseek-ai/cli": {
@@ -273,6 +289,29 @@ test("runtime lock rejects registry core copies even alongside the expected loca
   delete lock.packages["@deepseek-ai/cli@1.0.0"];
   lock.importers["."].dependencies["@deepseek-ai/cli"].version = "1.0.0";
   assert.throws(() => verifyHarnessPackageLock(lock, packages), /outside its local package set/);
+});
+
+test("runtime lock pins audited external Harness package bytes", () => {
+  const packages = [{ name: "@deepseek-ai/cli", version: "1.0.0", file: "cli-1.0.0.tgz" }];
+  const externalPackages = {
+    "@deepseek-ai/libreoffice-kit": { version: "0.0.1", integrity: "sha512-expected" }
+  };
+  const lock = {
+    importers: { ".": { dependencies: { "@deepseek-ai/cli": {
+      specifier: "file:packages/cli-1.0.0.tgz", version: "file:packages/cli-1.0.0.tgz"
+    } } } },
+    packages: {
+      "@deepseek-ai/cli@file:packages/cli-1.0.0.tgz": {},
+      "@deepseek-ai/libreoffice-kit@0.0.1": { resolution: { integrity: "sha512-expected" } }
+    }
+  };
+
+  assert.doesNotThrow(() => verifyHarnessPackageLock(lock, packages, externalPackages));
+  lock.packages["@deepseek-ai/libreoffice-kit@0.0.1"].resolution.integrity = "sha512-replaced";
+  assert.throws(
+    () => verifyHarnessPackageLock(lock, packages, externalPackages),
+    /does not match external package/u
+  );
 });
 
 test("production deployment without a native platform package needs no npm runner", async t => {

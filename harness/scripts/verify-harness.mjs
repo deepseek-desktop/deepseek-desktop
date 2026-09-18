@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { findInstalledPackages, listInstalledPackages, packageInventory } from "../../scripts/lib/installed-packages.mjs";
 import { verifyDesktopPatchAsset } from "../../scripts/lib/desktop-patches.mjs";
 import { assertPinnedHarnessSource } from "../../scripts/lib/harness-source-pin.mjs";
+import { nativeExecutableDeclarations } from "../../scripts/lib/native-prebuilds.mjs";
 
 const harnessRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(harnessRoot, "..");
@@ -64,34 +65,35 @@ async function verifyStaticMuslExecutables(root, moduleRoots, manifest, platform
       if (error?.code === "ENOENT") continue;
       throw error;
     }
-    if (!Array.isArray(prebuilds.binaries)) {
-      throw new Error(`native package has no binary declarations: ${item.manifest.name}`);
-    }
     if (!acceptedPlatforms.has(prebuilds.platform)) {
       throw new Error(
         `native package platform mismatch: ${item.manifest.name} declares ${String(prebuilds.platform)}, expected one of ${[...acceptedPlatforms].join(", ")}`
       );
     }
-    for (const binary of prebuilds.binaries) {
-      if (binary.kind !== "static-musl") continue;
-      declarations += 1;
-      if (typeof binary.path !== "string" || binary.path.length === 0) {
-        throw new Error(`native package has an invalid static-musl path: ${item.manifest.name}`);
-      }
+    for (const binary of nativeExecutableDeclarations(prebuilds, item.manifest.name)) {
+      if (binary.kind !== "static-musl" && binary.kind !== "native-engine") continue;
       const filename = resolve(item.directory, binary.path);
       const packageRelation = relative(item.directory, filename);
       if (!packageRelation || packageRelation === ".." || packageRelation.startsWith(`..${sep}`)) {
-        throw new Error(`native package static-musl path escapes its package: ${item.manifest.name}`);
+        throw new Error(`native package executable path escapes its package: ${item.manifest.name}`);
       }
       const info = await stat(filename);
       if (!info.isFile() || (info.mode & 0o111) === 0) {
-        throw new Error(`native package static-musl launcher is not executable: ${item.manifest.name}/${binary.path}`);
+        throw new Error(`native package launcher is not executable: ${item.manifest.name}/${binary.path}`);
       }
       const stagedPath = relative(root, filename).split(sep).join("/");
       const record = manifestFiles.get(stagedPath);
       if (!record || !Number.isInteger(record.mode) || (record.mode & 0o111) === 0) {
-        throw new Error(`Harness manifest omits the executable mode for static-musl launcher: ${stagedPath}`);
+        throw new Error(`Harness manifest omits the executable mode for native launcher: ${stagedPath}`);
       }
+      if (binary.kind === "native-engine") {
+        const actual = createHash("sha256").update(await readFile(filename)).digest("hex");
+        if (actual !== binary.sha256 || record.sha256 !== binary.sha256) {
+          throw new Error(`native package engine executable checksum mismatch: ${item.manifest.name}/${binary.path}`);
+        }
+        continue;
+      }
+      declarations += 1;
       if (process.platform === "linux") {
         const probe = spawnSync(filename, ["--probe"], {
           encoding: "utf8",

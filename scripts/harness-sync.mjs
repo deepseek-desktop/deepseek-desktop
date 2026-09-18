@@ -16,6 +16,7 @@ import {
 } from "./lib/harness-deployment.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
 import { artifactForbiddenRoots } from "./lib/artifact-scan.mjs";
+import { cleanCachedCheckout } from "./lib/cached-checkout-clean.mjs";
 import { applyDesktopCompatibilityPatches } from "./lib/desktop-patches.mjs";
 import { selectLatestHarnessTag } from "./lib/harness-ref.mjs";
 import { assertPinnedHarnessSource } from "./lib/harness-source-pin.mjs";
@@ -236,18 +237,31 @@ async function prepareRemote(repository, ref) {
   let current = null;
   try { current = runGit(["rev-parse", "HEAD"], checkout); } catch {}
   const recreateCheckout = process.platform === "win32" || current !== commit;
-  if (recreateCheckout) {
-    await rm(checkout, { recursive: true, force: true });
+
+  const createCheckout = async () => {
+    await rm(checkout, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     await mkdir(dirname(checkout), { recursive: true });
     // A local clone hardlinks .git/objects by default, so git aborts with
     // "hardlink different from source" whenever the mirror's background
     // maintenance rewrites a commit-graph while the clone is running.
     runGit(["clone", "--no-hardlinks", "--no-checkout", mirror, checkout], root);
     runGit(["checkout", "--detach", commit], checkout);
+  };
+
+  if (recreateCheckout) {
+    await createCheckout();
   }
   if (!recreateCheckout) {
     runGit(["reset", "--hard", commit], checkout);
-    runGit(["clean", "-ffdx", "-q"], checkout, { capture: false });
+    // Finder and filesystem indexers can recreate metadata such as .DS_Store
+    // while git is removing a large ignored dependency tree. A second clean is
+    // enough for the transient case; if the checkout remains unstable, replace
+    // the immutable cache instead of making local packaging fail permanently.
+    await cleanCachedCheckout({
+      clean: () => runGit(["clean", "-ffdx", "-q"], checkout),
+      recreate: createCheckout,
+      retries: 1
+    });
   }
   return { sourceRoot: checkout, repository, requestedRef, ref: resolvedRef, commit, dirty: false, kind, mode: "remote" };
 }
@@ -307,7 +321,12 @@ try {
     cli,
     harnessDeployment,
     runHarnessPnpm,
-    { desktopDeployment, desktopRoots: DESKTOP_EXTENSION_ROOTS, runHarnessNpm }
+    {
+      desktopDeployment,
+      desktopRoots: DESKTOP_EXTENSION_ROOTS,
+      externalPackages: toolchain.externalHarnessPackages,
+      runHarnessNpm
+    }
   );
   const mergedDesktopPackages = await mergeDesktopClosure(desktopDeployment, harnessDeployment, DESKTOP_EXTENSION_ROOTS);
   await rm(desktopDeployment, { recursive: true, force: true });

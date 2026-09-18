@@ -8,7 +8,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
-- 当前成功发行是 `v1.1.18` 社区预发布，annotated Tag 对象 `9435257a8f2df79b08c04fb9b66e790911c9047f` 指向 commit `2fcee8c1a53f8dfdd5de613c998ba3dcd5147cbd`；Run `34716431077` 的质量门禁、四平台原生构建、Windows x64 安装交互及汇总发布全部成功。内置 Harness 来自官方 `https://github.com/deepseek-ai/deepseek-harness.git` 的 `c291e7961a515f6d7af9304e7fd1d257929aef26`（`0.1.5-rc.2`）；Linux x64 原生 Job 已通过新的精确 SHA-256、`patchelf` / `readelf` 结构与单调阶段门禁。五个安装包和 `SHA256SUMS` 已全部下载并同时匹配清单、GitHub digest 与正文直达链接；公开包仍未使用可信发行签名，保持 prerelease 且不占据 Latest。`v1.1.14` 至 `v1.1.17` 仍为未发布的不可变失败 Tag。证据范围见 [当前发布验收](memory/verification.md#当前发布验收)，防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
+- 当前成功发行是 `v1.1.20` 社区预发布；质量门禁、四平台原生构建、Windows x64 安装交互、汇总发布和六个公开文件下载验收均成功。公开包仍未使用可信发行签名，保持 prerelease 且不占据 Latest。`v1.1.14` 至 `v1.1.17` 仍为未发布的不可变失败 Tag。`v1.1.21` 源码候选已在 macOS ARM64 完成官方 Harness `0.1.6-alpha.2` 的完整本地打包，远端矩阵和公开制品仍以新 Tag 实际结果为准。证据范围见 [当前发布验收](memory/verification.md#当前发布验收)，防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
 
 - macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地 DMG 已验证 WebKit 历史、同源链接、剪贴板、混合窗口操作、候选激活/拒绝/恢复和独立搜索设置；Alibaba MaaS Max / Flash GUI 并发各有 8 条来源，实际重叠 8067 毫秒。该实测为同端点同凭据，不扩大为所有 Provider 隔离或每个后续发行包均重测；逐缺陷范围见 [审计修复验收](memory/audit-remediation.md)。
 
@@ -53,7 +53,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 待安装 Harness 的激活 smoke 与自动检查在后台线程串行执行，不占用驱动窗口的线程；激活期间对外发布 `applying` 状态。工作台首次启动与后台维护共享一次性激活门闩，确保完成 pending 校验和原子切换后才拉起服务，避免实际运行版本与 current 指针不一致。
 - 签名清单请求使用 30 秒预算，与制品下载的 20 分钟预算分离，避免更新服务停滞长时间占用更新操作锁。
 
-- 插件配置和只读插件清单由当前官方 Harness 提供，Desktop 不再强制装配 DSH Market。需要市场时，使用当前桌面 Harness 与内置 pnpm，以应用自己的 `DSH_HOME` 执行官方 `dsh plugin --profile desktop-web add dshmarket`，由官方 CLI 管理用户依赖与 Bundle 声明，不改写市场代码。市场文档的普通 `web` profile 不是本桌面版使用的配置。受管 Bundle 撤出内置包时，只对所有权标记和实际内容摘要一致且非用户显式依赖的项撤下启用声明，保留文件及其他用户配置。
+- 插件配置、插件管理器和只读插件清单由当前官方 Harness 提供，Desktop 不再强制装配 DSH Market。需要市场时，使用当前桌面 Harness 与内置 pnpm，以应用自己的 `DSH_HOME` 执行官方 `dsh plugin --profile desktop-web add dshmarket`，由官方 CLI 管理用户依赖与 Bundle 声明，不改写市场代码。市场文档的普通 `web` profile 不是本桌面版使用的配置。受管 Bundle 撤出内置包时，只对所有权标记和实际内容摘要一致且非用户显式依赖的项撤下启用声明，保留文件及其他用户配置。
 
 ## 版本基线
 

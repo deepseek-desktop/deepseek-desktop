@@ -381,14 +381,22 @@ function supportsTarget(manifest, target) {
 function dependencyEdges(manifest) {
   const optional = manifest.optionalDependencies ?? {};
   return [
-    ...Object.keys(manifest.dependencies ?? {}).filter(name => !(name in optional)).map(name => [name, true]),
-    ...Object.keys(manifest.peerDependencies ?? {}).map(name => [name, !manifest.peerDependenciesMeta?.[name]?.optional]),
-    ...Object.keys(optional).map(name => [name, false])
+    ...Object.entries(manifest.dependencies ?? {}).filter(([name]) => !(name in optional)).map(([name, specifier]) => [name, true, specifier]),
+    ...Object.entries(manifest.peerDependencies ?? {}).map(([name, specifier]) => [name, !manifest.peerDependenciesMeta?.[name]?.optional, specifier]),
+    ...Object.entries(optional).map(([name, specifier]) => [name, false, specifier])
   ];
 }
 
+function isLockedExternalPackage(name, specifier, externalPackages) {
+  const locked = externalPackages?.[name];
+  return typeof specifier === "string"
+    && typeof locked?.version === "string"
+    && typeof locked?.integrity === "string"
+    && specifier === locked.version;
+}
+
 /** Select the same dependency/peer closure as the official npm package-set build. */
-export function selectHarnessPackageClosure(workspacePackages, roots, target = process) {
+export function selectHarnessPackageClosure(workspacePackages, roots, target = process, externalPackages = {}) {
   const selected = new Map();
   const excluded = {};
   function visit(name, required = true, parent) {
@@ -405,9 +413,10 @@ export function selectHarnessPackageClosure(workspacePackages, roots, target = p
     }
     if (item.manifest.private) throw new Error(`Harness runtime requires an unpublished package: ${name}`);
     selected.set(name, item);
-    for (const [dependency, requiredDependency] of dependencyEdges(item.manifest)) {
+    for (const [dependency, requiredDependency, specifier] of dependencyEdges(item.manifest)) {
       if (workspacePackages.has(dependency)) visit(dependency, requiredDependency, name);
-      else if (requiredDependency && dependency.startsWith("@deepseek-ai/")) {
+      else if (requiredDependency && dependency.startsWith("@deepseek-ai/")
+        && !isLockedExternalPackage(dependency, specifier, externalPackages)) {
         throw new Error(`Harness source package ${name} requires an unpacked internal package: ${dependency}`);
       }
     }
@@ -586,7 +595,7 @@ export async function verifyInstalledPlatformPackage(platformPackage, installedD
   }
 }
 
-export function verifyHarnessPackageLock(lock, packages) {
+export function verifyHarnessPackageLock(lock, packages, externalPackages = {}) {
   const importer = lock.importers?.["."];
   if (!importer) throw new Error("Harness runtime lock has no root importer");
   for (const record of packages) {
@@ -602,6 +611,13 @@ export function verifyHarnessPackageLock(lock, packages) {
       }
     }
   }
+  for (const [name, expected] of Object.entries(externalPackages)) {
+    const identity = `${name}@${expected.version}`;
+    const resolved = lock.packages?.[identity];
+    if (resolved?.resolution?.integrity !== expected.integrity) {
+      throw new Error(`Harness runtime lock does not match external package ${identity}`);
+    }
+  }
 }
 
 /** Package the official CLI closure, then install only immutable local core tarballs. */
@@ -609,7 +625,8 @@ export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, d
   const desktopRoots = options.desktopRoots ?? DESKTOP_EXTENSION_ROOTS;
   const peers = await desktopHarnessPeers(options.desktopDeployment, desktopRoots, workspacePackages);
   const roots = [cli.manifest.name, ...peers];
-  const { packages, excluded } = selectHarnessPackageClosure(workspacePackages, roots);
+  const externalPackages = options.externalPackages ?? {};
+  const { packages, excluded } = selectHarnessPackageClosure(workspacePackages, roots, process, externalPackages);
   const platformPackage = await hostPlatformPackage(packages, sourceRoot);
   if (platformPackage && typeof options.runHarnessNpm !== "function") {
     throw new Error(`Harness platform package requires the official npm pack path: ${platformPackage.manifest.name}`);
@@ -647,8 +664,10 @@ export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, d
       if (!names.delete(manifest.name) || manifest.version !== expected?.manifest.version) {
         throw new Error(`Harness packed identity differs from selected source: ${file}`);
       }
-      for (const [dependency, required] of dependencyEdges(manifest)) {
-        if (required && dependency.startsWith("@deepseek-ai/") && !packages.some(item => item.manifest.name === dependency)) {
+      for (const [dependency, required, specifier] of dependencyEdges(manifest)) {
+        if (required && dependency.startsWith("@deepseek-ai/")
+          && !packages.some(item => item.manifest.name === dependency)
+          && !isLockedExternalPackage(dependency, specifier, externalPackages)) {
           throw new Error(`Harness packed package requires an unpacked internal package: ${dependency}`);
         }
       }
@@ -681,7 +700,7 @@ export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, d
     }));
     await runHarnessPnpm(["install", "--lockfile-only"], staging);
     const lock = yaml.load(await readFile(join(staging, "pnpm-lock.yaml"), "utf8"));
-    verifyHarnessPackageLock(lock, records);
+    verifyHarnessPackageLock(lock, records, externalPackages);
     await runHarnessPnpm(["install", "--prod", "--frozen-lockfile", "--trust-lockfile"], staging);
     await materializePackageLinks(join(staging, "node_modules"));
     for (const record of records) {
@@ -704,7 +723,10 @@ export async function deployHarnessClosure(sourceRoot, workspacePackages, cli, d
       name: "deepseek-desktop-harness-runtime", private: true, version: cli.manifest.version,
       type: "module", dependencies: Object.fromEntries(records.map(record => [record.name, record.version]))
     }, null, 2)}\n`);
-    const packageSet = { schemaVersion: 1, roots, packages: records, upstreamPatches: patchRecords };
+    const lockedExternalPackages = Object.entries(externalPackages)
+      .map(([name, value]) => ({ name, version: value.version, integrity: value.integrity }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    const packageSet = { schemaVersion: 1, roots, packages: records, externalPackages: lockedExternalPackages, upstreamPatches: patchRecords };
     await writeFile(join(destination, "harness-packages.json"), `${JSON.stringify(packageSet, null, 2)}\n`);
     await patchBrowserJsonIntrinsics(destination);
     return packageSet;

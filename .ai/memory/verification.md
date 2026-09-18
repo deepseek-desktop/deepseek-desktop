@@ -8,6 +8,15 @@
 - 本机现有 `v1.1.18` 的用户 profile 已按此方式安装 `dshmarket@1.45.1`，安装前保留 profile 备份。市场 Host 与 Client 入口同 npm 原始制品逐字节一致；这是本机用户插件状态，不是新的发行默认能力。
 - 使用实际安装包的 Harness，在隔离 profile 中再次执行官方安装命令，确认市场侧栏入口、真实目录的 3,627 个条目及搜索设置保存/恢复正常。新源码暂存包再以相同方式验证，确认简化后的搜索标题和市场入口同时显示，退出后的 Harness 子进程清理通过。验证未安装目录中的其他第三方插件，不代表所有市场插件均兼容。
 
+## 官方 Harness 0.1.6-alpha.2 源码升级
+
+2026-09-18：由 `0a15e36e7f82`（`dsh-v0.1.6-alpha.1`）升级到 `ddefc45fbc7f8e46dd73185e68295696d1297887`（`dsh-v0.1.6-alpha.2`）。桌面扩展 peer 和两份仍需保留的精确补丁同步到新版本；补丁内容与摘要不变且在新上游包上实际应用成功。
+
+- 上游新增 `@deepseek-ai/libreoffice-kit@0.0.1` 及平台引擎包。生产闭包只接受工具链 lock 中版本与 registry integrity 都精确匹配的外部 `@deepseek-ai/*` 包，范围声明、缺失锁定或摘要漂移均失败。原生校验同时支持既有 `binaries` 和新的 `schemaVersion: 1` `engine/files` 格式，对引擎路径、SHA-256、执行位和暂存清单逐项复核。
+- 官方可配置插件已进入工作台侧栏的 `plugins.item` 插件管理器；跟随模型搜索扩展删除旧 `settings.plugin.item` 注册，改用官方插件管理器插槽。设置内的“内置插件”保持只读清单，烟测按官方 `aria-label` 的“已启用”状态断言，不再寻找新版明确取消的“运行中”圆点。
+- macOS 大型缓存检出清理期间若 `.DS_Store` 被 Finder 重建，第一次 `git clean -ffdx` 失败会重试；重复失败则删除并从本地镜像重建该不可变 commit。回归分别覆盖重试成功、重建和非法重试参数。
+- 完整本地 `desktop:package` 通过：配置/发行测试 149 项、三语 153 个 key、前端 32 项、搜索 45 项、Rust 101 项通过且 1 项外部仓库测试按设计忽略、Clippy、E2E 7 项、29,262 个 Harness 文件校验、真实插件管理器/搜索设置/模型流空闲超时/父进程清理 smoke 均成功。生成的 local channel ARM64 DMG 为 405,491,978 字节，SHA-256 `0106063774328011e8f648caea3779e8b8858ba63af175409d0d893f87ca51b8`；`SHA256SUMS`、`hdiutil verify` 与 `codesign --verify --deep --strict` 通过。该包记录源码 `dirty=true`、版本 `1.0.0` 且仅为本地修复验收，不替代干净候选和四平台 Tag 矩阵。
+
 ## 官方 Harness 0.1.6-alpha.1 源码升级
 
 由 `c291e7961a51`（`0.1.5-rc.2`）升级到 `0a15e36e7f82`（`dsh-v0.1.6-alpha.1`）。本机四道门禁全部通过：`test:config`、`verify`、`test:e2e`、`harness:smoke`（`Harness 0.1.6-alpha.1, 1 cycle(s)`）。升级需要处理的上游变化：

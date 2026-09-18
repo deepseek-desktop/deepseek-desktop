@@ -28,7 +28,7 @@ export async function verifySearchSettings(url, cookies, outputDirectory, seeded
       entry: window.__DSH_BOOT__?.entries?.find(entry => entry.id === "@deepseek-ai/dsh-web-search-follow-model"),
     }));
     expect(pluginBoot.entry?.external).toContain("react");
-    expect(pluginBoot.entry?.inject).toContain("@deepseek-ai/dsh-client-ui-settings-plugins");
+    expect(pluginBoot.entry?.inject).toContain("@deepseek-ai/dsh-client-ui-plugin-manager");
     await expect.poll(() => page.evaluate(() => window.__ModuleLoader__?.mode)).toBe("live");
     async function expandSearchSettings() {
       const details = page.locator(".desktop-search-card details");
@@ -49,23 +49,41 @@ export async function verifySearchSettings(url, cookies, outputDirectory, seeded
       });
       if (await later.isVisible()) await later.click();
       await page.getByText(/^(设置|設定|Settings)$/u).first().click();
-      await page.getByText(/^(插件|外掛|Plugins)$/u).first().click();
+      const dialog = page.getByRole("dialog", { name: /^(设置|設定|Settings)$/u });
+      await expect(dialog).toBeVisible();
+      return dialog;
+    }
+    async function openSearchSettings() {
+      await page.getByText(/^(插件|Plugins)$/u).first().click();
+      const panel = page.locator("[data-plugin-panel]");
+      await expect(panel).toBeVisible();
+      const later = page.getByRole("button", { name: /^(稍后配置|稍後設定|Configure later)$/u });
+      await later.waitFor({ state: "visible", timeout: 3000 }).catch(error => {
+        if (error.name !== "TimeoutError") throw error;
+      });
+      if (await later.isVisible()) await later.click();
+      const item = panel.locator('[data-plugin-item="web-search-follow-model"]');
+      await expect(item).toBeVisible();
+      await item.locator("button").first().click();
+      await expect(panel.locator('[data-plugin-item-detail="web-search-follow-model"]')).toBeVisible();
       await expandSearchSettings();
+      return panel;
     }
     try {
-      await openSettings();
-      await page.getByText(/^(插件列表|Plugin list)$/u).click();
-      const search = page.getByPlaceholder(/^(搜索插件|Search plugins)$/u);
+      const settingsDialog = await openSettings();
+      await settingsDialog.getByText(/^(内置插件|Built-in plugins)$/u).click();
+      const search = settingsDialog.getByPlaceholder(/^(搜索插件|Search plugins)$/u);
       await expect(search).toBeVisible();
       for (const name of ["@deepseek-ai/dsh-web-search-follow-model", "deepseek-desktop-credentials-vault"]) {
         await search.fill(name);
         const entry = page.locator(`[data-plugin-module="${name}"]`).first();
         await expect(entry).toBeVisible();
-        await expect(entry.getByRole("img", { name: /^(运行中|Running)$/u })).toBeVisible();
+        await expect(entry.getByRole("button", { name: /(?:已启用|已啟用|Enabled)$/u })).toBeVisible();
       }
       await page.screenshot({ path: join(outputDirectory, "official-plugin-list.png") });
-      await page.getByText(/^(插件配置|Plugin configuration)$/u).click();
-      await expandSearchSettings();
+      await settingsDialog.getByRole("button", { name: /^(关闭|Close)$/u }).click();
+      await expect(settingsDialog).toBeHidden();
+      await openSearchSettings();
       const card = page.locator(".desktop-search-card");
       await expect(card).toHaveCount(1);
       const expectActive = () => expect(card.getByRole("status")).toHaveText(/^(已生效|Active)$/u, { timeout: 10_000 });
@@ -87,7 +105,7 @@ export async function verifySearchSettings(url, cookies, outputDirectory, seeded
       // not, activation reports failure here instead of claiming to be active.
       await expectActive();
       await page.reload();
-      await openSettings();
+      await openSearchSettings();
       await expect(mode).toHaveValue("web-search");
       await expectActive();
       await mode.selectOption("disabled");
@@ -96,7 +114,7 @@ export async function verifySearchSettings(url, cookies, outputDirectory, seeded
       await expect(card.locator("summary")).not.toContainText(/未保存|未儲存|Unsaved/u);
       await expectActive();
       await page.reload();
-      await openSettings();
+      await openSearchSettings();
       await expect(mode).toHaveValue("disabled");
       await card.getByRole("button", { name: /^(恢复默认|恢復預設|Restore defaults)$/u }).click();
       await expect(mode).toHaveValue("follow-model");
@@ -113,10 +131,10 @@ export async function verifySearchSettings(url, cookies, outputDirectory, seeded
         await page.setViewportSize({ width: 1120, height: 720 });
         // A reload drops back to the chat surface; while the dialog is open just switch tabs.
         const openModels = async () => {
-          await openSettings();
-          await page.getByText(/^(模型|Models)$/u).first().click();
+          const dialog = await openSettings();
+          await dialog.getByText(/^(模型|Models)$/u).click();
         };
-        await page.getByText(/^(模型|Models)$/u).first().click();
+        await openModels();
         // The row's edit control carries an aria-label naming the provider, which is also the
         // only stable way to single out that provider's card among the hashed class names.
         const editButton = page.getByRole("button", { name: new RegExp(`(编辑|編輯|Edit)\\s+${seededProvider}$`, "u") });

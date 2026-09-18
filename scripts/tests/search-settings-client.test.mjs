@@ -46,7 +46,7 @@ function setup(user = {}, writable = true) {
   return { scope, state, calls, publish, listeners, controller: new client.SearchSettingsController(scope, activation) };
 }
 
-test("search owns its browser entry and locales without patching the official settings plugin", async () => {
+test("search owns its plugin-manager entry and locales without patching official UI packages", async () => {
   const manifest = JSON.parse(await readFile(resolve(packageRoot, "package.json"), "utf8"));
   const toolchain = JSON.parse(await readFile(resolve(root, "harness/toolchain-lock.json"), "utf8"));
   assert.equal(manifest.exports["./client"], "./client.js");
@@ -135,15 +135,16 @@ test("slot registration is owned by follow-model and cleans subscriptions on unl
   const registrations = [];
   const disposers = [];
   const context = {
-    locale: { register: () => () => {} },
+    locale: { register: () => () => {}, bind: () => key => client.dictionaries.en[key] },
     settingsScope: { bind: ({ namespace }) => { assert.equal(namespace, "web-search-follow-model"); return scope; } },
     effect: callback => { disposers.push(callback()); },
     slots: { inject: (_name, callback) => callback(), register: (options, component) => { registrations.push({ options, component }); } }
   };
   client.apply(context);
   assert.equal(registrations.length, 1);
-  assert.equal(registrations[0].options.key, "web-search-follow-model");
-  assert.equal(registrations[0].options.name, "settings.plugin.item");
+  assert.equal(registrations[0].options.id, "web-search-follow-model");
+  assert.equal(registrations[0].options.name, "plugins.item");
+  assert.equal(registrations[0].options.label(), "Web search");
   assert.equal(registrations[0].options.inject().hooks.searchSettings.getSnapshot().mode, "follow-model");
   assert.equal(listeners.size, 1);
   for (const dispose of disposers.reverse()) dispose?.();
@@ -165,7 +166,7 @@ test("the browser uses the shared Fetch API and preserves drafts when activation
   };
   try {
     client.apply({
-      locale: { register: () => () => {} },
+      locale: { register: () => () => {}, bind: () => key => client.dictionaries.en[key] },
       settingsScope: { bind: () => scope },
       effect: callback => { disposers.push(callback()); },
       slots: { inject: (_name, callback) => callback(), register: options => { mounted = options.inject().hooks.searchSettings; } },

@@ -163,9 +163,10 @@ window.__ModuleLoader__.load({
     function SearchSettingsCard(props) {
       const state = props.useSearchSettings(value => value);
       const t = props.t;
+      if (props.view === "summary") return t("description");
       if (!state.available) return null;
       const disabled = !state.writable || state.saving;
-      return h("li", { className: "desktop-search-card" }, h("details", null,
+      return h("div", { className: "desktop-search-card" }, h("details", null,
         h("summary", null, t("title"), state.dirty ? ` (${t("pending")})` : "", h("small", null, t("description"))),
         h("form", { className: "desktop-search-body", onSubmit: event => { event.preventDefault(); void props.save(); } },
           h("label", null, t("mode"), h("select", {
@@ -187,6 +188,7 @@ window.__ModuleLoader__.load({
 
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(localeNamespace, dictionaries), "web-search: settings dictionaries");
+      const t = ctx.locale.bind(localeNamespace);
       ctx.effect(() => {
         const style = document.createElement("style");
         style.dataset.plugin = "@deepseek-ai/dsh-web-search-follow-model";
@@ -207,8 +209,8 @@ window.__ModuleLoader__.load({
         return response.json();
       });
       ctx.effect(() => controller.dispose, "web-search: settings scope");
-      ctx.slots.inject("settings.plugin.item", () => ctx.slots.register({
-        name: "settings.plugin.item", key: namespace, locale: localeNamespace,
+      ctx.slots.inject("plugins.item", () => ctx.slots.register({
+        name: "plugins.item", id: namespace, order: 40, label: () => t("title"), locale: localeNamespace,
         inject: () => controller.inject()
       }, SearchSettingsCard));
     }
