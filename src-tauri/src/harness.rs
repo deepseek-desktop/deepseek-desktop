@@ -37,6 +37,13 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_RESTARTS: u8 = 2;
 const PROFILE_PACKAGE_DIGEST_FILE: &str = ".deepseek-desktop-source.sha256";
+/// Tools the desktop owns and the Harness must use: `pnpm` is the package manager the
+/// repository deployment and plugin installs are pinned to, so it leads the search path.
+const HARNESS_BIN_DIR: &str = "harness-bin";
+/// Tools the desktop merely guarantees exist. `node` goes here, last on the search path
+/// rather than first: the desktop already ships the exact Node the Harness runs on, but a
+/// user who installed their own meant to use it.
+const HARNESS_FALLBACK_BIN_DIR: &str = "harness-bin-fallback";
 const READY_PREFIX: &str = "dsh web: http://127.0.0.1:";
 const DESKTOP_MENU_WEBVIEW_LABEL: &str = "desktop-menu";
 const DESKTOP_MENU_INITIALIZATION_SCRIPT: &str = "window.__DEEPSEEK_DESKTOP_MENU_ONLY__ = true;";
@@ -662,6 +669,10 @@ impl HarnessSupervisor {
                 );
             }
         };
+        // Recorded on every start, success included: an environment that goes missing
+        // without a word is what made the old allowlist so hard to trace back to the shell.
+        self.diagnostics
+            .append("harness", &crate::login_shell::login_shell().report);
         let mut command = Command::new(&node);
         command
             .arg(NODE_EXPOSE_INTERNALS_ARGUMENT)
@@ -1269,7 +1280,12 @@ fn harness_environment(
     harness_dir: &Path,
     node: &Path,
 ) -> DesktopResult<HashMap<String, String>> {
-    let mut environment = inherited_environment();
+    // The user's own environment first, then the launch context over it: a variable the
+    // launch actually carries is the more specific of the two and still wins. Without the
+    // first layer there is usually nothing to win against — a Finder launch inherits no
+    // shell environment at all, so passing it through unfiltered passes through a skeleton.
+    let mut environment = crate::login_shell::login_shell().variables.clone();
+    environment.extend(inherited_environment());
     // A Finder- or Dock-launched app inherits no shell environment, so for most users the
     // machine's own configuration is the only proxy policy that exists. An explicitly
     // exported variable still wins: the fallback applies only when none came through.
@@ -1308,10 +1324,9 @@ fn harness_environment(
             .to_string_lossy()
             .into_owned(),
     );
-    let mut search_paths = vec![paths.data_dir.join("harness-bin")];
-    if let Some(path) = std::env::var_os("PATH") {
-        search_paths.extend(std::env::split_paths(&path));
-    }
+    let mut search_paths = vec![paths.data_dir.join(HARNESS_BIN_DIR)];
+    search_paths.extend(crate::login_shell::search_paths());
+    search_paths.push(paths.data_dir.join(HARNESS_FALLBACK_BIN_DIR));
     environment.insert(
         "PATH".to_owned(),
         std::env::join_paths(search_paths)
@@ -1356,7 +1371,7 @@ fn prepare_package_manager(paths: &AppPaths, harness_dir: &Path, node: &Path) ->
             pnpm_cli.display().to_string(),
         ));
     }
-    let harness_bin = paths.data_dir.join("harness-bin");
+    let harness_bin = paths.data_dir.join(HARNESS_BIN_DIR);
     fs::create_dir_all(&harness_bin)?;
     #[cfg(windows)]
     fs::write(
@@ -1378,6 +1393,39 @@ fn prepare_package_manager(paths: &AppPaths, harness_dir: &Path, node: &Path) ->
         return Err(DesktopError::HarnessArtifactMissing(
             node.display().to_string(),
         ));
+    }
+    publish_fallback_node(paths, node)
+}
+
+/// Make the bundled Node reachable by name.
+///
+/// The desktop ships the exact Node the Harness runs on and hands its path to the kernel as
+/// `DEEPSEEK_DESKTOP_NODE_PATH`, but until now not as anything `PATH` could resolve — so the
+/// kernel's own Bash tool reported Node missing while executing on it. The link is rebuilt
+/// every launch because the application bundle can move, and it is written to a directory of
+/// its own so the search path can put it last.
+fn publish_fallback_node(paths: &AppPaths, node: &Path) -> DesktopResult<()> {
+    let fallback_bin = paths.data_dir.join(HARNESS_FALLBACK_BIN_DIR);
+    fs::create_dir_all(&fallback_bin)?;
+    // The literal path rather than `%DEEPSEEK_DESKTOP_NODE_PATH%`: a tool that clears the
+    // environment before shelling out must still find a working Node here.
+    #[cfg(windows)]
+    fs::write(
+        fallback_bin.join("node.cmd"),
+        format!("@echo off\r\n\"{}\" %*\r\n", node.display()),
+    )?;
+    #[cfg(unix)]
+    {
+        // A symlink rather than a wrapper script: `process.execPath`, `process.argv[0]` and
+        // `#!/usr/bin/env node` all keep pointing at a real Node, and nothing depends on an
+        // environment variable still being set by the time the tool runs.
+        let link = fallback_bin.join("node");
+        match fs::remove_file(&link) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        std::os::unix::fs::symlink(node, &link)?;
     }
     Ok(())
 }

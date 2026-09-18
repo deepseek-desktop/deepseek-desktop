@@ -73,7 +73,7 @@ for (const key of referencedKeys) {
 }
 
 const harnessCodePattern = /"(harness-[a-z-]+|restart-limit-reached)"/gu;
-const nonErrorHarnessLiterals = new Set(["harness-bin", "harness-update"]);
+const nonErrorHarnessLiterals = new Set(["harness-bin", "harness-bin-fallback", "harness-update"]);
 const emittedHarnessCodes = new Set(
   [...harnessSource.matchAll(harnessCodePattern)]
     .map(match => match[1])

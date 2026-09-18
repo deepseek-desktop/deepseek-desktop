@@ -4,6 +4,7 @@ mod diagnostics;
 mod error;
 mod harness;
 mod harness_update;
+mod login_shell;
 mod native_menu;
 mod repository_proxy;
 mod settings;
@@ -488,6 +489,12 @@ pub fn run() {
             _ => {}
         })
         .setup(|app| {
+            // Started here rather than on demand: asking the user's login shell for their
+            // environment costs one shell startup, and this way it overlaps window creation
+            // instead of being charged to the first Harness launch.
+            thread::spawn(|| {
+                let _ = login_shell::login_shell();
+            });
             let app_handle = app.handle().clone();
             let paths = AppPaths::resolve(&app_handle)?;
             let settings = Arc::new(SettingsStore::load(&paths)?);

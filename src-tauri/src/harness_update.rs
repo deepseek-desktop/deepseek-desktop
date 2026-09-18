@@ -1737,16 +1737,15 @@ fn run_repository_command(
     if let Some(cwd) = cwd {
         process.current_dir(cwd);
     }
-    if let Some(tools) = tools {
-        let mut paths = vec![tools.to_path_buf()];
-        if let Some(path) = std::env::var_os("PATH") {
-            paths.extend(std::env::split_paths(&path));
-        }
-        process.env(
-            "PATH",
-            std::env::join_paths(paths).map_err(|error| DesktopError::Other(error.to_string()))?,
-        );
-    }
+    // The user's own search path, not the one a Finder launch inherited: `git` is routinely
+    // a Homebrew install, and a skeleton `PATH` either misses it or finds the Xcode stub that
+    // only offers to install the command line tools. Pinned tools still lead when given.
+    let mut paths: Vec<PathBuf> = tools.into_iter().map(Path::to_path_buf).collect();
+    paths.extend(crate::login_shell::search_paths());
+    process.env(
+        "PATH",
+        std::env::join_paths(paths).map_err(|error| DesktopError::Other(error.to_string()))?,
+    );
     configure_hidden_process(&mut process);
     let mut child = process.spawn().map_err(|error| {
         let hint = if command.file_name().and_then(|name| name.to_str()) == Some("git") {
