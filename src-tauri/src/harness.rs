@@ -1216,6 +1216,75 @@ impl Drop for HarnessSmokeDirectory {
     }
 }
 
+/// The proxy names the Harness reads. A subset of the passthrough list, named separately so the
+/// system-proxy fallback can tell "the user configured this explicitly" from "nothing is set".
+const HARNESS_PROXY_ENVIRONMENT: [&str; 8] = [
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+];
+
+/// The machine's own proxy policy, for launches that inherit no shell environment.
+///
+/// Resolution is delegated to the same CFNetwork path the repository fetch already uses, so
+/// the enable flags, exception list and any PAC script are honoured instead of re-read. The
+/// two probe URLs stand in for ordinary public traffic; the Harness merges its own loopback
+/// bypass into every policy, so local services such as the Web UI stay direct regardless.
+fn system_proxy_environment() -> HashMap<String, String> {
+    let mut environment = HashMap::new();
+    for (probe, upper, lower) in [
+        ("https://example.com/", "HTTPS_PROXY", "https_proxy"),
+        ("http://example.com/", "HTTP_PROXY", "http_proxy"),
+    ] {
+        if let Some(proxy) = crate::repository_proxy::resolve_system_proxy(probe) {
+            environment.insert(upper.to_owned(), proxy.clone());
+            environment.insert(lower.to_owned(), proxy);
+        }
+    }
+    environment
+}
+
+/// Names the Harness sidecar inherits from the desktop process. Everything else is dropped,
+/// so a variable the Harness needs has to be listed here to reach it at all.
+const HARNESS_ENVIRONMENT_PASSTHROUGH: [&str; 24] = [
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "XDG_RUNTIME_DIR",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "USERPROFILE",
+    "SystemRoot",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    // Outbound proxy policy. `@deepseek-ai/dsh-http-proxy` reads these once at launch and
+    // applies them to every request Node's fetch would otherwise send direct, which covers
+    // LLM, web search and web fetch traffic. Without them a machine that only reaches the
+    // network through a proxy gets connection failures and polluted DNS results instead.
+    // `NO_PROXY` travels with them so the user's exclusions still apply, and the Harness
+    // keeps loopback direct on its own. Both spellings are listed because the Harness reads
+    // both and POSIX environments are case-sensitive.
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+];
+
 fn harness_environment(
     paths: &AppPaths,
     locale: &str,
@@ -1224,27 +1293,19 @@ fn harness_environment(
     node: &Path,
 ) -> DesktopResult<HashMap<String, String>> {
     let mut environment = HashMap::new();
-    for name in [
-        "PATH",
-        "HOME",
-        "USER",
-        "LOGNAME",
-        "TMPDIR",
-        "LANG",
-        "LC_ALL",
-        "XDG_RUNTIME_DIR",
-        "DBUS_SESSION_BUS_ADDRESS",
-        "APPDATA",
-        "LOCALAPPDATA",
-        "USERPROFILE",
-        "SystemRoot",
-        "WINDIR",
-        "COMSPEC",
-        "PATHEXT",
-    ] {
+    for name in HARNESS_ENVIRONMENT_PASSTHROUGH {
         if let Ok(value) = std::env::var(name) {
             environment.insert(name.to_owned(), value);
         }
+    }
+    // A Finder- or Dock-launched app inherits no shell environment, so for most users the
+    // machine's own configuration is the only proxy policy that exists. An explicitly
+    // exported variable still wins: the fallback applies only when none came through.
+    if !HARNESS_PROXY_ENVIRONMENT
+        .iter()
+        .any(|name| environment.contains_key(*name))
+    {
+        environment.extend(system_proxy_environment());
     }
     environment.insert(
         "DSH_HOME".to_owned(),
@@ -2011,6 +2072,41 @@ impl Drop for WindowsJob {
 
 #[cfg(test)]
 mod tests {
+    /// The sidecar inherits nothing it is not listed for, so an outbound proxy policy that is
+    /// absent here never reaches the Harness and every web fetch goes direct. Both spellings
+    /// are required: the Harness reads both and POSIX environments are case-sensitive.
+    #[test]
+    fn the_sidecar_inherits_the_outbound_proxy_policy() {
+        for name in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "NO_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+            "no_proxy",
+        ] {
+            assert!(
+                super::HARNESS_ENVIRONMENT_PASSTHROUGH.contains(&name),
+                "the Harness sidecar must inherit {name}"
+            );
+        }
+    }
+
+    /// The list stays an allowlist: credentials reach the Harness through the vault, never by
+    /// inheriting whatever the launching shell happened to export.
+    #[test]
+    fn the_sidecar_inherits_no_credential_bearing_names() {
+        for name in super::HARNESS_ENVIRONMENT_PASSTHROUGH {
+            let upper = name.to_ascii_uppercase();
+            assert!(
+                !upper.contains("KEY") && !upper.contains("TOKEN") && !upper.contains("SECRET"),
+                "{name} must not be inherited by the Harness sidecar"
+            );
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn termination_waits_for_the_process_group_after_the_leader_exits() {

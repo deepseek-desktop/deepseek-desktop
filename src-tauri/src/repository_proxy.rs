@@ -1,5 +1,12 @@
 use std::process::Command;
 
+/// The system proxy that applies to `url`, or None when the machine has none or bypasses it.
+/// Resolution goes through CFNetwork, so the enable flags, exception list and any PAC script
+/// are honoured rather than re-implemented.
+pub fn resolve_system_proxy(url: &str) -> Option<String> {
+    system_proxy(url)
+}
+
 pub fn configure(command: &mut Command, repository: &str) {
     configure_with(
         command,
