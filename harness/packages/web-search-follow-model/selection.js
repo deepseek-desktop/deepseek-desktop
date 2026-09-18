@@ -5,46 +5,26 @@ import { WebError } from "@deepseek-ai/dsh-web";
 const SETTINGS_NS = "web-search-follow-model";
 const SETTINGS_API_PATH = "/api/desktop.web-search";
 const FOLLOW_MODEL_PROVIDER_ID = "follow-model";
-const DEFAULT_INDEPENDENT_PROVIDER_ID = "deepseek-official";
-const OFFICIAL_SEARCH_ENTRY_ID = "web-search-deepseek";
-const MAX_PROVIDER_ID_LENGTH = 128;
+const OFFICIAL_PROVIDER_ID = "deepseek-official";
+const MODES = ["follow-model", "web-search", "disabled"];
 
 export const Config = z.object({
-  mode: z.union(["follow-model", "disabled", "independent"]).default("follow-model"),
-  independentProvider: z.string().default(DEFAULT_INDEPENDENT_PROVIDER_ID),
-  // The official plugin registers its own web_search tool, so running it alongside the
-  // Desktop extension gives one conversation two competing search paths. Desktop keeps
-  // it off by default and lets this setting turn it back on; the setting is the single
-  // source of truth and is applied to the loader entry on every activation.
-  officialSearchPlugin: z.union(["disabled", "enabled"]).default("disabled"),
+  mode: z.union(MODES).default("follow-model"),
 });
 
 function normalizedSelection(value = {}) {
-  return {
-    mode: value.mode ?? "follow-model",
-    independentProvider: typeof value.independentProvider === "string"
-      ? value.independentProvider.trim()
-      : DEFAULT_INDEPENDENT_PROVIDER_ID,
-    officialSearchPlugin: value.officialSearchPlugin === "enabled" ? "enabled" : "disabled",
-  };
+  return { mode: MODES.includes(value.mode) ? value.mode : "follow-model" };
 }
 
 function validateSelection(value) {
-  const selection = normalizedSelection(value);
-  if (selection.mode !== "independent") return;
-  const provider = selection.independentProvider;
-  if (provider.length === 0 || provider.length > MAX_PROVIDER_ID_LENGTH || /[\s\u0000-\u001f\u007f]/u.test(provider)) {
-    throw new Error("Independent web search requires a valid Harness search Provider ID.");
-  }
-  if (provider === FOLLOW_MODEL_PROVIDER_ID) {
-    throw new Error("Use follow-model mode instead of selecting the follow-model Provider as an independent service.");
+  const mode = value?.mode;
+  if (mode !== undefined && !MODES.includes(mode)) {
+    throw new Error(`Web search mode must be one of ${MODES.join(", ")}.`);
   }
 }
 
 function sameSelection(left, right) {
-  return left.mode === right.mode
-    && left.independentProvider === right.independentProvider
-    && left.officialSearchPlugin === right.officialSearchPlugin;
+  return left.mode === right.mode;
 }
 
 export default class WebSearchSelection extends Service {
@@ -144,8 +124,7 @@ export default class WebSearchSelection extends Service {
       const previousUser = this.activeUser;
       this.pending = target;
       try {
-        await this.reloadWebProvider(ctx, this.providerFor(target));
-        await this.applyOfficialSearchPlugin(ctx, target.officialSearchPlugin === "enabled");
+        await this.applySelection(ctx, target);
         this.active = target;
         this.activeUser = user ?? {};
         this.failure = undefined;
@@ -154,8 +133,7 @@ export default class WebSearchSelection extends Service {
         this.pending = previous;
         let restored = false;
         try {
-          await this.reloadWebProvider(ctx, this.providerFor(previous));
-          await this.applyOfficialSearchPlugin(ctx, previous.officialSearchPlugin === "enabled");
+          await this.applySelection(ctx, previous);
           restored = true;
         } catch { /* Admission remains closed on failed restoration. */ }
         this.failure = restored ? "apply-failed" : "restore-failed";
@@ -176,10 +154,7 @@ export default class WebSearchSelection extends Service {
   }
 
   get searchProvider() {
-    const selection = this.pending ?? this.active;
-    return selection.mode === "independent"
-      ? selection.independentProvider
-      : FOLLOW_MODEL_PROVIDER_ID;
+    return this.providerFor(this.pending ?? this.active);
   }
 
   get searchEnabled() {
@@ -187,29 +162,42 @@ export default class WebSearchSelection extends Service {
   }
 
   providerFor(selection) {
-    return selection.mode === "independent"
-      ? selection.independentProvider
-      : FOLLOW_MODEL_PROVIDER_ID;
+    return selection.mode === "web-search" ? OFFICIAL_PROVIDER_ID : FOLLOW_MODEL_PROVIDER_ID;
   }
 
   /**
-   * Drive the upstream search plugin from this extension's setting. The setting is the
-   * only persisted state: the loader entry is re-derived from it on every activation,
-   * so a profile recomposed from bundle patches cannot silently resurrect the plugin.
-   * Passing null clears the override instead of writing an explicit false, which leaves
-   * the upstream default in place when the user turns it back on.
+   * Point the seam at the provider this selection names, and refuse the selection when the
+   * seam cannot actually serve it. A profile that leaves the upstream plugin out has no
+   * deepseek-official provider, so "web-search" fails here rather than being forced back
+   * into a profile that deliberately dropped it.
    */
-  async applyOfficialSearchPlugin(ctx, enabled) {
-    const entries = [...ctx.loader.entries()].filter(entry => entry.options.id === OFFICIAL_SEARCH_ENTRY_ID);
-    if (entries.length === 0) return;
-    if (entries.length !== 1) {
-      throw new Error(`Harness extension API is incompatible: expected at most one loader entry named ${OFFICIAL_SEARCH_ENTRY_ID}, found ${entries.length}.`);
+  async applySelection(ctx, selection) {
+    const provider = this.providerFor(selection);
+    await this.reloadWebProvider(ctx, provider);
+    // "disabled" closes admission on its own; asserting there would let a broken extension
+    // entry block the one selection that needs no provider at all.
+    if (selection.mode !== "disabled") this.assertProviderUsable(ctx, provider);
+  }
+
+  /**
+   * Fail activation when the seam cannot serve the selected provider. Without this the loader
+   * update succeeds, the settings card reports "active", and every later search throws
+   * WEB_PROVIDER_CONFIGURED_MISSING instead. Credential validity stays a runtime concern: the
+   * upstream provider resolves its key through its own settings section and a launch-environment
+   * fallback, and reproducing that here would report a missing key that actually resolves.
+   */
+  assertProviderUsable(ctx, provider) {
+    const providers = ctx.get("web")?.searchProviders;
+    if (!(providers instanceof Map)) {
+      throw new Error("Harness extension API is incompatible: web.searchProviders");
     }
-    const entry = entries[0];
-    const desired = enabled ? null : true;
-    if ((entry.options.disabled ?? null) === desired) return;
-    await entry.update({ disabled: desired });
-    await ctx.loader.await();
+    const registered = providers.get(provider);
+    if (registered === undefined) {
+      throw new Error(`No web search provider named "${provider}" is registered.`);
+    }
+    if (typeof registered.available !== "function" || !registered.available()) {
+      throw new Error(`Web search provider "${provider}" is registered but unavailable.`);
+    }
   }
 
   async reloadWebProvider(ctx, provider) {
@@ -233,8 +221,8 @@ export default class WebSearchSelection extends Service {
 }
 
 export {
-  DEFAULT_INDEPENDENT_PROVIDER_ID,
-  OFFICIAL_SEARCH_ENTRY_ID,
+  MODES,
+  OFFICIAL_PROVIDER_ID,
   FOLLOW_MODEL_PROVIDER_ID,
   SETTINGS_NS,
   SETTINGS_API_PATH,

@@ -8,7 +8,7 @@ const root = resolve(import.meta.dirname, "../..");
 const packageRoot = resolve(root, "harness/packages/web-search-follow-model");
 let client;
 // The backend's normalizedSelection always reports every field, so the double must too.
-let fetchHandler = async () => Response.json({ phase: "active", selection: { mode: "follow-model", independentProvider: "deepseek-official", officialSearchPlugin: "disabled" } });
+let fetchHandler = async () => Response.json({ phase: "active", selection: { mode: "follow-model" } });
 const document = { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } };
 vm.runInNewContext(await readFile(resolve(packageRoot, "client.js"), "utf8"), {
   document, AbortSignal, fetch: (...args) => fetchHandler(...args),
@@ -20,7 +20,7 @@ function setup(user = {}, writable = true) {
   const listeners = new Set();
   const state = {
     status: "ready", writable,
-    base: { mode: "follow-model", independentProvider: "deepseek-official", officialSearchPlugin: "disabled" },
+    base: { mode: "follow-model" },
     user, revision: 1
   };
   function publish() {
@@ -82,18 +82,19 @@ test("default requires no writes; saving and resetting use the same isolated nam
   controller.dispose();
 });
 
-test("independent Provider routing validates, saves and survives failed writes", async () => {
+test("web search routing validates, saves and survives failed writes", async () => {
   const { controller, scope, calls, state } = setup();
-  controller.edit("mode", "independent");
-  controller.edit("independentProvider", "follow-model");
+  controller.edit("mode", "not-a-mode");
   assert.equal(controller.getSnapshot().invalid, true);
   await controller.save();
   assert.equal(calls.length, 0);
-  controller.edit("independentProvider", "separate-search");
+
+  controller.edit("mode", "web-search");
   assert.equal(controller.getSnapshot().invalid, false);
   await controller.save();
-  assert.deepEqual(state.user, { mode: "independent", independentProvider: "separate-search" });
+  assert.deepEqual(state.user, { mode: "web-search" });
   assert.equal(calls.length, 1);
+
   controller.edit("mode", "disabled");
   const mutate = scope.mutate;
   scope.mutate = async () => { throw new Error("test-only failure"); };
@@ -104,9 +105,8 @@ test("independent Provider routing validates, saves and survives failed writes",
   scope.mutate = mutate;
   await controller.save();
   assert.equal(calls.length, 2);
-  assert.equal(calls[0].ops.length, 2);
-  assert.equal(calls[1].ops.length, 1);
-  assert.deepEqual(state.user, { mode: "disabled", independentProvider: "separate-search" });
+  assert.equal(calls.at(-1).ops.length, 1);
+  assert.deepEqual(state.user, { mode: "disabled" });
   controller.dispose();
 });
 
@@ -206,7 +206,7 @@ test("saved settings are not reported active until the backend confirms activati
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(state.user.mode, "disabled");
   assert.equal(controller.getSnapshot().saving, true);
-  complete({ phase: "failed", selection: { mode: "follow-model", independentProvider: "deepseek-official" } });
+  complete({ phase: "failed", selection: { mode: "follow-model" } });
   await saving;
   assert.equal(controller.getSnapshot().failed, true);
   assert.equal(controller.getSnapshot().activationPhase, "failed");
@@ -216,34 +216,14 @@ test("saved settings are not reported active until the backend confirms activati
   controller.dispose();
 });
 
-test("the official search plugin toggle is editable, saved and reset like the other fields", async () => {
-  const { controller, calls, state } = setup();
-  assert.equal(controller.getSnapshot().officialSearchPlugin, "disabled");
-  assert.equal(controller.getSnapshot().overridden, false);
-
-  controller.edit("officialSearchPlugin", "enabled");
-  assert.equal(controller.getSnapshot().dirty, true);
-  assert.equal(controller.getSnapshot().invalid, false);
-  await controller.save();
-  assert.deepEqual(state.user, { officialSearchPlugin: "enabled" });
-  assert.equal(controller.getSnapshot().failed, false);
+test("reset restores the default mode and removes the stored override", async () => {
+  const { controller, calls, state } = setup({ mode: "web-search" });
   assert.equal(controller.getSnapshot().overridden, true);
-
-  // Reset clears this field too, so the card cannot leave a stale override behind.
   controller.reset();
-  assert.equal(controller.getSnapshot().officialSearchPlugin, "disabled");
+  assert.equal(controller.getSnapshot().mode, "follow-model");
   await controller.save();
   assert.deepEqual(state.user, {});
   assert.equal(calls.at(-1).ops.length, 1);
   assert.equal(calls.at(-1).ops[0].op, "unset");
-  controller.dispose();
-});
-
-test("an unknown official search plugin value is rejected before saving", async () => {
-  const { controller, calls } = setup();
-  controller.edit("officialSearchPlugin", "sometimes");
-  assert.equal(controller.getSnapshot().invalid, true);
-  await controller.save();
-  assert.equal(calls.length, 0);
   controller.dispose();
 });

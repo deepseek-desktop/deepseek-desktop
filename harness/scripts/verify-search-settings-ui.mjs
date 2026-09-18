@@ -1,7 +1,7 @@
 import { chromium, expect } from "@playwright/test";
 import { join } from "node:path";
 
-export async function verifySearchSettings(url, cookies, outputDirectory) {
+export async function verifySearchSettings(url, cookies, outputDirectory, seededProvider) {
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext({ viewport: { width: 1120, height: 720 } });
@@ -70,26 +70,25 @@ export async function verifySearchSettings(url, cookies, outputDirectory) {
       await expect(card).toHaveCount(1);
       const expectActive = () => expect(card.getByRole("status")).toHaveText(/^(已生效|Active)$/u, { timeout: 10_000 });
       await expectActive();
-      // The card now carries two selects (routing and the upstream plugin toggle), so
-      // address them by id instead of by tag.
       const mode = card.locator("#plugin-config-web-search-mode");
       await expect(mode).toHaveValue("follow-model");
-      const officialPlugin = card.locator("#plugin-config-web-search-official");
-      await expect(officialPlugin).toHaveValue("disabled");
+      // Routing is the card's only control: the mode names the search source outright, so
+      // there is no free-text Provider id and no separate upstream-plugin toggle to keep
+      // in sync with it.
+      await expect(card.locator("select")).toHaveCount(1);
       await expect(card.locator("input")).toHaveCount(0);
-      await mode.selectOption("independent");
-      const provider = card.locator("#plugin-config-web-search-provider");
-      await expect(provider).toBeVisible();
-      await expect(provider).toHaveValue("deepseek-official");
-      await provider.fill("fixture-independent");
+      await expect(card.locator("#plugin-config-web-search-hint")).toHaveCount(0);
+      await mode.selectOption("web-search");
+      await expect(card.locator("#plugin-config-web-search-hint")).toBeVisible();
       await card.getByRole("button", { name: /^(保存|儲存|Save)$/u }).click();
       await expect(card.locator("button[type=submit]")).toBeDisabled();
       await expect(card.locator("summary")).not.toContainText(/未保存|未儲存|Unsaved/u);
+      // Selecting web search has to bring the upstream plugin into the profile; if it did
+      // not, activation reports failure here instead of claiming to be active.
       await expectActive();
       await page.reload();
       await openSettings();
-      await expect(mode).toHaveValue("independent");
-      await expect(provider).toHaveValue("fixture-independent");
+      await expect(mode).toHaveValue("web-search");
       await expectActive();
       await mode.selectOption("disabled");
       await card.getByRole("button", { name: /^(保存|儲存|Save)$/u }).click();
@@ -109,6 +108,66 @@ export async function verifySearchSettings(url, cookies, outputDirectory) {
       await expect(card.locator("button[type=submit]")).toBeInViewport();
       expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
       await page.screenshot({ path: join(outputDirectory, "search-settings.png") });
+
+      if (seededProvider !== undefined) {
+        await page.setViewportSize({ width: 1120, height: 720 });
+        // A reload drops back to the chat surface; while the dialog is open just switch tabs.
+        const openModels = async () => {
+          await openSettings();
+          await page.getByText(/^(模型|Models)$/u).first().click();
+        };
+        await page.getByText(/^(模型|Models)$/u).first().click();
+        // The row's edit control carries an aria-label naming the provider, which is also the
+        // only stable way to single out that provider's card among the hashed class names.
+        const editButton = page.getByRole("button", { name: new RegExp(`(编辑|編輯|Edit)\\s+${seededProvider}$`, "u") });
+        const card = page.locator("li").filter({ has: editButton });
+        const timeout = page.locator(`#provider-stream-idle-timeout-${seededProvider}`);
+        const submit = () => card.getByRole("button", { name: /^(保存|儲存|Apply)$/u });
+        const openEditor = async () => {
+          await editButton.click();
+          // API protocol and the model catalog live behind this disclosure in the edit form,
+          // and the timeout field sits with them.
+          const customized = card.locator("details").first();
+          if (!await customized.evaluate(element => element.open)) await customized.locator("summary").click();
+          await expect(timeout).toBeVisible();
+        };
+
+        await openEditor();
+        // One field, inside the provider's own form rather than a card of its own.
+        await expect(timeout).toHaveCount(1);
+        // The resolved profile materializes the upstream default, so an untouched provider
+        // shows the official value without the patch hard-coding it.
+        await expect(timeout).toHaveValue("300000");
+
+        // An unusable value blocks the form instead of quietly dropping the override.
+        await timeout.fill("0");
+        await expect(submit()).toBeDisabled();
+
+        await timeout.fill("1800000");
+        await expect(submit()).toBeEnabled();
+        await submit().click();
+        await page.reload();
+        await openModels();
+        await openEditor();
+        await expect(timeout).toHaveValue("1800000");
+        await page.screenshot({ path: join(outputDirectory, "provider-stream-idle-timeout.png") });
+
+        // Clearing the field removes the override and returns the provider to the upstream
+        // default. Read it back after a reload: like every other curated field, the section
+        // mirror still holds the previous resolved value until it refreshes.
+        await timeout.fill("");
+        await submit().click();
+        await page.reload();
+        await openModels();
+        await openEditor();
+        await expect(timeout).toHaveValue("300000");
+
+        // The create form carries the same field, so a new provider can set it up front.
+        await card.getByRole("button", { name: /^(取消|Cancel)$/u }).click();
+        await page.getByRole("button", { name: /(自定义提供方|自訂提供方|custom provider)/u }).click();
+        await expect(page.locator("#provider-stream-idle-timeout-new")).toBeVisible();
+        console.log("Provider stream idle timeout: upstream default shown, invalid value blocks submit, saved with the form, survives reload, cleared back to default, present when creating");
+      }
       expect(errors).toEqual([]);
       console.log("Harness plugin inventory and search settings: active Desktop plugins, follow-model default, durable save/reset and small-window layout passed");
     } catch (error) {

@@ -12,7 +12,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 - macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地 DMG 已验证 WebKit 历史、同源链接、剪贴板、混合窗口操作、候选激活/拒绝/恢复和独立搜索设置；Alibaba MaaS Max / Flash GUI 并发各有 8 条来源，实际重叠 8067 毫秒。该实测为同端点同凭据，不扩大为所有 Provider 隔离或每个后续发行包均重测；逐缺陷范围见 [审计修复验收](memory/audit-remediation.md)。
 
-- 跟随模型搜索现为 Desktop 独立 host/client 扩展，通过公开 Agent 异步上下文、模型目录、搜索 Provider 注册和设置插槽接入。官方搜索源码与设置界面遵循上游，不被改写；其启用状态在桌面 profile 中默认停用，并由 `web-search-follow-model` 的 `officialSearchPlugin` 开关控制（见 ADR-021），用户 profile 的主动启停仍然保留；Desktop 的单一选择可以映射为 `follow-model`、已注册的独立搜索 Provider 或关闭搜索，不再补丁修改官方搜索卡片或 Harness 搜索核心。候选闭包验证扩展前后端及 Harness 依赖，详见 ADR-017；平台和真实供应商的验收边界分别记账。
+- 跟随模型搜索现为 Desktop 独立 host/client 扩展，通过公开 Agent 异步上下文、模型目录、搜索 Provider 注册和设置插槽接入。官方搜索源码与设置界面遵循上游，不被改写，且与本扩展同时默认启用（见 ADR-022，取代 ADR-021 的默认停用）；两者只是向 `ctx.web` 注册不同 id 的 provider，模型可见的 `web_search` 工具由 `dsh-tool-web` 唯一注册，一次调用只解析出一个 provider。Desktop 的单一选择互斥映射为 `follow-model`、`deepseek-official`（网页搜索）或关闭搜索，激活期断言目标 provider 在册且可用，不再补丁修改官方搜索卡片或 Harness 搜索核心。候选闭包验证扩展前后端及 Harness 依赖，详见 ADR-017；平台和真实供应商的验收边界分别记账。
 
 - 安装包内置 Harness 基线以工具链 lock 为准；用户数据中的独立更新状态必须实际查询，不能从历史安装或升级记录推断。
 
@@ -32,7 +32,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 窗口状态按显示器恢复；保存位置仍能落在已连接显示器时保持不变，目标显示器断开时回到当前主显示器可见区域。
 - 工作台 WebView 不获得通用 Tauri Shell、文件系统或任意 IPC 权限。
 - 模型凭据保存在跨平台本地加密凭据库中，不使用系统钥匙串，也不降级为 `.env` 或明文文件。
-- 联网搜索默认跟随当前会话模型 Provider：模型目录及提供方公开 `settingsPath` 是路由来源；高级能力通过受信任扩展注册，不再读取非官方的 `capabilities.webSearch` 字段；已审计的 DeepSeek 与 Alibaba MaaS 精确端点可自动选择其标准搜索协议，其他提供方根据当前模型显式 `apiProtocol` 映射，并始终复用该会话的 endpoint、model 和 `CredentialRef`。模型 Provider 表单不显示重复协议控件。Provider 请求使用 55 秒预算，并服从当前 Agent preset 的外层工具预算（内置 preset 为 60 秒）；未知端点和接口不盲试协议，也不跨 Provider 传递凭据。
+- 联网搜索默认跟随当前会话模型 Provider：模型目录及提供方公开 `settingsPath` 是路由来源；高级能力通过受信任扩展注册，不再读取非官方的 `capabilities.webSearch` 字段；已审计的 DeepSeek 与 Alibaba MaaS 精确端点可自动选择其标准搜索协议；本机 loopback 端点改为一次 `HEAD {origin}/v1/web/search` 探测发现（见 ADR-023），命中即按 `plain-web-search` 协议直调该端点并按 origin 缓存，因此自带搜索接口的本机推理服务零配置可用。其他提供方根据当前模型显式 `apiProtocol` 映射，并始终复用该会话的 endpoint、model 和 `CredentialRef`；声明 `credential: "none"` 的免密钥端点不触碰凭据平面。模型 Provider 表单不显示重复协议控件。Provider 请求使用 55 秒预算，并服从当前 Agent preset 的外层工具预算（内置 preset 为 60 秒）；未知端点和接口不盲试协议，也不跨 Provider 传递凭据。
 - 模型配置、凭据保存与图片输入能力沿用官方最新模型目录及设置实现，不再对编译后的模型表单追加桌面旧控件或替换官方保存流程。
 - Desktop 仅承载并隔离 Harness 工作台，不改写页面交互：受管 loopback 页面在内嵌 WebView 中正常导航，外部 HTTP/HTTPS 链接优先交给系统默认浏览器，打开失败或其他原生导航行为由 WebView 继续处理。
 - 导航判定按当前受管 Origin 实时进行，不使用 WebView 创建时的快照；Harness 未就绪期间没有可信 Origin，HTTP/HTTPS 导航一律拒绝而不转交系统浏览器，避免把带令牌的 loopback 地址交给外部程序。

@@ -5,51 +5,41 @@ window.__ModuleLoader__.load({
     const h = React.createElement;
     const namespace = "web-search-follow-model";
     const localeNamespace = "desktop.webSearch";
-    const modes = ["follow-model", "disabled", "independent"];
-    const officialStates = ["disabled", "enabled"];
-    const editableFields = ["mode", "independentProvider", "officialSearchPlugin"];
+    const modes = ["follow-model", "web-search", "disabled"];
+    const editableFields = ["mode"];
     const dictionaries = {
       en: {
         title: "Web search", description: "Search follows the model used by each conversation.",
-        mode: "Search routing", "follow-model": "Follow current model", disabled: "Disable web search",
-        independent: "Independent search service", provider: "Independent search Provider",
-        providerHint: "Enter a Harness search Provider ID, for example deepseek-official.",
+        mode: "Search routing", "follow-model": "Follow current model",
+        "web-search": "DeepSeek web search", disabled: "Disable web search",
+        webSearchHint: "Searches through the official DeepSeek search plugin, which needs a DeepSeek API key set on its own settings card.",
         reset: "Restore defaults", save: "Save", discard: "Discard changes", pending: "Unsaved",
         failed: "Changes could not be completed. Review the settings and try again.",
         active: "Active", saved: "Saved; applying", applying: "Applying", activationFailed: "Search settings are not active. Retry or choose another service.",
-        invalid: "Enter a valid independent search Provider ID.",
-        readOnly: "These settings are read-only.",
-        officialPlugin: "DeepSeek search plugin",
-        officialDisabled: "Disabled", officialEnabled: "Enabled",
-        officialHint: "The official web-search-deepseek plugin registers its own search tool. Keep it disabled unless you want to use it instead of the settings above."
+        invalid: "Choose a valid search routing option.",
+        readOnly: "These settings are read-only."
       },
       zh: {
         title: "联网搜索", description: "联网搜索跟随每个会话使用的模型。",
-        mode: "联网搜索", "follow-model": "跟随当前模型", disabled: "禁用联网搜索",
-        independent: "独立搜索服务", provider: "独立搜索提供方",
-        providerHint: "填写 Harness 搜索 Provider ID，例如 deepseek-official。",
+        mode: "联网搜索", "follow-model": "跟随当前模型",
+        "web-search": "网页搜索", disabled: "禁用联网搜索",
+        webSearchHint: "通过官方 DeepSeek 搜索插件搜索，需要在它自己的设置卡片中填写 DeepSeek API 密钥。",
         reset: "恢复默认", save: "保存", discard: "放弃修改", pending: "未保存",
         failed: "修改未能完成，请检查设置后重试。",
         active: "已生效", saved: "已保存，等待生效", applying: "应用中", activationFailed: "搜索设置尚未生效，请重试或选择其他服务。",
-        invalid: "请填写有效的独立搜索 Provider ID。",
-        readOnly: "这些设置为只读。",
-        officialPlugin: "DeepSeek 搜索插件",
-        officialDisabled: "禁用", officialEnabled: "启用",
-        officialHint: "官方 web-search-deepseek 插件会注册自己的搜索工具。除非你要改用它，否则保持禁用。"
+        invalid: "请选择有效的联网搜索方式。",
+        readOnly: "这些设置为只读。"
       },
       "zh-TW": {
         title: "聯網搜尋", description: "聯網搜尋跟隨每個工作階段使用的模型。",
-        mode: "聯網搜尋", "follow-model": "跟隨目前模型", disabled: "停用聯網搜尋",
-        independent: "獨立搜尋服務", provider: "獨立搜尋提供方",
-        providerHint: "填寫 Harness 搜尋 Provider ID，例如 deepseek-official。",
+        mode: "聯網搜尋", "follow-model": "跟隨目前模型",
+        "web-search": "網頁搜尋", disabled: "停用聯網搜尋",
+        webSearchHint: "透過官方 DeepSeek 搜尋外掛程式搜尋，需要在它自己的設定卡片中填寫 DeepSeek API 金鑰。",
         reset: "恢復預設", save: "儲存", discard: "放棄修改", pending: "未儲存",
         failed: "修改未能完成，請檢查設定後重試。",
         active: "已生效", saved: "已儲存，等待生效", applying: "套用中", activationFailed: "搜尋設定尚未生效，請重試或選擇其他服務。",
-        invalid: "請填寫有效的獨立搜尋 Provider ID。",
-        readOnly: "這些設定為唯讀。",
-        officialPlugin: "DeepSeek 搜尋外掛程式",
-        officialDisabled: "停用", officialEnabled: "啟用",
-        officialHint: "官方 web-search-deepseek 外掛程式會註冊自己的搜尋工具。除非你要改用它，否則請保持停用。"
+        invalid: "請選擇有效的聯網搜尋方式。",
+        readOnly: "這些設定為唯讀。"
       }
     };
     const css = `
@@ -101,7 +91,7 @@ window.__ModuleLoader__.load({
       }
       publish() {
         const current = this.scope.getSnapshot();
-        const defaults = { mode: "follow-model", independentProvider: "deepseek-official", officialSearchPlugin: "disabled" };
+        const defaults = { mode: "follow-model" };
         const value = { ...defaults, ...current.value };
         const base = { ...defaults, ...current.base };
         for (const [field, draft] of this.drafts) value[field] = draft === null ? base[field] : draft;
@@ -110,11 +100,7 @@ window.__ModuleLoader__.load({
           overridden: Object.keys(current.user ?? {}).some(key => editableFields.includes(key)),
           dirty: this.operations().length > 0, saving: this.saving, failed: this.failed,
           activationPhase: this.activationPhase,
-          invalid: !modes.includes(value.mode) || !officialStates.includes(value.officialSearchPlugin) || (value.mode === "independent" && (
-            typeof value.independentProvider !== "string" || value.independentProvider.length === 0
-            || value.independentProvider.length > 128 || /[\s\u0000-\u001f\u007f]/u.test(value.independentProvider)
-            || value.independentProvider === "follow-model"
-          ))
+          invalid: !modes.includes(value.mode)
         };
         for (const listener of this.listeners) listener();
       }
@@ -148,11 +134,7 @@ window.__ModuleLoader__.load({
       save = async () => {
         if (!this.snapshot.available || !this.snapshot.writable || this.saving || this.snapshot.invalid || (!this.snapshot.dirty && this.activationPhase !== "failed")) return;
         const ops = this.operations();
-        const desired = {
-          mode: this.snapshot.mode,
-          independentProvider: this.snapshot.independentProvider,
-          officialSearchPlugin: this.snapshot.officialSearchPlugin,
-        };
+        const desired = { mode: this.snapshot.mode };
         this.saving = true;
         this.failed = false;
         this.publish();
@@ -163,8 +145,6 @@ window.__ModuleLoader__.load({
           const activation = await this.refreshActivation(true);
           const user = this.scope.getSnapshot().user ?? {};
           this.failed = activation?.phase !== "active" || activation.selection?.mode !== desired.mode
-            || activation.selection?.independentProvider !== desired.independentProvider
-            || activation.selection?.officialSearchPlugin !== desired.officialSearchPlugin
             || !ops.every(op => op.op === "unset" ? !Object.hasOwn(user, op.path[0]) : user[op.path[0]] === op.value);
           if (!this.failed) this.drafts.clear();
           else this.revision = this.scope.getSnapshot().revision;
@@ -192,24 +172,7 @@ window.__ModuleLoader__.load({
             id: "plugin-config-web-search-mode", value: state.mode, disabled,
             onChange: event => props.edit("mode", event.target.value)
           }, modes.map(mode => h("option", { key: mode, value: mode }, t(mode))))),
-          state.mode === "independent" ? h("label", null, t("provider"),
-            h("input", {
-              id: "plugin-config-web-search-provider", value: state.independentProvider, disabled,
-              list: "plugin-config-web-search-provider-options", spellCheck: false,
-              onChange: event => props.edit("independentProvider", event.target.value)
-            }),
-            h("datalist", { id: "plugin-config-web-search-provider-options" },
-              h("option", { value: "deepseek-official" })
-            ),
-            h("p", null, t("providerHint"))
-          ) : null,
-          h("label", null, t("officialPlugin"), h("select", {
-            id: "plugin-config-web-search-official", value: state.officialSearchPlugin, disabled,
-            onChange: event => props.edit("officialSearchPlugin", event.target.value)
-          }, officialStates.map(item => h("option", { key: item, value: item },
-            t(item === "enabled" ? "officialEnabled" : "officialDisabled")))),
-            h("p", null, t("officialHint"))
-          ),
+          state.mode === "web-search" ? h("p", { id: "plugin-config-web-search-hint" }, t("webSearchHint")) : null,
           !state.writable ? h("p", null, t("readOnly")) : null,
           h("p", { role: state.activationPhase === "failed" ? "alert" : "status" }, t(state.activationPhase === "failed" ? "activationFailed" : state.activationPhase)),
           state.invalid || state.failed ? h("p", { role: "alert" }, t(state.invalid ? "invalid" : "failed")) : null,

@@ -1,14 +1,10 @@
 - id: credentials
   disabled: true
 
-# The official plugin registers its own web_search tool. Running it next to the Desktop
-# extension gives one conversation two competing search paths, so the desktop profile
-# starts with it off. This bundle patch composes after dsh-base, which declares the
-# entry; the web-search-follow-model setting owns the state afterwards and re-applies it
-# to the loader on every activation.
-- id: web-search-deepseek
-  disabled: true
-
+# Both search plugins stay loaded. They register providers into the same ctx.web registry
+# under distinct ids, and WebRuntime.search() resolves exactly one of them per call from
+# searchProvider below, so two enabled plugins never produce two searches. The desktop
+# setting owns which id that is; see ADR-022.
 - id: web
   inject:
     - webSearchSelection
@@ -23,6 +19,5 @@
       name: '@deepseek-ai/dsh-web-search-follow-model/selection'
       config:
         mode: follow-model
-        independentProvider: deepseek-official
     - id: web-search-follow-model
       name: '@deepseek-ai/dsh-web-search-follow-model'

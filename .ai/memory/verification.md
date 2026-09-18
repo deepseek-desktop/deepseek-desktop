@@ -149,12 +149,36 @@
 - `DESKTOP_APP_VERSION=1.0.32 corepack pnpm@11.24.0 desktop:package` 完成同一套全链门禁并生成 ARM64 DMG；制品闭包扫描 76265 个文件、1308369569 字节，未残留本机绝对路径。`DeepSeek Desktop_1.0.32_aarch64.dmg` 的 SHA-256 为 `0394a19f8e8468215b9029ab2fa82a4ab96b4f6fd8cda2a0e3b265faafed1b70`，`hdiutil verify`、应用 `codesign --verify --deep --strict`、主程序与内置 Node 的原生 arm64 检查均通过；社区包仍为 ad-hoc 签名而非 Apple Developer ID 公证。
 - Windows x64 Tag 矩阵新增正式 NSIS 安装验收脚本：要求原生 64 位 Runner 和 x64 PE，安装后验证版本标题、工作台、设置菜单、Harness `node*` 子进程、关闭确认取消/确认、子进程清理及卸载。脚本已在 Windows PowerShell 5.1 解析通过；实际 Windows x64 运行结果必须等待对应 Tag 的原生 GitHub Runner，不以本机 ARM64 Windows 模拟替代。
 
+## 模型提供方流空闲超时字段
+
+日期：2026-09-18
+
+- `streamIdleTimeoutMs` 经补丁加入上游 `dsh-client-ui-settings-models@0.1.6-alpha.1`，在新建与编辑自定义提供方的表单中都作为原生字段出现，位置与 `API 协议`、`模型目录` 同在「自定义设置」折叠区内。先前用 `settings.models.provider-card` 插槽外加独立扩展包的做法已撤销：字段会挂在折叠卡片上脱离表单，且新建流程中提供方未进目录、插槽不渲染。
+- 真实 Harness + 真实浏览器回归覆盖：显示上游默认值 300000（由 schema 物化，未硬编码）、填 `0` 时提交按钮禁用、填 1800000 保存后重载仍为 1800000、清空保存后重载回到 300000、新建表单存在 `#provider-stream-idle-timeout-new`。
+- 清空后的即时回显仍是旧的解析值，要重载才更新 —— 这是上游各 curated 字段共有的 section 镜像刷新时序，不是本补丁引入；写入本身已由 smoke 家目录 `settings.yaml` 确认正确移除了覆盖。
+- 补丁不依赖行号：实测在文件顶部插入 500 行造成全文行号位移后，`git apply` 仍成功且补丁后语法通过。
+- 上下文真变化时为构建期硬失败：实测模拟上游 `0.1.7-alpha.1` 且锚点代码被重写，`applyDesktopCompatibilityPatches` 抛出 `Desktop compatibility patch … is absent from 0.1.7-alpha.1; expected 0.1.6-alpha.1`。补丁文件另有 sha256 与 4 个 marker 校验。
+- 暂存链路另修一处：`stage-harness.mjs` 在暂存前比对 `prepared` 中的桌面包与 `harness/packages` 源码，不一致即报错要求先 `harness:sync`。该缺陷在本次开发中实际命中过 —— 改完扩展只重新暂存，结果测到的仍是上一版。
+
+## 联网搜索三模式与本机端点能力发现
+
+日期：2026-09-18
+
+- 官方 `web-search-deepseek` 恢复默认启用，`deepseek-desktop-bundle` 不再对它打停用补丁；smoke 断言相应反转为「必须组装为启用且未被改写」，并改为验证用户 profile 仍可主动停用它。真实 Harness `harness:smoke --settings-ui` 通过。Desktop 不再改写该条目的启停：profile 停用它时，`web-search` 选择激活失败并回滚，回归用例断言设置值被还原且条目仍为停用。
+- 设置卡片只剩一个 `select`（`#plugin-config-web-search-mode`），无任何 `input`。真实浏览器 smoke 覆盖：默认 `follow-model`、切到 `web-search` 后出现说明文案并显示「已生效」、重载后仍为 `web-search`、切到 `disabled`、恢复默认、760×560 小窗口内提交按钮可见且卡片不横向溢出。「已生效」在此即证明 `deepseek-official` 确已注册且通过激活期断言。
+- 退役的 `independent` 模式不保留兼容值，经实测 `settings.register()` 会对联合类型之外的存储值抛错（`$.mode expected … but got "independent"`），即该条目加载失败。按产品决定接受：v1.1.20 是该模式唯一存在过的版本，且其中该模式每次搜索必败。
+- oMLX 0.6.4 实测（本机 127.0.0.1:8888）：`HEAD /v1/web/search` → 405，`HEAD /v1/web-search` → 404，`HEAD /v1/nonexistent` → 404，因此 405/404 足以区分路由存在性。`POST /v1/web/search {"query":"DeepSeek"}` 返回 `{"ok":true,"provider":"ddgs","results":[{title,url,snippet}]}`，无需密钥。
+- 同一服务的内置搜索工具确认不可用：其 OpenAPI 对 Anthropic 服务端工具写明 “oMLX cannot execute these locally … dropped before inference”；`POST /v1/responses` 带 `tools:[{"type":"web_search"}]` 实测（HTTP 200，60.6s）返回里只有 `message`，无 `web_search_call`，模型自答「I don't have a web search」。因此从聊天协议推断的 Responses 搜索对该服务永远失败，能力必须来自端点探测。
+- `harness:test-follow-model` 45 项通过，含新增的探测与协议回归：HEAD 只打 loopback、结果按 origin 缓存且第二次不再探测、连接失败退回无能力、`plain-web-search` 以精确 URL 发 `{query}` 且不触碰凭据平面、`ok:false` 与空结果判为未执行搜索、未知凭据策略仍被拒绝。`scripts/tests/search-settings-client.test.mjs` 9 项通过，含遗留 `independent` 归一化为 `web-search` 且不产生虚假未保存状态。
+- 发现并修复暂存缓存缺陷：`stage-harness.mjs` 的 `cacheIdentity` 完全派生自 lock 文件，不含 `harness/packages/**`，因此编辑桌面扩展或 bundle 补丁后仍复用过期暂存树（本次即先复现：改完补丁后 smoke 仍读到旧的 `disabled: true`）。缓存标识加入本地包内容摘要并升至 `schemaVersion: 3`。
+- 本次未使用任何真实 Provider API 密钥，未向外部供应商发起搜索请求。oMLX 探测与搜索均发往本机 loopback。官方「网页搜索」模式在缺少 DeepSeek 密钥时的运行期报错路径未实测，凭据有效性按设计留给运行期判定。
+
 ## 独立联网搜索插件共存验收
 
 日期：2026-09-05
 
-- Desktop 不补丁修改官方 `@deepseek-ai/dsh-web-search-deepseek` 的源码或设置界面，但桌面 profile 默认停用它（见 ADR-021）：该插件启用时会注册自己的 `web_search` 工具，与独立扩展在同一会话形成两条竞争路径。默认停用写在 `deepseek-desktop-bundle` 的 bundle 补丁中，`web-search-follow-model` 的 `officialSearchPlugin` 设置在每次激活时把状态重新应用到 Loader 条目。用户在 profile 中主动改回启用仍然有效。
-- 独立选择协调器通过公开 Settings 与 Loader API 提供“跟随当前模型 / 独立搜索 Provider / 关闭搜索”三种模式。单一用户设置映射到 `web.searchProvider`，独立 Provider 的 fixture 搜索实际返回独立结果；关闭后 follow-model Provider 明确返回 `WEB_FOLLOW_MODEL_DISABLED`，恢复默认后重新执行 follow-model。无效值在保存前拒绝，宿主重载失败会恢复先前的持久化值和实际路由。
+- Desktop 不补丁修改官方 `@deepseek-ai/dsh-web-search-deepseek` 的源码或设置界面，且与它**同时启用**（见 ADR-022，取代 ADR-021）。ADR-021 关于「官方插件注册自己的 `web_search` 工具、形成两条竞争路径」的判断经源码核对为错误：工具由 `@deepseek-ai/dsh-tool-web` 唯一注册，官方插件只注册一个 provider，`WebRuntime.search()` 每次按 `web.searchProvider` 解析出唯一一个。默认停用与 `officialSearchPlugin` 开关均已撤销。
+- 独立选择协调器通过公开 Settings 与 Loader API 提供“跟随当前模型 / 网页搜索 / 关闭搜索”三种互斥模式。单一用户设置映射到 `web.searchProvider`；关闭后 follow-model Provider 明确返回 `WEB_FOLLOW_MODEL_DISABLED`，恢复默认后重新执行 follow-model。无效值在保存前拒绝，宿主重载失败会恢复先前的持久化值和实际路由。激活期还断言目标 provider 已注册且 `available()` 为真，堵住「界面显示已生效、实际每次搜索抛 `WEB_PROVIDER_CONFIGURED_MISSING`」的路径。
 - 公共 Agent 上下文集成回归同时加载官方和 follow-model 插件，验证两个并发会话、切换模型、端点/模型/凭据隔离及用户主动停用官方插件后 follow-model 仍可用。未知协议、普通模型回答、无结构化搜索证据、取消和超时均明确失败，不跨 Provider 降级。
 - Web 应用的 `tool-web` 由 Agent preset 按会话装配且不出现在宿主 Loader entries 中；此前尝试热重载该条目的真实 Harness smoke 失败并揭示该边界。最终实现不访问会话私有 Loader，只在 Provider 调用边界执行关闭检查；因此保留当前会话和 `web_fetch`，已开始的请求按既有完成/取消语义收口。
 - `app:sync --check`、`harness:sync --check`、`verify`、`test:e2e`、`harness:smoke` 和 `release:smoke` 均通过。`verify` 包含 27 项搜索回归；真实浏览器设置 smoke 覆盖独立 Provider 保存、重载后恢复、关闭搜索、恢复默认和小窗口滚动。显式外部仓库测试使用公开仓库匿名解析 HEAD，确认社区仓库当前为 `d347e703908d0406b7a7ef80e3a0e594d86b2215`。

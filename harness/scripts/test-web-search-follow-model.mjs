@@ -15,8 +15,13 @@ const selectionUrl = pathToFileURL(resolve(
   preparedRoot,
   "node_modules/@deepseek-ai/dsh-web-search-follow-model/selection.js"
 )).href;
-const { default: FollowModelWebSearch, FollowModelSearchEngine, configuredSearchRoutes, resolveConfiguredRoutes } = await import(moduleUrl);
-const { default: WebSearchSelection, validateSelection, SETTINGS_API_PATH, OFFICIAL_SEARCH_ENTRY_ID } = await import(selectionUrl);
+const {
+  default: FollowModelWebSearch, FollowModelSearchEngine, configuredSearchRoutes, resolveConfiguredRoutes,
+  discoverLocalSearchCapability, resetLocalSearchProbes,
+} = await import(moduleUrl);
+const { default: WebSearchSelection, validateSelection, SETTINGS_API_PATH, OFFICIAL_PROVIDER_ID } = await import(selectionUrl);
+// The upstream plugin's loader entry id, as dsh-base declares it.
+const OFFICIAL_SEARCH_ENTRY_ID = "web-search-deepseek";
 const secretA = "secret-a-for-test";
 const secretB = "secret-b-for-test";
 
@@ -128,7 +133,7 @@ test("public Agent context routes concurrent WebRuntime searches without replaci
   assert.equal(observed.length, 4);
 });
 
-test("public Settings and Loader APIs apply independent, disabled and restored search routing live", async t => {
+test("public Settings and Loader APIs apply web-search, disabled and restored search routing live", async t => {
   const require = createRequire(moduleUrl);
   const load = name => import(pathToFileURL(require.resolve(name)).href);
   const { Context } = await load("@deepseek-ai/cordis");
@@ -147,10 +152,11 @@ test("public Settings and Loader APIs apply independent, disabled and restored s
   // throw here would only surface as an unhandled rejection; the coordinator's real
   // detection path is its own "web service did not become active" guard, which this
   // exercises directly.
+  let breakOfficialRoute = false;
   const GuardedWebRuntime = {
     name: "guarded-web",
     apply(ctx, config) {
-      if (config.searchProvider === "broken-apply") return;
+      if (breakOfficialRoute && config.searchProvider === OFFICIAL_PROVIDER_ID) return;
       ctx.plugin(WebRuntime, config);
     },
   };
@@ -188,18 +194,18 @@ test("public Settings and Loader APIs apply independent, disabled and restored s
             return { content: "follow", sources: [] };
           },
         });
-        current.web.registerSearchProvider({ id: "fixture-independent", available: () => true, search: async () => ({ content: "independent", sources: [] }) });
+        current.web.registerSearchProvider({ id: OFFICIAL_PROVIDER_ID, available: () => true, search: async () => ({ content: "official", sources: [] }) });
         calls.push(current.web);
       },
     });
     await ctx.webSearchSelection.applyQueue;
     assert.equal((await ctx.web.search({ query: "default" })).content, "follow");
 
-    await ctx.settings.update("web-search-follow-model", { mode: "independent", independentProvider: "fixture-independent" });
-    await eventually(() => ctx.get("webSearchSelection").searchProvider === "fixture-independent" && calls.length >= 2,
-      "independent Provider selection did not reload WebRuntime");
-    assert.equal((await ctx.web.search({ query: "independent" })).content, "independent");
-    assert.equal([...ctx.loader.entries()].find(entry => entry.options.id === "web")?.options.config.searchProvider, "fixture-independent");
+    await ctx.settings.update("web-search-follow-model", { mode: "web-search" });
+    await eventually(() => ctx.get("webSearchSelection").searchProvider === OFFICIAL_PROVIDER_ID && calls.length >= 2,
+      "the web-search selection did not reload WebRuntime");
+    assert.equal((await ctx.web.search({ query: "official" })).content, "official");
+    assert.equal([...ctx.loader.entries()].find(entry => entry.options.id === "web")?.options.config.searchProvider, OFFICIAL_PROVIDER_ID);
 
     const callsBeforeDisable = calls.length;
     await ctx.settings.update("web-search-follow-model", { mode: "disabled" });
@@ -215,12 +221,11 @@ test("public Settings and Loader APIs apply independent, disabled and restored s
       "restoring defaults did not re-enable follow-model routing");
     assert.equal((await ctx.web.search({ query: "restored" })).content, "follow");
 
-    assert.throws(() => validateSelection({ mode: "independent", independentProvider: "follow-model" }));
-    await assert.rejects(ctx.settings.update("web-search-follow-model", {
-      mode: "independent", independentProvider: "bad provider",
-    }));
+    assert.throws(() => validateSelection({ mode: "not-a-mode" }));
+    await assert.rejects(ctx.settings.update("web-search-follow-model", { mode: "not-a-mode" }));
 
-    await ctx.settings.update("web-search-follow-model", { mode: "independent", independentProvider: "broken-apply" });
+    breakOfficialRoute = true;
+    await ctx.settings.update("web-search-follow-model", { mode: "web-search" });
     await eventually(() => ctx.settings.describe().find(section => section.ns === "web-search-follow-model")?.value?.mode === "follow-model",
       "failed live routing did not restore the previous persisted selection");
     assert.equal(ctx.get("webSearchSelection").searchProvider, "follow-model");
@@ -235,10 +240,10 @@ test("public Settings and Loader APIs apply independent, disabled and restored s
       const waiting = new Promise(resolve => { release = resolve; });
       let started = false;
       t.mock.method(entry, "update", async options => {
-        if (options.config.searchProvider === "broken-apply") { started = true; await waiting; }
+        if (options.config.searchProvider === OFFICIAL_PROVIDER_ID) { started = true; await waiting; }
         return update(options);
       });
-      await ctx.settings.update("web-search-follow-model", { mode: "independent", independentProvider: "broken-apply" });
+      await ctx.settings.update("web-search-follow-model", { mode: "web-search" });
       await eventually(() => started, "the failing application did not start");
       await ctx.settings.update("web-search-follow-model", { mode: "disabled" });
       release();
@@ -251,7 +256,7 @@ test("public Settings and Loader APIs apply independent, disabled and restored s
 
     await t.test("startup routing overrides are reconciled even when the logical Provider is unchanged", async () => {
       const entry = [...ctx.loader.entries()].find(entry => entry.options.id === "web");
-      await entry.update({ config: { searchProvider: "fixture-independent", fetchProvider: "http" } });
+      await entry.update({ config: { searchProvider: OFFICIAL_PROVIDER_ID, fetchProvider: "http" } });
       await ctx.webSearchSelection.enqueue(ctx, ctx.settings.describe().find(section => section.ns === "web-search-follow-model").value);
       assert.equal(entry.options.config.searchProvider, "follow-model");
       await assert.rejects(ctx.web.search({ query: "override cannot bypass disabled" }), { code: "WEB_FOLLOW_MODEL_DISABLED" });
@@ -263,14 +268,15 @@ test("public Settings and Loader APIs apply independent, disabled and restored s
       let finish;
       const first = ctx.webSearchSelection.runSearch(() => new Promise(resolve => { finish = resolve; }));
       const oldInstances = calls.length;
-      await ctx.settings.update("web-search-follow-model", { mode: "independent", independentProvider: "fixture-independent" });
+      breakOfficialRoute = false;
+      await ctx.settings.update("web-search-follow-model", { mode: "web-search" });
       assert.equal(calls.length, oldInstances);
       await assert.rejects(ctx.webSearchSelection.runSearch(() => { throw new Error("must not execute"); }), { code: "WEB_SEARCH_SELECTION_INACTIVE" });
       finish("completed on original route");
       assert.equal(await first, "completed on original route");
       await ctx.webSearchSelection.applyQueue;
       assert.ok(calls.length > oldInstances);
-      assert.equal((await ctx.web.search({ query: "new route" })).content, "independent");
+      assert.equal((await ctx.web.search({ query: "new route" })).content, "official");
     });
     await t.test("the public tool pipeline denies disabled search but preserves web fetch", async () => {
       const executed = [];
@@ -704,6 +710,93 @@ test("model switches and concurrent sessions never mix endpoints or credentials"
   assert.equal(second.sources[0].url, "https://sources.test/model-b");
 });
 
+test("a loopback search endpoint is discovered by probe and served without a credential", async t => {
+  await t.test("HEAD tells a served route from a missing one, and only loopback is probed", async () => {
+    resetLocalSearchProbes();
+    const probes = [];
+    const responder = status => async (url, options) => {
+      probes.push({ url: String(url), method: options.method });
+      return new Response(null, { status });
+    };
+
+    const found = await discoverLocalSearchCapability("http://127.0.0.1:8888/v1", undefined, responder(405));
+    assert.deepEqual(found, { protocol: "plain-web-search", credential: "none", endpointPath: "/v1/web/search" });
+    assert.deepEqual(probes, [{ url: "http://127.0.0.1:8888/v1/web/search", method: "HEAD" }]);
+
+    // The answer is remembered per origin: a second route resolution must not probe again.
+    assert.deepEqual(await discoverLocalSearchCapability("http://127.0.0.1:8888/v1", undefined, responder(405)), found);
+    assert.equal(probes.length, 1);
+
+    resetLocalSearchProbes();
+    assert.equal(await discoverLocalSearchCapability("http://localhost:9999/v1", undefined, responder(404)), undefined);
+
+    // A third-party endpoint must never receive a request the user did not ask for.
+    const before = probes.length;
+    assert.equal(await discoverLocalSearchCapability("https://api.example.test/v1", undefined, responder(405)), undefined);
+    assert.equal(probes.length, before);
+
+    resetLocalSearchProbes();
+    const refused = async () => { throw new Error("connection refused"); };
+    assert.equal(await discoverLocalSearchCapability("http://127.0.0.1:8888/v1", undefined, refused), undefined);
+  });
+
+  await t.test("the discovered route posts the query to the exact endpoint with no credential", async () => {
+    let observed;
+    const { engine, resolvedRefs } = createEngine({
+      routes: {
+        "provider-a/model-a": {
+          provider: "provider-a",
+          model: "model-a",
+          endpoint: "http://127.0.0.1:8888/v1",
+          credentialRef: "PROVIDER_A_KEY",
+          webSearch: { protocol: "plain-web-search", credential: "none", endpointPath: "/v1/web/search" },
+        },
+      },
+      fetchImpl: async (url, options) => {
+        observed = { url: new URL(url), options, body: JSON.parse(options.body) };
+        return jsonResponse({ ok: true, provider: "ddgs", results: [
+          { title: "Result", url: "https://sources.test/local", snippet: "snippet" },
+        ] });
+      },
+    });
+    const result = await engine.search(agent(), { query: "local search", maxResults: 3 });
+    assert.equal(observed.url.href, "http://127.0.0.1:8888/v1/web/search");
+    assert.equal(observed.options.headers.authorization, undefined);
+    assert.deepEqual(observed.body, { query: "local search", maxResults: 3 });
+    // A keyless capability must not touch the credential plane at all.
+    assert.deepEqual(resolvedRefs, []);
+    assert.deepEqual(result.sources, [{ url: "https://sources.test/local", title: "Result", snippet: "snippet" }]);
+  });
+
+  await t.test("a refusal or an empty result is never presented as a search", async () => {
+    for (const payload of [{ ok: false }, { ok: true, results: [] }]) {
+      const { engine } = createEngine({
+        routes: {
+          "provider-a/model-a": {
+            provider: "provider-a", model: "model-a", endpoint: "http://127.0.0.1:8888/v1/web/search",
+            credentialRef: "PROVIDER_A_KEY", webSearch: { protocol: "plain-web-search", credential: "none" },
+          },
+        },
+        fetchImpl: async () => jsonResponse(payload),
+      });
+      await assert.rejects(engine.search(agent(), { query: "local search" }), { code: "WEB_FOLLOW_MODEL_SEARCH_NOT_PERFORMED" });
+    }
+  });
+
+  await t.test("an unsupported credential policy is still refused", async () => {
+    const { engine } = createEngine({
+      routes: {
+        "provider-a/model-a": {
+          provider: "provider-a", model: "model-a", endpoint: "http://127.0.0.1:8888/v1/web/search",
+          credentialRef: "PROVIDER_A_KEY", webSearch: { protocol: "plain-web-search", credential: "delegated" },
+        },
+      },
+      fetchImpl: async () => { throw new Error("must not reach fetch"); },
+    });
+    await assert.rejects(engine.search(agent(), { query: "local search" }), { code: "WEB_FOLLOW_MODEL_CAPABILITY_INVALID" });
+  });
+});
+
 test("unknown capabilities and protocols fail without blind probes", async () => {
   let fetches = 0;
   const missing = createEngine({
@@ -844,7 +937,7 @@ test("third-party protocols register without vendor branches", async () => {
   await assert.rejects(engine.search(agent(), { query: "extension" }), /protocol that is unavailable/u);
 });
 
-test("the official search plugin entry follows the Desktop setting and defaults to disabled", async () => {
+test("a profile without the upstream search plugin refuses the web-search selection", async () => {
   const require = createRequire(moduleUrl);
   const load = name => import(pathToFileURL(require.resolve(name)).href);
   const { Context } = await load("@deepseek-ai/cordis");
@@ -866,9 +959,18 @@ test("the official search plugin entry follows the Desktop setting and defaults 
     await ctx.plugin(ToolRuntime);
     await ctx.plugin(WebSearchSelection);
     ctx.loader.builtins["plain-web"] = WebRuntime;
-    ctx.loader.builtins["official-search"] = class OfficialSearchFixture {
-      static reusable = true;
-      constructor() {}
+    // Mirrors the upstream plugin: it contributes deepseek-official to ctx.web while its
+    // entry is in the profile, and takes the provider away again while the entry is not.
+    ctx.loader.builtins["official-search"] = {
+      name: "official-search",
+      inject: ["web"],
+      apply(current) {
+        current.web.registerSearchProvider({
+          id: OFFICIAL_PROVIDER_ID,
+          available: () => true,
+          search: async () => ({ content: "official", sources: [] }),
+        });
+      },
     };
     await ctx.loader.create({
       id: "web",
@@ -876,26 +978,37 @@ test("the official search plugin entry follows the Desktop setting and defaults 
       inject: ["webSearchSelection"],
       config: { searchProvider: { __jsExpr: "ctx.get('webSearchSelection').searchProvider" }, fetchProvider: "http" },
     });
-    // The desktop bundle composes the upstream entry disabled; the setting owns it afterwards.
     await ctx.loader.create({ id: OFFICIAL_SEARCH_ENTRY_ID, name: "cordis:official-search", disabled: true });
     const officialEntry = () => [...ctx.loader.entries()].find(entry => entry.options.id === OFFICIAL_SEARCH_ENTRY_ID);
+    await ctx.plugin({
+      inject: ["web"],
+      apply(current) {
+        current.web.registerSearchProvider({ id: "follow-model", available: () => true, search: async () => ({ content: "follow", sources: [] }) });
+      },
+    });
     await ctx.webSearchSelection.applyQueue;
+    assert.equal(ctx.webSearchSelection.active.mode, "follow-model");
 
-    assert.equal(ctx.webSearchSelection.active.officialSearchPlugin, "disabled", "the setting must default to disabled");
-    assert.equal(officialEntry()?.options.disabled, true, "a default Desktop profile must keep the upstream entry disabled");
+    // deepseek-official belongs to the upstream plugin. A profile that keeps it out cannot
+    // serve this selection, and the card must say so rather than report a working setting
+    // whose every search would throw WEB_PROVIDER_CONFIGURED_MISSING.
+    await ctx.settings.update("web-search-follow-model", { mode: "web-search" });
+    await eventually(() => ctx.webSearchSelection.activationStatus().phase === "failed",
+      "an unservable selection was not reported as failed");
+    assert.equal(ctx.settings.describe().find(section => section.ns === "web-search-follow-model")?.value?.mode, "follow-model",
+      "the refused selection must be rolled back rather than left stored");
+    assert.equal(ctx.webSearchSelection.searchProvider, "follow-model");
+    assert.equal((await ctx.web.search({ query: "still following" })).content, "follow");
+    // Desktop must not force the entry back into a profile that dropped it.
+    assert.equal(officialEntry()?.options.disabled, true);
 
-    await ctx.settings.update("web-search-follow-model", { officialSearchPlugin: "enabled" });
-    await eventually(() => (officialEntry()?.options.disabled ?? null) === null,
-      "enabling the setting did not clear the upstream entry's disabled override");
-    // `active` is published after the loader work completes, so settle the queue first.
-    await ctx.webSearchSelection.applyQueue;
-    assert.equal(ctx.webSearchSelection.active.officialSearchPlugin, "enabled");
-
-    await ctx.settings.update("web-search-follow-model", { officialSearchPlugin: "disabled" });
-    await eventually(() => officialEntry()?.options.disabled === true,
-      "disabling the setting did not disable the upstream entry again");
-    await ctx.webSearchSelection.applyQueue;
-    assert.equal(ctx.webSearchSelection.active.officialSearchPlugin, "disabled");
+    // With the plugin present the same selection activates and routes to it.
+    await officialEntry().update({ disabled: null });
+    await ctx.loader.await();
+    await ctx.settings.update("web-search-follow-model", { mode: "web-search" });
+    await eventually(() => ctx.webSearchSelection.activationStatus().phase === "active",
+      "the web-search selection did not activate once the plugin was present");
+    assert.equal((await ctx.web.search({ query: "official" })).content, "official");
   } finally {
     await ctx.fiber.dispose();
   }

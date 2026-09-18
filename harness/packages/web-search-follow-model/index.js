@@ -12,6 +12,17 @@ const MAX_REQUEST_FIELDS = 16;
 const PROTOCOL_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
 const REQUEST_FIELD = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+// A local inference server may expose its own search endpoint that owes nothing to the chat
+// model. Search capability belongs to the endpoint, so the extension discovers this one by
+// probing rather than by keeping a list of product names: any server serving the same shape
+// is picked up, and a server without it degrades to "no search capability" exactly as today.
+const LOCAL_SEARCH_PATH = "/v1/web/search";
+const LOCAL_SEARCH_PROTOCOL = "plain-web-search";
+const LOCAL_SEARCH_PROBE_TIMEOUT_MS = 2_000;
+const LOCAL_SEARCH_SUPPORTED_TTL_MS = 300_000;
+// A miss is cheap to retry and a server that is still booting must not stay written off.
+const LOCAL_SEARCH_MISSING_TTL_MS = 30_000;
+const localSearchProbes = new Map();
 const DEFAULT_PROTOCOL_BY_MODEL_API = new Map([
   ["openai-responses", "openai-responses-web-search"],
   ["openai-completions", "openai-chat-completions-search"],
@@ -297,7 +308,7 @@ function responseAnnotations(output) {
 }
 
 function genericSources(payload) {
-  const candidates = [payload?.sources, payload?.citations, payload?.search_results, payload?.searchResults];
+  const candidates = [payload?.sources, payload?.citations, payload?.search_results, payload?.searchResults, payload?.results];
   const sources = [];
   for (const candidate of candidates) {
     if (!Array.isArray(candidate)) continue;
@@ -409,6 +420,21 @@ function builtInProtocols(fetchImpl, timeoutMs) {
       }, bearerHeaders(credential), signal);
       return normalizedResult(payload?.content, payload?.sources ?? [], request.maxResults);
     }],
+    // A plain search API: the endpoint is the full search URL, not a base to append to, so a
+    // capability declaring this protocol carries the exact path in endpointPath. The credential
+    // is optional because a loopback search service commonly has none.
+    ["plain-web-search", async ({ route, capability, credential, request, signal }) => {
+      const payload = await requestJson(endpointUrl(route.endpoint), {
+        ...constrainedFields(capability.requestFields, new Set(["query", "maxResults"])),
+        query: request.query,
+        ...request.maxResults === undefined ? {} : { maxResults: request.maxResults },
+      }, credential === undefined ? {} : bearerHeaders(credential), signal);
+      const sources = genericSources(payload);
+      if (payload?.ok === false || sources.length === 0) {
+        fail(copy("searchNotPerformed"), "WEB_FOLLOW_MODEL_SEARCH_NOT_PERFORMED");
+      }
+      return normalizedResult(typeof payload?.content === "string" ? payload.content : undefined, sources, request.maxResults);
+    }],
     ["mcp-web-search", async ({ route, capability, credential, request, signal }) => {
       const endpoint = endpointUrl(route.endpoint);
       const timeout = AbortSignal.timeout(timeoutMs);
@@ -503,7 +529,10 @@ export class FollowModelSearchEngine {
     if (typeof route.endpoint !== "string" || route.endpoint.length === 0 || typeof capability?.protocol !== "string") {
       fail(`The current Provider "${selection.provider}" has an invalid web search capability declaration.`, "WEB_FOLLOW_MODEL_CAPABILITY_INVALID");
     }
-    if ((capability.credential ?? "inherit") !== "inherit") {
+    const credentialPolicy = capability.credential ?? "inherit";
+    // "none" exists for keyless endpoints — a loopback search service usually has no key, and
+    // demanding one would reject a capability the endpoint actually serves.
+    if (credentialPolicy !== "inherit" && credentialPolicy !== "none") {
       fail("The current Provider web search capability uses an unsupported credential policy.", "WEB_FOLLOW_MODEL_CAPABILITY_INVALID");
     }
     return {
@@ -518,17 +547,19 @@ export class FollowModelSearchEngine {
     if (adapter === undefined) {
       fail(copy("protocolUnavailable"), "WEB_FOLLOW_MODEL_PROTOCOL_UNAVAILABLE");
     }
-    if (typeof route.credentialRef !== "string" || route.credentialRef.length === 0) {
-      fail(copy("credentialMissing"), "WEB_FOLLOW_MODEL_CREDENTIAL_MISSING");
-    }
     let credential;
-    try {
-      credential = await this.resolveCredential(credentialRef(route.credentialRef));
-    } catch (error) {
-      fail(copy("credentialMissing"), "WEB_FOLLOW_MODEL_CREDENTIAL_MISSING", error);
-    }
-    if (typeof credential !== "string" || credential.length === 0) {
-      fail(copy("credentialMissing"), "WEB_FOLLOW_MODEL_CREDENTIAL_MISSING");
+    if ((capability.credential ?? "inherit") === "inherit") {
+      if (typeof route.credentialRef !== "string" || route.credentialRef.length === 0) {
+        fail(copy("credentialMissing"), "WEB_FOLLOW_MODEL_CREDENTIAL_MISSING");
+      }
+      try {
+        credential = await this.resolveCredential(credentialRef(route.credentialRef));
+      } catch (error) {
+        fail(copy("credentialMissing"), "WEB_FOLLOW_MODEL_CREDENTIAL_MISSING", error);
+      }
+      if (typeof credential !== "string" || credential.length === 0) {
+        fail(copy("credentialMissing"), "WEB_FOLLOW_MODEL_CREDENTIAL_MISSING");
+      }
     }
     return adapter({ route, capability, credential, request, signal });
   }
@@ -545,6 +576,48 @@ function endpointSearchCapability(endpoint) {
     return { protocol: "openai-responses-web-search", credential: "inherit" };
   }
   return undefined;
+}
+
+/**
+ * Ask a loopback endpoint whether it serves a plain search API, and remember the answer.
+ * HEAD costs nothing: it runs no search, loads no model, and a route that exists but refuses
+ * the method still answers 405, so only a genuine 404 means the capability is absent.
+ * @param endpoint - the Provider base URL whose origin is probed.
+ * @param signal - optional cancellation signal from the in-flight search.
+ * @param fetchImpl - injection seam for tests.
+ * @returns the discovered capability declaration, or undefined when the endpoint has none.
+ */
+export async function discoverLocalSearchCapability(endpoint, signal, fetchImpl = fetch) {
+  let url;
+  try { url = new URL(endpoint); } catch { return undefined; }
+  // Probing only loopback keeps this off third-party endpoints, which must never receive a
+  // request the user did not ask for.
+  if (!LOOPBACK_HOSTS.has(url.hostname)) return undefined;
+  const cached = localSearchProbes.get(url.origin);
+  const now = Date.now();
+  if (cached !== undefined && cached.expires > now) return cached.capability;
+  let capability;
+  try {
+    const timeout = AbortSignal.timeout(LOCAL_SEARCH_PROBE_TIMEOUT_MS);
+    const response = await fetchImpl(new URL(LOCAL_SEARCH_PATH, url.origin), {
+      method: "HEAD",
+      redirect: "error",
+      signal: signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
+    });
+    if (response.status !== 404) {
+      capability = { protocol: LOCAL_SEARCH_PROTOCOL, credential: "none", endpointPath: LOCAL_SEARCH_PATH };
+    }
+  } catch { capability = undefined; }
+  localSearchProbes.set(url.origin, {
+    capability,
+    expires: now + (capability === undefined ? LOCAL_SEARCH_MISSING_TTL_MS : LOCAL_SEARCH_SUPPORTED_TTL_MS),
+  });
+  return capability;
+}
+
+/** Drop every remembered probe result. Tests and endpoint edits need a clean slate. */
+export function resetLocalSearchProbes() {
+  localSearchProbes.clear();
 }
 
 export function configuredSearchRoutes(profile, selection) {
@@ -600,7 +673,12 @@ export async function resolveConfiguredRoutes(ctx, selection, signal) {
       matches.push({ ...selection, endpoint: connection.baseURL, credentialRef: connection.apiKeyEnv,
         webSearch: { protocol: "anthropic-messages-web-search", credential: "inherit", endpointPath: "/anthropic/v1" } });
     } else if (address.settingsNs === "llm-pi-ai") {
-      matches.push(...configuredSearchRoutes(profile, selection));
+      for (const route of configuredSearchRoutes(profile, selection)) {
+        // A declared capability always wins; discovery only fills the gap the allowlist leaves.
+        matches.push(route.webSearch !== undefined
+          ? route
+          : { ...route, webSearch: await discoverLocalSearchCapability(route.endpoint, signal) });
+      }
     }
   }
   return matches;

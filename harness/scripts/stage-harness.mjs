@@ -295,8 +295,63 @@ const output = join(harnessRoot, "staging", target);
 const stagingRoot = dirname(output);
 const binarySuffix = process.platform === "win32" ? ".exe" : "";
 const sidecar = join(desktopRoot, "src-tauri", "binaries", `node-${target}${binarySuffix}`);
+/**
+ * Digest the desktop's own Harness packages. Every other part of the cache identity comes
+ * from the lock file, so without this an edit to a bundle patch or a desktop extension
+ * keeps restoring the previous staging tree — and a local release could ship it.
+ * @param root - the workspace directory holding those packages.
+ * @returns a hex digest over each file's portable path and contents.
+ */
+async function desktopPackagesDigest(root) {
+  const files = [];
+  const walk = async current => {
+    const entries = await readdir(current, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      // Workspace links are resolved by the installer; only the sources identify the package.
+      if (entry.name === "node_modules") continue;
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) await walk(path);
+      else if (entry.isFile()) {
+        const digest = createHash("sha256").update(await readFile(path)).digest("hex");
+        files.push(`${relative(root, path).replaceAll("\\", "/")}:${digest}`);
+      }
+    }
+  };
+  await walk(root);
+  return createHash("sha256").update(files.join("\n")).digest("hex");
+}
+
+/**
+ * Refuse to stage a prepared tree that predates the desktop packages it is supposed to carry.
+ * Staging copies from `prepared`, which only `harness:sync` refreshes, so an edited package
+ * would otherwise be staged in its previous form and tested as if it were the new one.
+ * @param packagesRoot - the workspace directory holding the desktop packages.
+ * @param preparedModules - the prepared tree's node_modules directory.
+ * @throws Error naming the stale package and the command that refreshes it.
+ */
+async function assertPreparedPackagesAreCurrent(packagesRoot, preparedModules) {
+  for (const directory of await readdir(packagesRoot, { withFileTypes: true })) {
+    if (!directory.isDirectory()) continue;
+    const source = join(packagesRoot, directory.name);
+    const { name } = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
+    const installed = join(preparedModules, ...name.split("/"));
+    for (const file of await readdir(source, { withFileTypes: true })) {
+      if (!file.isFile()) continue;
+      const staged = join(installed, file.name);
+      const current = await readFile(join(source, file.name));
+      const previous = await readFile(staged).catch(() => undefined);
+      if (previous !== undefined && previous.equals(current)) continue;
+      throw new Error(`Prepared Harness carries a stale ${name}/${file.name}; run "pnpm harness:sync" before staging`);
+    }
+  }
+}
+
+await assertPreparedPackagesAreCurrent(join(harnessRoot, "packages"), join(preparedHarness, "node_modules"));
+
 const cacheIdentity = {
-  schemaVersion: 2,
+  schemaVersion: 3,
+  desktopPackages: await desktopPackagesDigest(join(harnessRoot, "packages")),
   closurePolicy: "production-without-development-tests-and-node-build-toolchain-v3",
   artifactScannerVersion: ARTIFACT_SCANNER_VERSION,
   target,

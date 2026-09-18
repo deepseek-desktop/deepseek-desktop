@@ -1,28 +1,34 @@
 # 跟随当前模型的联网搜索
 
-Desktop 独立管理 `@deepseek-ai/dsh-web-search-follow-model`。官方 `@deepseek-ai/dsh-web-search-deepseek` 启用时会注册自己的搜索工具，与该扩展在同一会话里形成两条竞争的搜索路径，因此桌面版**默认停用官方插件**。官方插件的源码、名称、设置界面和配置仍保持原样，只是默认不参与桌面 profile；在「联网搜索」设置卡片的「DeepSeek 搜索插件」开关中可以随时改回启用，用户在 profile 中的主动启停也不会被覆盖。
+Desktop 独立管理 `@deepseek-ai/dsh-web-search-follow-model`，与官方 `@deepseek-ai/dsh-web-search-deepseek` **同时启用**，两者不冲突。
 
-**启用插件不等于选择搜索 Provider。** 官方 Provider 和 follow-model Provider 可以同时注册；`web.searchProvider` 在任一时刻只选择其中一个执行搜索，`web_search` 工具仍只注册一次，不会重复搜索。
+**两个插件都不注册工具。** 模型可见的 `web_search` 工具由 `@deepseek-ai/dsh-tool-web` 注册，全局只有一个。两个搜索插件各自向 `ctx.web` 的同一个注册表登记一个 **search provider**：官方插件是 `deepseek-official`，本扩展是 `follow-model`。`WebRuntime.search()` 每次调用按 `web.searchProvider` 精确解析出唯一一个 provider，解析不到直接报错。因此一次工具调用只产生一个上游请求，不存在重复搜索、重复计费或两条路径互相干扰。详见 [ADR-022](../../.ai/decisions/adr-022-search-mode-selection.md)。
 
 ## 使用
 
 普通用户仍按原流程添加模型提供方、地址、密钥和模型，不需要选择联网搜索协议或重复填写密钥。设置 → 插件中的“联网搜索”是独立设置卡片，可选择：
 
 - **跟随当前模型**：默认值，搜索使用当前会话实际选择的模型、地址和凭据。
-- **指定搜索服务**：填写已经注册的搜索 Provider ID，例如官方插件默认注册的 `deepseek-official`；搜索使用该 Provider 自己的配置和凭据。
+- **网页搜索**：搜索交给官方 DeepSeek 搜索插件执行，使用它自己设置卡片中的端点、模型和密钥。
 - **禁用联网搜索**：立即拒绝后续搜索请求，但保留正常对话、当前会话和网页抓取能力。
 
-保存与恢复默认只修改 `web-search-follow-model` 命名空间，不改写官方插件卡片或用户对官方插件的启停选择。界面区分已保存、应用中、已生效和失败；只有实际路由应用成功才显示成功。应用失败时保留草稿供重试，回滚不会覆盖另一项较新的保存。独立 Provider ID 必须对应已注册的 Harness 搜索 Provider；Harness 没有公开 Provider 枚举接口，因此 Desktop 不读取私有注册表，填写不存在或不可用的 ID 时由 Harness 在实际搜索时明确报错。
+三项互斥单选，没有自由文本输入，因此填不出不存在的 Provider ID。保存与恢复默认只修改 `web-search-follow-model` 命名空间，不改写官方插件的设置卡片。界面区分已保存、应用中、已生效和失败；**只有目标 provider 确实注册且可用，才会显示已生效** —— 否则激活失败并回滚，不会出现「界面说成功、一搜就报错」。应用失败时保留草稿供重试，回滚不会覆盖另一项较新的保存。
+
+`deepseek-official` 由官方插件注册。若 profile 主动把该插件停用或移除，「网页搜索」会直接激活失败并回滚 —— Desktop 不替用户改写 profile 把它塞回去。密钥是否有效仍由官方插件在实际搜索时判定：它通过自己的设置节和启动环境回退解析密钥，Desktop 复刻这套逻辑只会误报。
+
+v1.1.20 把这一项存为 `independent` 加一个自由填写的 Provider ID。该模式已取消且不保留兼容值；仍存有 `independent` 的 profile 需要手动改为三个合法值之一，否则该设置节无法解析。
 
 Web 应用的 `tool-web` 由 Agent preset 按会话装配，上游明确不允许宿主热重组运行中会话。Desktop 因此不会私自访问会话内部 Loader，也不会为切换设置销毁会话。切换期间通过公开工具执行接口暂停新搜索，等待已开始的请求完成或取消后重载宿主搜索服务；禁用状态通过公开工具 guard 检查，`web_fetch` 保持可用。启动时同样核对实际路由，防止界面显示禁用但旧的服务覆盖仍在执行。
 
 搜索读取 Harness 公开的当前 Agent 上下文和该会话的实际模型路由。切换模型后，下一次搜索跟随新模型；并发会话不共享端点、模型或凭据快照。凭据通过原有凭据服务按次解析，不复制到新的搜索配置中。
 
-指定搜索服务仍由 Harness 原有 `web.searchProvider` 执行，Desktop 只是为该公开机制提供可视化入口。插件名称与 Provider ID 不一定相同；输入值必须使用目标插件实际注册的 Provider ID。Desktop 不调用修改过的 Harness 私有派发方法，也不会静默换服务。
+模式切换仍由 Harness 原有 `web.searchProvider` 执行，Desktop 只是为该公开机制提供可视化入口，不调用修改过的私有派发方法，也不会静默换服务。
 
 ## 自动匹配与边界
 
 通用模型配置由公开模型目录和提供方的 `settingsPath` 精确定位，读取实际配置的地址、API 协议和凭据引用，并校验当前具体模型仍可解析。提供方中其他模型的可修复诊断不会屏蔽当前有效模型；模型条目中的未知连接字段不会改变搜索端点。旧的 `capabilities.webSearch` / Provider `webSearch` 字段不再作为路由来源，高级能力由受信任扩展显式注册。
+
+本机 loopback 端点会被探测一次：Desktop 对 `{origin}/v1/web/search` 发一个 `HEAD`，得到 404 以外的状态就说明该路由存在，随即按 `plain-web-search` 协议直接调用它。`HEAD` 不执行搜索、不加载模型、不消耗 token，结果按 origin 缓存；连不上或 404 都退回「无搜索能力」，与今天行为一致。探测只针对 loopback，第三方端点永远不会收到用户没要求的请求。这样，自带搜索接口的本机推理服务（例如 oMLX 的 `/v1/web/search`）不需要任何配置就能用，且不依赖产品名白名单。
 
 已验证的 DeepSeek 官方端点（`https://api.deepseek.com`、其 `/v1` 路径）及 Alibaba MaaS Token Plan 端点（`https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`）自动使用 Responses 搜索。即使聊天配置选择 Chat Completions，或内置提供方未填写 API 协议，也无需增加搜索配置。匹配依据是准确的端点，不是可编辑的提供方名称；仍使用当前会话模型及其凭据，成功仍需真实搜索证据。
 
@@ -46,7 +52,7 @@ Responses 使用 `web_search` 与自动工具选择，避免强制选择与思�
 
 受信任扩展可通过独立插件的 `webSearchProtocols.registerRouteResolver(resolver)` 注册精确路由，再通过 `webSearchProtocols.registerProtocol(protocolId, adapter)` 注册协议执行器，不需要修改 Harness 核心。路由必须与当前会话的 Provider 和模型完全匹配，不能跨提供方回退。
 
-内置协议还包括 `mcp-web-search` 和 `dsh-web-search-v1`。显式路由中的 `webSearch` 可以声明协议、`credential: inherit`、同端点路径及少量短标量扩展字段；不能覆盖模型、查询、工具或凭据保留字段。普通模型提供方表单不暴露这些高级实现细节。
+内置协议还包括 `mcp-web-search`、`dsh-web-search-v1` 和 `plain-web-search`。`plain-web-search` 把端点视为完整的搜索 URL（而不是待拼接的基地址），POST `{query}` 并从 `results` / `sources` / `citations` / `search_results` 中任一数组读取来源。显式路由中的 `webSearch` 可以声明协议、`credential: inherit` 或 `credential: none`、同端点路径及少量短标量扩展字段；不能覆盖模型、查询、工具或凭据保留字段。`credential: none` 用于免密钥端点，声明后不会触碰凭据平面。普通模型提供方表单不暴露这些高级实现细节。
 
 ## Harness 更新
 
@@ -56,7 +62,8 @@ Responses 使用 `web_search` 与自动工具选择，避免强制选择与思�
 
 ## 安全
 
-- 凭据只发送到当前模型已配置的 HTTPS 端点；仅本机 loopback 开发地址允许 HTTP。
+- 凭据只发送到当前模型已配置的 HTTPS 端点；仅本机 loopback 开发地址允许 HTTP，且声明 `credential: none` 的端点根本不解析凭据。
+- 能力探测只对 loopback 发起，且只用 `HEAD`；第三方端点不会收到任何未经请求的流量。
 - HTTP 重定向被拒绝，不自动切换搜索服务，不盲试不同协议。
 - 模型的工具参数不能改变内部 Provider、端点、模型或凭据。
 - 来源只保留 HTTP(S) URL，并去重、归一化；响应有大小上限。

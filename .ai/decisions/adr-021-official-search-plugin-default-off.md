@@ -2,7 +2,9 @@
 
 ## 状态
 
-已采用，取代 ADR-017「官方 `web-search-deepseek` 不强制停用」这一条；ADR-017 其余决策继续有效。
+**已废弃，由 [ADR-022](adr-022-search-mode-selection.md) 取代。** 本决策的全部理由建立在一个错误的机制判断上（见下），实现已回退：官方插件恢复默认启用，`officialSearchPlugin` 开关已删除。保留本文件是为了记录该错误结论及其纠正过程。
+
+**错误在哪里**：下文称「官方插件在启用时会注册自己的 `web_search` 工具」。核对源码后并非如此 —— 官方插件只调用 `ctx.web.registerSearchProvider()` 注册一个 provider；模型可见的 `web_search` 工具由 `@deepseek-ai/dsh-tool-web` 唯一注册。官方插件源码里那处 `name: "web_search"` 是它 POST 到 `{baseURL}/messages` 的请求体中声明的 Anthropic 服务端工具 `web_search_20250305`，是发往远端 API 的参数，不是 Harness 工具注册。因此「两条竞争路径」从未存在。下文「用户观察到二者冲突」一句也未经机制层面确认。
 
 ## 背景
 

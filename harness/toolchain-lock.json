@@ -102,6 +102,21 @@
         "delete slot.block.namespace;"
       ],
       "id": "openai-responses-final-tool-identity"
+    },
+    {
+      "packageName": "@deepseek-ai/dsh-client-ui-settings-models",
+      "version": "0.1.6-alpha.1",
+      "file": "@deepseek-ai__dsh-client-ui-settings-models@0.1.6-alpha.1.patch",
+      "sha256": "061df1ff427bc333735aa35ec1e3271ecf33f52510a16d6be1af0074d367e107",
+      "moduleFile": "lib/client.js",
+      "markers": [
+        "function parseTimeoutMs(text) {",
+        "streamIdleTimeout: \"Stream idle timeout\",",
+        "{ streamIdleTimeoutMs: parseTimeoutMs(streamIdle) }",
+        "id: `provider-stream-idle-timeout-${props.provider}`,",
+        "|| timeoutInvalid(timeoutDraft),"
+      ],
+      "id": "provider-stream-idle-timeout-field"
     }
   ]
 }

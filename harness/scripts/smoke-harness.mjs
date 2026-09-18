@@ -13,6 +13,7 @@ const lock = JSON.parse(await readFile(join(desktopRoot, "target", "generated", 
 const { values: options } = parseArgs({ options: { directory: { type: "string" }, entry: { type: "string" }, "settings-ui": { type: "boolean" } } });
 if (Boolean(options.directory) !== Boolean(options.entry)) throw new Error("Candidate smoke requires --directory and --entry together");
 const LEGACY_COOKIE_COUNT = 60;
+const SMOKE_PROVIDER = "smoke-provider";
 
 function createLegacyCookieJar() {
   const cookies = new Map();
@@ -264,24 +265,37 @@ function officialSearchRow(text) {
   return parseYaml(text, { customTags: [{ tag: "tag:yaml.org,2002:js", resolve: value => value }] }).find(row => row.id === "web-search-deepseek");
 }
 const official = officialSearchRow(dump.stdout);
-// The official plugin registers a competing web_search tool, so a fresh Desktop profile
-// composes it disabled; the entry itself must still be present and unmodified so the
-// setting can turn it back on.
-if (official?.name !== "@deepseek-ai/dsh-web-search-deepseek" || official.disabled !== true) {
-  throw new Error("a fresh Desktop profile must compose the upstream search plugin as disabled");
+// Both search plugins stay composed. They register providers under distinct ids into one
+// ctx.web registry and the seam resolves exactly one per call, so neither plugin needs to
+// be kept out of the profile; the desktop setting decides which id runs. See ADR-022.
+if (official?.name !== "@deepseek-ai/dsh-web-search-deepseek" || (official.disabled ?? null) !== null) {
+  throw new Error("a fresh Desktop profile must compose the upstream search plugin enabled and unmodified");
 }
-await writeFile(join(profile, "cordis.patch.yml"), "- id: web-search-deepseek\n  disabled: false\n");
-const userEnabledDump = spawnSync(node, harnessArguments("--profile", "desktop-web", "--dump-config"), {
+await writeFile(join(profile, "cordis.patch.yml"), "- id: web-search-deepseek\n  disabled: true\n");
+const userDisabledDump = spawnSync(node, harnessArguments("--profile", "desktop-web", "--dump-config"), {
   cwd: smokeRoot, env: environment, input: "smoke-credential-session\n", encoding: "utf8", windowsHide: true
 });
-if (userEnabledDump.status !== 0 || officialSearchRow(userEnabledDump.stdout)?.disabled === true
-  || !userEnabledDump.stdout.includes("webSearchSelection")) {
-  throw new Error("Desktop must let the user re-enable the official plugin without changing search routing");
+if (userDisabledDump.status !== 0 || officialSearchRow(userDisabledDump.stdout)?.disabled !== true
+  || !userDisabledDump.stdout.includes("webSearchSelection")) {
+  throw new Error("Desktop must let the user disable the official plugin without changing search routing");
 }
 await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
 if (!/locale:\s+preference: zh/u.test(await readFile(join(dshHome, "settings.yaml"), "utf8"))) {
   throw new Error("desktop locale bridge did not persist the mapped Harness locale");
 }
+// Seed one configurable provider so the models page has a card to render. The endpoint is
+// unreachable on purpose: this checks the settings surface, never a real model call.
+await writeFile(join(dshHome, "settings.yaml"), `${(await readFile(join(dshHome, "settings.yaml"), "utf8")).trimEnd()}
+llm-pi-ai:
+  providers:
+    ${SMOKE_PROVIDER}:
+      apiKeyEnv: SMOKE_PROVIDER_KEY
+      api: openai-completions
+      baseURL: https://smoke-provider.invalid/v1
+      models:
+        - id: smoke-model
+          name: smoke-model
+`);
 
 const cycles = Number.parseInt(process.env.DEEPSEEK_DESKTOP_SMOKE_CYCLES || "1", 10);
 if (!Number.isInteger(cycles) || cycles < 1 || cycles > 1_000) {
@@ -369,7 +383,7 @@ async function runCycle(index) {
     if (options["settings-ui"]) {
       const { verifySearchSettings } = await import("./verify-search-settings-ui.mjs");
       try {
-        await verifySearchSettings(cleanUrl, browserCookies, smokeRoot);
+        await verifySearchSettings(cleanUrl, browserCookies, smokeRoot, SMOKE_PROVIDER);
       } catch (error) {
         throw withHarnessDiagnostic(error, output, index);
       }

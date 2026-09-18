@@ -1,0 +1,142 @@
+diff --git a/lib/client.js b/lib/client.js
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -1143,4 +1143,21 @@
+ 		*/
+ 		const ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
++		/**
++		 * Read the stream idle timeout field. Empty means the provider default, so it parses to
++		 * undefined just like an unusable entry; `timeoutInvalid` separates the two for the form.
++		 * @param text - the raw field value.
++		 * @returns the millisecond value, or undefined when empty or out of the adapter's range.
++		 */
++		function parseTimeoutMs(text) {
++			const trimmed = String(text ?? "").trim();
++			if (!/^\d{1,10}$/u.test(trimmed)) return void 0;
++			const value = Number.parseInt(trimmed, 10);
++			return value >= 1 && value <= 2147483647 ? value : void 0;
++		}
++		/** True for a field the user filled in that cannot be served. */
++		function timeoutInvalid(text) {
++			return String(text ?? "").trim().length > 0 && parseTimeoutMs(text) === void 0;
++		}
++
+ 		function isHttpUrl(value) {
+ 			try {
+@@ -1165,4 +1182,5 @@
+ 			const [keyDraft, setKeyDraft] = (0, react.useState)("");
+ 			const [models, setModels] = (0, react.useState)([]);
++			const [streamIdle, setStreamIdle] = (0, react.useState)("");
+ 			const [busy, setBusy] = (0, react.useState)(false);
+ 			const [failure, setFailure] = (0, react.useState)(void 0);
+@@ -1183,5 +1201,6 @@
+ 			const keyFailure = apiKeyFailure(keyDraft);
+ 			const keyValue = keyDraft.trim();
+-			const ready = route.length > 0 && !routeInvalid && !routeTaken && normalizedBaseURL.length > 0 && !baseUrlInvalid && models.length > 0 && modelFailure === void 0 && keyFailure === void 0;
++			const streamIdleInvalid = timeoutInvalid(streamIdle);
++			const ready = route.length > 0 && !routeInvalid && !routeTaken && normalizedBaseURL.length > 0 && !baseUrlInvalid && models.length > 0 && modelFailure === void 0 && keyFailure === void 0 && !streamIdleInvalid;
+ 			const hint = failure !== void 0 || ready || keyFailure !== void 0 || route.length === 0 || routeInvalid || routeTaken || baseUrlInvalid ? void 0 : normalizedBaseURL.length === 0 ? t("customNeedsBaseUrl") : modelFailure !== void 0 ? `${t("model")} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}` : t("customNeedsModels");
+ 			/** Perform the create, returning a failure message or undefined. */
+@@ -1195,5 +1214,6 @@
+ 						api: protocol,
+ 						baseURL: normalizedBaseURL,
+-						models: models.map((model) => ({ ...model }))
++						models: models.map((model) => ({ ...model })),
++						...parseTimeoutMs(streamIdle) === void 0 ? {} : { streamIdleTimeoutMs: parseTimeoutMs(streamIdle) }
+ 					};
+ 					const written = await operations.writeSettings(NS$1, [{
+@@ -1354,4 +1374,25 @@
+ 						t,
+ 						disabled: profileDisabled
++					}),
++					(0, react_jsx_runtime.jsxs)("div", {
++						className: ModelsSection_module_css_default["field"],
++						children: [(0, react_jsx_runtime.jsx)("span", {
++							className: ModelsSection_module_css_default["fieldLabel"],
++							children: `${t("streamIdleTimeout")} (${t("streamIdleTimeoutUnit")})`
++						}), (0, react_jsx_runtime.jsx)("input", {
++							className: ModelsSection_module_css_default["input"],
++							id: "provider-stream-idle-timeout-new",
++							value: streamIdle,
++							inputMode: "numeric",
++							placeholder: "300000",
++							"aria-label": t("streamIdleTimeout"),
++							disabled: profileDisabled,
++							onChange: (event) => {
++								setStreamIdle(event.target.value);
++							}
++						}), (0, react_jsx_runtime.jsx)("span", {
++							className: ModelsSection_module_css_default["advancedHint"],
++							children: streamIdleInvalid ? t("streamIdleTimeoutInvalid") : t("streamIdleTimeoutHint")
++						})]
+ 					}),
+ 					failure !== void 0 ? (0, react_jsx_runtime.jsx)("p", {
+@@ -1457,4 +1498,5 @@
+ 			const [draft, setDraft] = (0, react.useState)(() => draftAt(schema, namespace, settingsPath));
+ 			const [keyDraft, setKeyDraft] = (0, react.useState)("");
++			const [timeoutDraft, setTimeoutDraft] = (0, react.useState)(void 0);
+ 			const [keyState, setKeyState] = (0, react.useState)(void 0);
+ 			const [busy, setBusy] = (0, react.useState)(false);
+@@ -1491,4 +1533,11 @@
+ 				const value = schema.getPath(source, [key]);
+ 				return typeof value === "string" && value.trim().length > 0 ? value : void 0;
++			};
++			const setTimeoutField = (next) => {
++				const parsed = parseTimeoutMs(next);
++				setTimeoutDraft(next);
++				setDraft((current) => parsed === void 0
++					? schema.deletePath(current, ["streamIdleTimeoutMs"])
++					: schema.setPath(current, ["streamIdleTimeoutMs"], parsed));
+ 			};
+ 			const setField = (key, next) => {
+@@ -1716,4 +1765,25 @@
+ 								operations
+ 							})
++								, (0, react_jsx_runtime.jsxs)("div", {
++									className: ModelsSection_module_css_default["field"],
++									children: [(0, react_jsx_runtime.jsx)("span", {
++										className: ModelsSection_module_css_default["fieldLabel"],
++										children: `${t("streamIdleTimeout")} (${t("streamIdleTimeoutUnit")})`
++									}), (0, react_jsx_runtime.jsx)("input", {
++										className: ModelsSection_module_css_default["input"],
++										id: `provider-stream-idle-timeout-${props.provider}`,
++										value: timeoutDraft ?? String(schema.getPath(draft, ["streamIdleTimeoutMs"]) ?? schema.getPath(fallback, ["streamIdleTimeoutMs"]) ?? ""),
++										inputMode: "numeric",
++										placeholder: "300000",
++										"aria-label": t("streamIdleTimeout"),
++										disabled,
++										onChange: (event) => {
++											setTimeoutField(event.target.value);
++										}
++									}), (0, react_jsx_runtime.jsx)("span", {
++										className: ModelsSection_module_css_default["advancedHint"],
++										children: timeoutInvalid(timeoutDraft) ? t("streamIdleTimeoutInvalid") : t("streamIdleTimeoutHint")
++									})]
++								})
+ 						]
+ 					})]
+@@ -1748,5 +1818,5 @@
+ 						t,
+ 						busy,
+-						submitDisabled: disabled || layout === "unknown" || props.credentialOnly !== true && modelFailure !== void 0 || shownKeyFailure !== void 0 || props.credentialRequired === true && keyValue.length === 0,
++						submitDisabled: disabled || layout === "unknown" || props.credentialOnly !== true && modelFailure !== void 0 || shownKeyFailure !== void 0 || props.credentialRequired === true && keyValue.length === 0 || timeoutInvalid(timeoutDraft),
+ 						submitLabelKey: props.submitLabelKey ?? "apply",
+ 						submitBusyLabelKey: props.submitBusyLabelKey ?? "applying",
+@@ -2739,4 +2809,8 @@
+ 			customDisplayName: "Display name",
+ 			customApi: "API protocol",
++			streamIdleTimeout: "Stream idle timeout",
++			streamIdleTimeoutUnit: "milliseconds",
++			streamIdleTimeoutHint: "How long a request may receive no streamed data at all before it fails. Leave empty to use the provider default. Loading a large local model can exceed it.",
++			streamIdleTimeoutInvalid: "Enter a whole number of milliseconds between 1 and 2147483647.",
+ 			customApiUnset: "Not selected",
+ 			customNeedsBaseUrl: "A custom provider needs a base URL.",
+@@ -2845,4 +2919,8 @@
+ 			customDisplayName: "显示名称",
+ 			customApi: "API 协议",
++			streamIdleTimeout: "流空闲超时",
++			streamIdleTimeoutUnit: "毫秒",
++			streamIdleTimeoutHint: "一次请求最多允许多久完全收不到流式数据。留空表示使用提供方默认值。本机大模型的加载容易超过它。",
++			streamIdleTimeoutInvalid: "请填写 1 到 2147483647 之间的整数毫秒。",
+ 			customApiUnset: "未选择",
+ 			customNeedsBaseUrl: "自定义提供方需要填写 API 地址。",
