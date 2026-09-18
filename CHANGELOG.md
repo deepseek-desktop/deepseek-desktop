@@ -37,6 +37,17 @@ DeepSeek Desktop 的重要变化记录如下。
 
 ## 1.1.20 - 2026-09-17
 
+> **已知问题（该版本安装包已下架）**：本版本会把「停用官方 `web-search-deepseek` 插件」持久化写入用户 profile 补丁
+> `~/Library/Application Support/deepseek.desktop/dsh/profiles/desktop-web/cordis.patch.yml`。该文件在所有 bundle 补丁之后组装，
+> 优先级最高，因此升级到任何新版本都无法覆盖它，官方搜索插件会持续保持停用。行为本身已在 `1.1.24` 移除，但残留的本地覆盖需手动清除：
+>
+> ```bash
+> printf '[]\n' > ~/Library/Application\ Support/deepseek.desktop/dsh/profiles/desktop-web/cordis.patch.yml
+> ```
+>
+> 清除后重启应用生效（profile 补丁在组装期读取，不热重载）。`settings.yaml` 中遗留的 `officialSearchPlugin` 键自 `1.1.21` 起已无作用，可一并删除。
+
+
 - 内置官方 Harness 升级至 `0.1.6-alpha.1`：同步 13 个扩展 peer 版本，按新版本重做 loopback 陈旧会话 Cookie 兼容补丁，并接受官方 DeepSeek 适配器改用 `/anthropic` 的默认地址。
 - 修复失败回滚未能恢复持久化搜索设置的问题：`settings.replace` 自 `0.1.6` 起要求纯对象，无用户覆盖时协调器传入 `undefined` 导致回滚抛错，运行时路由虽已恢复但保存的选择仍停留在失败值。失败原因也不再一律记为冲突。
 - 修复部署闭包校验把 `"main": "index"` 这类声明误报为入口缺失：改为按 Node 的解析规则判定。

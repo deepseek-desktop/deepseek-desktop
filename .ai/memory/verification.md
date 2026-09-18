@@ -30,6 +30,8 @@
   - 环境不过滤：桌面进程 13 个环境变量全部到达 sidecar，差集为空；sidecar 共 25 项，多出的是桌面自身注入的名字。
   - 联网搜索：用装机包内实际发运的扩展代码实测，白名单声明为 undefined、探测命中 `plain-web-search`/`credential: none`/`/v1/web/search`、返回 3 条真实来源。模型是否主动调用 `web_search` 不属于该链路，未验证。
 
+- `v1.1.20` 的 `applyOfficialSearchPlugin()` 把官方搜索插件的停用状态持久化进**用户 profile 补丁**（`dsh/profiles/desktop-web/cordis.patch.yml`），该文件在所有 bundle 补丁之后组装，因此升级无法覆盖，官方插件在后续版本中持续保持停用。引入提交 `2f161bc`，移除提交 `b7ea856`；`v1.1.21` 至 `v1.1.23` 均构建失败未发布，故该行为只在已发布的 `v1.1.20` 中生效过，`v1.1.24` 起已消失。残留的本地覆盖必须手动清除并重启，删除发行包不能清除它。本机已清除并备份。
+
 ## 官方 Harness 0.1.6-alpha.1 源码升级
 
 由 `c291e7961a51`（`0.1.5-rc.2`）升级到 `0a15e36e7f82`（`dsh-v0.1.6-alpha.1`）。本机四道门禁全部通过：`test:config`、`verify`、`test:e2e`、`harness:smoke`（`Harness 0.1.6-alpha.1, 1 cycle(s)`）。升级需要处理的上游变化：
