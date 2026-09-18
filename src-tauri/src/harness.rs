@@ -1249,41 +1249,18 @@ fn system_proxy_environment() -> HashMap<String, String> {
     environment
 }
 
-/// Names the Harness sidecar inherits from the desktop process. Everything else is dropped,
-/// so a variable the Harness needs has to be listed here to reach it at all.
-const HARNESS_ENVIRONMENT_PASSTHROUGH: [&str; 24] = [
-    "PATH",
-    "HOME",
-    "USER",
-    "LOGNAME",
-    "TMPDIR",
-    "LANG",
-    "LC_ALL",
-    "XDG_RUNTIME_DIR",
-    "DBUS_SESSION_BUS_ADDRESS",
-    "APPDATA",
-    "LOCALAPPDATA",
-    "USERPROFILE",
-    "SystemRoot",
-    "WINDIR",
-    "COMSPEC",
-    "PATHEXT",
-    // Outbound proxy policy. `@deepseek-ai/dsh-http-proxy` reads these once at launch and
-    // applies them to every request Node's fetch would otherwise send direct, which covers
-    // LLM, web search and web fetch traffic. Without them a machine that only reaches the
-    // network through a proxy gets connection failures and polluted DNS results instead.
-    // `NO_PROXY` travels with them so the user's exclusions still apply, and the Harness
-    // keeps loopback direct on its own. Both spellings are listed because the Harness reads
-    // both and POSIX environments are case-sensitive.
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "ALL_PROXY",
-    "NO_PROXY",
-    "http_proxy",
-    "https_proxy",
-    "all_proxy",
-    "no_proxy",
-];
+/// The environment the sidecar starts from: the desktop's own, entire and unfiltered.
+///
+/// This was an allowlist, and the allowlist made the desktop shell the reason kernel features
+/// stopped working. The Harness reads its proxy policy, CA bundle, locale, package-manager
+/// settings and provider credentials from the environment, and every name the list had not
+/// anticipated was dropped in silence. The outbound proxy was one such failure; ADR-012
+/// records the same shape one layer down, for the repository fetch. Nothing is filtered now —
+/// ADR-025 records the reversal and what it means for credentials. Names the desktop owns are
+/// written over this afterwards, so those still win.
+fn inherited_environment() -> HashMap<String, String> {
+    std::env::vars().collect()
+}
 
 fn harness_environment(
     paths: &AppPaths,
@@ -1292,12 +1269,7 @@ fn harness_environment(
     harness_dir: &Path,
     node: &Path,
 ) -> DesktopResult<HashMap<String, String>> {
-    let mut environment = HashMap::new();
-    for name in HARNESS_ENVIRONMENT_PASSTHROUGH {
-        if let Ok(value) = std::env::var(name) {
-            environment.insert(name.to_owned(), value);
-        }
-    }
+    let mut environment = inherited_environment();
     // A Finder- or Dock-launched app inherits no shell environment, so for most users the
     // machine's own configuration is the only proxy policy that exists. An explicitly
     // exported variable still wins: the fallback applies only when none came through.
@@ -2072,39 +2044,27 @@ impl Drop for WindowsJob {
 
 #[cfg(test)]
 mod tests {
-    /// The sidecar inherits nothing it is not listed for, so an outbound proxy policy that is
-    /// absent here never reaches the Harness and every web fetch goes direct. Both spellings
-    /// are required: the Harness reads both and POSIX environments are case-sensitive.
+    /// The desktop shell must never be the reason a kernel feature stops working, so nothing
+    /// is filtered on the way to the sidecar. Asserted against the live process environment:
+    /// reintroducing any predicate — an allowlist, a denylist, a credential filter — fails
+    /// here instead of silently disabling a kernel feature in the field.
     #[test]
-    fn the_sidecar_inherits_the_outbound_proxy_policy() {
-        for name in [
-            "HTTP_PROXY",
-            "HTTPS_PROXY",
-            "ALL_PROXY",
-            "NO_PROXY",
-            "http_proxy",
-            "https_proxy",
-            "all_proxy",
-            "no_proxy",
-        ] {
-            assert!(
-                super::HARNESS_ENVIRONMENT_PASSTHROUGH.contains(&name),
-                "the Harness sidecar must inherit {name}"
+    fn the_sidecar_environment_is_inherited_whole() {
+        let inherited = super::inherited_environment();
+        let mut seen = 0usize;
+        for (name, value) in std::env::vars() {
+            assert_eq!(
+                inherited.get(&name).map(String::as_str),
+                Some(value.as_str()),
+                "{name} was filtered out of the Harness environment"
             );
+            seen += 1;
         }
-    }
-
-    /// The list stays an allowlist: credentials reach the Harness through the vault, never by
-    /// inheriting whatever the launching shell happened to export.
-    #[test]
-    fn the_sidecar_inherits_no_credential_bearing_names() {
-        for name in super::HARNESS_ENVIRONMENT_PASSTHROUGH {
-            let upper = name.to_ascii_uppercase();
-            assert!(
-                !upper.contains("KEY") && !upper.contains("TOKEN") && !upper.contains("SECRET"),
-                "{name} must not be inherited by the Harness sidecar"
-            );
-        }
+        assert_eq!(
+            inherited.len(),
+            seen,
+            "the inherited environment gained entries of its own"
+        );
     }
 
     #[cfg(unix)]

@@ -19,7 +19,7 @@
 - 用户可见文案同步维护 `zh-CN`、`zh-TW`、`en-US`，禁止硬编码单语提示。
 - 只在系统边界处理可发生的失败；错误信息应分类、脱敏并保留诊断关联能力。
 - 设置、索引和生成配置采用原子写入；损坏数据应隔离，不静默覆盖。
-- 不引入明文凭据 fallback，不通过命令参数、长期环境变量或日志传递 API Key。
+- 桌面自身不引入明文凭据 fallback：不由桌面把 API Key 写入命令参数、长期环境变量或日志，桌面保管的凭据只经加密保险库与受限 helper 会话传递。这不限制用户自己 export 的变量，Harness sidecar 继承完整环境（见 ADR-025）。
 - 不为临时验证修改产品源码；Harness 补丁必须与锁定版本、marker 和验证脚本一起维护。
 - Pull Request 和普通分支 push 不触发发布工作流；只有带或不带 `v` 前缀的完整 SemVer Tag 才触发质量门禁与正式四平台构建。
 - macOS ARM64、macOS x64、Windows x64 和 Linux x64 必须分别由对应 GitHub 官方托管 Runner 原生打包，并统一复用 `package:community`。
