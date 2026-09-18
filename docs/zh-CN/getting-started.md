@@ -28,7 +28,7 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 ## 模型与插件
 
-模型设置同时支持官方 Provider 和 OpenAI Compatible 自定义 Provider。自定义 Provider 至少需要填写唯一 ID、API 地址、协议和密钥；保存前可先获取模型目录，保存后可在会话输入区切换模型。Provider ID、API 地址和模型名输入框已关闭自动纠错与首字母大写，输入内容不会被系统改写。
+模型设置同时支持官方 Provider 和 OpenAI Compatible 自定义 Provider。自定义 Provider 至少需要填写唯一 ID、API 地址、协议和密钥；保存前可先获取模型目录，保存后可在会话输入区切换模型。Provider ID、API 地址和模型名输入框已关闭自动纠错与首字母大写，输入内容不会被系统改写。会话输入区的模型选择器带「推理等级」子菜单，按当前模型声明的可选档位渲染：官方 Provider 与上游模型目录内的模型自带档位，自定义 Provider 需要显式声明，方式与实测示例见[自定义模型提供方的推理强度](custom-provider-reasoning-effort.md)。
 
 图片输入能力以上游模型目录及当前模型配置的声明为准，按具体模型和 API 地址判断，不按 Provider 品牌统一开启。已声明视觉能力的模型可以添加图片；自定义模型同样使用官方模型配置契约，Desktop 不再追加独立的“支持图片输入”表单控件。
 
