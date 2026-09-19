@@ -32,6 +32,21 @@
 
 - `v1.1.20` 的 `applyOfficialSearchPlugin()` 把官方搜索插件的停用状态持久化进**用户 profile 补丁**（`dsh/profiles/desktop-web/cordis.patch.yml`），该文件在所有 bundle 补丁之后组装，因此升级无法覆盖，官方插件在后续版本中持续保持停用。引入提交 `2f161bc`，移除提交 `b7ea856`；`v1.1.21` 至 `v1.1.23` 均构建失败未发布，故该行为只在已发布的 `v1.1.20` 中生效过，`v1.1.24` 起已消失。残留的本地覆盖必须手动清除并重启，删除发行包不能清除它。本机已清除并备份。
 
+## 登录 shell 环境恢复（v1.1.27）
+
+2026-09-19：`v1.1.26` annotated Tag 指向 `c51b1b1`。GitHub Run `35407029575`：shell-quality、macos-arm64、linux-x64 成功，windows-x64 失败，macos-x64 未跑完。第一处错误是新增的两项 Rust 测试 `login_shell::tests::the_login_shells_own_order_leads_the_search_path` 与 `the_launch_context_is_kept_when_the_login_shell_is_silent`——夹具把 `:` 硬编码为路径分隔符，Windows 用 `;`，`split_paths` 因此把整条字符串当成一个条目。生产代码读写 `PATH` 用的就是 `split_paths` / `join_paths`，平台本就正确，错的只有测试数据。该 Tag 保持不可变，未创建 Release，修复转入 `v1.1.27`。
+
+- 这是 Windows 第四次因 POSIX 假设失败，但与前三次不同：前三次是产品代码的模式判断，本次是测试夹具。已改为用 `join_paths` 构造夹具，与被测代码读它的 API 一致。交叉编译到 `x86_64-pc-windows-gnu` 无助于此类问题（四次失败全是运行期语义，非编译错误），故未引入该本地门禁。
+- 排查中读出内核 `dsh-subprocess-local` 的 `windowsExecutableNames` 只尝试 `.com` 和 `.exe`，上一版写入的 `node.cmd` 兜底永远解析不到。该 shim 已删除，`HARNESS_FALLBACK_BIN_DIR` 与 `publish_fallback_node` 收敛为 `cfg(unix)`；hardlink 到 `node.exe` 的替代方案跨卷会失败且应用更新后会静默钉死旧 Node，本机无法验证，未采用。
+- `v1.1.27` 发布成功。GitHub Run `35409544128` 五个 Job 与 `publish-release` 全部通过。Release 标题为 Tag 本身，`prerelease=true`、`draft=false`，恰好六个公开资产（`aarch64.dmg`、`x64.dmg`、`x64-setup.exe`、`amd64.AppImage`、`amd64.deb`、`SHA256SUMS`）；`SHA256SUMS` 覆盖全部五个安装包，正文六条直接下载链接与当前 Tag 逐项一致；`/releases/latest` 返回 404，未签名包不占 Latest。
+- 下载校验只做了一个：ARM64 DMG 实际下载 408,286,407 字节并本机重算 SHA-256，与 `SHA256SUMS` 中的 `4535823eba4b1cf79108bae90bde179eefb140327ec6b93603942b22eec7d1e6` 一致。其余四个安装包只核对了元数据（文件名、大小、正文链接），未下载重算。
+- 本机安装验收：`hdiutil verify` VALID，`codesign --verify --deep --strict` 通过，主程序 arm64，`CFBundleShortVersionString` 为 `1.1.27`。
+- **第一次运行期验证无效并已作废**：用 `open -a` 启动时 macOS 把调用方 shell 的环境传给了应用，sidecar 的 `PATH` 中出现调用方会话专属目录，因此无法区分"登录 shell 探测恢复"与"从调用方继承"。改用 `env -i` 只给 Finder 骨架（`HOME`、`USER`、`LOGNAME`、`SHELL`、`TMPDIR`、`__CF_USER_TEXT_ENCODING`、`PATH=/usr/bin:/bin:/usr/sbin:/sbin`）再 `open`，并以该专属目录不出现作为无污染断言后重测。
+- 净化环境下的实测：sidecar `PATH` 由 4 项变为 26 项，`harness-bin` 在最前、`harness-bin-fallback` 在最后，中间为登录 shell 自身的顺序（graalvm、sdkman、pyenv、goenv、`~/.nvm/versions/node/v24.20.0/bin`、`/opt/homebrew/bin`…）；环境变量由 24 项变为 48 项，含 `LANG`、`NVM_DIR`、`PYENV_ROOT`、`GOENV_ROOT`、`SDKMAN_DIR` 与四项代理变量。诊断日志记录 `login shell environment: 36 variables from /bin/zsh`。
+- 以 sidecar 的实际 `PATH` 复现内核 Bash 工具（`env -i PATH=… bash -c`）：`node` 解析到 `~/.nvm/versions/node/v24.20.0/bin/node` 并输出 `v24.20.0`，`python3` 解析到 pyenv shim。仅保留 `harness-bin-fallback` 时 `node --version` 同样为 `v24.20.0`，`process.execPath` 为 `/Applications/DeepSeek Desktop.app/Contents/MacOS/node`，符号链接指向随包 Node，用户自己的安装优先于兜底。
+- 用户 profile 的 `cordis.patch.yml` 为 `[]`，官方搜索插件未被停用；搜索模式为 `follow-model`。启动日志无 error/warn，Harness 就绪。
+- 未验证：联网搜索端到端（本机 oMLX 未运行，也未发起需要凭据的模型调用）；本改动在 Windows 与 Linux 上的运行期行为（只有 CI 的构建与单元测试）；其余四个安装包的下载重算。
+
 ## 官方 Harness 0.1.6-alpha.1 源码升级
 
 由 `c291e7961a51`（`0.1.5-rc.2`）升级到 `0a15e36e7f82`（`dsh-v0.1.6-alpha.1`）。本机四道门禁全部通过：`test:config`、`verify`、`test:e2e`、`harness:smoke`（`Harness 0.1.6-alpha.1, 1 cycle(s)`）。升级需要处理的上游变化：
