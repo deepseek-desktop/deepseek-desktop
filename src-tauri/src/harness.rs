@@ -42,7 +42,8 @@ const PROFILE_PACKAGE_DIGEST_FILE: &str = ".deepseek-desktop-source.sha256";
 const HARNESS_BIN_DIR: &str = "harness-bin";
 /// Tools the desktop merely guarantees exist. `node` goes here, last on the search path
 /// rather than first: the desktop already ships the exact Node the Harness runs on, but a
-/// user who installed their own meant to use it.
+/// user who installed their own meant to use it. Unix only — see `publish_fallback_node`.
+#[cfg(unix)]
 const HARNESS_FALLBACK_BIN_DIR: &str = "harness-bin-fallback";
 const READY_PREFIX: &str = "dsh web: http://127.0.0.1:";
 const DESKTOP_MENU_WEBVIEW_LABEL: &str = "desktop-menu";
@@ -1326,6 +1327,7 @@ fn harness_environment(
     );
     let mut search_paths = vec![paths.data_dir.join(HARNESS_BIN_DIR)];
     search_paths.extend(crate::login_shell::search_paths());
+    #[cfg(unix)]
     search_paths.push(paths.data_dir.join(HARNESS_FALLBACK_BIN_DIR));
     environment.insert(
         "PATH".to_owned(),
@@ -1401,32 +1403,33 @@ fn prepare_package_manager(paths: &AppPaths, harness_dir: &Path, node: &Path) ->
 ///
 /// The desktop ships the exact Node the Harness runs on and hands its path to the kernel as
 /// `DEEPSEEK_DESKTOP_NODE_PATH`, but until now not as anything `PATH` could resolve — so the
-/// kernel's own Bash tool reported Node missing while executing on it. The link is rebuilt
-/// every launch because the application bundle can move, and it is written to a directory of
-/// its own so the search path can put it last.
+/// kernel's own Bash tool reported Node missing while executing on it. A symlink rather than
+/// a wrapper script: `process.execPath`, `process.argv[0]` and `#!/usr/bin/env node` all keep
+/// pointing at a real Node, and nothing depends on an environment variable still being set by
+/// the time the tool runs. It is rebuilt every launch because the application bundle can
+/// move, and lives in a directory of its own so the search path can put it last.
+///
+/// Unix only, deliberately. The Harness resolves a bare command name on Windows by trying
+/// `.com` and `.exe` and nothing else, so a `node.cmd` shim would sit on the search path and
+/// never be found — shipping one would only look like Windows had the same guarantee. The
+/// need is also smaller there: an Explorer-launched process inherits the user's real
+/// environment, so a user who installed Node already has it on `PATH`.
+#[cfg(unix)]
 fn publish_fallback_node(paths: &AppPaths, node: &Path) -> DesktopResult<()> {
     let fallback_bin = paths.data_dir.join(HARNESS_FALLBACK_BIN_DIR);
     fs::create_dir_all(&fallback_bin)?;
-    // The literal path rather than `%DEEPSEEK_DESKTOP_NODE_PATH%`: a tool that clears the
-    // environment before shelling out must still find a working Node here.
-    #[cfg(windows)]
-    fs::write(
-        fallback_bin.join("node.cmd"),
-        format!("@echo off\r\n\"{}\" %*\r\n", node.display()),
-    )?;
-    #[cfg(unix)]
-    {
-        // A symlink rather than a wrapper script: `process.execPath`, `process.argv[0]` and
-        // `#!/usr/bin/env node` all keep pointing at a real Node, and nothing depends on an
-        // environment variable still being set by the time the tool runs.
-        let link = fallback_bin.join("node");
-        match fs::remove_file(&link) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
-        std::os::unix::fs::symlink(node, &link)?;
+    let link = fallback_bin.join("node");
+    match fs::remove_file(&link) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
+    std::os::unix::fs::symlink(node, &link)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn publish_fallback_node(_paths: &AppPaths, _node: &Path) -> DesktopResult<()> {
     Ok(())
 }
 

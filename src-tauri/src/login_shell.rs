@@ -301,27 +301,40 @@ mod probe {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
+    use std::ffi::OsString;
     use std::path::PathBuf;
+
+    /// A search path written the way this platform writes one.
+    ///
+    /// These fixtures used to hard-code `:`, which made both cases pass on Unix and fail on
+    /// Windows, where the separator is `;` and the whole fixture therefore arrived as a
+    /// single entry. Building them with the same API the code under test reads them with
+    /// keeps the assertions about ordering rather than about a separator.
+    fn search_path(entries: &[&str]) -> OsString {
+        std::env::join_paths(entries.iter().map(PathBuf::from)).expect("fixture entries join")
+    }
+
+    fn paths(entries: &[&str]) -> Vec<PathBuf> {
+        entries.iter().map(PathBuf::from).collect()
+    }
 
     /// The user put Homebrew ahead of `/usr/bin` on purpose. Appending the launch context
     /// instead of leading with it is what keeps the kernel and the Terminal agreeing on
     /// which `python3` they mean.
     #[test]
     fn the_login_shells_own_order_leads_the_search_path() {
-        let merged = super::ordered_paths([
-            Some(OsStr::new("/opt/homebrew/bin:/usr/bin:/bin")),
-            Some(OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin")),
-        ]);
+        let login = search_path(&["/opt/homebrew/bin", "/usr/bin", "/bin"]);
+        let launch = search_path(&["/usr/bin", "/bin", "/usr/sbin", "/sbin"]);
+        let merged = super::ordered_paths([Some(login.as_os_str()), Some(launch.as_os_str())]);
         assert_eq!(
             merged,
-            vec![
-                PathBuf::from("/opt/homebrew/bin"),
-                PathBuf::from("/usr/bin"),
-                PathBuf::from("/bin"),
-                PathBuf::from("/usr/sbin"),
-                PathBuf::from("/sbin"),
-            ]
+            paths(&[
+                "/opt/homebrew/bin",
+                "/usr/bin",
+                "/bin",
+                "/usr/sbin",
+                "/sbin"
+            ])
         );
     }
 
@@ -329,9 +342,8 @@ mod tests {
     /// login shell never answered at all.
     #[test]
     fn the_launch_context_is_kept_when_the_login_shell_is_silent() {
-        let merged =
-            super::ordered_paths([None, Some(OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"))]);
-        assert_eq!(merged.len(), 4);
-        assert_eq!(merged[0], PathBuf::from("/usr/bin"));
+        let launch = search_path(&["/usr/bin", "/bin", "/usr/sbin", "/sbin"]);
+        let merged = super::ordered_paths([None, Some(launch.as_os_str())]);
+        assert_eq!(merged, paths(&["/usr/bin", "/bin", "/usr/sbin", "/sbin"]));
     }
 }
