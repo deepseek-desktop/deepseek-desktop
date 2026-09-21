@@ -28,7 +28,7 @@ export default defineConfig({
     screenshot: "only-on-failure"
   },
   webServer: {
-    command: `${pnpm} build && ${pnpm} exec vite preview --host 127.0.0.1 --port ${port}`,
+    command: `${pnpm} frontend:build && ${pnpm} exec vite preview --host 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 60_000

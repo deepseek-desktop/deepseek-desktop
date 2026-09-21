@@ -166,6 +166,8 @@ Windows 构建会按当前 Node 架构显式选择 `x86_64-pc-windows-msvc` 工�
 打包脚本不得要求开发者预先手动同步配置。单独保留分步骤命令，方便开发阶段快速检查和定位错误：
 
 ```bash
+corepack pnpm@11.24.0 install --frozen-lockfile
+corepack pnpm@11.24.0 run build
 corepack pnpm@11.24.0 app:sync
 corepack pnpm@11.24.0 harness:sync
 corepack pnpm@11.24.0 verify
@@ -173,6 +175,8 @@ corepack pnpm@11.24.0 test:e2e
 corepack pnpm@11.24.0 harness:smoke
 corepack pnpm@11.24.0 tauri:build
 ```
+
+标准源码构建入口就是 `pnpm install` 后执行 `pnpm run build`。`build` 复用 `tauri:build`，先按 lock 完成应用配置、Harness 依赖安装、官方构建、生产闭包装配和暂存，再进入 Tauri；`verify` 和 `test:e2e` 同样在消费 Harness 前强制刷新，Playwright 的预览服务器只调用 `frontend:build`，不依赖上一次构建遗留的 `target/generated`，也不在服务器启动窗口内递归执行完整桌面打包。
 
 命令职责保持单向组合：底层分步骤命令不调用一键命令，`desktop:package` 负责编排底层命令，`package:community` 只向同一编排入口传递发行通道参数。
 

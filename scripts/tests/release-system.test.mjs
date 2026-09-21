@@ -88,13 +88,30 @@ test("local Linux worker does not inject hosted-runner packaging flags", () => {
   assert.deepEqual(assignments, []);
 });
 
-test("Tauri build performs frontend compilation without rewriting prepared app config", async () => {
+test("the standard build prepares Harness before Tauri compiles the frontend", async () => {
   const packageJson = JSON.parse(await readFile(resolve("package.json"), "utf8"));
   const tauriConfig = JSON.parse(await readFile(resolve("src-tauri/tauri.conf.json"), "utf8"));
-  assert.match(packageJson.scripts.build, /app-sync\.mjs/u);
-  assert.match(packageJson.scripts.build, /frontend:build/u);
+  assert.match(packageJson.scripts.build, /tauri:build/u);
+  const tauriBuild = packageJson.scripts["tauri:build"];
+  const appSyncIndex = tauriBuild.indexOf("app-sync.mjs");
+  const harnessSyncIndex = tauriBuild.indexOf("harness-sync.mjs");
+  const harnessStageIndex = tauriBuild.indexOf("stage-harness.mjs");
+  const tauriIndex = tauriBuild.indexOf("tauri build");
+  assert.ok(appSyncIndex >= 0 && appSyncIndex < harnessSyncIndex);
+  assert.ok(harnessSyncIndex < harnessStageIndex && harnessStageIndex < tauriIndex);
+  const verify = packageJson.scripts.verify;
+  const verifyHarnessSyncIndex = verify.indexOf("harness:sync");
+  const verifyCredentialsIndex = verify.indexOf("harness:test-credentials");
+  const verifyStageIndex = verify.indexOf("harness:stage");
+  assert.ok(verifyHarnessSyncIndex >= 0 && verifyHarnessSyncIndex < verifyCredentialsIndex);
+  assert.ok(verifyCredentialsIndex < verifyStageIndex);
   assert.equal(tauriConfig.build.beforeBuildCommand, "node scripts/with-pnpm.mjs frontend:build");
-  assert.doesNotMatch(packageJson.scripts["frontend:build"], /app:sync|app-sync/u);
+  assert.doesNotMatch(packageJson.scripts["frontend:build"], /app:sync|app-sync|harness:sync|harness-sync/u);
+  const playwrightConfig = await readFile(resolve("playwright.config.ts"), "utf8");
+  assert.match(playwrightConfig, /\$\{pnpm\} frontend:build/u);
+  assert.doesNotMatch(playwrightConfig, /\$\{pnpm\} build &&/u);
+  const e2e = packageJson.scripts["test:e2e"];
+  assert.ok(e2e.indexOf("harness:sync") < e2e.indexOf("playwright test"));
 });
 
 function releaseInput({ channel = "local", targetId = "macos-arm64", trustedNodeId = "" } = {}) {

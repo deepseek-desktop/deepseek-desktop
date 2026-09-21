@@ -66,6 +66,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - Tauri CLI：`2.11.4`
 - 当前 Harness 按 `deepseek-desktop/deepseek-harness` 的不可变 commit 锁定（具体来源见工具链 lock）。独立搜索设置直接使用 `connection.fetch.register` / `connection.fetch` 的 `/api/desktop.web-search` GET/POST 接口，旧 RPC 通道与强制 `webServer` 注入补丁已移除。
 - Harness 固定来源、commit 和制品校验和以 `harness/toolchain-lock.json` 为准，不在本文件重复维护。
+- 标准本地构建使用 `pnpm install --frozen-lockfile` 后执行 `pnpm run build`；`build`、`verify` 和 `test:e2e` 都会在消费当前 Harness 前完成同步，禁止把历史 `target/generated` 当作依赖安装结果。Playwright 预览只调用 `frontend:build`，避免在 60 秒服务器启动窗口内递归执行完整桌面构建。
 
 ## 发行目标
 

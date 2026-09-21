@@ -431,7 +431,7 @@ fn release_tag_from_url(repository: &GithubRepository, value: &str) -> Option<St
 
 fn feed_entry_to_release(entry: FeedEntry, repository: &GithubRepository) -> Option<GithubRelease> {
     let tag_name = entry.tag?;
-    let version = parse_tag(&tag_name)?;
+    parse_tag(&tag_name)?;
     let content = entry.content.unwrap_or_default();
     Some(GithubRelease {
         tag_name: tag_name.clone(),
@@ -730,21 +730,21 @@ mod tests {
     }
 
     #[test]
-    fn selects_the_highest_complete_semver_release() {
+    fn selects_the_highest_complete_four_part_release() {
         let settings = DesktopSettings::default();
-        let mut incomplete = release("v9.0.0", false, "2026-08-30T10:00:00Z");
+        let mut incomplete = release("v0.1.6.9", false, "2026-08-30T10:00:00Z");
         incomplete.assets.pop();
         let status = select_release(
             vec![
-                release("v1.1.0", false, "2026-08-30T10:00:00Z"),
-                release("v1.2.0", false, "2026-08-30T09:00:00Z"),
+                release("v0.1.6.2", false, "2026-08-30T10:00:00Z"),
+                release("v0.1.6.3", false, "2026-08-30T09:00:00Z"),
                 incomplete,
             ],
             &settings,
-            "1.0.0",
+            "0.1.6.1",
         );
-        assert_eq!(status.available_version.as_deref(), Some("1.2.0"));
-        assert_eq!(status.release_tag.as_deref(), Some("v1.2.0"));
+        assert_eq!(status.available_version.as_deref(), Some("0.1.6.3"));
+        assert_eq!(status.release_tag.as_deref(), Some("v0.1.6.3"));
     }
 
     #[test]
@@ -776,17 +776,17 @@ mod tests {
     #[test]
     fn ignores_draft_releases() {
         let settings = DesktopSettings::default();
-        let mut draft = release("v2.0.0", false, "2026-08-30T10:00:00Z");
+        let mut draft = release("v0.1.6.2", false, "2026-08-30T10:00:00Z");
         draft.draft = true;
-        let status = select_release(vec![draft], &settings, "1.0.0");
+        let status = select_release(vec![draft], &settings, "0.1.6.1");
         assert_eq!(status.message, "up-to-date");
         assert!(status.available_version.is_none());
     }
 
     #[test]
     fn community_accepts_prereleases_but_stable_does_not() {
-        let releases = vec![release("v1.1.0-beta.1", true, "2026-08-30T10:00:00Z")];
-        let community = select_release(releases, &DesktopSettings::default(), "1.0.0");
+        let releases = vec![release("v0.1.6.2", true, "2026-08-30T10:00:00Z")];
+        let community = select_release(releases, &DesktopSettings::default(), "0.1.6.1");
         assert_eq!(community.message, "update-available");
 
         let stable = DesktopSettings {
@@ -794,38 +794,38 @@ mod tests {
             ..DesktopSettings::default()
         };
         let status = select_release(
-            vec![release("v1.1.0-beta.1", true, "2026-08-30T10:00:00Z")],
+            vec![release("v0.1.6.2", true, "2026-08-30T10:00:00Z")],
             &stable,
-            "1.0.0",
+            "0.1.6.1",
         );
         assert_eq!(status.message, "up-to-date");
     }
 
     #[test]
     fn stable_channel_never_accepts_an_unknown_atom_release_classification() {
-        let mut candidate = release("v2.0.0", false, "2026-09-05T00:00:00Z");
+        let mut candidate = release("v0.1.6.2", false, "2026-09-05T00:00:00Z");
         candidate.prerelease = None;
         let settings = DesktopSettings {
             update_channel: "stable".to_owned(),
             ..DesktopSettings::default()
         };
-        let result = select_release(vec![candidate], &settings, "1.0.0");
+        let result = select_release(vec![candidate], &settings, "0.1.6.1");
         assert_eq!(result.available_version, None);
     }
 
     #[test]
     fn ignored_version_stays_available_without_prompting() {
         let settings = DesktopSettings {
-            desktop_update_ignored_version: Some("1.1.0".to_owned()),
+            desktop_update_ignored_version: Some("0.1.6.2".to_owned()),
             ..DesktopSettings::default()
         };
         let status = select_release(
-            vec![release("v1.1.0", false, "2026-08-30T10:00:00Z")],
+            vec![release("v0.1.6.2", false, "2026-08-30T10:00:00Z")],
             &settings,
-            "1.0.0",
+            "0.1.6.1",
         );
         assert_eq!(status.message, "update-ignored");
-        assert_eq!(status.available_version.as_deref(), Some("1.1.0"));
+        assert_eq!(status.available_version.as_deref(), Some("0.1.6.2"));
     }
 
     #[test]
@@ -857,21 +857,21 @@ mod tests {
           <feed xmlns="http://www.w3.org/2005/Atom">
             <entry>
               <updated>2026-09-01T12:00:00Z</updated>
-              <link rel="alternate" href="https://github.com/example/desktop/releases/tag/v1.2.3"/>
+              <link rel="alternate" href="https://github.com/example/desktop/releases/tag/v0.1.6.2"/>
               <content type="html">
                 &lt;p&gt;A complete release.&lt;/p&gt;
-                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v1.2.3/DeepSeek.Desktop_1.2.3_aarch64.dmg&quot;&gt;arm&lt;/a&gt;
-                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v1.2.3/DeepSeek.Desktop_1.2.3_x64.dmg&quot;&gt;intel&lt;/a&gt;
-                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v1.2.3/DeepSeek.Desktop_1.2.3_x64-setup.exe&quot;&gt;windows&lt;/a&gt;
-                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v1.2.3/DeepSeek.Desktop_1.2.3_amd64.AppImage&quot;&gt;appimage&lt;/a&gt;
-                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v1.2.3/DeepSeek.Desktop_1.2.3_amd64.deb&quot;&gt;deb&lt;/a&gt;
-                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v1.2.3/SHA256SUMS&quot;&gt;hashes&lt;/a&gt;
+                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v0.1.6.2/DeepSeek.Desktop_0.1.6.2_aarch64.dmg&quot;&gt;arm&lt;/a&gt;
+                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v0.1.6.2/DeepSeek.Desktop_0.1.6.2_x64.dmg&quot;&gt;intel&lt;/a&gt;
+                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v0.1.6.2/DeepSeek.Desktop_0.1.6.2_x64-setup.exe&quot;&gt;windows&lt;/a&gt;
+                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v0.1.6.2/DeepSeek.Desktop_0.1.6.2_amd64.AppImage&quot;&gt;appimage&lt;/a&gt;
+                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v0.1.6.2/DeepSeek.Desktop_0.1.6.2_amd64.deb&quot;&gt;deb&lt;/a&gt;
+                &lt;a href=&quot;https://github.com/example/desktop/releases/download/v0.1.6.2/SHA256SUMS&quot;&gt;hashes&lt;/a&gt;
               </content>
             </entry>
           </feed>"#;
         let releases = parse_release_feed(xml.as_bytes(), &repository).unwrap();
         assert_eq!(releases.len(), 1);
-        assert_eq!(releases[0].tag_name, "v1.2.3");
+        assert_eq!(releases[0].tag_name, "v0.1.6.2");
         assert_eq!(releases[0].prerelease, None);
         assert!(has_complete_assets(&releases[0].assets));
         assert!(
@@ -880,7 +880,7 @@ mod tests {
                 .as_deref()
                 .is_some_and(|notes| { notes.contains("<p>A complete release.</p>") })
         );
-        let status = select_release(releases, &DesktopSettings::default(), "1.0.0");
+        let status = select_release(releases, &DesktopSettings::default(), "0.1.6.1");
         assert_eq!(status.release_notes_format, ReleaseNotesFormat::Html);
     }
 
@@ -890,12 +890,12 @@ mod tests {
             "# Release\n\n{}\n\n[Details](https://example.com/notes)",
             "A paragraph.\n\n".repeat(150)
         );
-        let mut candidate = release("v1.1.0", false, "2026-09-04T10:00:00Z");
+        let mut candidate = release("v0.1.6.2", false, "2026-09-04T10:00:00Z");
         candidate.body = Some(notes.clone());
-        let status = select_release(vec![candidate], &DesktopSettings::default(), "1.0.0");
+        let status = select_release(vec![candidate], &DesktopSettings::default(), "0.1.6.1");
         assert_eq!(status.release_notes.as_deref(), Some(notes.as_str()));
         assert_eq!(status.release_notes_format, ReleaseNotesFormat::Markdown);
-        let remote: GithubRelease = serde_json::from_str(r#"{"tag_name":"v1.1.0","draft":false,"prerelease":false,"published_at":null,"body":"<h1>raw</h1>","notes_format":"html"}"#).unwrap();
+        let remote: GithubRelease = serde_json::from_str(r#"{"tag_name":"v0.1.6.2","draft":false,"prerelease":false,"published_at":null,"body":"<h1>raw</h1>","notes_format":"html"}"#).unwrap();
         assert_eq!(remote.notes_format, ReleaseNotesFormat::Markdown);
     }
 
@@ -903,15 +903,15 @@ mod tests {
     fn atom_assets_cannot_escape_the_official_repository() {
         let repository = parse_github_repository("https://github.com/example/desktop").unwrap();
         let content = r#"
-          <a href="https://evil.example/releases/download/v1.2.3/SHA256SUMS">foreign</a>
-          <a href="https://github.com/example/desktop/releases/download/v1.2.3/../SHA256SUMS">traversal</a>
-          <a href="https://github.com/example/desktop/releases/download/v1.2.4/SHA256SUMS">wrong tag</a>
+          <a href="https://evil.example/releases/download/v0.1.6.2/SHA256SUMS">foreign</a>
+          <a href="https://github.com/example/desktop/releases/download/v0.1.6.2/../SHA256SUMS">traversal</a>
+          <a href="https://github.com/example/desktop/releases/download/v0.1.6.3/SHA256SUMS">wrong tag</a>
         "#;
-        assert!(release_assets_from_html(&repository, "v1.2.3", content).is_empty());
+        assert!(release_assets_from_html(&repository, "v0.1.6.2", content).is_empty());
         assert!(
             release_tag_from_url(
                 &repository,
-                "https://github.com/example/other/releases/tag/v1.2.3"
+                "https://github.com/example/other/releases/tag/v0.1.6.2"
             )
             .is_none()
         );

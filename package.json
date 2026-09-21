@@ -20,12 +20,12 @@
   "scripts": {
     "app:sync": "node scripts/app-sync.mjs",
     "dev": "node scripts/app-sync.mjs && vite",
-    "build": "node scripts/app-sync.mjs && node scripts/with-pnpm.mjs frontend:build",
+    "build": "node scripts/with-pnpm.mjs tauri:build",
     "frontend:build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
     "test": "node scripts/app-sync.mjs && vitest run",
     "test:config": "node --test scripts/tests/*.test.mjs",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/with-pnpm.mjs harness:sync && playwright test",
     "playwright:install": "node scripts/playwright-install.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
     "harness:install": "node scripts/with-pnpm.mjs --dir harness install --frozen-lockfile",
@@ -61,7 +61,7 @@
     "tauri": "tauri",
     "tauri:dev": "node scripts/app-sync.mjs && node scripts/harness-sync.mjs && node harness/scripts/stage-harness.mjs && node scripts/with-rust.mjs tauri dev --config target/generated/tauri.conf.json",
     "tauri:build": "node scripts/app-sync.mjs && node scripts/harness-sync.mjs && node harness/scripts/stage-harness.mjs && node scripts/with-rust.mjs tauri build --config target/generated/tauri.conf.json",
-    "verify": "node scripts/with-pnpm.mjs app:sync --check && node scripts/with-pnpm.mjs test:config && node scripts/with-pnpm.mjs check:i18n && node scripts/with-pnpm.mjs test && node scripts/with-pnpm.mjs typecheck && node scripts/with-pnpm.mjs harness:test-locale && node scripts/with-pnpm.mjs harness:test-credentials && node scripts/with-pnpm.mjs harness:stage && node scripts/with-pnpm.mjs harness:test-follow-model && node scripts/with-pnpm.mjs harness:verify && node scripts/with-pnpm.mjs rust:test && node scripts/with-pnpm.mjs rust:clippy"
+    "verify": "node scripts/with-pnpm.mjs app:sync --check && node scripts/with-pnpm.mjs test:config && node scripts/with-pnpm.mjs check:i18n && node scripts/with-pnpm.mjs test && node scripts/with-pnpm.mjs typecheck && node scripts/with-pnpm.mjs harness:test-locale && node scripts/with-pnpm.mjs harness:sync && node scripts/with-pnpm.mjs harness:test-credentials && node scripts/with-pnpm.mjs harness:stage && node scripts/with-pnpm.mjs harness:test-follow-model && node scripts/with-pnpm.mjs harness:verify && node scripts/with-pnpm.mjs rust:test && node scripts/with-pnpm.mjs rust:clippy"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
