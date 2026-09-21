@@ -4,7 +4,7 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 桌面 Shell、应用程序和安装包统一使用固定上游提交中的侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Harness，不代表官方发行或品牌授权。
 
-公开版本使用四段数字：前三段对应锁定 Harness 的正式版本，第四段是 Desktop 修订号，当前默认示例为 `0.1.6.1`。实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，桌面安装包自动更新也未启用，因此不能作为已认证 Stable 版本宣传。Harness 与 Desktop 外壳独立，用户可以在设置中只更换 Harness 仓库地址。
+公开版本使用四段数字：前三段对应锁定 Harness 的正式版本，第四段是 Desktop 修订号，当前默认版本为 `0.1.6.2`。实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，桌面安装包自动更新也未启用，因此不能作为已认证 Stable 版本宣传。Harness 与 Desktop 外壳独立，用户可以在设置中只更换 Harness 仓库地址。
 
 工程源码位于仓库根目录。`harness/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Harness 来源；`harness:sync` 在本地开发且 `HARNESS_REF` 为空时自动选择 Harness 仓库最新的 SemVer 版本标签，显式填写时使用指定来源，随后统一解析为不可变 commit。社区版和正式发布还必须匹配仓库内经过审计的固定 Harness 提交，避免可变标签在无人复核时改变发行内容。同步结果写入当前构建专用的 `target/generated/harness-lock.json`。Harness 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Harness manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
@@ -36,7 +36,7 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 ## 模型与插件
 
-模型设置同时支持官方 Provider 和 OpenAI Compatible 自定义 Provider。自定义 Provider 至少需要填写唯一 ID、API 地址、协议和密钥；保存前可先获取模型目录，保存后可在会话输入区切换模型。Provider ID、API 地址和模型名输入框已关闭自动纠错与首字母大写，输入内容不会被系统改写。会话输入区的模型选择器带「推理等级」子菜单，按当前模型声明的可选档位渲染：官方 Provider 与上游模型目录内的模型自带档位，自定义 Provider 需要显式声明，方式与实测示例见[自定义模型提供方的推理强度](custom-provider-reasoning-effort.md)。
+模型设置同时支持官方 Provider 和 OpenAI Compatible 自定义 Provider。自定义 Provider 至少需要填写唯一 ID、API 地址、协议和密钥；保存前可先获取模型目录，保存后可在会话输入区切换模型。Provider ID、API 地址和模型名输入框已关闭自动纠错与首字母大写，输入内容不会被系统改写。会话输入区的模型选择器带「推理等级」子菜单，按当前模型声明的可选档位渲染：官方 Provider 与上游模型目录内的模型自带档位，自定义 Provider 需要显式声明。oMLX Qwen3.8 可使用[完整配置示例](../examples/omlx-qwen38.settings.yaml)，字段解释与本机实测边界见[自定义模型提供方的推理强度](custom-provider-reasoning-effort.md)。
 
 图片输入能力以上游模型目录及当前模型配置的声明为准，按具体模型和 API 地址判断，不按 Provider 品牌统一开启。已声明视觉能力的模型可以添加图片；自定义模型同样使用官方模型配置契约，Desktop 不再追加独立的“支持图片输入”表单控件。
 

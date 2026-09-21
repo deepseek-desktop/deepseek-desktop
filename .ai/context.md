@@ -8,7 +8,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
-- GitHub 上的旧 Release 与 Tag 已于 2026-09-22 全部清理，当前没有公开发行版。历史上最后完成验证的是 `v1.1.27`；其质量门禁、四平台原生构建、Windows x64 安装交互、汇总发布和本机 ARM64 安装证据仍保留在 [验证基线](memory/verification.md#当前发布验收)，但不再代表当前可下载版本。下一次发行从 `v0.1.6.1` 四段体系开始。防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
+- GitHub 上旧版本体系的 Release 与 Tag 已于 2026-09-22 全部清理。四段体系的 `v0.1.6.1` 已进入官方 Tag 矩阵并完成本机 ARM64 安装、真实 oMLX 对话与工具调用；本次配置固化和回归作为 Desktop 修订版 `v0.1.6.2` 发布。历史 `v1.1.27` 证据继续保留，但不再代表当前下载版本。防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
 
 - macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地 DMG 已验证 WebKit 历史、同源链接、剪贴板、混合窗口操作、候选激活/拒绝/恢复和独立搜索设置；Alibaba MaaS Max / Flash GUI 并发各有 8 条来源，实际重叠 8067 毫秒。该实测为同端点同凭据，不扩大为所有 Provider 隔离或每个后续发行包均重测；逐缺陷范围见 [审计修复验收](memory/audit-remediation.md)。
 
@@ -58,7 +58,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 版本基线
 
-- 新发行体系使用四段公开版本：锁定 Harness `0.1.6` 对应 Desktop `0.1.6.<修订号>`，当前默认示例为 `0.1.6.1`；旧 Release 与 Tag 已从 GitHub 清理，更新器只接受四段格式。
+- 新发行体系使用四段公开版本：锁定 Harness `0.1.6` 对应 Desktop `0.1.6.<修订号>`，当前默认版本为 `0.1.6.2`；旧版本体系的 Release 与 Tag 已从 GitHub 清理，更新器只接受四段格式。
 - Node：`24.20.0`（四平台精确锁定，module ABI `137`）
 - pnpm：`11.24.0`
 - npm：`11.19.0`（随固定 Node 官方归档提供）

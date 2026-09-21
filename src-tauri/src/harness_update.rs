@@ -2606,7 +2606,6 @@ mod tests {
     fn repository_timeout_stops_helpers_and_preserves_timeout_classification() {
         let directory = TempDir::new().unwrap();
         let marker = directory.path().join("helper-finished");
-        let started = Instant::now();
         let result = run_repository_command(
             Path::new("/bin/sh"),
             &["-c", "(sleep 1; touch helper-finished) & wait"],
@@ -2620,7 +2619,8 @@ mod tests {
             result,
             Err(DesktopError::RepositoryCommandTimedOut)
         ));
-        assert!(started.elapsed() < Duration::from_secs(2));
+        // The helper marker proves the timed-out process group was actually reaped. A wall-clock
+        // bound also measures the independently cached login-shell probe and flakes under load.
         thread::sleep(Duration::from_millis(1100));
         assert!(!marker.exists());
     }

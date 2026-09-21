@@ -89,67 +89,70 @@ compat:
 
 ## 完整示例：oMLX + Qwen3.8
 
-以本机 oMLX 暴露的 Qwen3.8 为例。该模型的 chat template 只接受 `low`、`medium`、`xhigh` 三个值（默认 `xhigh`），因此**只声明这三档**，菜单显示的就是线上生效的档；词表中的 `minimal`、`high`、`max` 该模型不支持，声明了只会得到与 Xhigh 行为相同的重复项。
+以本机 oMLX 暴露的 Qwen3.8 为例。以下配置对齐本机 OpenCode 已在使用的路由：模型 `qwen3.8-27b-4bit`、131072 上下文、32768 最大输出、Medium 默认推理、15 分钟流空闲超时，并保留跨轮思考内容。该模型的 chat template 只接受 `low`、`medium`、`xhigh` 三个值（默认 `xhigh`），因此只声明这三档；词表中的 `minimal`、`high`、`max` 该模型不支持，声明后只会得到与 Xhigh 行为相同的重复项。
+
+[可直接合并的完整示例](../examples/omlx-qwen38.settings.yaml)由验证脚本交给当前暂存 Harness 的 `@deepseek-ai/dsh-llm-pi-ai` schema 解析，避免文档字段与实际内核漂移。
 
 ```yaml
 llm-pi-ai:
   providers:
     omlx:
+      apiKeyEnv: OMLX_API_KEY
       api: openai-completions
       baseURL: http://127.0.0.1:8888/v1
+      streamIdleTimeoutMs: 900000
       reasoning: medium
-      thinkingBudgets:
-        low: 1024
-        medium: 2048
-        high: 8192
       compat:
         thinkingFormat: chat-template
-        thinkingTokenBudgetField: thinking_budget
         chatTemplateKwargs:
           enable_thinking:
             $var: thinking.enabled
+          preserve_thinking: true
           reasoning_effort:
             $var: thinking.effort
             omitWhenOff: true
       models:
         - id: qwen3.8-27b-4bit
+          name: Qwen3.8 27B
           contextWindow: 131072
           maxTokens: 32768
+          input:
+            - text
           reasoningEfforts:
             off:
             low: low
             medium: medium
             xhigh: xhigh
+agent-default-model:
+  provider: omlx
+  model: qwen3.8-27b-4bit
 ```
 
-四个档位实际发出的请求字段：
+四个档位实际发出的 `chat_template_kwargs`：
 
-| 菜单档位 | `chat_template_kwargs` | `thinking_budget` |
-| --- | --- | --- |
-| Off | `{"enable_thinking": false}` | 不发送 |
-| Low | `{"enable_thinking": true, "reasoning_effort": "low"}` | `1024` |
-| Medium | `{"enable_thinking": true, "reasoning_effort": "medium"}` | `2048` |
-| Xhigh | `{"enable_thinking": true, "reasoning_effort": "xhigh"}` | `8192`（取自 `thinkingBudgets.high`） |
+| 菜单档位 | `chat_template_kwargs` |
+| --- | --- |
+| Off | `{"enable_thinking": false, "preserve_thinking": true}` |
+| Low | `{"enable_thinking": true, "preserve_thinking": true, "reasoning_effort": "low"}` |
+| Medium | `{"enable_thinking": true, "preserve_thinking": true, "reasoning_effort": "medium"}` |
+| Xhigh | `{"enable_thinking": true, "preserve_thinking": true, "reasoning_effort": "xhigh"}` |
 
-上下文窗口按实际模型声明：未声明 `contextWindow` 时适配器使用 262144 的默认值，大于该模型实际的 131072 会让压缩时机偏晚。
+`streamIdleTimeoutMs` 对应 Harness 的单段流空闲预算；OpenCode 的总请求 `timeout` 没有一一对应的 Harness 字段，因此没有硬套进去。`preserve_thinking` 是静态 chat template 参数，每档都发送。`input: [text]` 与当前 OpenCode 模型声明一致，避免把该量化版本误标成已验证的图片模型。上下文窗口必须按实际模型声明：未声明 `contextWindow` 时适配器使用 262144 的默认值，大于该模型实际的 131072 会让压缩时机偏晚。
 
-### 不发送预算的简化写法
+### 可选的思考预算
 
-`thinkingBudgets` 与 `thinkingTokenBudgetField` 是可选的。去掉这两项后，各档仍按 `reasoning_effort` 区分，只是不再附带顶层预算字段：
+推荐配置不发送思考预算，由 oMLX 和模型模板自己决定。确实需要为每档固定预算时，可以另外加入：
 
 ```yaml
-      reasoning: medium
+      thinkingBudgets:
+        low: 1024
+        medium: 2048
+        high: 8192
       compat:
-        thinkingFormat: chat-template
-        chatTemplateKwargs:
-          enable_thinking:
-            $var: thinking.enabled
-          reasoning_effort:
-            $var: thinking.effort
-            omitWhenOff: true
+        thinkingTokenBudgetField: thinking_budget
 ```
 
-其余字段与上例一致。对本示例的模型，档位差异来自 chat template 注入的指令而非预算，因此两种写法的思考长度区间没有可观察的差别；预算槽只有四个且 `xhigh` 与 `high` 共用，去掉后也就没有了那条约束。服务端自身对思考预算另有默认时，以服务端为准。
+其余字段保持不变。此时 Low、Medium、Xhigh 分别附带 1024、2048、8192；Xhigh 使用 `thinkingBudgets.high` 槽。客户端会在每次请求覆盖服务端预算，只有确认需要固定预算时才应启用。
 
 ## 常见问题
 
@@ -169,4 +172,4 @@ llm-pi-ai:
 
 本文的字段语义取自当前锁定 Harness 的 `@deepseek-ai/dsh-llm-pi-ai` 配置契约，Harness 升级后须重新核对。
 
-示例一节的四档请求与响应差异在 macOS arm64 + oMLX 0.6.4 + Qwen3.8-27B-oQ4e-mtp 上实测通过：`off` 档三次采样均无思考内容，`xhigh` 档与 `low`/`medium` 档的思考长度区间不重叠；`low` 与 `medium` 的区间存在重叠，与该模板 `medium` 分支不注入任何指令一致。该结果不扩大为其他本机推理服务、其他模型或其他量化版本的兼容性结论，也不构成对任何外部 Provider 的兼容承诺。
+示例一节的四档请求与响应差异在 macOS arm64 + oMLX 0.6.4 + Qwen3.8-27B-oQ4e-mtp 上实测通过：`off` 档三次采样均无思考内容，`xhigh` 档与 `low`/`medium` 档的思考长度区间不重叠；`low` 与 `medium` 的区间存在重叠，与该模板 `medium` 分支不注入任何指令一致。随后使用 `/Applications/DeepSeek Desktop.app` 内实际安装的 `v0.1.6.1`，通过桌面凭据桥接完成 Medium 档真实对话和 Bash 工具调用；会话记录确认 provider、model、131072 上下文、32768 最大输出、工具结果及最终回复。该结果只覆盖本机 oMLX 0.6.4 与上述量化模型，不扩大为其他服务、模型或平台兼容性结论。

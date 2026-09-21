@@ -1,0 +1,33 @@
+# 将这两个顶层分节合并到 DeepSeek Desktop 的 dsh/settings.yaml。
+llm-pi-ai:
+  providers:
+    omlx:
+      apiKeyEnv: OMLX_API_KEY
+      api: openai-completions
+      baseURL: http://127.0.0.1:8888/v1
+      streamIdleTimeoutMs: 900000
+      reasoning: medium
+      compat:
+        thinkingFormat: chat-template
+        chatTemplateKwargs:
+          enable_thinking:
+            $var: thinking.enabled
+          preserve_thinking: true
+          reasoning_effort:
+            $var: thinking.effort
+            omitWhenOff: true
+      models:
+        - id: qwen3.8-27b-4bit
+          name: Qwen3.8 27B
+          contextWindow: 131072
+          maxTokens: 32768
+          input:
+            - text
+          reasoningEfforts:
+            off:
+            low: low
+            medium: medium
+            xhigh: xhigh
+agent-default-model:
+  provider: omlx
+  model: qwen3.8-27b-4bit

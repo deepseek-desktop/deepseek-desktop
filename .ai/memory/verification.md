@@ -1,5 +1,14 @@
 # 验证基线
 
+## oMLX Qwen3.8 安装版验收与 0.1.6.2 候选
+
+2026-09-22：将本机 OpenCode 已使用的 oMLX 路由按 Harness 官方 `llm-pi-ai` 配置契约接入 Desktop。模型为 `qwen3.8-27b-4bit`，OpenAI Chat Completions 端点为 loopback `http://127.0.0.1:8888/v1`，上下文 131072、最大输出 32768、文本输入、Medium 默认推理、Off/Low/Medium/Xhigh 四档、`chat-template` 思考开关、`preserve_thinking: true` 与 900000 毫秒流空闲超时。仓库示例由当前暂存 Harness 的真实 `@deepseek-ai/dsh-llm-pi-ai` `Config` schema 解析，不用手写的镜像 schema 冒充内核契约。
+
+- 从本地 `0.1.6.1` ARM64 DMG 安装到 `/Applications/DeepSeek Desktop.app`；安装后 `CFBundleShortVersionString=0.1.6`、`CFBundleVersion=1`、窗口标题 `DeepSeek Desktop v0.1.6.1`，主进程和 Node/Harness sidecar 均从该应用包启动，arm64 与 ad-hoc 完整签名检查通过。
+- 使用安装版自己的桌面凭据桥接向正在运行的 oMLX 0.6.4 发起真实会话。会话事件 `session-7b616e22-1917-4418-b595-5079865979bc` 记录 `provider=omlx`、`model=qwen3.8-27b-4bit`、`reasoningEffort=medium`、`contextWindow=131072`、`maxTokens=32768`；模型返回唯一对话标记 `INSTALLED_CHAT_1790015304_OK`。
+- 同一安装版随后要求模型调用 Bash；事件记录真实 `tool/call`、输出 `INSTALLED_TOOL_1790015353_OK` 的 `tool/result` 且 `isError=false`，模型读取结果后返回 `INSTALLED_TOOL_1790015353_DONE`。这证明安装包内 Desktop、Harness、凭据桥接、oMLX 推理与 Agent 工具闭环，而不只是源码或浏览器 Mock。
+- 用户 `settings.yaml` 修改前保留同目录时间戳备份。该实测仅覆盖本机 macOS arm64、oMLX 0.6.4 与当前量化模型；其他平台、模型或外部 Provider 仍按各自证据判断。
+
 ## 搜索标题与 DSH Market 官方安装
 
 2026-09-13：未发布源码将搜索卡片标题统一为“联网搜索 / 聯網搜尋 / Web search”，模式仍在卡片内选择。现有搜索设置单元测试 7 项、三语言键检查、E2E 7 项、固定官方 `c291e7961a515f6d7af9304e7fd1d257929aef26` 的重新装配、`harness:smoke` 与 `harness:verify` 均通过。
