@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { createMacDmg } from "./macos-dmg.mjs";
 import { loadBuildConfig } from "./lib/build-config.mjs";
+import { desktopArtifactName } from "./lib/desktop-artifacts.mjs";
 import { artifactForbiddenRoots, scanArtifactPaths } from "./lib/artifact-scan.mjs";
 import { prepareLinuxAppImageLdd } from "./lib/linux-appimage.mjs";
 import { portableRustFlags, RUST_PATH_REMAP_VERSION } from "./lib/rust-flags.mjs";
@@ -216,7 +217,13 @@ await rm(outputRoot, { recursive: true, force: true });
 await mkdir(outputRoot, { recursive: true });
 const copiedArtifacts = [];
 for (const artifact of artifacts) {
-  const output = join(outputRoot, basename(artifact));
+  const extension = target.extensions.find(candidate => artifact.endsWith(candidate));
+  const output = join(outputRoot, desktopArtifactName({
+    productName: config.productName,
+    version: config.version,
+    target: target.triple,
+    extension
+  }));
   await copyFile(artifact, output);
   copiedArtifacts.push(output);
 }

@@ -1,4 +1,5 @@
 use std::io::Read;
+use std::{cmp::Ordering, fmt};
 use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, Utc};
@@ -78,12 +79,78 @@ struct FeedEntry {
 
 #[derive(Debug)]
 struct ReleaseCandidate {
-    version: Version,
+    version: DesktopReleaseVersion,
     tag: String,
     prerelease: Option<bool>,
     published_at: DateTime<Utc>,
     notes: Option<String>,
     notes_format: ReleaseNotesFormat,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum DesktopReleaseVersion {
+    Legacy(Version),
+    HarnessAligned {
+        major: u64,
+        minor: u64,
+        patch: u64,
+        revision: u64,
+    },
+}
+
+impl DesktopReleaseVersion {
+    fn is_prerelease(&self) -> bool {
+        matches!(self, Self::Legacy(version) if !version.pre.is_empty())
+    }
+}
+
+impl Ord for DesktopReleaseVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (
+                Self::HarnessAligned {
+                    major,
+                    minor,
+                    patch,
+                    revision,
+                },
+                Self::HarnessAligned {
+                    major: other_major,
+                    minor: other_minor,
+                    patch: other_patch,
+                    revision: other_revision,
+                },
+            ) => (*major, *minor, *patch, *revision).cmp(&(
+                *other_major,
+                *other_minor,
+                *other_patch,
+                *other_revision,
+            )),
+            (Self::Legacy(left), Self::Legacy(right)) => left.cmp(right),
+            (Self::HarnessAligned { .. }, Self::Legacy(_)) => Ordering::Greater,
+            (Self::Legacy(_), Self::HarnessAligned { .. }) => Ordering::Less,
+        }
+    }
+}
+
+impl PartialOrd for DesktopReleaseVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl fmt::Display for DesktopReleaseVersion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Legacy(version) => version.fmt(formatter),
+            Self::HarnessAligned {
+                major,
+                minor,
+                patch,
+                revision,
+            } => write!(formatter, "{major}.{minor}.{patch}.{revision}"),
+        }
+    }
 }
 
 pub async fn check(app: &AppHandle, settings: &DesktopSettings) -> DesktopResult<UpdateStatus> {
@@ -117,7 +184,9 @@ pub fn skipped_status(settings: &DesktopSettings) -> UpdateStatus {
 
 pub fn official_release_page(tag: &str) -> DesktopResult<String> {
     let version = parse_tag(tag).ok_or_else(|| {
-        DesktopError::InvalidConfiguration("Desktop release tag must be valid SemVer".to_owned())
+        DesktopError::InvalidConfiguration(
+            "Desktop release tag must be a four-part version or a legacy SemVer".to_owned(),
+        )
     })?;
     let repository = official_github_repository()?;
     let canonical_tag = if tag.starts_with('v') {
@@ -175,7 +244,9 @@ async fn check_signed_update(
         enabled: true,
         channel: settings.update_channel.clone(),
         current_version: env!("DEEPSEEK_DESKTOP_APP_VERSION").to_owned(),
-        available_version: update.as_ref().map(|release| release.version.clone()),
+        available_version: update
+            .as_ref()
+            .map(|release| public_version_from_bundle_semver(&release.version)),
         release_tag: None,
         published_at: None,
         release_notes: None,
@@ -413,10 +484,10 @@ fn feed_entry_to_release(entry: FeedEntry, repository: &GithubRepository) -> Opt
     Some(GithubRelease {
         tag_name: tag_name.clone(),
         draft: false,
-        prerelease: if version.pre.is_empty() {
-            None
-        } else {
+        prerelease: if version.is_prerelease() {
             Some(true)
+        } else {
+            None
         },
         published_at: entry.updated,
         body: sanitize_notes(Some(content.clone())),
@@ -463,7 +534,7 @@ fn select_release(
     settings: &DesktopSettings,
     current_version: &str,
 ) -> UpdateStatus {
-    let Ok(current) = Version::parse(current_version) else {
+    let Some(current) = parse_tag(current_version) else {
         return empty_status(settings, "up-to-date");
     };
     let allow_prerelease = settings.update_channel == "community";
@@ -517,9 +588,56 @@ fn to_candidate(release: GithubRelease) -> Option<ReleaseCandidate> {
     })
 }
 
-fn parse_tag(tag: &str) -> Option<Version> {
+fn parse_tag(tag: &str) -> Option<DesktopReleaseVersion> {
     let version = tag.strip_prefix('v').unwrap_or(tag);
-    Version::parse(version).ok()
+    let segments = version.split('.').collect::<Vec<_>>();
+    if segments.len() == 4
+        && segments.iter().all(|segment| {
+            !segment.is_empty()
+                && segment.chars().all(|character| character.is_ascii_digit())
+                && (segment == &"0" || !segment.starts_with('0'))
+        })
+    {
+        let major = segments[0].parse().ok()?;
+        let minor = segments[1].parse().ok()?;
+        let patch = segments[2].parse().ok()?;
+        let revision = segments[3].parse().ok()?;
+        if revision == 0 {
+            return None;
+        }
+        return Some(DesktopReleaseVersion::HarnessAligned {
+            major,
+            minor,
+            patch,
+            revision,
+        });
+    }
+    Version::parse(version)
+        .ok()
+        .map(DesktopReleaseVersion::Legacy)
+}
+
+pub(crate) fn canonical_release_version(value: &str) -> Option<String> {
+    parse_tag(value.trim()).map(|version| version.to_string())
+}
+
+fn public_version_from_bundle_semver(value: &str) -> String {
+    let Ok(version) = Version::parse(value) else {
+        return value.to_owned();
+    };
+    let build = version.build.as_str();
+    if version.pre.is_empty()
+        && !build.is_empty()
+        && !build.contains('.')
+        && build.chars().all(|character| character.is_ascii_digit())
+        && build != "0"
+    {
+        return format!(
+            "{}.{}.{}.{}",
+            version.major, version.minor, version.patch, build
+        );
+    }
+    value.to_owned()
 }
 
 fn has_complete_assets(assets: &[GithubAsset]) -> bool {
@@ -684,6 +802,42 @@ mod tests {
     }
 
     #[test]
+    fn harness_aligned_versions_replace_legacy_desktop_versions() {
+        let settings = DesktopSettings::default();
+        let status = select_release(
+            vec![
+                release("v1.1.27", true, "2026-09-19T10:00:00Z"),
+                release("v0.1.6.1", true, "2026-09-22T10:00:00Z"),
+                release("v0.1.6.2", true, "2026-09-22T11:00:00Z"),
+            ],
+            &settings,
+            "1.1.27",
+        );
+        assert_eq!(status.available_version.as_deref(), Some("0.1.6.2"));
+        assert_eq!(status.release_tag.as_deref(), Some("v0.1.6.2"));
+
+        let current = select_release(
+            vec![release("v1.1.27", true, "2026-09-19T10:00:00Z")],
+            &settings,
+            "0.1.6.1",
+        );
+        assert_eq!(current.message, "up-to-date");
+    }
+
+    #[test]
+    fn maps_internal_bundle_semver_back_to_the_public_version() {
+        assert_eq!(
+            public_version_from_bundle_semver("0.1.6+2"),
+            "0.1.6.2"
+        );
+        assert_eq!(public_version_from_bundle_semver("0.1.6"), "0.1.6");
+        assert_eq!(
+            public_version_from_bundle_semver("0.1.6+build.2"),
+            "0.1.6+build.2"
+        );
+    }
+
+    #[test]
     fn ignores_draft_releases() {
         let settings = DesktopSettings::default();
         let mut draft = release("v2.0.0", false, "2026-08-30T10:00:00Z");
@@ -754,9 +908,9 @@ mod tests {
 
     #[test]
     fn release_pages_ignore_remote_asset_urls() {
-        let page = official_release_page("v1.2.3-beta.1").unwrap();
+        let page = official_release_page("v0.1.6.1").unwrap();
         assert!(page.starts_with("https://github.com/"));
-        assert!(page.ends_with("/releases/tag/v1.2.3-beta.1"));
+        assert!(page.ends_with("/releases/tag/v0.1.6.1"));
         assert!(official_release_page("../latest").is_err());
     }
 

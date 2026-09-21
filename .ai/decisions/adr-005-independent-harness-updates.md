@@ -6,7 +6,7 @@
 
 ## 决策
 
-DeepSeek Desktop 将桌面安装包和 Harness 更新拆分。Desktop 是稳定原生外壳，安装包始终携带已验证 Harness 作为最终恢复基线；用户只配置一个 Harness Git 仓库地址，即可改变下次运行的 Harness。默认地址来自构建时的 `HARNESS_REPOSITORY`，当前社区版为官方上游 `https://github.com/deepseek-ai/deepseek-harness.git`；用户可以替换为自己的兼容 fork。
+DeepSeek Desktop 将桌面安装包和 Harness 更新拆分。Desktop 是稳定原生外壳，安装包始终携带已验证 Harness 作为最终恢复基线；用户只配置一个 Harness Git 仓库地址，即可改变下次运行的 Harness。默认地址来自构建时的 `HARNESS_REPOSITORY`，当前社区版为 `https://github.com/deepseek-desktop/deepseek-harness.git`；用户可以替换为自己的兼容 fork。
 
 设置 schema 只公开 `harnessUpdateRepository` 覆盖值，不再让普通用户配置来源类型、清单 URL、发布者或公钥。覆盖值为空时使用构建默认仓库；保存其他仓库后，更新检查和候选准备立即绑定新仓库，旧候选失效。诊断导出剔除自定义仓库地址。
 

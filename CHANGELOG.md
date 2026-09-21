@@ -2,6 +2,12 @@
 
 DeepSeek Desktop 的重要变化记录如下。
 
+## 未发布
+
+- Harness 默认来源切换为 `https://github.com/deepseek-desktop/deepseek-harness.git`；继续锁定已经审计的 `ddefc45fbc7f8e46dd73185e68295696d1297887`，因此来源身份改变而内核字节不变。
+- 发行版本改为四段数字。前三段对应锁定 Harness 的正式版本，第四段是 Desktop 修订号，例如 Harness `v0.1.6` 对应 Desktop `v0.1.6.1`、`v0.1.6.2`。
+- 构建生成器把四段公开版本转换为各平台接受的内部版本格式，Tag、窗口、更新提示、发布目录、安装包名称和构建事实继续统一显示四段版本；更新器支持从历史 `v1.x` 迁移到新版本体系。
+
 ## 1.1.27 - 2026-09-19
 
 - 内核现在能用到用户自己安装的命令行工具。从 Finder 或 Dock 启动的应用不继承任何 shell 环境，`PATH` 只有 `/usr/bin:/bin:/usr/sbin:/sbin`，于是内核的 Bash 工具在终端里 `node --version` 正常的机器上报「Node 不可用」，Homebrew、nvm、pyenv 等安装的工具同样一个都看不到。桌面改为在启动时询问用户自己的登录 shell，把它报告的环境垫在启动环境之下；`PATH` 按合并处理，登录 shell 的顺序在前，启动上下文独有的条目追加在后，一条不丢。探测有 8 秒预算、独立进程组，失败即放弃并沿用原有环境，成败都写入诊断日志。见 ADR-026。

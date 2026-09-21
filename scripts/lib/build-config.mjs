@@ -3,6 +3,8 @@ import { readFile, stat } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 
+import { parseDesktopVersion } from "./release-tag.mjs";
+
 export const CONFIG_KEYS = Object.freeze([
   "DESKTOP_APP_NAME",
   "DESKTOP_APP_VERSION",
@@ -25,14 +27,14 @@ export const CONFIG_KEYS = Object.freeze([
 
 export const DEFAULT_CONFIG = Object.freeze({
   DESKTOP_APP_NAME: "DeepSeek Desktop",
-  DESKTOP_APP_VERSION: "1.0.0",
+  DESKTOP_APP_VERSION: "0.1.6.1",
   DESKTOP_APP_IDENTIFIER: "deepseek.desktop",
   DESKTOP_APP_SLUG: "deepseek-desktop",
   DESKTOP_APP_DESCRIPTION: "Local AI agent workspace",
   DESKTOP_APP_AUTHORS: "DeepSeek Desktop Contributors",
   DESKTOP_APP_REPOSITORY: "",
   DESKTOP_APP_ICON: "src-tauri/icons/icon.png",
-  HARNESS_REPOSITORY: "https://github.com/deepseek-ai/deepseek-harness.git",
+  HARNESS_REPOSITORY: "https://github.com/deepseek-desktop/deepseek-harness.git",
   HARNESS_REF: "",
   HARNESS_UPDATE_MANIFEST_URL: "",
   HARNESS_UPDATE_CHANNEL: "stable",
@@ -50,7 +52,6 @@ const OPTIONAL_EMPTY_KEYS = new Set([
   "HARNESS_UPDATE_PUBLIC_KEY"
 ]);
 
-const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const identifierPattern = /^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*)+$/u;
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
@@ -227,7 +228,12 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
   const values = resolveBuildValues({ fileValues, environment });
   assertText("DESKTOP_APP_NAME", values.DESKTOP_APP_NAME);
   assertText("DESKTOP_APP_DESCRIPTION", values.DESKTOP_APP_DESCRIPTION);
-  if (!semverPattern.test(values.DESKTOP_APP_VERSION)) throw new Error("DESKTOP_APP_VERSION must be valid SemVer");
+  let desktopVersion;
+  try {
+    desktopVersion = parseDesktopVersion(values.DESKTOP_APP_VERSION);
+  } catch {
+    throw new Error("DESKTOP_APP_VERSION must use four numeric segments such as 0.1.6.1");
+  }
   if (!identifierPattern.test(values.DESKTOP_APP_IDENTIFIER)) {
     throw new Error("DESKTOP_APP_IDENTIFIER must use reverse-domain notation");
   }
@@ -260,15 +266,22 @@ export async function loadBuildConfig(root, { environment = process.env, envFile
     throw new Error("RELEASE_SIGNED must be true or false");
   }
   const toolchainLock = JSON.parse(await readFile(resolve(root, "harness/toolchain-lock.json"), "utf8"));
+  assertText("harness/toolchain-lock.json harnessSource.version", toolchainLock.harnessSource?.version || "");
+  if (desktopVersion.coreVersion !== toolchainLock.harnessSource.version) {
+    throw new Error(`DESKTOP_APP_VERSION ${desktopVersion.version} must use locked Harness version ${toolchainLock.harnessSource.version} as its first three segments`);
+  }
   assertText("harness/toolchain-lock.json node.version", toolchainLock.node?.version || "");
   assertText("harness/toolchain-lock.json node.moduleAbi", toolchainLock.node?.moduleAbi || "");
   assertText("harness/toolchain-lock.json toolchain.rust", toolchainLock.toolchain?.rust || "");
   const year = new Date().getUTCFullYear();
   const displayVersion = formatDisplayVersion(values.DESKTOP_APP_VERSION);
   return Object.freeze({
-    schemaVersion: 3,
+    schemaVersion: 4,
     productName: values.DESKTOP_APP_NAME,
     version: values.DESKTOP_APP_VERSION,
+    coreVersion: desktopVersion.coreVersion,
+    revision: desktopVersion.revision,
+    bundleVersion: desktopVersion.bundleVersion,
     displayVersion,
     windowTitle: `${values.DESKTOP_APP_NAME} ${displayVersion}`,
     identifier: values.DESKTOP_APP_IDENTIFIER,

@@ -38,9 +38,9 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 - 导航判定按当前受管 Origin 实时进行，不使用 WebView 创建时的快照；Harness 未就绪期间没有可信 Origin，HTTP/HTTPS 导航一律拒绝而不转交系统浏览器，避免把带令牌的 loopback 地址交给外部程序。
 - Harness 进程以 `--expose-internals` 启动：这是 Harness 插件加载器与 HMR 的硬性契约，同时意味着 Harness 内所有代码（含第三方插件）都能访问 Node 内部模块，属于已知且被接受的边界放宽。
 - 加密凭据库主要防止意外明文泄漏；它不承诺抵御已经取得同一操作系统用户权限的恶意进程。
-- 社区版保持关闭 Desktop 自动下载安装，但每天最多从构建时固定的官方 GitHub 仓库静默检查一次 Release，也允许手动检查；候选按完整 SemVer、发布时间、draft/prerelease 状态和五个平台资产完整性选择，不使用 `latest`，提醒只打开由固定仓库和验证后 tag 构造的官方 Release 页面。Harness 独立更新默认采用“发现后提醒”，默认跟随构建时的 Harness 仓库；用户只需替换仓库地址即可改用官方上游或自己的兼容 fork，二者不共用更新边界。
-- 未签名制品发布时一律标记 GitHub prerelease，不占据 Latest release 位置；该判断取自生成配置的 `release.signed`，与 SemVer 版本号形态无关，签名接入后自动恢复为正式发布。
-- 正式四平台发行统一由 GitHub Actions 官方托管 Runner 原生构建：Pull Request 与普通分支 push 不触发发布工作流，只有完整 SemVer Tag 才运行质量门禁并进入 macOS ARM64/x64、Windows x64、Linux x64 矩阵。
+- 社区版保持关闭 Desktop 自动下载安装，但每天最多从构建时固定的 GitHub 仓库静默检查一次 Release，也允许手动检查；候选按四段公开版本、发布时间、draft/prerelease 状态和五个平台资产完整性选择，不使用 `latest`，提醒只打开由固定仓库和验证后 tag 构造的 Release 页面。Harness 独立更新默认采用“发现后提醒”，默认跟随构建时的 Harness 仓库；用户只需替换仓库地址即可改用其他兼容 fork，二者不共用更新边界。
+- 未签名制品发布时一律标记 GitHub prerelease，不占据 Latest release 位置；该判断取自生成配置的 `release.signed`，与四段版本形态无关，签名接入后自动恢复为正式发布。
+- 正式四平台发行统一由 GitHub Actions 官方托管 Runner 原生构建：Pull Request 与普通分支 push 不触发发布工作流，只有四段数字 Tag 才运行质量门禁并进入 macOS ARM64/x64、Windows x64、Linux x64 矩阵。
 - 四个平台复用唯一 `package:community` / `desktop:package` 构建事实；全部成功后才创建 Release，公开资产只包含 5 个安装包和 `SHA256SUMS`。
 - Windows x64 矩阵在上传制品前必须实际安装 NSIS 包并验证 x64 PE、工作台、设置菜单、关闭确认、Harness 子进程退出与卸载；只构建成功不能进入汇总发布。
 - GitHub Release 正文根据当前 Tag 和已汇总的完整公开资产集合生成直接下载链接；站点自身的 `Assets` 折叠状态不作为用户下载入口前提。
@@ -58,13 +58,13 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 版本基线
 
-- 项目默认和文档示例版本：`1.0.0`；真实发行版本由 Git tag 或发布环境注入。
+- 新发行体系使用四段公开版本：锁定 Harness `0.1.6` 对应 Desktop `0.1.6.<修订号>`，当前默认示例为 `0.1.6.1`；旧 `v1.1.27` 及更早版本仅作为历史发行，更新器把四段体系视为其后继。
 - Node：`24.20.0`（四平台精确锁定，module ABI `137`）
 - pnpm：`11.24.0`
 - npm：`11.19.0`（随固定 Node 官方归档提供）
 - Rust：`1.98.0`
 - Tauri CLI：`2.11.4`
-- 当前 Harness 按官方 master 的不可变 commit 锁定（具体来源见工具链 lock）。独立搜索设置直接使用 `connection.fetch.register` / `connection.fetch` 的 `/api/desktop.web-search` GET/POST 接口，旧 RPC 通道与强制 `webServer` 注入补丁已移除。
+- 当前 Harness 按 `deepseek-desktop/deepseek-harness` 的不可变 commit 锁定（具体来源见工具链 lock）。独立搜索设置直接使用 `connection.fetch.register` / `connection.fetch` 的 `/api/desktop.web-search` GET/POST 接口，旧 RPC 通道与强制 `webServer` 注入补丁已移除。
 - Harness 固定来源、commit 和制品校验和以 `harness/toolchain-lock.json` 为准，不在本文件重复维护。
 
 ## 发行目标

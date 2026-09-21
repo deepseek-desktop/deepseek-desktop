@@ -2,6 +2,9 @@ export interface AppConfig {
   schemaVersion: number;
   productName: string;
   version: string;
+  coreVersion: string;
+  revision: number;
+  bundleVersion: string;
   displayVersion: string;
   windowTitle: string;
   identifier: string;

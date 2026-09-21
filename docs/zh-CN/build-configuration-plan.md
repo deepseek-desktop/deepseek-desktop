@@ -28,7 +28,7 @@
 ```dotenv
 # 应用信息
 DESKTOP_APP_NAME=DeepSeek Desktop
-DESKTOP_APP_VERSION=1.0.0
+DESKTOP_APP_VERSION=0.1.6.1
 DESKTOP_APP_IDENTIFIER=deepseek.desktop
 DESKTOP_APP_SLUG=deepseek-desktop
 DESKTOP_APP_DESCRIPTION=Local AI agent workspace
@@ -37,7 +37,7 @@ DESKTOP_APP_REPOSITORY=
 DESKTOP_APP_ICON=src-tauri/icons/icon.png
 
 # Harness 来源
-HARNESS_REPOSITORY=https://github.com/deepseek-ai/deepseek-harness.git
+HARNESS_REPOSITORY=https://github.com/deepseek-desktop/deepseek-harness.git
 HARNESS_REF=
 
 # 可选预构建签名制品通道；留空时按 Harness 仓库准备源码候选
@@ -98,7 +98,7 @@ corepack pnpm@11.24.0 app:sync --check
 ### 字段校验
 
 - `DESKTOP_APP_NAME`：非空，不允许控制字符。
-- `DESKTOP_APP_VERSION`：必须是合法 SemVer，可包含 `community.9` 等预发布标识。
+- `DESKTOP_APP_VERSION`：必须是四段数字；前三段等于 `harness/toolchain-lock.json` 的 Harness 正式版本，第四段是从 `1` 开始的 Desktop 修订号。
 - `DESKTOP_APP_IDENTIFIER`：必须符合反向域名格式；发布后修改会改变应用数据目录和升级识别，构建时应显示醒目提示。
 - `DESKTOP_APP_SLUG`：只允许小写字母、数字和连字符。
 - `DESKTOP_APP_ICON`：相对项目根目录解析，必须存在、为正方形 PNG，至少 `512 x 512`，建议使用 `1024 x 1024`。
@@ -201,7 +201,7 @@ corepack pnpm@11.24.0 tauri:build
   "schemaVersion": 1,
   "application": {
     "productName": "DeepSeek Desktop",
-    "version": "1.0.0",
+    "version": "0.1.6.1",
     "identifier": "deepseek.desktop",
     "slug": "deepseek-desktop",
     "description": "Local AI agent workspace",
@@ -221,7 +221,7 @@ corepack pnpm@11.24.0 tauri:build
     "tauriCliVersion": "2.11.4"
   },
   "harness": {
-    "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
+    "repository": "https://github.com/deepseek-desktop/deepseek-harness.git",
     "requestedRef": null,
     "resolvedRef": "dsh-v0.1.2-alpha.1",
     "commit": "resolved immutable commit",
@@ -236,7 +236,7 @@ corepack pnpm@11.24.0 tauri:build
 
 发布构建必须满足：
 
-- 桌面版本在 resolved config、Tauri bundle、Harness manifest 和 `BUILD-INFO.<target>.json` 中一致。
+- 四段桌面版本在窗口、关于页、安装包名称和 `BUILD-INFO.<target>.json` 中一致；Tauri 内部按平台转换为合法原生版本元数据。
 - Git tag 与解析后的桌面版本一致。
 - Node、pnpm、npm、Rust 和 Tauri CLI 身份与工具链 lock 一致。
 - Harness commit 和 Harness hash 可追溯。

@@ -12,11 +12,9 @@ test("an unsigned build is a prerelease no matter how its version reads", () => 
   assert.equal(releaseIsPrerelease(community("1.0.0-rc.1")), true);
 });
 
-test("a signed build follows its SemVer prerelease segment", () => {
-  assert.equal(releaseIsPrerelease(signed("1.0.16")), false);
-  assert.equal(releaseIsPrerelease(signed("1.0.16+build.7")), false);
-  assert.equal(releaseIsPrerelease(signed("1.0.0-rc.1")), true);
-  assert.equal(releaseIsPrerelease(signed("0.1.0-community.16")), true);
+test("a signed four-part build can become a stable release", () => {
+  assert.equal(releaseIsPrerelease(signed("0.1.6.1")), false);
+  assert.throws(() => releaseIsPrerelease(signed("0.1.6-rc.1")), /unsupported release version/u);
 });
 
 test("a missing or non-boolean signature claim never promotes a release", () => {

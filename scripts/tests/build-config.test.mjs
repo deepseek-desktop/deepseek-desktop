@@ -25,6 +25,9 @@ test("uses built-in defaults without an env file", async () => {
   const config = await loadBuildConfig(root, { environment: {}, envFile: resolve(root, "target/missing.env") });
   assert.equal(config.productName, DEFAULT_CONFIG.DESKTOP_APP_NAME);
   assert.equal(config.version, DEFAULT_CONFIG.DESKTOP_APP_VERSION);
+  assert.equal(config.coreVersion, "0.1.6");
+  assert.equal(config.revision, 1);
+  assert.equal(config.bundleVersion, "0.1.6+1");
   assert.equal(config.displayVersion, `v${DEFAULT_CONFIG.DESKTOP_APP_VERSION}`);
   assert.equal(config.windowTitle, `${DEFAULT_CONFIG.DESKTOP_APP_NAME} v${DEFAULT_CONFIG.DESKTOP_APP_VERSION}`);
   assert.equal(config.repository, "https://github.com/deepseek-desktop/deepseek-desktop");
@@ -57,8 +60,8 @@ test("environment values override env file values", () => {
 test("Docker preflight forwards every explicit public build input", () => {
   assert.deepEqual(dockerConfigEnvironmentArgs({
     PATH: "/usr/bin",
-    DESKTOP_APP_VERSION: "1.1.15",
-    HARNESS_REPOSITORY: "https://github.com/deepseek-ai/deepseek-harness.git",
+    DESKTOP_APP_VERSION: "0.1.6.15",
+    HARNESS_REPOSITORY: "https://github.com/deepseek-desktop/deepseek-harness.git",
     HARNESS_REF: "c291e7961a515f6d7af9304e7fd1d257929aef26",
     RELEASE_CHANNEL: "community",
     RELEASE_SIGNED: "false"
@@ -76,7 +79,7 @@ test("loads every declared value from an env file before applying environment ov
   const envFile = join(directory, ".env");
   await writeFile(envFile, [
     "DESKTOP_APP_NAME=定制桌面",
-    "DESKTOP_APP_VERSION=2.3.4-preview.5",
+    "DESKTOP_APP_VERSION=0.1.6.5",
     "DESKTOP_APP_IDENTIFIER=example.custom.desktop",
     "DESKTOP_APP_SLUG=custom-desktop",
     "DESKTOP_APP_DESCRIPTION=Custom agent workspace",
@@ -99,9 +102,12 @@ test("loads every declared value from an env file before applying environment ov
       envFile
     });
     assert.equal(config.productName, "命令行桌面");
-    assert.equal(config.version, "2.3.4-preview.5");
-    assert.equal(config.displayVersion, "v2.3.4-preview.5");
-    assert.equal(config.windowTitle, "命令行桌面 v2.3.4-preview.5");
+    assert.equal(config.version, "0.1.6.5");
+    assert.equal(config.coreVersion, "0.1.6");
+    assert.equal(config.revision, 5);
+    assert.equal(config.bundleVersion, "0.1.6+5");
+    assert.equal(config.displayVersion, "v0.1.6.5");
+    assert.equal(config.windowTitle, "命令行桌面 v0.1.6.5");
     assert.equal(config.identifier, "example.custom.desktop");
     assert.equal(config.slug, "custom-desktop");
     assert.deepEqual(config.authors, ["Alice", "Bob"]);
@@ -149,6 +155,13 @@ test("validates explicit release metadata", async () => {
     environment: { RELEASE_SIGNED: "yes" },
     envFile: resolve(root, "target/missing.env")
   }), /true or false/u);
+});
+
+test("requires the public version to match the locked Harness core", async () => {
+  await assert.rejects(loadBuildConfig(root, {
+    environment: { DESKTOP_APP_VERSION: "0.1.5.1" },
+    envFile: resolve(root, "target/missing.env")
+  }), /must use locked Harness version 0\.1\.6/u);
 });
 
 test("validates Harness update configuration and disables automatic updates for a fixed ref", async () => {
@@ -255,9 +268,9 @@ test("ignores a local clone origin and falls back to the manifest repository", a
   }
 });
 
-test("validates SemVer, identifier, slug, and icon paths", async () => {
+test("validates the four-part version, identifier, slug, and icon paths", async () => {
   const cases = [
-    ["DESKTOP_APP_VERSION", "1.0", /valid SemVer/u],
+    ["DESKTOP_APP_VERSION", "0.1.6", /four numeric segments/u],
     ["DESKTOP_APP_IDENTIFIER", "desktop", /reverse-domain/u],
     ["DESKTOP_APP_SLUG", "Desktop App", /lowercase/u],
     ["DESKTOP_APP_ICON", "/tmp/icon.png", /relative/u],

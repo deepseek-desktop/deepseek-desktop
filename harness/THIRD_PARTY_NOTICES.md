@@ -1,8 +1,9 @@
 # 第三方软件声明
 
-安装包中的 Harness 包含锁定版本的上游 Harness 和 Node.js，两者均按 MIT License 分发。
+安装包中的 Harness 包含锁定版本的 DeepSeek Desktop Harness、其上游组件和 Node.js，均保留各自许可证。
 
-- Upstream Harness `0.1.5-rc.2`: <https://github.com/deepseek-ai/deepseek-harness>
+- DeepSeek Desktop Harness `0.1.6-alpha.2`: <https://github.com/deepseek-desktop/deepseek-harness>
+- Upstream DeepSeek Harness: <https://github.com/deepseek-ai/deepseek-harness>
 - Node.js `24.20.0`: <https://github.com/nodejs/node>；官方归档许可证随包保存在 `licenses/node-LICENSE.txt`。
 - npm `11.19.0`：随上述经 SHA-256 校验的 Node.js 官方归档提供，用于本机源码候选中的原生平台包发布文件装配；许可证保存在 `licenses/npm-LICENSE.txt`。
 

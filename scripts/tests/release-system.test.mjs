@@ -100,12 +100,12 @@ test("Tauri build performs frontend compilation without rewriting prepared app c
 function releaseInput({ channel = "local", targetId = "macos-arm64", trustedNodeId = "" } = {}) {
   return {
     productName: "DeepSeek Desktop",
-    version: "1.0.0",
-    tag: "v1.0.0",
+    version: "0.1.6.1",
+    tag: "v0.1.6.1",
     channel,
     signed: false,
-    source: { repository: sourceRepository, tag: "v1.0.0", commit: desktopCommit },
-    harness: { repository: harnessRepository, ref: "v1.0.0", commit: harnessCommit },
+    source: { repository: sourceRepository, tag: "v0.1.6.1", commit: desktopCommit },
+    harness: { repository: harnessRepository, version: "0.1.6", ref: "dsh-v0.1.6-alpha.2", commit: harnessCommit },
     toolchain: releaseToolchain,
     targets: [{ id: targetId, trustedNodeId }]
   };
@@ -302,8 +302,8 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   assert.doesNotMatch(workflow, /NO_STRIP/u, "the workflow must leave Linux-only Tauri flags to the packaging boundary");
   assert.match(
     workflow,
-    /^on:\n  push:\n    tags:\n      - "\*\.\*\.\*"\n      - "v\*\.\*\.\*"\n\npermissions:/mu,
-    "the release workflow must only listen for version tags"
+    /^on:\n  push:\n    tags:\n      - "\*\.\*\.\*\.\*"\n      - "v\*\.\*\.\*\.\*"\n\npermissions:/mu,
+    "the release workflow must only listen for four-part version tags"
   );
   assert.doesNotMatch(workflow, /pull_request|branches:|workflow_dispatch|desktop:package/u);
   assert.doesNotMatch(workflow, /if:\s+startsWith\(github\.ref, 'refs\/tags\/'\)/u);
@@ -417,7 +417,7 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
   await writeFile(join(directory, "source.txt"), "trusted source\n");
   await writeFile(join(directory, "harness", "toolchain-lock.json"), `${JSON.stringify({
     node: { version: process.versions.node, moduleAbi: process.versions.modules },
-    harnessSource: { repository: harnessRepository, ref: "v1.0.0", commit: harnessCommit },
+    harnessSource: { repository: harnessRepository, version: "0.1.6", ref: "v0.1.6", commit: harnessCommit },
     toolchain: { rust: "1.98.0", pnpm: "11.24.0", npm: "11.19.0" }
   })}\n`);
   await writeFile(join(directory, "target", "generated", "app-config.json"), "{}\n");
@@ -431,19 +431,19 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
   git(directory, ["config", "user.name", "Release Tests"]);
   git(directory, ["add", ".gitignore", "source.txt", "harness/toolchain-lock.json"]);
   git(directory, ["commit", "-m", "fixture"]);
-  git(directory, ["tag", "v1.0.0"]);
+  git(directory, ["tag", "v0.1.6.1"]);
   const cacheRoot = join(directory, "target", "prepared-cache");
   const hostTarget = await detectHostTarget();
-  const first = await prepareRelease({ root: directory, tag: "v1.0.0", cacheRoot, runChecks: false });
+  const first = await prepareRelease({ root: directory, tag: "v0.1.6.1", cacheRoot, runChecks: false });
   assert.equal(first.cacheHit, false);
   await rm(join(directory, "target", "generated"), { recursive: true, force: true });
-  const second = await prepareRelease({ root: directory, tag: "v1.0.0", cacheRoot, runChecks: false });
+  const second = await prepareRelease({ root: directory, tag: "v0.1.6.1", cacheRoot, runChecks: false });
   assert.equal(second.cacheHit, true);
   assert.deepEqual(second.descriptor, first.descriptor);
   assert.equal(await readFile(join(directory, "target", "generated", "app-config.json"), "utf8"), "{}\n");
   const plan = {
-    tag: "v1.0.0",
-    version: "1.0.0",
+    tag: "v0.1.6.1",
+    version: "0.1.6.1",
     channel: "community",
     signed: false,
     source: { commit: git(directory, ["rev-parse", "HEAD"]) },
@@ -468,7 +468,7 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
   await assert.rejects(
     () => prepareRelease({
       root: directory,
-      tag: "v1.0.0",
+      tag: "v0.1.6.1",
       cacheRoot,
       runChecks: false,
       targetIds: [hostTarget.id, secondTarget.id]
@@ -479,10 +479,10 @@ test("release preparation signs immutable inputs, reuses valid cache, and reject
   await mkdir(join(directory, "target", "generated"), { recursive: true });
   await writeFile(join(directory, "target", "generated", "harness-source.json"), `${JSON.stringify({ resolvedCommit: harnessCommit })}\n`);
   await writeFile(join(directory, "target", "generated", "harness-lock.json"), `${JSON.stringify({ harness: { commit: harnessCommit, sha256: sha256("harness") } })}\n`);
-  const rebuilt = await prepareRelease({ root: directory, tag: "v1.0.0", cacheRoot, runChecks: false });
+  const rebuilt = await prepareRelease({ root: directory, tag: "v0.1.6.1", cacheRoot, runChecks: false });
   assert.equal(rebuilt.cacheHit, false);
   await writeFile(join(directory, "source.txt"), "drifted source\n");
-  await assert.rejects(() => prepareRelease({ root: directory, tag: "v1.0.0", cacheRoot, runChecks: false }), /clean Desktop worktree/u);
+  await assert.rejects(() => prepareRelease({ root: directory, tag: "v0.1.6.1", cacheRoot, runChecks: false }), /clean Desktop worktree/u);
 });
 
 test("content-addressed release cache rejects corruption, target drift, and links", async t => {
@@ -639,12 +639,12 @@ test("distributed release HTTP smoke streams, validates, and publishes artifacts
 
   const artifacts = join(directory, "worker-artifacts");
   await mkdir(artifacts, { recursive: true });
-  const installerName = "DeepSeek.Desktop_1.0.0_aarch64.dmg";
+  const installerName = "DeepSeek.Desktop_0.1.6.1_aarch64.dmg";
   const buildInfoName = "BUILD-INFO.aarch64-apple-darwin.json";
   const installer = Buffer.from("fixture installer bytes", "utf8");
   const buildInfo = Buffer.from(`${JSON.stringify({
     schemaVersion: 1,
-    application: { version: "1.0.0" },
+    application: { version: "0.1.6.1" },
     desktop: { commit: desktopCommit, dirty: false },
     harness: { repository: harnessRepository, commit: harnessCommit },
     toolchain: releaseToolchain,
@@ -720,12 +720,12 @@ test("completion rejects source facts and local path leakage", async t => {
   });
   const incoming = join(store.root, "incoming", created.release.id, "macos-arm64");
   await mkdir(incoming, { recursive: true });
-  const installerName = "DeepSeek.Desktop_1.0.0_aarch64.dmg";
+  const installerName = "DeepSeek.Desktop_0.1.6.1_aarch64.dmg";
   const buildInfoName = "BUILD-INFO.aarch64-apple-darwin.json";
   const files = new Map([
     [installerName, Buffer.from("installer")],
     [buildInfoName, Buffer.from(`${JSON.stringify({
-      application: { version: "1.0.0" },
+      application: { version: "0.1.6.1" },
       desktop: { commit: desktopCommit, dirty: false },
       harness: { repository: harnessRepository, commit: harnessCommit },
       toolchain: releaseToolchain,
@@ -768,11 +768,11 @@ test("completion rejects a worker that did not use the bound prepared receipt", 
   });
   const incoming = join(store.root, "incoming", created.release.id, "macos-arm64");
   await mkdir(incoming, { recursive: true });
-  const installerName = "DeepSeek.Desktop_1.0.0_aarch64.dmg";
+  const installerName = "DeepSeek.Desktop_0.1.6.1_aarch64.dmg";
   const buildInfoName = "BUILD-INFO.aarch64-apple-darwin.json";
   const installer = Buffer.from("installer");
   const buildInfo = Buffer.from(`${JSON.stringify({
-    application: { version: "1.0.0" },
+    application: { version: "0.1.6.1" },
     desktop: { commit: desktopCommit, dirty: false },
     harness: { repository: harnessRepository, commit: harnessCommit },
     toolchain: releaseToolchain,
@@ -824,11 +824,11 @@ test("release preparation and artifacts remain bound to targets and the exact to
   });
   const incoming = join(store.root, "incoming", created.release.id, "macos-arm64");
   await mkdir(incoming, { recursive: true });
-  const installerName = "DeepSeek.Desktop_1.0.0_aarch64.dmg";
+  const installerName = "DeepSeek.Desktop_0.1.6.1_aarch64.dmg";
   const buildInfoName = "BUILD-INFO.aarch64-apple-darwin.json";
   const installer = Buffer.from("installer");
   const buildInfo = Buffer.from(`${JSON.stringify({
-    application: { version: "1.0.0" },
+    application: { version: "0.1.6.1" },
     desktop: { commit: desktopCommit, dirty: false },
     harness: { repository: harnessRepository, commit: harnessCommit },
     toolchain: { ...releaseToolchain, npmVersion: "0.0.0" },

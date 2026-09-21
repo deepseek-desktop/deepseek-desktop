@@ -18,8 +18,8 @@ import { resolveRemoteTag } from "./git-source.mjs";
 import { publishWithProvider } from "./providers/index.mjs";
 import { ARTIFACT_SCANNER_VERSION, scanArtifactPaths } from "../lib/artifact-scan.mjs";
 import { assertPreparedDescriptor } from "./prepared-release.mjs";
+import { parseDesktopVersion } from "../lib/release-tag.mjs";
 
-const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const shaPattern = /^[0-9a-f]{64}$/u;
 const textLeakPatterns = [
   { pattern: /(?:^|[\\/])\.env(?:[.\\/]|$)/imu, label: ".env path" },
@@ -40,8 +40,11 @@ function futureIso(clock, milliseconds) {
 
 function assertVersion(version) {
   const value = version.trim();
-  if (!semverPattern.test(value)) throw new Error("release version must be valid SemVer without a v prefix");
-  return value;
+  try {
+    return parseDesktopVersion(value);
+  } catch {
+    throw new Error("release version must use four numeric segments without a v prefix");
+  }
 }
 
 function assertChannel(channel) {
@@ -124,7 +127,11 @@ export class ReleaseControllerService {
     if (prepared && (prepared.desktopCommit !== desktopCommit || prepared.harnessCommit !== harnessCommit)) {
       throw new Error("prepared release descriptor does not match release source commits");
     }
-    const version = assertVersion(input.version || "");
+    const desktopVersion = assertVersion(input.version || "");
+    const version = desktopVersion.version;
+    if (input.harness?.version !== desktopVersion.coreVersion) {
+      throw new Error(`release Harness version must be ${desktopVersion.coreVersion}`);
+    }
     if (tag !== version && tag !== `v${version}`) throw new Error(`release tag ${tag} does not match version ${version}`);
     const channel = assertChannel(input.channel || "community");
     const signed = input.signed === true;

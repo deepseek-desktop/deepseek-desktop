@@ -296,10 +296,10 @@ fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
     if settings
         .desktop_update_ignored_version
         .as_deref()
-        .is_some_and(|version| semver::Version::parse(version).is_err())
+        .is_some_and(|version| crate::updater::canonical_release_version(version).is_none())
     {
         return Err(DesktopError::InvalidConfiguration(
-            "Desktop ignored version must be valid SemVer".to_owned(),
+            "Desktop ignored version must be a four-part version or legacy SemVer".to_owned(),
         ));
     }
     Ok(())
@@ -396,7 +396,7 @@ mod tests {
     fn accepts_only_valid_desktop_update_memory() {
         let valid = DesktopSettings {
             desktop_update_last_check_at: Some("2026-08-30T10:00:00Z".to_owned()),
-            desktop_update_ignored_version: Some("1.2.0-beta.1".to_owned()),
+            desktop_update_ignored_version: Some("0.1.6.2".to_owned()),
             ..DesktopSettings::default()
         };
         assert!(validate(&valid).is_ok());

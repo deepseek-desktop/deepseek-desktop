@@ -3,8 +3,8 @@ name: Community Release
 on:
   push:
     tags:
-      - "*.*.*"
-      - "v*.*.*"
+      - "*.*.*.*"
+      - "v*.*.*.*"
 
 permissions:
   contents: read

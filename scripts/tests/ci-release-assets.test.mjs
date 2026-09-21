@@ -7,22 +7,23 @@ import { test } from "node:test";
 
 import { prepareCiReleaseAssets } from "../prepare-ci-release-assets.mjs";
 
-const version = "1.0.0";
+const version = "0.1.6.1";
 const commit = "0123456789abcdef0123456789abcdef01234567";
 const toolchainLock = {
   node: { version: "24.20.0", moduleAbi: "137" },
   toolchain: { rust: "1.98.0", pnpm: "11.24.0", npm: "11.19.0", tauriCli: "2.11.4" },
   harnessSource: {
     repository: "https://example.invalid/harness.git",
-    ref: "harness-v1.0.0",
+    version: "0.1.6",
+    ref: "dsh-v0.1.6-alpha.2",
     commit: "89abcdef0123456789abcdef0123456789abcdef"
   }
 };
 const targets = new Map([
-  ["aarch64-apple-darwin", ["DeepSeek Desktop_1.0.0_aarch64.dmg"]],
-  ["x86_64-apple-darwin", ["DeepSeek Desktop_1.0.0_x64.dmg"]],
-  ["x86_64-pc-windows-msvc", ["DeepSeek Desktop_1.0.0_x64-setup.exe"]],
-  ["x86_64-unknown-linux-gnu", ["DeepSeek Desktop_1.0.0_amd64.AppImage", "DeepSeek Desktop_1.0.0_amd64.deb"]]
+  ["aarch64-apple-darwin", ["DeepSeek Desktop_0.1.6.1_aarch64.dmg"]],
+  ["x86_64-apple-darwin", ["DeepSeek Desktop_0.1.6.1_x64.dmg"]],
+  ["x86_64-pc-windows-msvc", ["DeepSeek Desktop_0.1.6.1_x64-setup.exe"]],
+  ["x86_64-unknown-linux-gnu", ["DeepSeek Desktop_0.1.6.1_amd64.AppImage", "DeepSeek Desktop_0.1.6.1_amd64.deb"]]
 ]);
 
 function hash(value) {

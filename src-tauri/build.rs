@@ -69,6 +69,10 @@ fn main() {
         required_string(&app, &["version"]),
     );
     emit(
+        "DEEPSEEK_DESKTOP_APP_SEMVER",
+        required_string(&app, &["bundleVersion"]),
+    );
+    emit(
         "DEEPSEEK_DESKTOP_APP_DESCRIPTION",
         required_string(&app, &["description"]),
     );

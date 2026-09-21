@@ -4,7 +4,7 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 桌面 Shell、应用程序和安装包统一使用固定上游提交中的侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Harness，不代表官方发行或品牌授权。
 
-源码默认和文档示例版本固定为 `1.0.0`，实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，桌面安装包自动更新也未启用，因此不能作为已认证 Stable 版本宣传。Harness 与 Desktop 外壳独立，用户可以在设置中只更换 Harness 仓库地址。
+公开版本使用四段数字：前三段对应锁定 Harness 的正式版本，第四段是 Desktop 修订号，当前默认示例为 `0.1.6.1`。实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，桌面安装包自动更新也未启用，因此不能作为已认证 Stable 版本宣传。Harness 与 Desktop 外壳独立，用户可以在设置中只更换 Harness 仓库地址。
 
 工程源码位于仓库根目录。`harness/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Harness 来源；`harness:sync` 在本地开发且 `HARNESS_REF` 为空时自动选择 Harness 仓库最新的 SemVer 版本标签，显式填写时使用指定来源，随后统一解析为不可变 commit。社区版和正式发布还必须匹配仓库内经过审计的固定 Harness 提交，避免可变标签在无人复核时改变发行内容。同步结果写入当前构建专用的 `target/generated/harness-lock.json`。Harness 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Harness manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
@@ -101,7 +101,7 @@ macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows �
 
 ## 更新与卸载
 
-桌面安装包和 Harness 使用两条独立更新链路。Desktop 启动后每天最多静默检查一次自身版本，也可从“帮助 → 检查 Desktop 更新”手动检查。社区版只读取构建时固定的官方 GitHub 仓库 Release 列表，按完整 SemVer、发布时间及五个平台安装包完整性选择候选；发现新版后显示版本、时间与摘要，可选择前往官方 Release、稍后提醒或忽略该版本。当前社区版未签名，因此不会自动下载安装，也不会使用远端提供的任意下载地址。
+桌面安装包和 Harness 使用两条独立更新链路。Desktop 启动后每天最多静默检查一次自身版本，也可从“帮助 → 检查 Desktop 更新”手动检查。社区版只读取构建时固定的 GitHub 仓库 Release 列表，按四段版本、发布时间及五个平台安装包完整性选择候选；发现新版后显示版本、时间与摘要，可选择前往 Release、稍后提醒或忽略该版本。当前社区版未签名，因此不会自动下载安装，也不会使用远端提供的任意下载地址。
 
 更新摘要显示标题、列表、表格和代码块，长内容可在摘要区滚动查看；切换至备用更新源时也保留排版。点击摘要中的网页链接会使用系统浏览器打开，不会离开当前设置页；外部图片仅显示替代文字。“前往下载”仍进入官方 Release 页面，由用户确认并下载安装包。
 
@@ -121,4 +121,4 @@ corepack pnpm@11.24.0 package:community
 
 该命令会自动安装锁定依赖，执行应用配置与 Harness 同步、社区版发行门禁、单元测试、端到端测试、Harness 校验和真实 readiness smoke，再构建当前操作系统及 CPU 架构对应的安装包。结果统一输出到 `release/<版本>/<目标平台>/`，同时生成 `BUILD-INFO.<目标平台>.json` 和 `SHA256SUMS`。macOS 构建先由 Tauri 生成 `.app`，再通过不依赖 Finder 或 AppleScript 的 `hdiutil` 创建 DMG，避免无界面构建机因窗口美化流程阻塞。
 
-单台电脑只生成当前平台安装包。默认和示例版本始终使用 `1.0.0`。维护者推送符合 SemVer 的标签后，GitHub 工作流会从标签注入真实发行版本；标签可带或不带 `v` 前缀，例如 `1.0.0`、`v1.0.0`、`v0.1.0-community.13`。完整 SemVer 校验会在构建开始时执行，随后分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；Windows x64 还会安装实际 NSIS 包并验证工作台、设置和关闭流程，只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。
+单台电脑只生成当前平台安装包。Desktop 公开版本用四段数字，前三段等于锁定 Harness 的正式版本，第四段是 Desktop 修订号，例如 `0.1.6.1`、`v0.1.6.2`。版本映射校验会在构建开始时执行，随后分别构建 macOS arm64、macOS x64、Windows x64 和 Linux x64；Windows x64 还会安装实际 NSIS 包并验证工作台、设置和关闭流程，只有全部成功才会创建包含安装包和 `SHA256SUMS` 的 GitHub Release。

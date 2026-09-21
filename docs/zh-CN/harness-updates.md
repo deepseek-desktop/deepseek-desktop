@@ -4,10 +4,10 @@ DeepSeek Desktop 把稳定桌面外壳与 Harness 分开。用户只需更换一
 
 ## 普通用户
 
-Harness 更新页始终显示当前桌面包的默认仓库。社区版默认使用官方上游仓库：
+Harness 更新页始终显示当前桌面包的默认仓库。社区版默认使用 DeepSeek Desktop Harness 仓库：
 
 ```text
-https://github.com/deepseek-ai/deepseek-harness.git
+https://github.com/deepseek-desktop/deepseek-harness.git
 ```
 
 用户也可以填写自己维护的兼容 fork。设置中只有一个“Harness 仓库”输入框，不需要另外填写更新清单、发布者或公钥。可用行为包括：

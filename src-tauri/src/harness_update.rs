@@ -1134,7 +1134,7 @@ impl HarnessUpdateConfig {
             manifest_url,
             publisher: env!("DEEPSEEK_DESKTOP_HARNESS_UPDATE_PUBLISHER").to_owned(),
             public_key,
-            desktop_version: Version::parse(env!("DEEPSEEK_DESKTOP_APP_VERSION")).map_err(
+            desktop_version: Version::parse(env!("DEEPSEEK_DESKTOP_APP_SEMVER")).map_err(
                 |error| {
                     DesktopError::InvalidConfiguration(format!(
                         "Desktop version is invalid: {error}"

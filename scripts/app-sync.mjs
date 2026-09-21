@@ -40,7 +40,7 @@ try {
   const tauriConfig = {
     ...baseTauri,
     productName: config.productName,
-    version: config.version,
+    version: process.platform === "darwin" ? config.coreVersion : config.bundleVersion,
     identifier: config.identifier,
     app: {
       ...baseTauri.app,
@@ -51,7 +51,11 @@ try {
       icon: [icon("32x32.png"), icon("128x128.png"), icon("128x128@2x.png"), icon("icon.icns"), icon("icon.ico"), icon("icon.png")],
       shortDescription: config.description,
       longDescription: config.description,
-      copyright: config.copyright
+      copyright: config.copyright,
+      macOS: {
+        ...baseTauri.bundle.macOS,
+        bundleVersion: String(config.revision)
+      }
     }
   };
   await writeJson(join(outputRoot, "app-config.json"), config);

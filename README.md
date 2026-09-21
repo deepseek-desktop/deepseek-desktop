@@ -5,7 +5,7 @@
 
 DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区桌面应用。用户无需另外安装 Node.js、pnpm、Rust 或其他框架应用。本项目与 DeepSeek 不存在隶属、合作或官方背书关系。
 
-源码默认和文档示例版本固定为 `1.0.0`，实际发行版本以 GitHub Releases 为准。macOS 安装包使用完整的 ad-hoc 签名，但没有 Apple Developer ID 身份和公证；Windows、Linux 社区版产物目前也没有可信发布者签名。桌面自有源码采用 Apache-2.0，内置 Harness、Node.js 和 npm 依赖保留各自许可证声明。
+公开版本使用四段数字：前三段对应锁定 Harness 的正式版本，第四段是 Desktop 修订号，例如 Harness `v0.1.6` 对应 Desktop `v0.1.6.1`。实际发行版本以 GitHub Releases 为准。macOS 安装包使用完整的 ad-hoc 签名，但没有 Apple Developer ID 身份和公证；Windows、Linux 社区版产物目前也没有可信发布者签名。桌面自有源码采用 Apache-2.0，内置 Harness、Node.js 和 npm 依赖保留各自许可证声明。
 
 安装包发布在 [GitHub Releases](https://github.com/deepseek-desktop/deepseek-desktop/releases)。安装前请使用同版本 `SHA256SUMS` 校验文件完整性。
 
@@ -146,9 +146,9 @@ corepack pnpm@11.24.0 desktop:package
 
 项目自有界面、配置、命令和目录统一使用 **Harness**，按全新配置契约开发，不提供历史名称别名或迁移逻辑。构建配置以 `.env.example` 为准。
 
-Desktop 外壳启动后每天最多静默检查一次自身版本，也可以从“帮助 → 检查 Desktop 更新”随时手动检查。社区版从构建时固定的官方 GitHub 仓库读取 Release 列表，按完整 SemVer、发布时间和五个平台安装包是否齐全筛选，不依赖可能指向旧正式版的 `latest`。发现新版时会在当前窗口显示版本、发布时间和摘要，并提供“前往下载 / 稍后提醒 / 忽略此版本”；未签名社区版只打开固定官方 Release 页面，不自动下载安装，也不接受远端返回的任意下载地址。Desktop 版本提醒与下面的 Harness 独立更新是两条不同链路。
+Desktop 外壳启动后每天最多静默检查一次自身版本，也可以从“帮助 → 检查 Desktop 更新”随时手动检查。社区版从构建时固定的 GitHub 仓库读取 Release 列表，按四段版本、发布时间和五个平台安装包是否齐全筛选，不依赖可能指向旧正式版的 `latest`。发现新版时会在当前窗口显示版本、发布时间和摘要，并提供“前往下载 / 稍后提醒 / 忽略此版本”；未签名社区版只打开固定 Release 页面，不自动下载安装，也不接受远端返回的任意下载地址。Desktop 版本提醒与下面的 Harness 独立更新是两条不同链路。
 
-DeepSeek Desktop 将稳定的桌面外壳与 Harness 分开。桌面版默认使用官方上游仓库 `https://github.com/deepseek-ai/deepseek-harness.git`，用户也可以换成自己的兼容 fork。更换仓库只会改变本机运行的 Harness，不会替换 Desktop、模型配置、对话或工作区数据。
+DeepSeek Desktop 将稳定的桌面外壳与 Harness 分开。桌面版默认使用 `https://github.com/deepseek-desktop/deepseek-harness.git`，用户也可以换成自己的兼容 fork。更换仓库只会改变本机运行的 Harness，不会替换 Desktop、模型配置、对话或工作区数据。
 
 “设置 → 更新 → Harness 独立更新”只需要一个 **Harness 仓库** 地址，不需要填写更新清单、发布者或公钥。点击“检查 Harness”会读取该仓库默认分支的最新 commit；发现变化后，Desktop 使用安装包内置的 Node、pnpm、npm 和 Node-API 头文件，在应用数据目录拉取、安装依赖、构建并启动验证候选 Harness。系统需要能够执行 Git；当前官方原生包还要求 macOS 提供可用的 C 编译器，Linux 提供 `cc` 与 `musl-gcc`（通常来自 `musl-tools`）。私有仓库还需要用户自己的 Git 访问权限。前置工具缺失或构建失败时保留当前 Harness。
 
@@ -156,14 +156,14 @@ DeepSeek Desktop 将稳定的桌面外壳与 Harness 分开。桌面版默认使
 
 设置页显示的默认仓库来自构建时的 `HARNESS_REPOSITORY`；用户不修改时不额外保存覆盖值。维护者仍可为特定发行版预置签名制品清单，客户端会优先使用该高保障分发路径；一旦用户填写其他仓库，则明确改为本机源码准备流程，不会把仓库凭据或地址写入诊断包。完整行为与维护说明见 [Harness 独立更新指南](docs/zh-CN/harness-updates.md)。
 
-单台主机只构建其原生目标。默认和示例版本始终使用 `1.0.0`。符合 SemVer 的标签都会触发 GitHub Actions，可带或不带 `v` 前缀，例如 `1.0.0`、`v1.0.0`、`v0.1.0-community.13`；完整 SemVer 校验会在构建开始时执行，非法标签不会进入发行。全部平台通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。发布构建从标签注入真实版本，不需要修改源码中的默认或示例版本。
+单台主机只构建其原生目标。默认版本为当前 Harness `0.1.6` 的首个 Desktop 修订版 `0.1.6.1`。发行标签必须是带或不带 `v` 前缀的四段数字，例如 `0.1.6.1`、`v0.1.6.2`；前三段必须与工具链 lock 的 Harness 版本一致，第四段必须从 `1` 开始递增。非法标签不会进入发行。全部平台通过后统一发布 macOS arm64/x64、Windows x64 和 Linux x64 安装包。
 
 ## 多平台发布
 
 正式发布统一由 GitHub Actions 官方托管 Runner 原生构建，不要求维护者在一台电脑上准备虚拟机、Rosetta 或 Docker：
 
 - Pull Request 和普通分支 push 不触发发布工作流，也不创建安装包或 Release。
-- 只有带或不带 `v` 前缀的完整 SemVer Tag 才触发质量门禁和四平台矩阵，例如 `1.0.0`、`v1.0.0`、`v1.0.0-rc.1`。
+- 只有带或不带 `v` 前缀的四段数字 Tag 才触发质量门禁和四平台矩阵，例如 `0.1.6.1`、`v0.1.6.2`。
 - macOS ARM64、macOS x64、Windows x64、Linux x64 分别在对应官方 Runner 上调用同一个 `package:community`。
 - Windows x64 在上传制品前实际静默安装 NSIS 包，验证 x64 PE、工作台与设置菜单、关闭确认、Harness 子进程清理和卸载。
 - 四个平台全部成功后才创建 GitHub Release；任何目标失败都不会发布不完整版本。

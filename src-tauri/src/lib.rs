@@ -280,13 +280,13 @@ fn desktop_update_ignore(
     state: State<'_, AppState>,
     version: String,
 ) -> DesktopResult<DesktopSettings> {
-    let version = semver::Version::parse(version.trim()).map_err(|_| {
+    let version = updater::canonical_release_version(version.trim()).ok_or_else(|| {
         DesktopError::InvalidConfiguration(
-            "Desktop ignored version must be valid SemVer".to_owned(),
+            "Desktop ignored version must be a four-part version or legacy SemVer".to_owned(),
         )
     })?;
     state.settings.mutate(|settings| {
-        settings.desktop_update_ignored_version = Some(version.to_string());
+        settings.desktop_update_ignored_version = Some(version.clone());
         Ok(())
     })
 }

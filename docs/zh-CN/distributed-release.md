@@ -7,7 +7,7 @@ DeepSeek Desktop 的正式发布统一使用 GitHub Actions 官方托管 Runner 
 `.github/workflows/community-build.yml` 是多平台发布入口：
 
 1. Pull Request 和普通分支 push 不触发该工作流。
-2. 只有完整 SemVer Tag 才触发工作流，并先通过严格版本解析和 `ci:shell-quality` 质量门禁。
+2. 只有四段数字 Tag 才触发工作流，并先通过 Harness 版本映射校验和 `ci:shell-quality` 质量门禁。
 3. 四个官方 Runner 分别调用同一个 `package:community`：
    - `macos-15`：macOS ARM64 DMG
    - `macos-15-intel`：macOS x64 DMG
@@ -38,13 +38,11 @@ corepack pnpm@11.24.0 desktop:package
 
 ## 创建版本
 
-默认和示例版本始终使用 `1.0.0`。真实发行版本来自 Tag，支持带或不带 `v` 前缀：
+发行版本的前三段来自锁定 Harness 的正式版本，第四段是 Desktop 修订号。支持带或不带 `v` 前缀：
 
 ```text
-1.0.0
-v1.0.0
-v1.0.0-rc.1
-v1.0.0+build.1
+0.1.6.1
+v0.1.6.2
 ```
 
 发布前必须确认：
@@ -58,9 +56,9 @@ v1.0.0+build.1
 创建新的 annotated Tag 后推送：
 
 ```bash
-git tag -a v1.0.0 -m "DeepSeek Desktop v1.0.0"
+git tag -a v0.1.6.1 -m "DeepSeek Desktop v0.1.6.1"
 git push origin master
-git push origin v1.0.0
+git push origin v0.1.6.1
 ```
 
 旧 Tag 不移动、不覆盖。某个平台失败时修复源码并使用下一个未占用版本，不能强推原 Tag。
@@ -78,7 +76,7 @@ git push origin v1.0.0
 
 各 Worker 上传的 `BUILD-INFO.<target>.json` 只供汇总任务核对来源和目标，不作为公开下载附件。Release 中缺少任一安装包、出现重复目标或多出内部文件时，发布任务必须失败。
 
-未签名构建一律创建预发布 Release；只有完成签名且版本不带 prerelease 标识时才创建正式 Release。带 prerelease 标识的 SemVer（例如 `v1.0.0-rc.1`）始终创建预发布 Release。
+未签名构建一律创建预发布 Release；只有完成签名的四段版本才创建正式 Release。四段公开版本不使用 SemVer 预发布后缀。
 
 ## 签名与安全
 

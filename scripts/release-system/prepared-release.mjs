@@ -6,7 +6,7 @@ import process from "node:process";
 
 import { atomicWriteJson, detectHostTarget, loadTargets, sha256File } from "./common.mjs";
 import { loadBuildConfig } from "../lib/build-config.mjs";
-import { parseReleaseTag } from "../lib/release-tag.mjs";
+import { parseDesktopVersion, parseReleaseTag } from "../lib/release-tag.mjs";
 
 const shaPattern = /^[0-9a-f]{64}$/u;
 const commitPattern = /^[0-9a-f]{40}$/u;
@@ -212,8 +212,11 @@ export async function prepareRelease({
     throw new Error(`release preparation requires Node ${lock.node?.version} ABI ${lock.node?.moduleAbi}; current Node is ${process.versions.node} ABI ${process.versions.modules}`);
   }
   const harness = lock.harnessSource;
-  if (!harness?.repository || !harness?.ref || !commitPattern.test(harness?.commit || "")) {
+  if (!harness?.repository || !harness?.version || !harness?.ref || !commitPattern.test(harness?.commit || "")) {
     throw new Error("harness/toolchain-lock.json has no immutable Harness source");
+  }
+  if (parseDesktopVersion(version).coreVersion !== harness.version) {
+    throw new Error(`release version ${version} does not match Harness ${harness.version}`);
   }
   const targetConfig = await loadTargets();
   const hostTarget = await detectHostTarget();

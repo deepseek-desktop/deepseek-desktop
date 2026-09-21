@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 
 import { assertSourceRepository, loadTargets } from "./common.mjs";
-import { parseReleaseTag } from "../lib/release-tag.mjs";
+import { parseDesktopVersion, parseReleaseTag } from "../lib/release-tag.mjs";
 
 const defaultRoot = resolve(import.meta.dirname, "../..");
 
@@ -34,8 +34,11 @@ export async function createReleasePlan({
   const repository = assertSourceRepository(sourceRepository || git(workspace, ["remote", "get-url", "origin"]));
   const lock = JSON.parse(await readFile(join(workspace, "harness", "toolchain-lock.json"), "utf8"));
   const harness = lock.harnessSource;
-  if (!harness?.repository || !harness?.ref || !harness?.commit) {
+  if (!harness?.repository || !harness?.version || !harness?.ref || !harness?.commit) {
     throw new Error("harness/toolchain-lock.json has no immutable Harness source");
+  }
+  if (parseDesktopVersion(version).coreVersion !== harness.version) {
+    throw new Error(`release version ${version} does not match Harness ${harness.version}`);
   }
   const targetConfig = await loadTargets();
   const targetIds = requestedTargetIds.length > 0
