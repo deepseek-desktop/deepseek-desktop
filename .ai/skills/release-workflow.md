@@ -6,7 +6,7 @@
 
 - 正式四平台发布只使用 `.github/workflows/community-build.yml` 的 GitHub 官方托管 Runner 原生矩阵。
 - Pull Request 和普通分支 push 不触发发布工作流。
-- 只有带或不带 `v` 的完整 SemVer Tag 才运行质量门禁、构建安装包和创建 Release。
+- 只有带或不带 `v` 的四段数字 Tag 才运行质量门禁、构建安装包和创建 Release；前三段必须等于工具链 lock 的 Harness 正式版本，第四段是 Desktop 修订号。
 - Tag 必须是 annotated Tag，并指向实际构建 commit；质量门禁记录 Tag 对象，原生构建及发布前与远端 Tag / peeled commit 再次比对，任何漂移立即失败。不得重建、移动或覆盖旧 Tag。
 - 四个平台都调用现有 `package:community`，禁止复制第二套打包逻辑。
 - 本机只验证源码、E2E、Harness smoke 和当前 macOS 架构安装包。
@@ -71,7 +71,7 @@ macOS 本机至少检查：
 
 ## Tag 与矩阵
 
-接受示例：`1.0.0`、`v1.0.0`、`v1.0.0-rc.1`。非法或不完整版本必须在 `ci-release-version.mjs` 失败。
+接受示例：`0.1.6.1`、`v0.1.6.2`。缺段、前导零、修订号为零、预发布后缀或前三段与 Harness lock 不一致时，必须在 `ci-release-version.mjs` 失败。
 
 矩阵固定为：
 
@@ -82,7 +82,7 @@ macOS 本机至少检查：
 | Windows x64 | `windows-2022` | EXE |
 | Linux x64 | `ubuntu-22.04` | AppImage、DEB |
 
-四个 Job 全部成功后才能运行 `publish-release`。prerelease 标记由 `scripts/ci-release-prerelease.mjs` 决定：**制品未签名一律标记 prerelease**，已签名版本再按 SemVer prerelease 段判断。GitHub 的 Latest release 是用户默认下载和 `/releases/latest` 的返回值，未签名制品不应占据该位置；签名接入后同一规则自动把正式版本提升为 Latest。
+四个 Job 全部成功后才能运行 `publish-release`。prerelease 标记由 `scripts/ci-release-prerelease.mjs` 决定：**制品未签名一律标记 prerelease**，已签名四段版本可成为正式 Release。GitHub 的 Latest release 是用户默认下载和 `/releases/latest` 的返回值，未签名制品不应占据该位置；签名接入后同一规则自动把正式版本提升为 Latest。
 
 ## 公开资产
 
@@ -104,7 +104,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 
 只有用户明确授权发布后才执行：
 
-1. 查询远程最新 Tag/Release，选择下一个未占用完整 SemVer。
+1. 查询远程最新 Tag/Release；在当前 Harness 前三段下选择下一个未占用 Desktop 修订号。
 2. 确认 `master`、工作区、验证、提交范围和远端状态。
 3. 创建新的 annotated Tag；已有 `v` 时保持，没有时按约定补 `v`。
 4. 推送 `master` 和新 Tag，不 force push、不移动旧 Tag。社区预发布显式使用 `--prerelease --latest=false`，不依赖 GitHub 默认 Latest 推断。
@@ -130,7 +130,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 | 原生模块携带 node-gyp 构建路径 | 区分必要 `.node` 与开发中间产物；清理器和扫描器一致处理路径拼写及 UTF-8 / UTF-16LE，保持二进制偏移并复验实际加载，不扩大扫描白名单掩盖泄漏 |
 | 工作台白屏或 Failed to load plugins | 区分 bundle rev 失效的 404、旧会话 Cookie 累积的 431、脚本异常与服务未启动；检查实际响应及 Harness 启动代次，不靠清空用户数据或进程存活判定修复。现有生产链清理旧认证 Cookie 并按代次重新导航 |
 | Chromium 正常但 macOS 历史回放失败 | 检查 WebKit 实际异常及相同会话内容；不能依赖 V8 的内置函数字符串排版。现有修复及双引擎对照见 [ADR-020](../decisions/adr-020-webkit-json-intrinsics.md)，不要用 Chromium 通过替代 WebKit |
-| 普通提交出现发布构建记录 | 工作流只能监听完整 SemVer Tag；禁止添加 PR、分支 push 或手动触发入口 |
+| 普通提交出现发布构建记录 | 工作流只能监听四段数字 Tag；禁止添加 PR、分支 push 或手动触发入口 |
 | 已签名版本仍被标为 prerelease | 检查生成配置的 `release.signed` 是否为布尔 `true`；`ci-release-prerelease.mjs` 对缺失或非布尔的签名声明一律按未签名处理 |
 | Release 多出 BUILD-INFO | 只从五类安装包生成公开目录，发布前检查文件总数为 6 |
 | Windows 路径过长 | 保持 Windows Job 在短路径 detached clone 中打包 |

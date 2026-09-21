@@ -1,5 +1,5 @@
+use std::fmt;
 use std::io::Read;
-use std::{cmp::Ordering, fmt};
 use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, Utc};
@@ -87,69 +87,21 @@ struct ReleaseCandidate {
     notes_format: ReleaseNotesFormat,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum DesktopReleaseVersion {
-    Legacy(Version),
-    HarnessAligned {
-        major: u64,
-        minor: u64,
-        patch: u64,
-        revision: u64,
-    },
-}
-
-impl DesktopReleaseVersion {
-    fn is_prerelease(&self) -> bool {
-        matches!(self, Self::Legacy(version) if !version.pre.is_empty())
-    }
-}
-
-impl Ord for DesktopReleaseVersion {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (
-                Self::HarnessAligned {
-                    major,
-                    minor,
-                    patch,
-                    revision,
-                },
-                Self::HarnessAligned {
-                    major: other_major,
-                    minor: other_minor,
-                    patch: other_patch,
-                    revision: other_revision,
-                },
-            ) => (*major, *minor, *patch, *revision).cmp(&(
-                *other_major,
-                *other_minor,
-                *other_patch,
-                *other_revision,
-            )),
-            (Self::Legacy(left), Self::Legacy(right)) => left.cmp(right),
-            (Self::HarnessAligned { .. }, Self::Legacy(_)) => Ordering::Greater,
-            (Self::Legacy(_), Self::HarnessAligned { .. }) => Ordering::Less,
-        }
-    }
-}
-
-impl PartialOrd for DesktopReleaseVersion {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct DesktopReleaseVersion {
+    major: u64,
+    minor: u64,
+    patch: u64,
+    revision: u64,
 }
 
 impl fmt::Display for DesktopReleaseVersion {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Legacy(version) => version.fmt(formatter),
-            Self::HarnessAligned {
-                major,
-                minor,
-                patch,
-                revision,
-            } => write!(formatter, "{major}.{minor}.{patch}.{revision}"),
-        }
+        write!(
+            formatter,
+            "{}.{}.{}.{}",
+            self.major, self.minor, self.patch, self.revision
+        )
     }
 }
 
@@ -185,7 +137,7 @@ pub fn skipped_status(settings: &DesktopSettings) -> UpdateStatus {
 pub fn official_release_page(tag: &str) -> DesktopResult<String> {
     let version = parse_tag(tag).ok_or_else(|| {
         DesktopError::InvalidConfiguration(
-            "Desktop release tag must be a four-part version or a legacy SemVer".to_owned(),
+            "Desktop release tag must use four numeric segments".to_owned(),
         )
     })?;
     let repository = official_github_repository()?;
@@ -484,11 +436,7 @@ fn feed_entry_to_release(entry: FeedEntry, repository: &GithubRepository) -> Opt
     Some(GithubRelease {
         tag_name: tag_name.clone(),
         draft: false,
-        prerelease: if version.is_prerelease() {
-            Some(true)
-        } else {
-            None
-        },
+        prerelease: None,
         published_at: entry.updated,
         body: sanitize_notes(Some(content.clone())),
         notes_format: ReleaseNotesFormat::Html,
@@ -605,16 +553,14 @@ fn parse_tag(tag: &str) -> Option<DesktopReleaseVersion> {
         if revision == 0 {
             return None;
         }
-        return Some(DesktopReleaseVersion::HarnessAligned {
+        return Some(DesktopReleaseVersion {
             major,
             minor,
             patch,
             revision,
         });
     }
-    Version::parse(version)
-        .ok()
-        .map(DesktopReleaseVersion::Legacy)
+    None
 }
 
 pub(crate) fn canonical_release_version(value: &str) -> Option<String> {
@@ -802,34 +748,24 @@ mod tests {
     }
 
     #[test]
-    fn harness_aligned_versions_replace_legacy_desktop_versions() {
+    fn compares_only_four_part_desktop_versions() {
         let settings = DesktopSettings::default();
         let status = select_release(
             vec![
-                release("v1.1.27", true, "2026-09-19T10:00:00Z"),
                 release("v0.1.6.1", true, "2026-09-22T10:00:00Z"),
                 release("v0.1.6.2", true, "2026-09-22T11:00:00Z"),
             ],
             &settings,
-            "1.1.27",
+            "0.1.6.1",
         );
         assert_eq!(status.available_version.as_deref(), Some("0.1.6.2"));
         assert_eq!(status.release_tag.as_deref(), Some("v0.1.6.2"));
-
-        let current = select_release(
-            vec![release("v1.1.27", true, "2026-09-19T10:00:00Z")],
-            &settings,
-            "0.1.6.1",
-        );
-        assert_eq!(current.message, "up-to-date");
+        assert!(parse_tag("v1.1.27").is_none());
     }
 
     #[test]
     fn maps_internal_bundle_semver_back_to_the_public_version() {
-        assert_eq!(
-            public_version_from_bundle_semver("0.1.6+2"),
-            "0.1.6.2"
-        );
+        assert_eq!(public_version_from_bundle_semver("0.1.6+2"), "0.1.6.2");
         assert_eq!(public_version_from_bundle_semver("0.1.6"), "0.1.6");
         assert_eq!(
             public_version_from_bundle_semver("0.1.6+build.2"),

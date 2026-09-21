@@ -678,9 +678,9 @@ test("distributed release HTTP smoke streams, validates, and publishes artifacts
     body: { provider: "filesystem", destination }
   });
   assert.equal(published.provider, "filesystem");
-  const publishedEntries = (await readdir(join(destination, "v1.0.0"))).sort();
+  const publishedEntries = (await readdir(join(destination, "v0.1.6.1"))).sort();
   assert.deepEqual(publishedEntries, [installerName, "SHA256SUMS"].sort());
-  const globalChecksums = await readFile(join(destination, "v1.0.0", "SHA256SUMS"), "utf8");
+  const globalChecksums = await readFile(join(destination, "v0.1.6.1", "SHA256SUMS"), "utf8");
   assert.match(globalChecksums, new RegExp(`${sha256(installer)}  ${installerName.replaceAll(".", "\\.")}`, "u"));
   assert.doesNotMatch(globalChecksums, /BUILD-INFO/u);
 });

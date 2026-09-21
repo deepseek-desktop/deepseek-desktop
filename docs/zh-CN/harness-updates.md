@@ -2,6 +2,8 @@
 
 DeepSeek Desktop 把稳定桌面外壳与 Harness 分开。用户只需更换一个 Git 仓库地址，就能改变 Desktop 下次运行的 Harness；Tauri、原生菜单、凭据边界和桌面设置仍由原来的 Desktop 外壳提供。
 
+DeepSeek 官方上游是 [DeepSeek Harness（官方版）](https://github.com/deepseek-ai/deepseek-harness.git)。本项目默认使用 [DeepSeek Harness（社区版）](https://github.com/deepseek-desktop/deepseek-harness.git)，并由 [DeepSeek Desktop（社区版）](https://github.com/deepseek-desktop/deepseek-desktop.git) 通过工具链 lock 固定实际 commit。两个社区仓库均不代表 DeepSeek 官方发行。
+
 ## 普通用户
 
 Harness 更新页始终显示当前桌面包的默认仓库。社区版默认使用 DeepSeek Desktop Harness 仓库：

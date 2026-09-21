@@ -8,7 +8,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
-- 当前成功发行是 `v1.1.27` 社区预发布；质量门禁、四平台原生构建、Windows x64 安装交互和汇总发布均成功，六个公开资产元数据核对一致且 ARM64 DMG 已下载重算校验，`v1.1.24` 与 `v1.1.25` 同样成功。公开包仍未使用可信发行签名，保持 prerelease 且不占据 Latest。`v1.1.14` 至 `v1.1.17`、`v1.1.21`、`v1.1.22`、`v1.1.23` 和 `v1.1.26` 均为未发布的不可变失败 Tag。从 Finder 启动的应用不继承 shell 环境，验证壳侧环境构造时必须用 `env -i` 构造骨架环境后再 `open`：`open` 会把调用方 shell 的环境传给应用，直接用会得到假通过。`v1.1.20` 的 Tag 保留，但其 Release 因持久化停用官方搜索插件的缺陷已下架。证据范围见 [当前发布验收](memory/verification.md#当前发布验收)，防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
+- GitHub 上的旧 Release 与 Tag 已于 2026-09-22 全部清理，当前没有公开发行版。历史上最后完成验证的是 `v1.1.27`；其质量门禁、四平台原生构建、Windows x64 安装交互、汇总发布和本机 ARM64 安装证据仍保留在 [验证基线](memory/verification.md#当前发布验收)，但不再代表当前可下载版本。下一次发行从 `v0.1.6.1` 四段体系开始。防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
 
 - macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地 DMG 已验证 WebKit 历史、同源链接、剪贴板、混合窗口操作、候选激活/拒绝/恢复和独立搜索设置；Alibaba MaaS Max / Flash GUI 并发各有 8 条来源，实际重叠 8067 毫秒。该实测为同端点同凭据，不扩大为所有 Provider 隔离或每个后续发行包均重测；逐缺陷范围见 [审计修复验收](memory/audit-remediation.md)。
 
@@ -58,7 +58,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 版本基线
 
-- 新发行体系使用四段公开版本：锁定 Harness `0.1.6` 对应 Desktop `0.1.6.<修订号>`，当前默认示例为 `0.1.6.1`；旧 `v1.1.27` 及更早版本仅作为历史发行，更新器把四段体系视为其后继。
+- 新发行体系使用四段公开版本：锁定 Harness `0.1.6` 对应 Desktop `0.1.6.<修订号>`，当前默认示例为 `0.1.6.1`；旧 Release 与 Tag 已从 GitHub 清理，更新器只接受四段格式。
 - Node：`24.20.0`（四平台精确锁定，module ABI `137`）
 - pnpm：`11.24.0`
 - npm：`11.19.0`（随固定 Node 官方归档提供）

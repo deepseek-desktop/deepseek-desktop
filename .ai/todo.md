@@ -6,7 +6,7 @@
 
 Harness 默认来源已切换到 `deepseek-desktop/deepseek-harness`，后续发行采用 `0.1.6.<Desktop 修订号>` 四段版本。首次四段版本尚未经过 GitHub 四平台 Tag 矩阵与真机安装验收，不得把本机验证写成已发布结论。
 
-官方 Harness `0.1.6-alpha.2` 源码升级的本机验证范围见[升级验证](memory/verification.md#官方-harness-016-alpha2-源码升级)。`v1.1.24` 与 `v1.1.25` 已发布且不再作为活跃待办。`v1.1.14` 至 `v1.1.17`、`v1.1.21`、`v1.1.22` 和 `v1.1.23` 保持不可变且未创建 Release；其失败原因依次为官方 WASM 回退被原生平台校验误拒（`v1.1.21`）、NTFS 无执行位（`v1.1.22`）和 manifest 在 Windows 不记录 mode（`v1.1.23`），三者均已在 `v1.1.24` 修复。`v1.1.20` 的 Tag 保留而 Release 已下架。`v1.1.26` 的 Windows 因新增的 `PATH` 合并测试把 `:` 硬编码为分隔符而失败（生产代码用 `split_paths`/`join_paths`，平台正确；错的只有测试夹具），同样保持不可变；修复后的 `v1.1.27` 已发布成功，本机安装验收见[登录 shell 环境恢复](memory/登录-shell-环境恢复v1127)。
+Harness `0.1.6-alpha.2` 源码升级的本机验证范围见[升级验证](memory/verification.md#官方-harness-016-alpha2-源码升级)。旧 Release 与 Tag 已全部清理；其中的成功或失败记录只保留在验证基线中，不再作为候选或远端状态。下一次公开发行从 `v0.1.6.1` 开始。
 
 ## 独立搜索扩展的外部验收
 

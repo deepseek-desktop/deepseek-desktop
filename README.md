@@ -9,6 +9,14 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 安装包发布在 [GitHub Releases](https://github.com/deepseek-desktop/deepseek-desktop/releases)。安装前请使用同版本 `SHA256SUMS` 校验文件完整性。
 
+## 项目关系
+
+- [DeepSeek Harness（官方版）](https://github.com/deepseek-ai/deepseek-harness.git)：DeepSeek 官方 Harness 上游。
+- [DeepSeek Harness（社区版）](https://github.com/deepseek-desktop/deepseek-harness.git)：本桌面版默认使用并锁定的 Harness 社区仓库。
+- [DeepSeek Desktop（社区版）](https://github.com/deepseek-desktop/deepseek-desktop.git)：本仓库，负责桌面外壳、构建、扩展集成与发行。
+
+社区 Harness 与 Desktop 由 `deepseek-desktop` 组织维护；两者都不是 DeepSeek 官方发行。工具链 lock 记录每个 Desktop 版本实际使用的社区 Harness commit。
+
 ## 界面预览
 
 ![DeepSeek Desktop 工作台](docs/assets/workbench.png)

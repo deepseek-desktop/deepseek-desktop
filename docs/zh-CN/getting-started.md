@@ -8,6 +8,14 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 工程源码位于仓库根目录。`harness/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Harness 来源；`harness:sync` 在本地开发且 `HARNESS_REF` 为空时自动选择 Harness 仓库最新的 SemVer 版本标签，显式填写时使用指定来源，随后统一解析为不可变 commit。社区版和正式发布还必须匹配仓库内经过审计的固定 Harness 提交，避免可变标签在无人复核时改变发行内容。同步结果写入当前构建专用的 `target/generated/harness-lock.json`。Harness 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Harness manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
+相关仓库及边界如下：
+
+- [DeepSeek Harness（官方版）](https://github.com/deepseek-ai/deepseek-harness.git) 是 DeepSeek 官方上游。
+- [DeepSeek Harness（社区版）](https://github.com/deepseek-desktop/deepseek-harness.git) 是本桌面版默认使用并锁定的 Harness 来源。
+- [DeepSeek Desktop（社区版）](https://github.com/deepseek-desktop/deepseek-desktop.git) 是桌面外壳、构建、扩展集成与发行仓库。
+
+两个社区仓库均不代表 DeepSeek 官方发行；实际内核来源和 commit 以 Desktop 工具链 lock 为准。
+
 ## 支持平台
 
 | 平台 | 构建产物 | 当前验收口径 |

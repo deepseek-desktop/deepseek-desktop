@@ -282,7 +282,7 @@ fn desktop_update_ignore(
 ) -> DesktopResult<DesktopSettings> {
     let version = updater::canonical_release_version(version.trim()).ok_or_else(|| {
         DesktopError::InvalidConfiguration(
-            "Desktop ignored version must be a four-part version or legacy SemVer".to_owned(),
+            "Desktop ignored version must use four numeric segments".to_owned(),
         )
     })?;
     state.settings.mutate(|settings| {

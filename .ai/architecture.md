@@ -42,7 +42,7 @@ Harness 仓库地址（默认构建仓库或用户覆盖）
 ## 正式发布链路
 
 ```text
-完整 SemVer Tag
+四段 Desktop Tag
   -> GitHub Actions 校验 Tag / Desktop commit / Harness lock
   -> macOS ARM64 / macOS x64 / Windows x64 / Linux x64 官方 Runner
   -> 各目标复用 package:community -> desktop:package
@@ -51,7 +51,7 @@ Harness 仓库地址（默认构建仓库或用户覆盖）
   -> GitHub Release：5 个安装包 + SHA256SUMS
 ```
 
-Pull Request 和普通分支 push 不触发发布工作流。正式发布以 `.github/workflows/community-build.yml` 为唯一入口；只有完整 SemVer Tag 才运行质量门禁和四平台矩阵，矩阵全部成功后才允许汇总发布，不完整版本不得公开。
+Pull Request 和普通分支 push 不触发发布工作流。正式发布以 `.github/workflows/community-build.yml` 为唯一入口；只有前三段匹配 Harness lock 的四段数字 Tag 才运行质量门禁和四平台矩阵，矩阵全部成功后才允许汇总发布，不完整版本不得公开。
 
 `scripts/release-system/` 保留通用 Controller、Worker 和 filesystem Provider 作为实验与协议测试实现，不是正式发布前提；本机不再通过 Rosetta、Docker 或虚拟机模拟四平台发行。
 
@@ -64,7 +64,7 @@ Pull Request 和普通分支 push 不触发发布工作流。正式发布以 `.g
 - `src-tauri/src/settings.rs`：原子设置读写、schema 与字段校验、损坏或未来 schema 隔离恢复，不包含历史配置迁移。
 - `src-tauri/src/diagnostics.rs`：日志轮转、脱敏和诊断导出。
 - `src-tauri/src/native_menu.rs`：由窗口内五个菜单标题触发的受控原生弹出菜单、窗口命令及 macOS 最小应用菜单。
-- `src-tauri/src/updater.rs`：Desktop 安装包更新边界；按固定官方仓库 Release 列表、SemVer、发布时间和资产完整性生成社区版提醒，与 Harness 独立更新分离。
+- `src-tauri/src/updater.rs`：Desktop 安装包更新边界；按固定社区仓库 Release 列表、四段版本、发布时间和资产完整性生成社区版提醒，与 Harness 独立更新分离。
 - `harness/packages/credentials-vault/`：Harness Credential Provider 代理，通过 stdin/stdout JSON 调用桌面 helper。
 - `harness/packages/web-search-follow-model/`：Provider 无关的联网搜索路由、标准协议执行器和受控第三方协议注册服务。
 - `harness/patches/`：针对锁定 Harness 的最小桌面集成补丁，必须有 marker 和验证。
@@ -106,7 +106,7 @@ Desktop 版本提醒链路：
 ```text
 启动每日检查 / 帮助手动检查
   -> 构建时固定的 GitHub 仓库 Releases API（禁止重定向）
-  -> draft / prerelease / 完整 SemVer / 发布时间 / 五平台资产完整性
+  -> draft / prerelease / 四段版本 / 发布时间 / 五平台资产完整性
   -> 当前窗口提醒
   -> 固定仓库 + 已验证 tag 构造官方 Release 页面
 ```

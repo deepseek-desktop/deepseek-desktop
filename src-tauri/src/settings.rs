@@ -299,7 +299,7 @@ fn validate(settings: &DesktopSettings) -> DesktopResult<()> {
         .is_some_and(|version| crate::updater::canonical_release_version(version).is_none())
     {
         return Err(DesktopError::InvalidConfiguration(
-            "Desktop ignored version must be a four-part version or legacy SemVer".to_owned(),
+            "Desktop ignored version must use four numeric segments".to_owned(),
         ));
     }
     Ok(())
