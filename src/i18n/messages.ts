@@ -21,6 +21,8 @@ export const messages = {
       origin: "本地地址",
       restarts: "恢复次数",
       errors: {
+        marketUpdating: "正在通过官方命令安装或更新 DSH Market，完成后进入工作台。",
+        marketUpdateFailed: "DSH Market 安装或更新失败，Harness 已继续启动。请检查网络后重新启动重试，详情见诊断日志。",
         artifactMissing: "Harness 制品不完整，请重新安装应用。",
         workdirUnavailable: "Harness 独立工作目录无法创建，请检查应用数据目录权限。",
         profilePrepareFailed: "Harness 用户配置准备失败，请检查应用数据目录权限。",
@@ -71,6 +73,8 @@ export const messages = {
       origin: "本機位址",
       restarts: "復原次數",
       errors: {
+        marketUpdating: "正在透過官方命令安裝或更新 DSH Market，完成後進入工作台。",
+        marketUpdateFailed: "DSH Market 安裝或更新失敗，Harness 已繼續啟動。請檢查網路後重新啟動重試，詳情見診斷日誌。",
         artifactMissing: "Harness 制品不完整，請重新安裝應用程式。",
         workdirUnavailable: "Harness 獨立工作目錄無法建立，請檢查應用程式資料目錄權限。",
         profilePrepareFailed: "Harness 使用者設定準備失敗，請檢查應用程式資料目錄權限。",
@@ -121,6 +125,8 @@ export const messages = {
       origin: "Local origin",
       restarts: "Recovery attempts",
       errors: {
+        marketUpdating: "Installing or updating DSH Market through the official command before opening the workbench.",
+        marketUpdateFailed: "DSH Market could not be installed or updated. Harness has started. Check your network and restart to retry; see diagnostics for details.",
         artifactMissing: "The Harness artifact is incomplete. Reinstall the application.",
         workdirUnavailable: "The isolated Harness working directory could not be created. Check the application data directory permissions.",
         profilePrepareFailed: "The Harness profile could not be prepared. Check the application data directory permissions.",

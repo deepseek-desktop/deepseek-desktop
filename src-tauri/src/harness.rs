@@ -18,7 +18,7 @@ use reqwest::StatusCode;
 use reqwest::header::{COOKIE, HeaderValue, LOCATION, SET_COOKIE};
 use reqwest::redirect::Policy;
 
-use crate::contracts::{HarnessPhase, HarnessStatus};
+use crate::contracts::{HarnessPhase, HarnessStatus, HarnessUpdatePhase};
 use crate::credential_vault::HarnessSession;
 use crate::diagnostics::Diagnostics;
 use crate::error::{DesktopError, DesktopResult};
@@ -674,6 +674,51 @@ impl HarnessSupervisor {
         // without a word is what made the old allowlist so hard to trace back to the shell.
         self.diagnostics
             .append("harness", &crate::login_shell::login_shell().report);
+        let market_state = self.paths.dsh_home.join("desktop-market-sync.json");
+        // Never add a network operation to crash recovery or the explicit offline rollback path.
+        let sync_market = restart_count == 0
+            && self.harness_updates.status()?.phase != HarnessUpdatePhase::RolledBack
+            && !crate::harness_market::is_current(&market_state, &location.commit);
+        let market_failed = if sync_market {
+            self.publish(HarnessStatus {
+                phase,
+                restart_count,
+                error_code: Some("market-updating".to_owned()),
+                ..HarnessStatus::default()
+            })?;
+            match crate::harness_market::sync(
+                &market_state,
+                &location.commit,
+                &node,
+                &dsh_entry,
+                &harness_working_directory,
+                &environment,
+            ) {
+                Ok(_) => {
+                    self.diagnostics.append(
+                        "market",
+                        "DSH Market synchronized through the official Harness CLI",
+                    );
+                    false
+                }
+                Err(error) => {
+                    self.diagnostics.append(
+                        "market",
+                        &format!("DSH Market synchronization failed; retry on next start: {error}"),
+                    );
+                    true
+                }
+            }
+        } else {
+            false
+        };
+        if sync_market {
+            // pnpm may prune installation-owned profile packages while reconciling dependencies.
+            // Reuse normal profile preparation; only the official CLI owns the market itself.
+            if let Err(error) = self.prepare_profile(&harness_dir, &node) {
+                return self.fail(restart_count, "harness-profile-prepare-failed", error);
+            }
+        }
         let mut command = Command::new(&node);
         command
             .arg(NODE_EXPOSE_INTERNALS_ARGUMENT)
@@ -836,7 +881,7 @@ impl HarnessSupervisor {
             url: Some(harness_http.to_string()),
             restart_count,
             diagnostic_id: None,
-            error_code: None,
+            error_code: market_failed.then(|| "market-update-failed".to_owned()),
         };
         {
             let mut inner = self.lock_inner()?;
@@ -1087,6 +1132,14 @@ fn recovery_event_is_current(inner: &HarnessInner, restart_count: u8) -> bool {
 }
 
 pub(crate) fn smoke_harness_service(location: &HarnessLocation) -> DesktopResult<()> {
+    smoke_harness_service_with_setup(location, &std::env::current_exe()?, |_| Ok(()))
+}
+
+fn smoke_harness_service_with_setup(
+    location: &HarnessLocation,
+    helper: &Path,
+    setup: impl FnOnce(&AppPaths) -> DesktopResult<()>,
+) -> DesktopResult<()> {
     let smoke_root = std::env::temp_dir().join(format!(
         "deepseek-desktop-harness-smoke-{}-{}",
         std::process::id(),
@@ -1115,8 +1168,8 @@ pub(crate) fn smoke_harness_service(location: &HarnessLocation) -> DesktopResult
     let harness_working_directory = smoke_root.join(HARNESS_WORK_DIR_NAME);
     fs::create_dir_all(&harness_working_directory)?;
     prepare_harness_profile(&paths, &location.harness_dir, &location.node)?;
+    setup(&paths)?;
     let entry = location.harness_dir.join(&location.entry);
-    let helper = std::env::current_exe()?;
     let credential_session = HarnessSession::create(&paths.data_dir)?;
     let mut command = Command::new(&location.node);
     command
@@ -1148,7 +1201,7 @@ pub(crate) fn smoke_harness_service(location: &HarnessLocation) -> DesktopResult
         .envs(harness_environment(
             &paths,
             "en-US",
-            &helper,
+            helper,
             &location.harness_dir,
             &location.node,
         )?)
@@ -2095,6 +2148,119 @@ impl Drop for WindowsJob {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[ignore = "installs DSH Market from npm into an isolated profile and boots the staged Harness"]
+    fn market_sync_live_install_upgrade_and_service_boot() {
+        use super::*;
+        let target = env!("DEEPSEEK_DESKTOP_TARGET");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let harness_dir = root.join("../harness/staging").join(target);
+        let lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(harness_dir.join("harness-lock.json")).unwrap())
+                .unwrap();
+        let location = HarnessLocation {
+            harness_dir,
+            node: root
+                .join("binaries")
+                .join(format!("node-{target}{}", std::env::consts::EXE_SUFFIX)),
+            entry: lock["harness"]["entry"].as_str().unwrap().to_owned(),
+            version: "test".into(),
+            commit: "live-test".into(),
+            source: "bundled".into(),
+        };
+        let helper = PathBuf::from(
+            std::env::var_os("DEEPSEEK_DESKTOP_TEST_HELPER")
+                .expect("set DEEPSEEK_DESKTOP_TEST_HELPER to a built Desktop executable"),
+        );
+        smoke_harness_service_with_setup(&location, &helper, |paths| {
+            let environment = harness_environment(
+                paths,
+                "en-US",
+                &std::env::current_exe()?,
+                &location.harness_dir,
+                &location.node,
+            )?;
+            let state = paths.dsh_home.join("desktop-market-sync.json");
+            let profile = paths.dsh_home.join("profiles/desktop-web");
+            let manifest_path = profile.join("package.json");
+            let mut manifest: serde_json::Value =
+                serde_json::from_slice(&fs::read(&manifest_path)?)?;
+            manifest["testPreserved"] = serde_json::json!({"value": true});
+            write_json_atomic(&manifest_path, &manifest)?;
+            let entry = location.harness_dir.join(&location.entry);
+            assert!(crate::harness_market::sync(
+                &state,
+                "first-core",
+                &location.node,
+                &entry,
+                &paths.data_dir,
+                &environment
+            )?);
+            let market_version = || -> String {
+                let package: serde_json::Value = serde_json::from_slice(
+                    &fs::read(profile.join("node_modules/dshmarket/package.json")).unwrap(),
+                )
+                .unwrap();
+                package["version"].as_str().unwrap().to_owned()
+            };
+            let latest = market_version();
+            // Reproduce the pinned older version that a bare `add dshmarket` failed to upgrade.
+            let mut pin = Command::new(&location.node);
+            pin.args(["--expose-internals"])
+                .arg(&entry)
+                .args([
+                    "plugin",
+                    "--profile",
+                    "desktop-web",
+                    "add",
+                    "dshmarket@1.45.1",
+                ])
+                .env_clear()
+                .envs(&environment)
+                .env("CI", "1")
+                .current_dir(&paths.data_dir)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            crate::harness_update::run_bounded_command(&mut pin, Duration::from_secs(180), false)?;
+            assert_eq!(market_version(), "1.45.1");
+            assert!(crate::harness_market::sync(
+                &state,
+                "next-core",
+                &location.node,
+                &entry,
+                &paths.data_dir,
+                &environment
+            )?);
+            assert_eq!(market_version(), latest);
+            assert_ne!(latest, "1.45.1");
+            assert!(!crate::harness_market::sync(
+                &state,
+                "next-core",
+                &location.node,
+                &entry,
+                &paths.data_dir,
+                &environment
+            )?);
+            prepare_harness_profile(paths, &location.harness_dir, &location.node)?;
+            let after: serde_json::Value = serde_json::from_slice(&fs::read(manifest_path)?)?;
+            assert_eq!(after["testPreserved"], manifest["testPreserved"]);
+            let bundles = after["dsh"]["profile"]["bundles"].as_array().unwrap();
+            assert_eq!(
+                bundles
+                    .iter()
+                    .filter(|name| name.as_str() == Some("dshmarket"))
+                    .count(),
+                1
+            );
+            println!(
+                "DSH Market installed and upgraded: 1.45.1 -> {latest}; user fields preserved"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
     /// The desktop shell must never be the reason a kernel feature stops working, so nothing
     /// is filtered on the way to the sidecar. Asserted against the live process environment:
     /// reintroducing any predicate — an allowlist, a denylist, a credential filter — fails

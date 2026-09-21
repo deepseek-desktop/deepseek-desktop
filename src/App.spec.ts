@@ -292,10 +292,11 @@ describe(`${appConfig.productName} shell`, () => {
     expect(checkForUpdates).toHaveBeenLastCalledWith(false);
   });
 
-  it("opens an already running Harness without starting a second process", async () => {
+  it.each([null, "market-update-failed"])("opens a ready Harness without restarting it (market status: %s)", async errorCode => {
     Object.assign(harness, {
       phase: "ready",
-      url: "http://127.0.0.1:49152"
+      url: "http://127.0.0.1:49152",
+      errorCode
     });
 
     const wrapper = mount(App, { global: { plugins: [i18n] } });
@@ -304,6 +305,7 @@ describe(`${appConfig.productName} shell`, () => {
     expect(startHarness).not.toHaveBeenCalled();
     expect(openWorkbench).toHaveBeenCalledOnce();
     expect(wrapper.text()).toContain("Harness 已就绪");
+    if (errorCode) expect(wrapper.text()).toContain("DSH Market 安装或更新失败");
   });
 
   it("retries an early failure without a Desktop workspace", async () => {

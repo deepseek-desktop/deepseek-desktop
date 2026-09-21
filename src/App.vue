@@ -94,6 +94,8 @@ let desktopMenuOpening = false;
 const phaseLabel = computed(() => t(`harness.${harness.value.phase}`));
 const harnessStartLabel = computed(() => harness.value.phase === "failed" ? t("common.retry") : t("common.start"));
 const harnessErrorKeys: Record<string, string> = {
+  "market-updating": "harness.errors.marketUpdating",
+  "market-update-failed": "harness.errors.marketUpdateFailed",
   "harness-artifact-missing": "harness.errors.artifactMissing",
   "harness-workdir-unavailable": "harness.errors.workdirUnavailable",
   "harness-profile-prepare-failed": "harness.errors.profilePrepareFailed",

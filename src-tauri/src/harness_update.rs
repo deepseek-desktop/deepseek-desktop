@@ -1746,8 +1746,18 @@ fn run_repository_command(
         "PATH",
         std::env::join_paths(paths).map_err(|error| DesktopError::Other(error.to_string()))?,
     );
-    configure_hidden_process(&mut process);
+    run_bounded_command(&mut process, timeout, capture_output)
+}
+
+/// Run a non-interactive Harness command with the same process-tree deadline as updates.
+pub(crate) fn run_bounded_command(
+    process: &mut Command,
+    timeout: Duration,
+    capture_output: bool,
+) -> DesktopResult<String> {
+    configure_hidden_process(process);
     let mut child = process.spawn().map_err(|error| {
+        let command = Path::new(process.get_program());
         let hint = if command.file_name().and_then(|name| name.to_str()) == Some("git") {
             "; install Git when using a source Harness repository"
         } else {

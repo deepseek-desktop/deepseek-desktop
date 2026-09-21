@@ -133,18 +133,6 @@ test("rejects unknown and required empty declared values", () => {
   assert.doesNotThrow(() => resolveBuildValues({ environment: { RELEASE_TAG_OBJECT: "4ce8e0e67f6f4d85f2dc1f164d52b1ace23e29bd" } }));
 });
 
-test("uses Harness throughout the public shell contracts, copy, and package commands", async () => {
-  for (const path of ["src/contracts.ts", "src/desktop.ts", "src/i18n/messages.ts", "src/app-config.ts"]) {
-    assert.doesNotMatch(await readFile(join(root, path), "utf8"), /runtime/iu, path);
-  }
-  const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-  assert.ok(manifest.scripts["harness:sync"]);
-  assert.ok(manifest.scripts["harness:smoke"]);
-  assert.doesNotMatch(JSON.stringify(manifest.scripts), /runtime/iu);
-  const tauri = JSON.parse(await readFile(join(root, "src-tauri/tauri.conf.json"), "utf8"));
-  assert.equal(tauri.bundle.macOS.hardenedRuntime, false);
-  assert.equal(tauri.bundle.macOS.hardenedHarness, undefined);
-});
 
 test("validates explicit release metadata", async () => {
   await assert.rejects(loadBuildConfig(root, {

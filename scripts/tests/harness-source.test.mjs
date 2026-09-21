@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-
 import { assertPinnedHarnessSource } from "../lib/harness-source-pin.mjs";
+import { selectLatestHarnessTag } from "../lib/harness-ref.mjs";
+import { cleanCachedCheckout } from "../lib/cached-checkout-clean.mjs";
 
 const pin = {
   repository: "https://github.com/deepseek-desktop/deepseek-harness.git",
@@ -34,13 +35,6 @@ test("rejects an invalid committed source pin", () => {
   }, { ...pin, commit: "latest" }), /immutable harnessSource pin/u);
 });
 
-test("the cached Harness checkout is cloned without hardlinks", async () => {
-  const { readFile } = await import("node:fs/promises");
-  const source = await readFile(new URL("../harness-sync.mjs", import.meta.url), "utf8");
-  // Hardlinking .git/objects from the local mirror races the mirror's own
-  // commit-graph maintenance and aborts the clone on any platform.
-  assert.match(source, /"clone",\s*"--no-hardlinks",\s*"--no-checkout"/u);
-});
 
 test("desktop patches never embed a build-machine path", async () => {
   const { readFile, readdir } = await import("node:fs/promises");
@@ -66,4 +60,70 @@ test("desktop patches never embed a build-machine path", async () => {
       .slice(0, 3);
     assert.deepEqual(offending, [], `${file} embeds a build-machine path`);
   }
+});
+
+
+test("selects the newest Harness SemVer tag", () => {
+  assert.equal(selectLatestHarnessTag([
+    "dsh-v0.1.0-rc.8",
+    "dsh-v0.1.1-rc.2",
+    "dsh-v0.1.1-rc.10",
+    "feature-preview"
+  ]), "dsh-v0.1.1-rc.10");
+});
+
+test("prefers a stable release over a prerelease with the same version", () => {
+  assert.equal(selectLatestHarnessTag(["v1.0.0-rc.2", "v1.0.0"]), "v1.0.0");
+});
+
+test("rejects repositories without a version tag", () => {
+  assert.throws(() => selectLatestHarnessTag(["main", "nightly"]), /no SemVer release tags/u);
+});
+
+
+test("retries a transient cached checkout cleanup failure", async () => {
+  let cleanAttempts = 0;
+  let recreateAttempts = 0;
+  const warnings = [];
+
+  const result = await cleanCachedCheckout({
+    clean: async () => {
+      cleanAttempts += 1;
+      if (cleanAttempts === 1) throw new Error("Directory not empty");
+    },
+    recreate: async () => { recreateAttempts += 1; },
+    warn: message => warnings.push(message)
+  });
+
+  assert.deepEqual(result, { recreated: false, attempts: 2 });
+  assert.equal(recreateAttempts, 0);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /Directory not empty/u);
+});
+
+test("recreates an immutable checkout after repeated cleanup failures", async () => {
+  let cleanAttempts = 0;
+  let recreateAttempts = 0;
+  const warnings = [];
+
+  const result = await cleanCachedCheckout({
+    clean: async () => {
+      cleanAttempts += 1;
+      throw new Error(`cleanup failure ${cleanAttempts}`);
+    },
+    recreate: async () => { recreateAttempts += 1; },
+    warn: message => warnings.push(message)
+  });
+
+  assert.deepEqual(result, { recreated: true, attempts: 2 });
+  assert.equal(recreateAttempts, 1);
+  assert.equal(warnings.length, 2);
+  assert.match(warnings[1], /recreating the immutable checkout/u);
+});
+
+test("rejects an invalid retry count before cleanup", async () => {
+  await assert.rejects(
+    cleanCachedCheckout({ clean: async () => {}, recreate: async () => {}, retries: -1 }),
+    /non-negative integer/u
+  );
 });

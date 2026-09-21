@@ -3,6 +3,7 @@ mod credential_vault;
 mod diagnostics;
 mod error;
 mod harness;
+mod harness_market;
 mod harness_update;
 mod login_shell;
 mod native_menu;

@@ -44,13 +44,19 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 社区版采用官方 Harness 的插件配置和只读插件列表，可查看全局与 Agent 预设的插件组合、启停状态及加载失败原因。[DSH Market](https://github.com/dsh-market/dsh-market) 是独立的社区插件市场，安装后会在设置侧栏提供“插件市场”入口；官方插件列表不承担市场安装、更新或卸载功能。市场按其官方方式作为用户插件安装，不改写市场代码或官方 CLI 依赖。
 
-安装前退出桌面版，使用**桌面版当前 Harness 的 `dsh` 入口和内置 pnpm**，将 `DSH_HOME` 指向桌面应用数据目录下的 `dsh`，然后执行：
+Desktop 首次启动或开始使用不同 commit 的 Harness 时，会在工作台启动前调用当前内核的官方 CLI，自动安装或更新市场。独立内核更新和桌面安装包带来的内核升级都走这一流程；同一 commit 同步成功后，普通重启不会重复联网安装。
+
+实际命令为：
 
 ```bash
-dsh plugin --profile desktop-web add dshmarket
+dsh plugin --profile desktop-web add dshmarket@latest
 ```
 
-市场文档中的 `--profile web` 对应普通 Harness Web 部署；本桌面版实际使用 `desktop-web`，不能装到另一个 profile 后期待桌面入口出现。官方 CLI 会将包依赖和 Bundle 启用声明写入该 profile，重新启动桌面版后加载。`DSH_HOME` 必须与桌面实际启动目录一致，默认位于系统的 `deepseek.desktop` 应用数据目录下；安装市场不需要 API Key。
+这沿用[市场官方推荐的 `dsh plugin ... add` 安装方式](https://github.com/dsh-market/dsh-market#install)，指定 `@latest` 以更新已有的固定版本；单纯重复 `add dshmarket` 可能保留旧版本。市场文档的 `--profile web` 对应普通 Web 部署，本桌面版使用 `desktop-web`。Desktop 自动传入自己的 `DSH_HOME`、当前 Harness 的 Node/CLI 和随包 pnpm；包依赖与 Bundle 声明仍由官方 CLI 管理，不改写市场源码，也不批量升级其他用户插件。
+
+市场同步最多等待三分钟。失败会在“运行状态”显示说明并写入诊断日志，内核仍会尝试启动；下次普通启动会重试。崩溃自动恢复及当次“恢复内置 Harness”操作跳过市场联网同步，保留恢复入口。用户主动禁用的 Bundle 仍按官方 CLI 的保留规则处理。
+
+需要手动重试时，先退出桌面版，再使用**桌面版当前 Harness 的 `dsh` 入口和内置 pnpm**，将 `DSH_HOME` 指向桌面应用数据目录下的 `dsh` 后执行上述命令。默认数据目录位于系统的 `deepseek.desktop` 应用数据目录；安装市场不需要 API Key。
 
 Harness 每次启动会合并桌面内置 Bundle 和用户插件配置，已有的自定义插件声明仍会保留；已撤出内置包且能通过 Desktop 所有权标记和内容摘要确认未被修改的旧受管 Bundle，只撤下启用声明，保留文件。通过官方 CLI 安装后，市场属于用户显式依赖，不会被这项清理撤下。固定版本 pnpm 随应用提供，供官方插件命令和候选构建使用。
 

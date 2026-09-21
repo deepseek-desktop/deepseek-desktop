@@ -1,5 +1,13 @@
 # 验证基线
 
+## Harness 联动市场同步与测试精简（未发布）
+
+- 通过当前内核的官方 CLI 同步市场；实测裸 `add dshmarket` 保留已有 `1.45.1`，显式 `add dshmarket@latest` 更新到当时 registry 的 `1.52.0`。不将即时市场版本锁入内置 Harness。
+- 显式联网 Rust 用例 `market_sync_live_install_upgrade_and_service_boot` 调用生产同步函数，在全新隔离 profile 完成首次安装、降到固定旧版后升级、同 commit 跳过安装、保留用户字段/唯一 Bundle 声明，再启动暂存 Harness 并通过认证 HTTP 探活。凭据 helper 使用已安装 `0.1.6.2` 主程序；没有替换用户应用、操作用户 profile，或将此结果称为新版安装包 GUI 验收。
+- 日常测试覆盖成功 commit 记账、失败重试、损坏记账恢复、实际进程参数/环境和市场失败仍可打开就绪工作台。联网测试单独显式运行，普通 `verify` 不依赖 npm 在线。
+- 脚本与 E2E 测试文件由 28 个收敛为 22 个、3792 行减至 3108 行；移除实验 Controller/Worker 与 Docker/Parallels 编排测试，合并版本/频道和 Harness 来源测试，删除没有桌面补丁的上游 CSS 模拟页面。正式发布身份、制品扫描、闭包、凭据与真实兼容补丁的回归继续保留。
+- 最终 `verify` 通过：134 项配置/发行、33 项前端、45 项搜索、113 项 Rust、三语 155 个 key 和 Clippy；两项显式联网测试默认忽略，其中市场用例已单独通过。E2E 共 6 项通过；Harness smoke 的设置保存/恢复、小窗布局、父进程退出清理及完整启停通过；正式发布入口的 `release:smoke` 25 项通过。语言桥测试已移到 Harness 同步之后，清理依赖后不会提前引用缺失的 `yaml`。
+
 ## oMLX Qwen3.8 安装版与 0.1.6.2 发布验收
 
 2026-09-22：将本机 OpenCode 已使用的 oMLX 路由按 Harness 官方 `llm-pi-ai` 配置契约接入 Desktop。模型为 `qwen3.8-27b-4bit`，OpenAI Chat Completions 端点为 loopback `http://127.0.0.1:8888/v1`，上下文 131072、最大输出 32768、文本输入、Medium 默认推理、Off/Low/Medium/Xhigh 四档、`chat-template` 思考开关、`preserve_thinking: true` 与 900000 毫秒流空闲超时。仓库示例由当前暂存 Harness 的真实 `@deepseek-ai/dsh-llm-pi-ai` `Config` schema 解析，不用手写的镜像 schema 冒充内核契约。

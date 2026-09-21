@@ -54,3 +54,7 @@ corepack pnpm@11.24.0 release:smoke
 - 提交前检查 `git status --short`、`git diff --check` 和实际 staged diff。
 - `target/`、`dist/`、`release/`、诊断、工具链缓存和上游审计检出不得进入提交。
 - 不提交 `.env`、凭据、用户工作区数据或含本机绝对路径的生成文件。
+
+## 测试范围
+
+只维护 Desktop 自有行为和必要的官方集成边界：凭据隔离、内核候选/回滚、依赖闭包、用户插件同步、发布身份/制品、Shell 交互及实际兼容补丁。不要复制上游测试套件，不为无桌面补丁的上游 CSS 另造模拟页面；实验 Controller/Worker、Docker/Parallels 编排不进入日常回归。同类短测试归入现有边界文件。`release:smoke` 验证正式 GitHub 发布的身份、版本、资产和说明，不再测试实验 HTTP 发布服务。

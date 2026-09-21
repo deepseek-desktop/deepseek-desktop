@@ -4,6 +4,10 @@ DeepSeek Desktop 的重要变化记录如下。
 
 ## 未发布
 
+- 首次使用新 Harness commit 时，通过当前内核的官方 CLI 自动安装或更新 DSH Market；明确使用 `dshmarket@latest`，避免已有固定版本被保留。同步成功后普通重启不再重复安装，失败会提示并允许重试。
+- 精简自有测试：删除实验性发布编排回归及上游 CSS 模拟页面测试，合并版本、频道和内核来源测试；保留正式发布、凭据、依赖闭包、更新恢复及真实插件集成检查。
+- `verify` 先同步 Harness 再运行语言桥测试，确保清理依赖后的首次验证不会因缺少 `yaml` 失败。
+
 ## 0.1.6.2 - 2026-09-22
 
 - Harness 默认来源切换为 `https://github.com/deepseek-desktop/deepseek-harness.git`；继续锁定已经审计的 `ddefc45fbc7f8e46dd73185e68295696d1297887`，因此来源身份改变而内核字节不变。
