@@ -4,12 +4,14 @@ DeepSeek Desktop 的重要变化记录如下。
 
 ## 未发布
 
+## 0.1.6.2 - 2026-09-22
+
 - Harness 默认来源切换为 `https://github.com/deepseek-desktop/deepseek-harness.git`；继续锁定已经审计的 `ddefc45fbc7f8e46dd73185e68295696d1297887`，因此来源身份改变而内核字节不变。
 - 发行版本改为四段数字。前三段对应锁定 Harness 的正式版本，第四段是 Desktop 修订号，例如 Harness `v0.1.6` 对应 Desktop `v0.1.6.1`、`v0.1.6.2`。
 - 构建生成器把四段公开版本转换为各平台接受的内部版本格式，Tag、窗口、更新提示、发布目录、安装包名称和构建事实继续统一显示四段版本；旧 Release 和 Tag 已清理，更新器只接受新格式。
 - 标准 `pnpm run build` 现在执行完整 Desktop 构建链；`verify` 和 E2E 在消费 Harness 前强制按当前 lock 重新安装并构建，Playwright 预览显式使用前端构建入口，避免复用损坏的 `target/generated` 导致运行时依赖缺失或启动超时。
 - 新增与 OpenCode 本机路由对齐的 oMLX Qwen3.8 配置示例：固定 131072 上下文、32768 最大输出、文本输入、Medium 默认推理、15 分钟流空闲超时和跨轮思考保留；`verify` 会用当前暂存 Harness 的真实配置 schema 解析该示例。
-- 本机安装版已通过 oMLX Qwen3.8 的真实对话与 Bash 工具调用验收；下一版 Desktop 修订号更新为 `0.1.6.2`。
+- 本机安装版已通过 oMLX Qwen3.8 的真实对话与 Bash 工具调用验收；本版 Desktop 修订号为 `0.1.6.2`。
 - Harness 仓库命令超时回归改为验证整个进程组已被回收，避免把登录 Shell 探测时间计入固定两秒墙钟而在高负载构建中误报。
 
 ## 1.1.27 - 2026-09-19

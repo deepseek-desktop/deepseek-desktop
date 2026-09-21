@@ -1,12 +1,17 @@
 # 验证基线
 
-## oMLX Qwen3.8 安装版验收与 0.1.6.2 候选
+## oMLX Qwen3.8 安装版与 0.1.6.2 发布验收
 
 2026-09-22：将本机 OpenCode 已使用的 oMLX 路由按 Harness 官方 `llm-pi-ai` 配置契约接入 Desktop。模型为 `qwen3.8-27b-4bit`，OpenAI Chat Completions 端点为 loopback `http://127.0.0.1:8888/v1`，上下文 131072、最大输出 32768、文本输入、Medium 默认推理、Off/Low/Medium/Xhigh 四档、`chat-template` 思考开关、`preserve_thinking: true` 与 900000 毫秒流空闲超时。仓库示例由当前暂存 Harness 的真实 `@deepseek-ai/dsh-llm-pi-ai` `Config` schema 解析，不用手写的镜像 schema 冒充内核契约。
 
-- 从本地 `0.1.6.1` ARM64 DMG 安装到 `/Applications/DeepSeek Desktop.app`；安装后 `CFBundleShortVersionString=0.1.6`、`CFBundleVersion=1`、窗口标题 `DeepSeek Desktop v0.1.6.1`，主进程和 Node/Harness sidecar 均从该应用包启动，arm64 与 ad-hoc 完整签名检查通过。
-- 使用安装版自己的桌面凭据桥接向正在运行的 oMLX 0.6.4 发起真实会话。会话事件 `session-7b616e22-1917-4418-b595-5079865979bc` 记录 `provider=omlx`、`model=qwen3.8-27b-4bit`、`reasoningEffort=medium`、`contextWindow=131072`、`maxTokens=32768`；模型返回唯一对话标记 `INSTALLED_CHAT_1790015304_OK`。
-- 同一安装版随后要求模型调用 Bash；事件记录真实 `tool/call`、输出 `INSTALLED_TOOL_1790015353_OK` 的 `tool/result` 且 `isError=false`，模型读取结果后返回 `INSTALLED_TOOL_1790015353_DONE`。这证明安装包内 Desktop、Harness、凭据桥接、oMLX 推理与 Agent 工具闭环，而不只是源码或浏览器 Mock。
+- 从干净提交 `0080e35eb1569f32c3450145941f461038cf7024` 本地构建 `0.1.6.2` ARM64 DMG 并安装到 `/Applications/DeepSeek Desktop.app`；安装后 `CFBundleShortVersionString=0.1.6`、`CFBundleVersion=2`、窗口标题 `DeepSeek Desktop v0.1.6.2`，主进程和 Node/Harness sidecar 均从该应用包启动，二者均为 arm64，ad-hoc 完整签名检查通过。本地 DMG 的 SHA-256 为 `35e923f677391dfec62c401cd28be82e75ffef1af9007ffb8373e6e7ddf7cf8f`，不用于推断 GitHub Runner 产物可重现。
+- 使用安装版自己的桌面凭据桥接向正在运行的 oMLX 0.6.4 发起真实会话。会话 `session-3a6b1abc-ee80-494c-ada7-e926e419d893` 记录 `provider=omlx`、`model=qwen3.8-27b-4bit`、`reasoningEffort=medium`、`contextWindow=131072`、`maxTokens=32768`；模型返回唯一对话标记 `OMLX_V0162_1790018603_OK`。
+- 同一安装版随后在新会话 `session-bf0d9fe3-c2e4-4788-b508-e94674198a50` 要求模型调用 Bash；模型发出的实际命令为 `printf '%s\n' 'OMLX_V0162_TOOL_1790018942_OK'`，工具结果包含 `OMLX_V0162_TOOL_1790018942_OK` 且 `isError=false`，模型读取结果后返回 `OMLX_V0162_TOOL_1790018942_DONE`。这证明安装包内 Desktop、Harness、凭据桥接、oMLX 推理与 Agent 工具闭环，而不只是源码或浏览器 Mock。
+- `v0.1.6.2` GitHub Actions Run `35645424595` 绑定上述干净提交：`shell-quality` 22 分 09 秒、Linux x64 30 分 15 秒、macOS ARM64 33 分 48 秒、Windows x64 61 分 22 秒、macOS x64 62 分 13 秒、汇总发布 1 分 15 秒，六个 Job 全部成功。Release 为 `draft=false`、`prerelease=true`，公开资产严格是两份 DMG、EXE、AppImage、DEB 与 `SHA256SUMS`。
+- 六个公开资产已全部下载；五个安装包逐项通过 `SHA256SUMS`，且实算摘要与 GitHub asset digest 一致：ARM64 DMG `8da9b6231f18d8a7501eb40e534b99329196ccb159fbd004fad28b12d29bd70e`、x64 DMG `d6cde6e587b6fccd961ce82ae73e0a340e2fac0c13340738cb9a169cde78baa5`、Windows EXE `f9066d32411c9594f9e5155a95b5bd9325664aa7e0151531242364cd5192bfca`、AppImage `9f409e2949f8d6d950b6d5b470b75935d78db67a331d90ac2f5ad5fa56f62f31`、DEB `ce6829faa890b27ecb5c7f26aeb7475321fa0a062b4de9c17c8be869ab5ab48c`；校验文件自身摘要为 `82c03b7ac3111c6f576868edf5feafd08fa948f19c7c2dd207a432e9b5db68f5`。
+- 下载的 ARM64 DMG 经 `hdiutil verify` 后覆盖安装到 `/Applications/DeepSeek Desktop.app`。安装版版本为 `0.1.6` / build `2`，主程序与 Node 均为 arm64，`codesign --verify --deep --strict` 通过；签名为 ad-hoc、无 TeamIdentifier，未声称 Apple 公证。内置锁记录 Desktop `0.1.6.2`、社区 Harness 仓库、commit `ddefc45f`、Harness `0.1.6-alpha.2`。
+- 正式发布安装版通过实际窗口发送唯一请求；会话 `session-a2e473a7-a7ce-43c2-8041-667dbe8e2316` 的 request header 记录 `provider=omlx`、`model=qwen3.8-27b-4bit`、`reasoningEffort=medium`、`maxTokens=32768`，模型返回 `RELEASE_V0162_1790024965_OK`，随后 `turn/end` 为 `completed`。启动后的插件市场页面同时正常显示当前用户通过官方 CLI 安装的 DSH Market；这不改变发行默认插件集合。
+- 首次生成的 Release 正文仍包含旧版本硬编码说明。已立即更正公开正文；生成器改为从 `CHANGELOG.md` 的非空“未发布”段提取主要变化，模板只保留标记，并用聚焦回归锁定下载标记、变化标记、完整资产集合和非空变化，防止后续重复过期说明。
 - 用户 `settings.yaml` 修改前保留同目录时间戳备份。该实测仅覆盖本机 macOS arm64、oMLX 0.6.4 与当前量化模型；其他平台、模型或外部 Provider 仍按各自证据判断。
 
 ## 搜索标题与 DSH Market 官方安装

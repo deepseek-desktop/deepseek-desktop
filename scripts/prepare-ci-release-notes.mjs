@@ -6,6 +6,7 @@ import { parseReleaseTag } from "./lib/release-tag.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const DOWNLOADS_MARKER = "<!-- release-downloads -->";
+const CHANGES_MARKER = "<!-- release-changes -->";
 
 function downloadUrl(repository, tag, name) {
   return `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
@@ -22,7 +23,16 @@ export function communityReleaseAssetNames(version) {
   ];
 }
 
-export function prepareCommunityReleaseNotes({ template, repository, tag, assetNames }) {
+export function unreleasedChanges(changelog) {
+  const match = /(?:^|\n)## 未发布[^\S\r\n]*\r?\n([\s\S]*?)(?=\r?\n##[^\S\r\n]|$)/u.exec(changelog);
+  const changes = match?.[1]?.trim();
+  if (!changes || !changes.split("\n").some(line => /^-\s+/u.test(line))) {
+    throw new Error("CHANGELOG must contain non-empty unreleased changes");
+  }
+  return changes;
+}
+
+export function prepareCommunityReleaseNotes({ template, repository, tag, assetNames, changes }) {
   if (!/^[^/\s]+\/[^/\s]+$/u.test(repository || "")) throw new Error("GitHub repository must use owner/name format");
   const { version } = parseReleaseTag(tag);
   const expected = communityReleaseAssetNames(version);
@@ -32,6 +42,12 @@ export function prepareCommunityReleaseNotes({ template, repository, tag, assetN
   }
   if (template.split(DOWNLOADS_MARKER).length !== 2) {
     throw new Error("community release notes must contain one download marker");
+  }
+  if (template.split(CHANGES_MARKER).length !== 2) {
+    throw new Error("community release notes must contain one changes marker");
+  }
+  if (typeof changes !== "string" || changes.trim().length === 0) {
+    throw new Error("community release notes require release changes");
   }
 
   const links = [
@@ -44,17 +60,19 @@ export function prepareCommunityReleaseNotes({ template, repository, tag, assetN
   ].map(([label, name]) => `- [${label}](${downloadUrl(repository, tag, name)})`).join("\n");
 
   const downloads = `## 直接下载 / Direct downloads\n\n${links}`;
-  return template.replace(DOWNLOADS_MARKER, downloads);
+  const releaseChanges = `## 主要变化\n\n${changes.trim()}`;
+  return template.replace(DOWNLOADS_MARKER, downloads).replace(CHANGES_MARKER, releaseChanges);
 }
 
-export async function prepareCommunityReleaseNotesFile({ templatePath, assetsPath, outputPath, repository, tag }) {
+export async function prepareCommunityReleaseNotesFile({ templatePath, changelogPath, assetsPath, outputPath, repository, tag }) {
   const entries = await readdir(assetsPath, { withFileTypes: true });
   if (entries.some(entry => !entry.isFile())) throw new Error("public release assets must only contain files");
   const notes = prepareCommunityReleaseNotes({
     template: await readFile(templatePath, "utf8"),
     repository,
     tag,
-    assetNames: entries.map(entry => entry.name)
+    assetNames: entries.map(entry => entry.name),
+    changes: unreleasedChanges(await readFile(changelogPath, "utf8"))
   });
   await writeFile(outputPath, notes);
   return outputPath;
@@ -63,6 +81,7 @@ export async function prepareCommunityReleaseNotesFile({ templatePath, assetsPat
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
   const output = await prepareCommunityReleaseNotesFile({
     templatePath: process.env.CI_RELEASE_NOTES_TEMPLATE || join(root, ".github", "release-notes-community.md"),
+    changelogPath: process.env.CI_RELEASE_CHANGELOG || join(root, "CHANGELOG.md"),
     assetsPath: process.env.CI_RELEASE_ASSETS_OUTPUT || join(root, "release-assets", "publish"),
     outputPath: process.env.CI_RELEASE_NOTES_OUTPUT || join(root, "release-assets", "RELEASE-NOTES.md"),
     repository: process.env.GITHUB_REPOSITORY,

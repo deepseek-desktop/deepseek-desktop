@@ -8,7 +8,7 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 ## 当前边界
 
-- GitHub 上旧版本体系的 Release 与 Tag 已于 2026-09-22 全部清理。四段体系的 `v0.1.6.1` 已进入官方 Tag 矩阵并完成本机 ARM64 安装、真实 oMLX 对话与工具调用；本次配置固化和回归作为 Desktop 修订版 `v0.1.6.2` 发布。历史 `v1.1.27` 证据继续保留，但不再代表当前下载版本。防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
+- GitHub 上旧版本体系的 Release 与 Tag 已于 2026-09-22 全部清理。当前公开版本 `v0.1.6.2` 已通过 GitHub 官方 Runner 四平台矩阵、六个公开资产的下载重算、本机 ARM64 正式发布包覆盖安装，以及真实 oMLX 对话；Tag 绑定提交 `0080e35eb1569f32c3450145941f461038cf7024`。历史 `v1.1.27` 证据继续保留，但不再代表当前下载版本。防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。
 
 - macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地 DMG 已验证 WebKit 历史、同源链接、剪贴板、混合窗口操作、候选激活/拒绝/恢复和独立搜索设置；Alibaba MaaS Max / Flash GUI 并发各有 8 条来源，实际重叠 8067 毫秒。该实测为同端点同凭据，不扩大为所有 Provider 隔离或每个后续发行包均重测；逐缺陷范围见 [审计修复验收](memory/audit-remediation.md)。
 

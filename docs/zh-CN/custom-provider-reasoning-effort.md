@@ -172,4 +172,4 @@ agent-default-model:
 
 本文的字段语义取自当前锁定 Harness 的 `@deepseek-ai/dsh-llm-pi-ai` 配置契约，Harness 升级后须重新核对。
 
-示例一节的四档请求与响应差异在 macOS arm64 + oMLX 0.6.4 + Qwen3.8-27B-oQ4e-mtp 上实测通过：`off` 档三次采样均无思考内容，`xhigh` 档与 `low`/`medium` 档的思考长度区间不重叠；`low` 与 `medium` 的区间存在重叠，与该模板 `medium` 分支不注入任何指令一致。随后使用 `/Applications/DeepSeek Desktop.app` 内实际安装的 `v0.1.6.1`，通过桌面凭据桥接完成 Medium 档真实对话和 Bash 工具调用；会话记录确认 provider、model、131072 上下文、32768 最大输出、工具结果及最终回复。该结果只覆盖本机 oMLX 0.6.4 与上述量化模型，不扩大为其他服务、模型或平台兼容性结论。
+示例一节的四档请求与响应差异在 macOS arm64 + oMLX 0.6.4 + Qwen3.8-27B-oQ4e-mtp 上实测通过：`off` 档三次采样均无思考内容，`xhigh` 档与 `low`/`medium` 档的思考长度区间不重叠；`low` 与 `medium` 的区间存在重叠，与该模板 `medium` 分支不注入任何指令一致。随后使用 `/Applications/DeepSeek Desktop.app` 内实际安装的 `v0.1.6.2`，通过桌面凭据桥接完成 Medium 档真实对话和 Bash 工具调用；会话记录确认 provider、model、131072 上下文、32768 最大输出、工具结果及最终回复。该结果只覆盖本机 oMLX 0.6.4 与上述量化模型，不扩大为其他服务、模型或平台兼容性结论。

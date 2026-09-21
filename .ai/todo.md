@@ -4,9 +4,9 @@
 
 当前发布及已解决门禁见 [验证基线](memory/verification.md#当前发布验收)；本文件只列未验证范围与外部条件，不再保留旧失败版本为待发布候选。F01–F24 各自的实测、Mock 和平台边界以 [审计修复验收](memory/audit-remediation.md) 为准，不能用发行成功统一标记全平台全功能通过。
 
-Harness 默认来源已切换到 `deepseek-desktop/deepseek-harness`，后续发行采用 `0.1.6.<Desktop 修订号>` 四段版本。`v0.1.6.1` 已进入 GitHub 四平台 Tag 矩阵并完成本机 ARM64 安装及真实 oMLX 验收；`v0.1.6.2` 仍须完成本机全链、安装复测与本次 Tag 矩阵后才能写成已发布结论。
+Harness 默认来源已切换到 `deepseek-desktop/deepseek-harness`，后续发行采用 `0.1.6.<Desktop 修订号>` 四段版本。当前 `v0.1.6.2` 已完成 GitHub 四平台 Tag 矩阵、全部公开资产下载重算、本机 ARM64 正式发布包安装及真实 oMLX 验收。
 
-Harness `0.1.6-alpha.2` 源码升级的本机验证范围见[升级验证](memory/verification.md#官方-harness-016-alpha2-源码升级)。旧版本体系的 Release 与 Tag 已全部清理；其中的成功或失败记录只保留在验证基线中，不再作为候选或远端状态。本次公开候选为 `v0.1.6.2`。
+Harness `0.1.6-alpha.2` 源码升级的本机验证范围见[升级验证](memory/verification.md#官方-harness-016-alpha2-源码升级)。旧版本体系的 Release 与 Tag 已全部清理；其中的成功或失败记录只保留在验证基线中，不再作为候选或远端状态。当前公开发行版为 `v0.1.6.2`。
 
 ## 独立搜索扩展的外部验收
 
@@ -15,7 +15,7 @@ Harness `0.1.6-alpha.2` 源码升级的本机验证范围见[升级验证](memor
 
 ## 登录 shell 环境恢复的未验证范围
 
-- 联网搜索端到端未在 `v1.1.27` 上实测：本机 oMLX 未运行，也未发起需要凭据的模型调用。配置侧已确认官方搜索插件未被停用、模式为 `follow-model`。
+- `v0.1.6.2` 已通过本机 oMLX 真实对话和 Bash 工具调用；该结果不等同于联网搜索端到端验收。当前仍未在正式发布包内要求模型实际调用 `web_search` 并核对本机 `/v1/web/search` 返回来源。
 - 登录 shell 探测与 `PATH` 合并只在 macOS arm64 实测。Linux 走同一条 `cfg(unix)` 路径但未在真机验证；Windows 不执行探测也不提供 Node 兜底，只有 CI 的构建与单元测试覆盖。
 
 ## 发布外部条件
