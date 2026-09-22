@@ -172,6 +172,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 | Windows 单条 Provider 表单测试无法提取函数体 | 生成的 JavaScript 可为 CRLF，不受仓库 `.gitattributes` 控制；读入测试产物后归一化行尾，保留实际装配函数行为断言。修复见 `835afdc`；不能删除失败测试或改产品以迎合正则 |
 | NSIS 架构或安装后 EXE 检查失败 | NSIS 安装器外壳可以是 x86，实际 `deepseek-desktop.exe` 必须为 x64；规范化注册表安装路径，不按产品显示名称猜可执行文件名 |
 | Windows 首次安装后超时，已有用户机器却正常 | 先检查两层引导：“内测声明”后还有 API Key 引导；在隔离测试账户依次处理“继续”“稍后配置”，禁止点击“保存并继续”。`ccc6377` 加入诊断后定位，`60c6693` / `5039dde` 补齐流程，`d56e3d9` 修正检查顺序；安装验收入口为 `scripts/verify-windows-install.ps1` |
+| 安装验收报 `dismissed 0 blocking dialog(s)`，应用本身正常 | 线上仍存在四段版本更高、资产完整的 Release 时，新装应用会弹出 Desktop 更新提示盖住工作台。在 `Wait-WorkbenchThroughFirstRun` 的可关闭控件中按三语加入 `update.later`（“稍后提醒”/“稍後提醒”/`Later`），不得加入 `update.download`（会打开浏览器）或 `update.ignoreVersion`（会写入用户状态），也不要靠延长超时。回归在 `scripts/tests/release-safety.test.mjs`，按 `src/i18n/messages.ts` 的实际文案比对，文案漂移会失败 |
 | 日志显示关闭 0 个弹窗、短暂就绪，随后又找不到工作台 | 瞬时工作台外壳不是可交互就绪。每轮先检查已知引导按钮，再判断工作台；继续执行实际菜单和设置交互，不能以进程存活或一帧非白像素代替验收 |
 | WebView2 菜单找到但 Invoke 失败 | `aria-haspopup` 菜单使用公开 UIA ExpandCollapse，必要时后备 Invoke；根据控件实际模式操作，不因自动化失败修改产品菜单位置 |
 | 原生模块携带 node-gyp 构建路径 | 区分必要 `.node` 与开发中间产物；清理器和扫描器一致处理路径拼写及 UTF-8 / UTF-16LE，保持二进制偏移并复验实际加载，不扩大扫描白名单掩盖泄漏 |

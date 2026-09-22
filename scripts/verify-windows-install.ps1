@@ -189,6 +189,14 @@ function Wait-AppUiElement {
 # onboarding but must never press onboardingSave ("保存并继续" / "Save and continue"),
 # which submits a real credential.
 #
+# The Desktop update prompt covers the workbench the same way whenever the release
+# repository still carries a higher four-part version with a complete asset set, which
+# is what happens when a lower version is built after a higher one was published. Dismiss
+# it with update.later, which only hides the prompt for this run. Never press
+# update.download ("前往下载" / "Open Download"), which opens the Release page in a
+# browser, and never press update.ignoreVersion ("忽略此版本" / "Ignore Version"), which
+# persists into user state.
+#
 # Dismissal takes priority over the readiness check on purpose. The Harness paints the
 # workbench shell briefly before a modal mounts over it, so a single sighting of the
 # workbench proves nothing; checking it first lets a transient frame end the loop while
@@ -202,7 +210,7 @@ function Wait-WorkbenchThroughFirstRun {
     [int]$TimeoutSeconds = 600
   )
 
-  $dismissNames = @("继续", "Continue", "稍后配置", "Configure later")
+  $dismissNames = @("继续", "Continue", "稍后配置", "Configure later", "稍后提醒", "稍後提醒", "Later")
   $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
   $dismissed = 0
   while ([DateTime]::UtcNow -lt $deadline) {
@@ -212,19 +220,19 @@ function Wait-WorkbenchThroughFirstRun {
       $label = $button.Current.Name
       Invoke-UiElement -Element $button
       $dismissed++
-      Write-Host "dismissed first-run dialog: $label"
+      Write-Host "dismissed blocking dialog: $label"
       Start-Sleep -Milliseconds 1500
     } else {
       $workbench = Find-UiElement -Names $WorkbenchNames -ProcessIds $processIds
       if ($null -ne $workbench) {
-        Write-Host "workbench ready after dismissing $dismissed first-run dialog(s)"
+        Write-Host "workbench ready after dismissing $dismissed blocking dialog(s)"
         return $workbench
       }
       Start-Sleep -Milliseconds 500
     }
   }
   Write-AppUiDiagnostic -RootProcessId $RootProcessId
-  throw "workbench did not become ready (dismissed $dismissed first-run dialog(s))"
+  throw "workbench did not become ready (dismissed $dismissed blocking dialog(s))"
 }
 
 function Write-AppUiDiagnostic {

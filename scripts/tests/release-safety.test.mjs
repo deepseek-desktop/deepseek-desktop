@@ -277,8 +277,20 @@ test("GitHub workflow pins first-party actions to immutable commits", async () =
   assert.match(workflow, /release_flags\+=\(--prerelease --latest=false\)/u);
   assert.match(workflow, /verify-windows-install\.ps1/u);
   assert.match(workflow, /-ExpectedVersion \$env:DESKTOP_APP_VERSION/u);
-  // The native Windows acceptance job runs the script; retain only the credential boundary here.
-  assert.doesNotMatch(windowsAcceptance, /\$dismissNames = @\([^)]*(?:保存并继续|Save and continue)/u);
+  // The native Windows acceptance job runs the script; retain only the control boundaries here.
+  const dismissNames = windowsAcceptance.match(/\$dismissNames = @\(([^)]*)\)/u)?.[1] ?? "";
+  const messages = await readFile(resolve(import.meta.dirname, "../../src/i18n/messages.ts"), "utf8");
+  const updateLater = [...messages.matchAll(/\blater: "([^"]+)"/gu)].map(([, label]) => label);
+  assert.equal(updateLater.length, 3, "every locale must ship an update.later label");
+  for (const label of updateLater) {
+    // A published higher four-part release makes the update prompt cover the workbench, so
+    // acceptance has to defer it; deferring only hides the prompt for this run.
+    assert.ok(dismissNames.includes(`"${label}"`), `acceptance must dismiss the update prompt with ${label}`);
+  }
+  for (const forbidden of ["保存并继续", "Save and continue", "前往下载", "Open Download", "忽略此版本", "Ignore Version"]) {
+    // Saving submits a credential, downloading opens a browser, ignoring persists into user state.
+    assert.ok(!dismissNames.includes(forbidden), `acceptance must never press ${forbidden}`);
+  }
   // The release list truncates titles, so the tag must be the whole title.
   assert.match(workflow, /--title "\$GITHUB_REF_NAME"/u);
   assert.doesNotMatch(workflow, /--title "\$product_name/u);
