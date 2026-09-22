@@ -8,7 +8,7 @@
 
 当前发布及已解决门禁见 [验证基线](memory/verification.md#当前发布验收)；本文件只列未验证范围与外部条件，不再保留旧失败版本为待发布候选。F01–F24 各自的实测、Mock 和平台边界以 [审计修复验收](memory/audit-remediation.md) 为准，不能用发行成功统一标记全平台全功能通过。
 
-Harness 默认来源为 `deepseek-desktop/deepseek-harness`，当前 RC 基线使用 `0.1.5.<Desktop 修订号>`。`v0.1.5.1` 已完成四平台原生矩阵与公开资产核验并发布。仍未做的是：本版安装包在任何平台的本机安装、启动与真实模型验收，以及除 ARM64 DMG 外四个安装包的下载重算与镜像/签名检查；旧 alpha 版本的安装与推理记录不替代本版。
+Harness 默认来源为 `deepseek-desktop/deepseek-harness`，当前 RC 基线使用 `0.1.5.<Desktop 修订号>`。`v0.1.5.1` 已完成四平台原生矩阵与公开资产核验并发布。ARM64 DMG 已完成本机安装、启动、真实 oMLX 推理与退出清理验收。仍未做的是：Windows/Linux/macOS x64 安装包的人工实机验收、除 ARM64 DMG 外四个安装包的下载重算与签名检查，以及本版的联网搜索端到端和升级回滚验证。
 
 ## 独立搜索扩展的外部验收
 

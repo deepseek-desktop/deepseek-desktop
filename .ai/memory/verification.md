@@ -34,7 +34,15 @@
 
 实际下载只做了两个：`SHA256SUMS` 与 ARM64 DMG。两者本机重算的 SHA-256 与 GitHub 元数据一致，ARM64 DMG 同时匹配 `SHA256SUMS` 条目，`hdiutil verify` 报 checksum VALID。其余四个安装包只核对文件名、大小与 GitHub digest，未下载重算，也未做镜像或签名检查。
 
-本版边界：没有在本机安装或启动该发行包，没有本版的真实模型推理、菜单或升级回滚验收，也没有替换 `/Applications` 中的现有应用。macOS 仍为 ad-hoc 签名，无 Apple Developer ID、公证或 Windows Authenticode。旧 `0.1.6.x` 的安装与推理记录不代表本版。
+2026-09-22 的 `v0.1.5.1` 本机安装验收（macOS arm64，使用上面下载并校验过的公开 ARM64 DMG）：
+
+- 挂载后包内应用为 `CFBundleShortVersionString=0.1.5`、`CFBundleVersion=1`，主程序与随包 Node 均为 arm64，Node 为 `v24.20.0`，`codesign --verify --deep --strict` 通过且签名为 adhoc、`TeamIdentifier not set`。包内暂存内核为 `deepseek-desktop-harness-runtime` `0.1.5-rc.2`，依赖 `@deepseek-ai/dsh` `0.1.5-rc.2`，没有 alpha 内核。
+- 覆盖安装到 `/Applications/DeepSeek Desktop.app`，替换了先前的 `0.1.6` build `3`；安装后版本字段、架构与严格签名检查再次通过。用户数据目录未改动，历史会话和现有 oMLX 模型配置在启动后保留。
+- 启动后窗口标题为 `DeepSeek Desktop v0.1.5.1`，窗口内容区顶部左侧显示唯一的“文件 / 编辑 / 视图 / 窗口 / 帮助”，工作台在同一窗口加载。Harness sidecar 由包内 Node 以 `--expose-internals --profile desktop-web --host 127.0.0.1 --port 0` 启动，实际监听 `127.0.0.1:59251`；未认证 `GET /` 返回 401，同一端口在局域网地址 `192.168.31.38` 上连接失败。
+- 真实推理：新会话发送唯一标记后，模型精确返回 `RELEASE_V0151_1790070630_OK`，界面记录用时 38 秒、8.4K tok。会话记录为 `provider=omlx`、`model=qwen3.8-27b-4bit`、`reasoningEffort=medium`、`contextWindow=131072`、`maxTokens=32768`。
+- 退出应用后，主进程、Harness 子进程和该监听端口全部消失。
+
+本版边界：实机验收只覆盖 macOS arm64 与本机 oMLX `qwen3.8-27b-4bit`，不含联网搜索端到端、工具调用、其他 Provider、其他平台安装包和升级回滚；Windows 只有矩阵内的自动安装门禁。macOS 仍为 ad-hoc 签名，无 Apple Developer ID、公证或 Windows Authenticode。旧 `0.1.6.x` 的安装与推理记录不代表本版。
 
 ## 已撤下 v0.1.6.3 的历史验收
 
