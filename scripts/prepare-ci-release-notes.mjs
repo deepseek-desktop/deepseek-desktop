@@ -51,17 +51,18 @@ export function prepareCommunityReleaseNotes({ template, repository, tag, assetN
   }
 
   const links = [
-    ["macOS Apple 芯片 / Apple Silicon", expected[0]],
+    ["macOS Apple 芯片", expected[0]],
     ["macOS Intel", expected[1]],
     ["Windows x64", expected[2]],
     ["Linux x64 AppImage", expected[3]],
     ["Linux x64 DEB", expected[4]],
-    ["SHA-256 校验文件 / checksums", expected[5]]
-  ].map(([label, name]) => `- [${label}](${downloadUrl(repository, tag, name)})`).join("\n");
+    ["SHA-256 校验文件", expected[5]]
+  ].map(([label, name]) => `| ${label} | [${name}](${downloadUrl(repository, tag, name)}) |`).join("\n");
 
-  const downloads = `## 直接下载 / Direct downloads\n\n${links}`;
-  const releaseChanges = `## 主要变化\n\n${changes.trim()}`;
-  return template.replace(DOWNLOADS_MARKER, downloads).replace(CHANGES_MARKER, releaseChanges);
+  const downloads = `## 下载与安装\n\n| 平台 / 用途 | 文件 |\n| --- | --- |\n${links}\n\n安装前请核对同版本 SHA256SUMS。GitHub 自动生成的 Source code 是源码，不是安装包。[安装与校验步骤](https://github.com/${repository}/blob/HEAD/README.md#下载安装)。`;
+  const releaseChanges = `## 更新内容\n\n${changes.trim()}`;
+  const body = template.replace(DOWNLOADS_MARKER, downloads).replace(CHANGES_MARKER, releaseChanges).trim();
+  return `${body}\n\n**本版源码：** [${tag}](https://github.com/${repository}/tree/${encodeURIComponent(tag)})\n`;
 }
 
 export async function prepareCommunityReleaseNotesFile({ templatePath, changelogPath, assetsPath, outputPath, repository, tag }) {

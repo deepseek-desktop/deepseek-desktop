@@ -1,5 +1,10 @@
 # 验证基线
 
+## README 与发布说明
+
+- README 的导航与表格已通过 GitHub Markdown 渲染检查；本地文档链接及锚点可解析。`docs/releases/` 的两份历史正文与对应 Release 的六个资产链接逐项一致，并能由 Desktop 实际摘要渲染器展示下载表格。
+- 发布生成器改用下载表格和本版源码链接，继续拒绝缺失资产、重复标记或空变化；文件入口已验证只读取当前未发布条目。`release:smoke` 25 项、完整 `verify`、6 项 E2E 与真实 Harness smoke 均通过。本次只调整文档与正文生成，不生成新安装包或扩展历史模型实测结论。
+
 ## Harness 联动市场同步与测试精简（未发布）
 
 - 通过当前内核的官方 CLI 同步市场；实测裸 `add dshmarket` 保留已有 `1.45.1`，显式 `add dshmarket@latest` 更新到当时 registry 的 `1.52.0`。不将即时市场版本锁入内置 Harness。

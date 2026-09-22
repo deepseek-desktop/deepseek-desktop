@@ -8,13 +8,7 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 工程源码位于仓库根目录。`harness/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Harness 来源；`harness:sync` 在本地开发且 `HARNESS_REF` 为空时自动选择 Harness 仓库最新的 SemVer 版本标签，显式填写时使用指定来源，随后统一解析为不可变 commit。社区版和正式发布还必须匹配仓库内经过审计的固定 Harness 提交，避免可变标签在无人复核时改变发行内容。同步结果写入当前构建专用的 `target/generated/harness-lock.json`。Harness 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Harness manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
-相关仓库及边界如下：
-
-- [DeepSeek Harness（官方版）](https://github.com/deepseek-ai/deepseek-harness.git) 是 DeepSeek 官方上游。
-- [DeepSeek Harness（社区版）](https://github.com/deepseek-desktop/deepseek-harness.git) 是本桌面版默认使用并锁定的 Harness 来源。
-- [DeepSeek Desktop（社区版）](https://github.com/deepseek-desktop/deepseek-desktop.git) 是桌面外壳、构建、扩展集成与发行仓库。
-
-两个社区仓库均不代表 DeepSeek 官方发行；实际内核来源和 commit 以 Desktop 工具链 lock 为准。
+相关项目包括 DeepSeek 官方 Harness 上游、社区 Harness 与社区 Desktop。三个仓库及职责见 [README 的项目关系](../../README.md#项目关系)。本桌面版默认使用社区 Harness，实际来源和 commit 以工具链 lock 为准。
 
 ## 支持平台
 
@@ -25,7 +19,46 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 | Windows x64 | NSIS `.exe` | CI 原生构建；每次发布必须完成安装、启动、工作台与设置交互、关闭确认、子进程清理和卸载验收 |
 | Linux x64 | AppImage / `.deb` | CI 原生构建，等待对应发行版安装验收 |
 
-当前社区版产物名称和发布说明必须明确带有 `community` / `unsigned`；其中 macOS 的 `unsigned` 表示没有 Apple Developer ID 身份签名和公证，不代表应用 Bundle 缺少本地 ad-hoc 完整性签名。社区版不能作为已认证 Stable 版本对外宣传。
+Release 标题直接使用四段版本 Tag，安装包名称由产品名、版本和架构组成。社区版的签名状态在发布正文说明，并以 GitHub 的 Pre-release 标记展示；macOS Bundle 有 ad-hoc 完整性签名，但没有 Apple Developer ID 身份签名和公证。
+
+## macOS 首次打开
+
+当前社区版尚未使用 Apple Developer ID 签名和公证，因此首次打开时，macOS 可能提示“Apple 无法验证 DeepSeek Desktop 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件”。该提示本身不代表应用已被检测出恶意代码。请只从本项目的 [GitHub Releases](https://github.com/deepseek-desktop/deepseek-desktop/releases) 下载，并核对同版本 `SHA256SUMS`。
+
+**普通用户：**
+
+1. 将 `DeepSeek Desktop.app` 拖入“应用程序”目录，然后尝试启动。
+2. 如果出现下图所示提示，请先确认安装包来自本项目 GitHub Releases，并已核对 `SHA256SUMS`。确认无误后点击“完成”，**不要点击“移到废纸篓”**。
+
+<p align="center">
+  <img src="../assets/macos-unverified-app-warning.png" alt="macOS 无法验证 DeepSeek Desktop 的提示" width="420">
+</p>
+
+3. 打开“系统设置 → 隐私与安全”，向下滚动到“安全性”区域。找到“已阻止 DeepSeek Desktop.app 以保护 Mac”，点击右侧的“仍要打开”。
+
+<p align="center">
+  <img src="../assets/macos-privacy-security-open-anyway.png" alt="在 macOS 隐私与安全设置中点击仍要打开" width="900">
+</p>
+
+4. 按系统提示使用登录密码或 Touch ID 完成验证；如果随后再次出现确认框，请选择“打开”。这项确认通常只需完成一次，之后可从“应用程序”目录正常双击启动。
+
+如果“仍要打开”没有出现，请重新启动一次 DeepSeek Desktop 触发拦截，再立即返回“系统设置 → 隐私与安全”查看。较旧版本的 macOS 可在“系统偏好设置 → 安全性与隐私 → 通用”中找到同类入口。
+
+**开发者：** 确认安装包来源和 SHA-256 无误后，按以下两步操作。
+
+1. 仅移除 DeepSeek Desktop 的下载隔离标记：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/DeepSeek Desktop.app"
+```
+
+2. 启动 DeepSeek Desktop：
+
+```bash
+open "/Applications/DeepSeek Desktop.app"
+```
+
+不要关闭 macOS 的全局 Gatekeeper、SIP 或 XProtect，也不要对“下载”目录批量移除隔离标记；这些操作会降低整台 Mac 的安全性。
 
 ## 开始使用
 
@@ -40,9 +73,11 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 图片输入能力以上游模型目录及当前模型配置的声明为准，按具体模型和 API 地址判断，不按 Provider 品牌统一开启。已声明视觉能力的模型可以添加图片；自定义模型同样使用官方模型配置契约，Desktop 不再追加独立的“支持图片输入”表单控件。
 
-联网搜索默认跟随当前会话使用的模型。添加 Provider 时无需配置联网搜索协议；Harness 会根据模型 API 协议自动匹配标准搜索协议，并复用已经保存的 API 地址、模型和凭据引用。切换模型后，下一次搜索同步切换；无法可靠识别的非标准接口会给出可操作提示，正常对话仍可继续，也不会为了猜测协议向接口发送额外请求。需要固定使用独立搜索服务时，可在“联网搜索”设置卡片中选择“独立搜索服务”，再填写已经注册的搜索 Provider ID；也可关闭搜索并随时恢复默认。Provider 开发者和高级用户可查看[跟随当前模型的联网搜索](harness-web-search.md)。
+联网搜索默认跟随当前会话使用的模型。添加 Provider 时无需配置联网搜索协议；Harness 会根据模型 API 协议自动匹配标准搜索协议，并复用已经保存的 API 地址、模型和凭据引用。切换模型后，下一次搜索同步切换；无法可靠识别的非标准接口会给出可操作提示，正常对话仍可继续，也不会为了猜测协议向接口发送额外请求。“联网搜索”提供“跟随当前模型 / 网页搜索 / 禁用联网搜索”三种互斥模式，也可随时恢复默认。Provider 开发者和高级用户可查看[跟随当前模型的联网搜索](harness-web-search.md)。
 
 社区版采用官方 Harness 的插件配置和只读插件列表，可查看全局与 Agent 预设的插件组合、启停状态及加载失败原因。[DSH Market](https://github.com/dsh-market/dsh-market) 是独立的社区插件市场，安装后会在设置侧栏提供“插件市场”入口；官方插件列表不承担市场安装、更新或卸载功能。市场按其官方方式作为用户插件安装，不改写市场代码或官方 CLI 依赖。
+
+**未发布功能：** 以下自动同步行为已进入主分支，尚未包含在 `v0.1.6.2` 安装包中；该版本仍按下文命令手动安装市场。
 
 Desktop 首次启动或开始使用不同 commit 的 Harness 时，会在工作台启动前调用当前内核的官方 CLI，自动安装或更新市场。独立内核更新和桌面安装包带来的内核升级都走这一流程；同一 commit 同步成功后，普通重启不会重复联网安装。
 
@@ -119,13 +154,13 @@ macOS 默认位于 `~/Library/Application Support/deepseek.desktop/`；Windows �
 
 更新摘要显示标题、列表、表格和代码块，长内容可在摘要区滚动查看；切换至备用更新源时也保留排版。点击摘要中的网页链接会使用系统浏览器打开，不会离开当前设置页；外部图片仅显示替代文字。“前往下载”仍进入官方 Release 页面，由用户确认并下载安装包。
 
-Harness 更新可在“设置 → 更新 → Harness 独立更新”中选择“自动下载并在下次启动安装”“发现后提醒”或“仅手动检查”，也可以固定当前版本。设置页默认显示官方 Harness 仓库；用户可替换为自己的兼容 fork，不需要配置额外清单、公钥或发布者。Desktop 会在应用数据目录使用内置 Node/pnpm/npm 与 Node-API 头文件准备候选，并执行真实启动 smoke；当前官方原生包还要求 macOS 系统提供 C 编译器，Linux 提供 `cc` 与 `musl-gcc`。通过后才在下次启动切换；缺少前置工具、构建失败或启动失败都会保留当前版本，用户也可随时恢复安装包内置 Harness。更详细的行为与离线恢复说明见 [Harness 独立更新指南](harness-updates.md)。
+Harness 更新可在“设置 → 更新 → Harness 独立更新”中选择“自动下载并在下次启动安装”“发现后提醒”或“仅手动检查”，也可以固定当前版本。设置页默认显示社区 Harness 仓库；用户可替换为自己的兼容 fork，不需要配置额外清单、公钥或发布者。Desktop 会在应用数据目录使用内置 Node/pnpm/npm 与 Node-API 头文件准备候选，并执行真实启动 smoke；当前官方原生包还要求 macOS 系统提供 C 编译器，Linux 提供 `cc` 与 `musl-gcc`。通过后才在下次启动切换；缺少前置工具、构建失败或启动失败都会保留当前版本，用户也可随时恢复安装包内置 Harness。更详细的行为与离线恢复说明见 [Harness 独立更新指南](harness-updates.md)。
 
 卸载应用不会自动删除 Harness 工作台管理的项目目录或应用数据。需要完全清理时，先卸载 DeepSeek Desktop，再由用户主动删除系统应用数据目录。新版只使用社区版内置的本地加密凭据库，不访问系统钥匙串。
 
 ## 开发者验证
 
-完整构建命令、Harness lock、测试入口和发行门禁见仓库根目录 `README.md`。本地验证至少包括三语 parity、语言桥保真测试、Vue 单测、Playwright Shell E2E、Rust 单测、Harness manifest 校验、真实 Harness readiness smoke 和目标平台安装包构建。连续启停验收使用 `DEEPSEEK_DESKTOP_SMOKE_CYCLES=100 corepack pnpm@11.24.0 harness:smoke`。
+完整构建命令、Harness lock 和测试入口见 [贡献指南](../../CONTRIBUTING.md)，发行门禁见 [多平台发布指南](distributed-release.md)。本地验证至少包括三语 parity、语言桥保真测试、Vue 单测、Playwright Shell E2E、Rust 单测、Harness manifest 校验、真实 Harness readiness smoke 和目标平台安装包构建。连续启停验收使用 `DEEPSEEK_DESKTOP_SMOKE_CYCLES=100 corepack pnpm@11.24.0 harness:smoke`。
 
 需要主动生成当前电脑对应的桌面安装包时，在仓库根目录执行：
 

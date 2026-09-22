@@ -6,6 +6,10 @@ DeepSeek Desktop 是 DeepSeek Harness 的独立社区桌面发行版。它使用
 
 本仓库是独立 Git 仓库，不得从其他仓库接管、暂存或提交本仓库文件。生成的上游 Harness 检出只是临时构建输入，不作为相邻源码仓库管理。
 
+社区仓库的代码与文档只介绍官方 Harness 上游、社区 Harness 和社区 Desktop；下游专版的品牌与版本关系由下游仓库自行维护，不反向加入社区项目。
+
+README 面向安装与使用，开发、构建和架构细节集中到 `CONTRIBUTING.md`，macOS 首次打开步骤放在使用指南。发布说明格式与历史正文归档见 `docs/releases/README.md`；生成器仍从 CHANGELOG 的“未发布”段提取变化，不在模板硬编码历史版本事实。
+
 ## 当前边界
 
 - GitHub 上旧版本体系的 Release 与 Tag 已于 2026-09-22 全部清理。当前公开版本 `v0.1.6.2` 已通过 GitHub 官方 Runner 四平台矩阵、六个公开资产的下载重算、本机 ARM64 正式发布包覆盖安装，以及真实 oMLX 对话；Tag 绑定提交 `0080e35eb1569f32c3450145941f461038cf7024`。历史 `v1.1.27` 证据继续保留，但不再代表当前下载版本。防复发规则见 [发布手册](skills/release-workflow.md#最短反馈路径)。

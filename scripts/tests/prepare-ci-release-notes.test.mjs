@@ -18,8 +18,11 @@ test("community release notes expose direct links for every public asset", () =>
 
   assert.doesNotMatch(notes, /release-downloads/u);
   assert.doesNotMatch(notes, /release-changes/u);
-  assert.match(notes, /## 直接下载 \/ Direct downloads/u);
-  assert.match(notes, /## 主要变化\n\n- Current change/u);
+  assert.match(notes, /## 下载与安装\n\n\| 平台 \/ 用途 \| 文件 \|/u);
+  assert.match(notes, /## 更新内容\n\n- Current change/u);
+  assert.equal(notes.split("\n").filter(line => /^\| [^|]+ \| \[/u.test(line)).length, 6);
+  assert.match(notes, /https:\/\/github.com\/example\/desktop\/blob\/HEAD\/README.md#下载安装/u);
+  assert.match(notes, /https:\/\/github.com\/example\/desktop\/tree\/v0\.1\.6\.1/u);
   for (const name of communityReleaseAssetNames("0.1.6.1")) {
     assert.match(notes, new RegExp(`releases/download/v0\\.1\\.6\\.1/${name.replaceAll(".", "\\.")}`, "u"));
   }
