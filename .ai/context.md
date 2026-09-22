@@ -12,7 +12,7 @@ README 面向安装与使用，开发、构建和架构细节集中到 `CONTRIBU
 
 ## 当前边界
 
-- 已撤下含 alpha 内核的 `v0.1.6.1`、`v0.1.6.2`、`v0.1.6.3` Release 和 Tag，源码历史保留。当前准备发行 `v0.1.5.1`，固定真实 `dsh-v0.1.5-rc.2` 来源；发布状态与验证边界见 [验证基线](memory/verification.md#当前发布验收)。
+- 已撤下含 alpha 内核的 `v0.1.6.1`、`v0.1.6.2`、`v0.1.6.3` Release 和 Tag，源码历史保留。当前发行为 `v0.1.5.1`，已作为社区预发布上线，固定真实 `dsh-v0.1.5-rc.2` 来源；发布状态与验证边界见 [验证基线](memory/verification.md#当前发布验收)。
 
 - macOS 根视图过度释放已定位到优化构建的 `content_top_inset`，以显式且成对的局部引用修复，见 ADR-019 与 [生命周期证据](memory/macos-lifecycle.md)。1.1.0 本地 DMG 已验证 WebKit 历史、同源链接、剪贴板、混合窗口操作、候选激活/拒绝/恢复和独立搜索设置；Alibaba MaaS Max / Flash GUI 并发各有 8 条来源，实际重叠 8067 毫秒。该实测为同端点同凭据，不扩大为所有 Provider 隔离或每个后续发行包均重测；逐缺陷范围见 [审计修复验收](memory/audit-remediation.md)。
 

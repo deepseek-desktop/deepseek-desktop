@@ -4,7 +4,7 @@
 
 `v0.1.6.1`、`v0.1.6.2`、`v0.1.6.3` 因包含 alpha 内核，已按用户要求删除 GitHub Release 和对应 Tag，源码历史保留。原 `v0.1.6.3` Run `35688432896` 的构建、资产和安装记录是历史证据，不满足新的 RC 发行要求。
 
-当前候选为 Desktop `0.1.5.1` / Harness `0.1.5-rc.2`，来源为真实 RC 标签 commit `fb2c4b9e698e30edb738bca4cf0618587db7d203`，未发布。用户已将打包发布交给另一位 AI，本任务只交付社区代码；未创建新 Tag、安装包或 Release，也未替换本机应用。
+`v0.1.5.1` 已发布。annotated Tag 对象 `cf5a907d1a223e7bfcf97ea7b720564aaa668490` 指向构建 commit `9ae0b131bfb4d88b2d00f9915f2e0735202cd46d`，内核为真实 RC 标签 `dsh-v0.1.5-rc.2`（commit `fb2c4b9e698e30edb738bca4cf0618587db7d203`）。
 
 频道临时分类为 alpha/beta 预览版，其余稳定版（包括 RC），不代表官方稳定性承诺。社区安装包不接受 alpha/beta；运行时仅显式选择预览频道时接受这两种版本。
 
@@ -16,7 +16,25 @@
 - 单独执行联网用例 `market_sync_live_install_upgrade_and_service_boot`：官方 CLI 在隔离 profile 安装市场，再从 `1.45.1` 升到当时 registry 的 `1.52.0`，保留用户字段、同 commit 跳过重复安装，随后 RC 服务启动与认证探活通过。凭据 helper 使用已安装的 Desktop 主程序，未操作用户 profile；这不是新安装包验收。
 - 私有 Rust 工具链增加进程锁，并检查 cargo 是否完整，避免并发初始化相互覆盖；锁的等待与释放回归通过。
 
-交给发布任务的边界：以最终干净提交构建 `v0.1.5.1`，重新完成本机安装、真实模型测试、四平台原生矩阵与公开资产核验。上述源码/隔离服务结果不替代安装包验收，也不沿用旧 alpha 的推理记录。
+2026-09-22 的 `v0.1.5.1` 发布验收：
+
+- 打 Tag 前本机只重跑 `release:smoke`（26 项通过）。同一 commit 的完整 `verify`、`test:e2e`、`harness:smoke` 沿用上方源码验证记录，未在发布当次重跑。
+- [GitHub Run 35702640615](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/35702640615) 六个 Job 全部成功：质量门禁 19 分 22 秒、Linux x64 27 分 44 秒、macOS ARM64 32 分 22 秒、Windows x64 59 分 20 秒、macOS x64 77 分 29 秒、汇总发布 32 秒。
+- Windows x64 Job 实际安装本版 NSIS 包，日志记录 `workbench ready after dismissing 2 first-run dialog(s)` 与 `Windows x64 installation acceptance passed for DeepSeek Desktop 0.1.5.1.`；该门禁覆盖工作台、设置、退出与卸载，不扩展为 Windows 真实模型或全部菜单人工验收。
+- Release 为 `draft=false`、`prerelease=true`，`/releases/latest` 返回 404，未签名包不占 Latest。公开资产恰好五个安装包与 `SHA256SUMS`，正文六条直接下载链接与当前 Tag 逐项一致，无公开 BUILD-INFO。
+
+| 公开资产 | 字节 | SHA-256 |
+| --- | ---: | --- |
+| `DeepSeek.Desktop_0.1.5.1_aarch64.dmg` | 265,754,262 | `e8e855366578e7afb7e6507b92dc97cc165a64cd60887189cb7f18c0ab182299` |
+| `DeepSeek.Desktop_0.1.5.1_x64.dmg` | 222,523,240 | `ca9bb00f5d9a7f88bea946ea30f3d2fd3b383a8bc266e2c0bc7b59663460b3dd` |
+| `DeepSeek.Desktop_0.1.5.1_x64-setup.exe` | 59,345,776 | `61538a615fd08145b3a7c54dcfd8e5864ca0994aa74de24d33058846c7fdf55a` |
+| `DeepSeek.Desktop_0.1.5.1_amd64.AppImage` | 178,457,080 | `03ed7ffe386eb177ad62698cdea9d578cf2e1b2b132ec57d7a45f523d95d2b0e` |
+| `DeepSeek.Desktop_0.1.5.1_amd64.deb` | 109,301,664 | `83a3950e75db5d24d36024264eeb635a6694e648de6cf0a59643508050fab6b8` |
+| `SHA256SUMS` | 514 | `7f180773b0bc30f3d25346c57079960f83a4035b6a48c745407224f826e13d1f` |
+
+实际下载只做了两个：`SHA256SUMS` 与 ARM64 DMG。两者本机重算的 SHA-256 与 GitHub 元数据一致，ARM64 DMG 同时匹配 `SHA256SUMS` 条目，`hdiutil verify` 报 checksum VALID。其余四个安装包只核对文件名、大小与 GitHub digest，未下载重算，也未做镜像或签名检查。
+
+本版边界：没有在本机安装或启动该发行包，没有本版的真实模型推理、菜单或升级回滚验收，也没有替换 `/Applications` 中的现有应用。macOS 仍为 ad-hoc 签名，无 Apple Developer ID、公证或 Windows Authenticode。旧 `0.1.6.x` 的安装与推理记录不代表本版。
 
 ## 已撤下 v0.1.6.3 的历史验收
 
