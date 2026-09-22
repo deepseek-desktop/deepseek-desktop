@@ -1,19 +1,42 @@
 # 验证基线
 
+## 当前发布验收
+
+2026-09-22：[v0.1.6.3](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v0.1.6.3) 已发布。annotated Tag 对象 `91fc56267713f504cd2f83a7a3553d2b6c7ef3ac` 指向 `850a88a6827d3758ddcadb7834263aa5a941ccec`，与实际构建源码一致；发布后的文档提交不移动 Tag。
+
+- [GitHub Run 35688432896](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/35688432896) 六个 Job 全部成功：质量门禁 22 分 25 秒、Windows x64 61 分 20 秒、Linux x64 30 分 21 秒、macOS ARM64 32 分 02 秒、macOS x64 87 分钟、汇总发布 1 分 17 秒。Windows 包另通过真实 NSIS 安装、工作台与设置交互、退出清理及卸载自动门禁。
+- Release 为 `draft=false`、`prerelease=true`，恰好五个安装包及 `SHA256SUMS`，正文六条直接下载链接逐项一致。六个公开文件已实际下载，大小和 SHA-256 与 GitHub 元数据一致，五个安装包同时通过同版校验清单。
+
+| 公开资产 | 字节 | 下载后 SHA-256 |
+| --- | ---: | --- |
+| `DeepSeek.Desktop_0.1.6.3_aarch64.dmg` | 402,810,026 | `882f082528076b9eac0c2058765bb0094452d7b21ffee4a15a8fcc9c9fb83a2d` |
+| `DeepSeek.Desktop_0.1.6.3_amd64.AppImage` | 233,937,400 | `caf055130c1d569173b18b76673f1881fe6b2f951e4b09a90c69bb79cc3d1c32` |
+| `DeepSeek.Desktop_0.1.6.3_amd64.deb` | 172,183,264 | `4bbfbf2586a84e8f358c6ba5303bd4cfc84bb84fabe6976213b5ad68c05d3931` |
+| `DeepSeek.Desktop_0.1.6.3_x64-setup.exe` | 139,720,488 | `5c826f3ed7554d72b7b70073b7d23fd309b2cfeff1842ec7512ad8679bf0ba31` |
+| `DeepSeek.Desktop_0.1.6.3_x64.dmg` | 356,401,629 | `22d48e912e0c6b70911efb891011000b81666f8e24a5f8c3dab33dc257c6fda4` |
+| `SHA256SUMS` | 514 | `9837f81f1ea0f491fde864367e70bb9b5d082dcef4064bef0aa30f29a0cd9d66` |
+
+- 公开 ARM64 DMG 与下文先行下载并安装的 CI 制品摘要相同；该安装版的真实 oMLX Qwen3.8 对话、原生工作台与退出清理结果因此对应最终交付字节。两份 DMG 的镜像、严格完整签名、主程序/Node 架构、版本字段和内置 Harness pin 均通过检查；Intel 包仅做静态验证，未在本机执行其运行时。
+- 本版仍为 macOS ad-hoc 签名，没有 Apple Developer ID、公证或 Windows Authenticode；不据此扩大为其他平台模型推理、Linux 人工 GUI 或所有供应商兼容验收。
+
 ## Harness 版本过滤与 0.1.6.3 本机验收
 
 - 自动标签选择和独立更新候选暂时只过滤 `alpha`、`beta`，包括编号与大小写形式；`rc`、其他预发布类型和构建元数据继续使用原有规则。签名清单仍要求裸 SemVer，不接受带 `v` / `dsh-v` 的 Git 标签。仓库更新保留默认分支 HEAD 契约，在依赖安装前检查 CLI 版本；被过滤的待安装候选不能激活，当前内核不因此降级。
 - 内置审计来源为社区 Harness `303d39dab4a88bcd957221d88b663e72e03bf7ee`，相对原基线只增加 WebKit 模型菜单点击前聚焦修复和对应文档/回归；CLI 仍是 `0.1.6-alpha.2`，不能称为稳定内核。显式发行 pin 与自动选版规则分开管理。
 - 本机完整 `verify`、`app:sync --check`、`harness:sync --check`、6 项 E2E、真实 Harness smoke 和 `desktop:package` 通过；配置 135 项、前端 33 项、搜索 45 项、Rust 113 项通过（2 项显式联网测试默认忽略），三语 156 个 key、Clippy 通过。正式发布脚本回归 25 项通过；追加签名清单格式校验后，所在脚本回归 6 项通过。
 - 本机 ARM64 DMG 的 BUILD-INFO 记录 Desktop `850a88a6827d3758ddcadb7834263aa5a941ccec`、`dirty=false`、版本 `0.1.6.3` 和上述 Harness pin。DMG SHA-256 为 `4e130ea5cbf71bad91b70cded82e53656997286a0dd56268913c8883c1ee39a7`，校验清单、`hdiutil verify` 和 `codesign --verify --deep --strict` 均通过；该本机 local channel 包不冒充 GitHub 正式发布资产。
-- 包内应用实际启动后，原生辅助功能树显示 `DeepSeek Desktop v0.1.6.3`、两个 WebView、新建会话/插件/发送消息按钮和文本输入框。实际运行的是包内 Harness，服务仅监听 loopback，未认证访问返回 401；按精确应用路径退出后，主进程、Harness 子进程和端口监听均已消失。本次未据此扩展为真实模型推理或其他平台人工验收。
+- 包内应用实际启动后，原生辅助功能树显示 `DeepSeek Desktop v0.1.6.3`、两个 WebView、新建会话/插件/发送消息按钮和文本输入框。实际运行的是包内 Harness，服务仅监听 loopback，未认证访问返回 401；按精确应用路径退出后，主进程、Harness 子进程和端口监听均已消失。此项启动检查不作为真实模型推理或其他平台人工验收证据。
+- GitHub Run `35688432896` 的 ARM64 CI 候选 DMG 已下载、通过内层 `SHA256SUMS`、镜像及严格签名检查并覆盖安装到 `/Applications/DeepSeek Desktop.app`；BUILD-INFO 记录相同干净源码 `850a88a` 和 Harness `303d39d`。候选 DMG SHA-256 为 `882f082528076b9eac0c2058765bb0094452d7b21ffee4a15a8fcc9c9fb83a2d`。安装版为 `0.1.6` / build `3`，主程序与 Node 均为 arm64，Node 为 `v24.20.0`。
+- CI 候选安装版通过实际原生窗口新建会话并发送测试，现有配置指向本机 oMLX 的 `qwen3.8-27b-4bit`，模型选择显示 Qwen3.8 27B / Medium；回复区精确返回 `RELEASE_V0163_20260922_OK`。工作台与 Shell 共两个 WebView，实际 Harness 来自安装包，仅监听 loopback，未认证访问返回 401；退出后主进程、Harness 和端口均清理。该候选与最终公开资产的字节一致性另行核验，不用既往 `0.1.6.2` 推理记录代替本次结果。
+
+- Windows x64 Job `106624359521` 已实际安装本版 NSIS 包，日志记录 `workbench ready after dismissing 2 first-run dialog(s)` 和 `Windows x64 installation acceptance passed for DeepSeek Desktop 0.1.6.3.`；该门禁覆盖工作台、设置、退出与卸载，不扩展为 Windows 真实模型或全部菜单人工验收。
 
 ## README 与发布说明
 
 - README 的导航与表格已通过 GitHub Markdown 渲染检查；本地文档链接及锚点可解析。`docs/releases/` 的两份历史正文与对应 Release 的六个资产链接逐项一致，并能由 Desktop 实际摘要渲染器展示下载表格。
 - 发布生成器改用下载表格和本版源码链接，继续拒绝缺失资产、重复标记或空变化；文件入口已验证只读取当前未发布条目。`release:smoke` 25 项、完整 `verify`、6 项 E2E 与真实 Harness smoke 均通过。本次只调整文档与正文生成，不生成新安装包或扩展历史模型实测结论。
 
-## Harness 联动市场同步与测试精简（未发布）
+## Harness 联动市场同步与测试精简（随 v0.1.6.3 发布）
 
 - 通过当前内核的官方 CLI 同步市场；实测裸 `add dshmarket` 保留已有 `1.45.1`，显式 `add dshmarket@latest` 更新到当时 registry 的 `1.52.0`。不将即时市场版本锁入内置 Harness。
 - 显式联网 Rust 用例 `market_sync_live_install_upgrade_and_service_boot` 调用生产同步函数，在全新隔离 profile 完成首次安装、降到固定旧版后升级、同 commit 跳过安装、保留用户字段/唯一 Bundle 声明，再启动暂存 Harness 并通过认证 HTTP 探活。凭据 helper 使用已安装 `0.1.6.2` 主程序；没有替换用户应用、操作用户 profile，或将此结果称为新版安装包 GUI 验收。
@@ -116,9 +139,9 @@
 - `v1.1.17` 本机干净提交社区包完成 76,148 文件 / 1,218,230,347 字节扫描；ARM64 DMG SHA-256 为 `661ca3f3c79224540e735700ebe5c767dd5c674e8caada00053a4ee0b7b8843c`，`hdiutil verify`、应用严格签名结构、主程序及内置 Node ARM64、LaunchServices 启动、真实 Harness 子进程和有界退出清理通过。该包仍为 ad-hoc 签名，且不能替代 `v1.1.18` 的干净提交包和四平台新 Tag 验收。
 - `v1.1.18` 候选 commit `2fcee8c1a53f8dfdd5de613c998ba3dcd5147cbd` 的本机干净 `desktop:package` 完成 76,148 文件 / 1,216,241,536 字节扫描；本机 ARM64 DMG 为 355,964,265 字节，SHA-256 `10a67aaf3de45568b29e14dfa14ee8a3a9e0accbe7f48087d7e658b9d2ad7a58`。`hdiutil verify`、严格签名结构、主程序与内置 Node ARM64、版本 `1.1.18` 均通过；LaunchServices 启动显示 `DeepSeek Desktop v1.1.18`，Harness 子进程只监听 `127.0.0.1` 随机端口，无令牌请求返回预期 401，主进程退出后子进程同步清理且无新增崩溃报告。该本机包是 ad-hoc 签名的 local channel 证据，不与 GitHub 公开制品混同。
 
-## 当前发布验收
+## v1.1.20 历史发布验收
 
-2026-09-17 发布后复核 Git、GitHub Actions、Release 与下载制品：当前成功发行是 [v1.1.20](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.20)。
+2026-09-17 发布后复核 Git、GitHub Actions、Release 与下载制品：当时成功发行是 [v1.1.20](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.20)。
 
 - 远端 `v1.1.20` 是 annotated Tag，对象 `cea11ed41d3c37b7621872e67bfca4d160127b7b` 指向 commit `ea4855a5931e59ebfc5ec24531353b3e5c2c6bae`；本地 Tag、远端 Tag peeled commit 与 GitHub Run head SHA 三者一致。`v1.1.14` 至 `v1.1.17` 仍是不可变失败 Tag，均未创建 Release。
 - [Run 35194837044](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/35194837044) 的六个 Job 全部成功：shell-quality `105115514272`、Linux x64 `105118132871`、macOS ARM64 `105118132874`、macOS x64 `105118132903`、Windows x64 `105118132948`、publish-release `105131367719`。Windows Job 的 NSIS 安装交互验收覆盖首次运行引导、工作台、菜单与设置交互、关闭确认及静默卸载，本次默认停用官方搜索插件与新增设置开关未破坏该路径。
@@ -173,9 +196,9 @@
 - `v1.1.17` 本机干净提交社区包完成 76,148 文件 / 1,218,230,347 字节扫描；ARM64 DMG SHA-256 为 `661ca3f3c79224540e735700ebe5c767dd5c674e8caada00053a4ee0b7b8843c`，`hdiutil verify`、应用严格签名结构、主程序及内置 Node ARM64、LaunchServices 启动、真实 Harness 子进程和有界退出清理通过。该包仍为 ad-hoc 签名，且不能替代 `v1.1.18` 的干净提交包和四平台新 Tag 验收。
 - `v1.1.18` 候选 commit `2fcee8c1a53f8dfdd5de613c998ba3dcd5147cbd` 的本机干净 `desktop:package` 完成 76,148 文件 / 1,216,241,536 字节扫描；本机 ARM64 DMG 为 355,964,265 字节，SHA-256 `10a67aaf3de45568b29e14dfa14ee8a3a9e0accbe7f48087d7e658b9d2ad7a58`。`hdiutil verify`、严格签名结构、主程序与内置 Node ARM64、版本 `1.1.18` 均通过；LaunchServices 启动显示 `DeepSeek Desktop v1.1.18`，Harness 子进程只监听 `127.0.0.1` 随机端口，无令牌请求返回预期 401，主进程退出后子进程同步清理且无新增崩溃报告。该本机包是 ad-hoc 签名的 local channel 证据，不与 GitHub 公开制品混同。
 
-## 当前发布验收
+## v1.1.19 历史发布验收
 
-2026-09-15 发布后复核 Git、GitHub Actions、Release 与下载制品：当前成功发行是 [v1.1.19](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.19)。
+2026-09-15 发布后复核 Git、GitHub Actions、Release 与下载制品：当时成功发行是 [v1.1.19](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v1.1.19)。
 
 - 远端 `v1.1.19` 是 annotated Tag，对象 `cb0125d8539b578a1b5ce556c5ca5eb840c58fac` 指向 commit `594dd750627a0a086803fe8526c23ec1fcdbefc1`；本地 Tag、远端 Tag peeled commit 与 GitHub Run head SHA 三者一致。发布后的验证记录提交不会移动该 Tag。`v1.1.14` 至 `v1.1.17` 仍是不可变失败 Tag，均未创建 Release。
 - [Run 34863036761](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/34863036761) 的六个 Job 全部成功：shell-quality `104039843630`、macOS x64 `104044190003`、Windows x64 `104044190060`、macOS ARM64 `104044190200`、Linux x64 `104044190229`、publish-release `104064467258`。

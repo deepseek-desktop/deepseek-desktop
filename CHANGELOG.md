@@ -4,6 +4,8 @@ DeepSeek Desktop 的重要变化记录如下。
 
 ## 未发布
 
+## 0.1.6.3 - 2026-09-22
+
 - 内置社区 Harness 同步已审计的 WebKit 模型菜单修复，解决 macOS 点击模型或推理等级时菜单提前关闭、选择不生效的问题；CLI 基线仍为 `0.1.6-alpha.2`，不将其标为稳定内核。
 
 - Harness 自动选版与独立更新暂时只忽略 `alpha`、`beta`，保留 `rc` 与其他类型；仓库候选在安装依赖前判断实际 CLI 版本，忽略时继续使用当前内核。已安装版本和内置审计来源不自动降级。
@@ -16,7 +18,7 @@ DeepSeek Desktop 的重要变化记录如下。
 ## 0.1.6.2 - 2026-09-22
 
 - Harness 默认来源切换为 `https://github.com/deepseek-desktop/deepseek-harness.git`；继续锁定已经审计的 `ddefc45fbc7f8e46dd73185e68295696d1297887`，因此来源身份改变而内核字节不变。
-- 发行版本改为四段数字。前三段对应锁定 Harness 的正式版本，第四段是 Desktop 修订号，例如 Harness `v0.1.6` 对应 Desktop `v0.1.6.1`、`v0.1.6.2`。
+- 发行版本改为四段数字。前三段对应锁定 Harness 的前三段版本号，第四段是 Desktop 修订号，例如 Harness `v0.1.6` 对应 Desktop `v0.1.6.1`、`v0.1.6.2`。
 - 构建生成器把四段公开版本转换为各平台接受的内部版本格式，Tag、窗口、更新提示、发布目录、安装包名称和构建事实继续统一显示四段版本；旧 Release 和 Tag 已清理，更新器只接受新格式。
 - 标准 `pnpm run build` 现在执行完整 Desktop 构建链；`verify` 和 E2E 在消费 Harness 前强制按当前 lock 重新安装并构建，Playwright 预览显式使用前端构建入口，避免复用损坏的 `target/generated` 导致运行时依赖缺失或启动超时。
 - 新增与 OpenCode 本机路由对齐的 oMLX Qwen3.8 配置示例：固定 131072 上下文、32768 最大输出、文本输入、Medium 默认推理、15 分钟流空闲超时和跨轮思考保留；`verify` 会用当前暂存 Harness 的真实配置 schema 解析该示例。

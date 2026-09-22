@@ -85,7 +85,7 @@ Get-FileHash ".\安装包文件名.exe" -Algorithm SHA256
 
 **版本规则：** 使用 `v主版本.次版本.修订版本.Desktop修订号`。前三段取自 Harness 版本，第四段从 `1` 开始，例如 Harness `v0.1.6` 对应 Desktop `v0.1.6.1`、`v0.1.6.2`。实际内核的完整版本及 commit 由 [工具链 lock](harness/toolchain-lock.json)记录，具体发行以对应 Tag 的 lock 为准。
 
-> 主分支已加入“更新 Harness 时通过官方 CLI 同步 DSH Market”的功能，尚未包含在 `v0.1.6.2` 安装包中。当前版本请按[插件安装说明](docs/zh-CN/getting-started.md#模型与插件)操作，已发布内容以各版本说明为准。
+> 自 [v0.1.6.3](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v0.1.6.3) 起，首次使用新 Harness commit 时会通过官方 CLI 安装或更新 DSH Market；普通重启不重复安装。详见[插件安装说明](docs/zh-CN/getting-started.md#模型与插件)。
 
 ## 常见问题
 
