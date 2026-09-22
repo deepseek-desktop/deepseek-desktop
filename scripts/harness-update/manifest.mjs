@@ -2,7 +2,8 @@ import { createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { assertSemVer, compareSemVer, isPrereleaseSemVer, parseArguments, sha256, supportedTargets } from "./common.mjs";
+import { isIgnoredHarnessVersion } from "../lib/harness-ref.mjs";
+import { assertSemVer, compareSemVer, parseArguments, sha256, supportedTargets } from "./common.mjs";
 
 function normalizeBaseUrl(value) {
   if (!value) return "";
@@ -98,8 +99,8 @@ const unexpectedTargets = descriptorTargets.filter(target => !expectedTargets.in
 if (missingTargets.length > 0 || unexpectedTargets.length > 0) {
   throw new Error(`Harness update target set mismatch; missing=${missingTargets.join(",") || "none"}; unexpected=${unexpectedTargets.join(",") || "none"}`);
 }
-if (channel === "stable" && isPrereleaseSemVer(first.harnessVersion)) {
-  throw new Error("stable channel cannot publish a prerelease Harness");
+if (isIgnoredHarnessVersion(first.harnessVersion)) {
+  throw new Error("alpha and beta Harness versions are ignored");
 }
 const artifacts = {};
 for (const descriptor of descriptors) {

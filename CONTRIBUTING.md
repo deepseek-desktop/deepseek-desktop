@@ -16,7 +16,7 @@
 - npm `11.19.0`（随固定 Node 官方归档提供）
 - Rust `1.98.0`
 - Tauri CLI `2.11.4`
-- 本地开发默认选择 Harness 仓库最新的 SemVer 标签；社区版和正式发布只接受仓库内经过审计的固定提交
+- 本地开发默认选择 Harness 仓库最新的 SemVer 标签，暂时仅忽略 `alpha`、`beta`，允许 `rc` 及其他类型；社区版和正式发布只接受仓库内经过审计的固定提交
 
 `scripts/with-rust.mjs` 会把 Rust 安装到仓库的 `target/deepseek-desktop-toolchain/`，下载时校验 Rust 官方发布的 `rustup-init` SHA-256，并确认实际 `rustc` 版本与 lock 一致，不会修改用户的全局 Rust 环境。
 
@@ -44,7 +44,9 @@ corepack pnpm@11.24.0 install --frozen-lockfile
 
 `pnpm install` 按根目录 lock 安装固定依赖；标准 `pnpm run build` 会依次生成应用配置、从当前 Harness lock 安装依赖并执行官方 `build:official`、组装生产闭包、暂存目标平台 Harness，再调用 Tauri 构建。`verify` 和 `test:e2e` 也会在消费 Harness 前重新同步，因此不会读取历史 `target/generated` 中可能过期、损坏或不完整的依赖树；Playwright 启动预览时只调用 `frontend:build`，避免在服务器启动时重复触发完整桌面打包。
 
-`harness/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Harness 来源。`HARNESS_REF` 留空时，本地 `harness:sync` 自动选择仓库中最新的 SemVer 版本标签；显式填写时则使用指定 tag、commit 或开发分支。两种方式都会解析并锁定不可变 commit，并把请求 ref、最终 ref、commit、动态 CLI 入口和 Harness 哈希写入不提交 Git 的 `target/generated/harness-lock.json`。社区版和正式发布额外要求解析结果匹配 `harness/toolchain-lock.json` 中经过审计的固定仓库与提交；上游出现新版本时必须先复核并更新固定来源，不能在无人审查时自动改变安装包内容。Harness staging 只消费该生成 lock，并且只保留当前原生目标。
+`harness/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Harness 来源。`HARNESS_REF` 留空时，本地 `harness:sync` 自动选择仓库中最新的 SemVer 版本标签（暂时仅忽略 `alpha`、`beta`，允许 `rc` 及其他类型）；显式填写时则使用指定 tag、commit 或开发分支。两种方式都会解析并锁定不可变 commit，并把请求 ref、最终 ref、commit、动态 CLI 入口和 Harness 哈希写入不提交 Git 的 `target/generated/harness-lock.json`。社区版和正式发布额外要求解析结果匹配 `harness/toolchain-lock.json` 中经过审计的固定仓库与提交；上游出现新版本时必须先复核并更新固定来源，不能在无人审查时自动改变安装包内容。Harness staging 只消费该生成 lock，并且只保留当前原生目标。
+
+复验当前发行基线时，显式将 `HARNESS_REF` 设为工具链 lock 的 `harnessSource.ref`。过滤后最新候选可能早于内置基线；不要为了匹配候选标签自动回退内核、扩展 peer 或兼容补丁。
 
 staging 会下载目标平台的 Node.js 官方归档到仓库 `target/` 缓存，校验固定 SHA-256，保留锁定的 npm 与当前平台构建所需的最小 Node-API 头文件，移除安装期时间元数据和非目标平台原生制品，并输出确定性的 `harness-manifest.json`、`licenses.json` 与 `sbom.spdx.json`。各平台允许使用的 `node-pty` 和 Koffi 原生制品固定在 `harness/toolchain-lock.json`。
 
@@ -68,7 +70,7 @@ corepack pnpm@11.24.0 package:community
 corepack pnpm@11.24.0 desktop:package
 ```
 
-可复制 [`.env.example`](.env.example) 为 `.env` 来定制应用元数据和 Harness 来源。配置优先级为“命令行环境变量 > `.env` > 内置默认值”；`.env` 不会进入 Harness、安装包、诊断包或发布目录。`HARNESS_REF` 默认留空，本地开发会自动选择最新版本标签；社区版和正式发布仍受仓库内固定 Harness 来源约束。`DESKTOP_APP_REPOSITORY` 默认留空：GitHub Actions 使用当前工作流仓库地址，本地开发读取公开的 Git `origin`；若 `origin` 只是本机路径，则继续读取 `package.json` 或项目内置仓库地址。作者和仓库地址会显示在关于页，仓库地址可直接用系统浏览器打开。
+可复制 [`.env.example`](.env.example) 为 `.env` 来定制应用元数据和 Harness 来源。配置优先级为“命令行环境变量 > `.env` > 内置默认值”；`.env` 不会进入 Harness、安装包、诊断包或发布目录。`HARNESS_REF` 默认留空，本地开发会自动选择最新的非 alpha/beta 版本标签；社区版和正式发布仍受仓库内固定 Harness 来源约束。`DESKTOP_APP_REPOSITORY` 默认留空：GitHub Actions 使用当前工作流仓库地址，本地开发读取公开的 Git `origin`；若 `origin` 只是本机路径，则继续读取 `package.json` 或项目内置仓库地址。作者和仓库地址会显示在关于页，仓库地址可直接用系统浏览器打开。
 
 正式发行步骤见 [多平台发布指南](docs/zh-CN/distributed-release.md)，正文格式与维护方式见 [发布说明规范](docs/releases/README.md)。
 

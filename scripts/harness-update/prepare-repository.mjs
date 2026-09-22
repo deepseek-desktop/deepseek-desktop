@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { deployHarnessClosure, DESKTOP_EXTENSION_ROOTS, findCliPackage, findWorkspacePackages, mergeDesktopClosure } from "../lib/harness-deployment.mjs";
 import { applyDesktopCompatibilityPatches } from "../lib/desktop-patches.mjs";
+import { isIgnoredHarnessVersion } from "../lib/harness-ref.mjs";
 
 const [source, destination, desktop, resultFile] = process.argv.slice(2).map(value => resolve(value));
 if (!source || !destination || !desktop || !resultFile) throw new Error("Repository preparation requires four paths");
@@ -48,14 +49,18 @@ function runNpm(args, cwd = source) {
   runPackageManager(npm, args, cwd, "npm");
 }
 
-try {
+async function prepare() {
+  const workspace = await findWorkspacePackages(source);
+  const cli = findCliPackage(workspace);
+  if (isIgnoredHarnessVersion(cli.manifest.version)) {
+    await writeFile(resultFile, `${JSON.stringify({ version: cli.manifest.version, entry: "" })}\n`);
+    return;
+  }
   await Promise.all([stat(pnpm), stat(npm)]);
   runPnpm(["install", "--frozen-lockfile"]);
   const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
   if (!manifest.scripts?.["build:official"]) throw new Error("Harness repository does not provide build:official");
   runPnpm(["run", "build:official"]);
-  const workspace = await findWorkspacePackages(source);
-  const cli = findCliPackage(workspace);
   await stat(join(cli.directory, cli.entry));
   await deployHarnessClosure(source, workspace, cli, destination, runPnpm, {
     desktopDeployment: desktop,
@@ -72,6 +77,10 @@ try {
   const entry = join("node_modules", ...cli.manifest.name.split("/"), cli.entry).split(sep).join("/");
   await stat(join(destination, entry));
   await writeFile(resultFile, `${JSON.stringify({ version: cli.manifest.version, entry })}\n`);
+}
+
+try {
+  await prepare();
 } catch (error) {
   const message = diagnosticTail(error instanceof Error ? error.message : error) || "Harness repository preparation failed";
   await writeFile(resultFile, `${JSON.stringify({ error: message })}\n`);

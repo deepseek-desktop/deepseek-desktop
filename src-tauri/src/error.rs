@@ -19,6 +19,8 @@ pub enum DesktopError {
     HarnessNotReady,
     #[error("Harness repository command timed out")]
     RepositoryCommandTimedOut,
+    #[error("alpha and beta Harness versions are ignored: {0}")]
+    HarnessVersionIgnored(String),
     #[error("configuration is invalid: {0}")]
     InvalidConfiguration(String),
     #[error("credential vault operation failed: {0}")]

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assertPinnedHarnessSource } from "../lib/harness-source-pin.mjs";
-import { selectLatestHarnessTag } from "../lib/harness-ref.mjs";
+import { isIgnoredHarnessVersion, selectLatestHarnessTag } from "../lib/harness-ref.mjs";
 import { cleanCachedCheckout } from "../lib/cached-checkout-clean.mjs";
 
 const pin = {
@@ -63,21 +63,31 @@ test("desktop patches never embed a build-machine path", async () => {
 });
 
 
-test("selects the newest Harness SemVer tag", () => {
+test("selects the newest Harness tag while ignoring only alpha and beta", () => {
   assert.equal(selectLatestHarnessTag([
-    "dsh-v0.1.0-rc.8",
-    "dsh-v0.1.1-rc.2",
-    "dsh-v0.1.1-rc.10",
+    "dsh-v0.1.5", "v0.1.6", "0.1.10",
+    "dsh-v0.2.0-alpha.2", "v0.3.0-beta.1", "v1.0.0-rc.10",
+    "v2.0.0-alpha.2", "v3.0.0-beta.1",
     "feature-preview"
-  ]), "dsh-v0.1.1-rc.10");
+  ]), "v1.0.0-rc.10");
+  assert.equal(selectLatestHarnessTag(["v1.0.0-rc.2", "v1.0.0-rc.10"]), "v1.0.0-rc.10");
+  for (const suffix of ["alpha.2", "beta.1", "ALPHA.1", "beta2"]) {
+    assert.equal(isIgnoredHarnessVersion(`1.0.0-${suffix}`), true);
+  }
+  for (const suffix of ["rc.1", "preview.1", "nightly.1", "custom", "1"]) {
+    assert.equal(selectLatestHarnessTag([`v1.0.0-${suffix}`]), `v1.0.0-${suffix}`);
+  }
 });
 
 test("prefers a stable release over a prerelease with the same version", () => {
   assert.equal(selectLatestHarnessTag(["v1.0.0-rc.2", "v1.0.0"]), "v1.0.0");
+  assert.equal(selectLatestHarnessTag(["v1.0.0", "v1.0.1+build-alpha.2"]), "v1.0.1+build-alpha.2");
 });
 
-test("rejects repositories without a version tag", () => {
-  assert.throws(() => selectLatestHarnessTag(["main", "nightly"]), /no SemVer release tags/u);
+test("never falls back to alpha, beta or a branch when no eligible tag exists", () => {
+  for (const tags of [[], ["main", "nightly"], ["dsh-v0.1.6-alpha.2", "v0.1.5-beta.2"]]) {
+    assert.throws(() => selectLatestHarnessTag(tags), /no eligible SemVer release tags/u);
+  }
 });
 
 

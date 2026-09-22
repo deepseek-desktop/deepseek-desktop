@@ -26,8 +26,8 @@ test("uses built-in defaults without an env file", async () => {
   assert.equal(config.productName, DEFAULT_CONFIG.DESKTOP_APP_NAME);
   assert.equal(config.version, DEFAULT_CONFIG.DESKTOP_APP_VERSION);
   assert.equal(config.coreVersion, "0.1.6");
-  assert.equal(config.revision, 2);
-  assert.equal(config.bundleVersion, "0.1.6+2");
+  assert.equal(config.revision, 3);
+  assert.equal(config.bundleVersion, "0.1.6+3");
   assert.equal(config.displayVersion, `v${DEFAULT_CONFIG.DESKTOP_APP_VERSION}`);
   assert.equal(config.windowTitle, `${DEFAULT_CONFIG.DESKTOP_APP_NAME} v${DEFAULT_CONFIG.DESKTOP_APP_VERSION}`);
   assert.equal(config.repository, "https://github.com/deepseek-desktop/deepseek-desktop");

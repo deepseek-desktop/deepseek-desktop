@@ -269,6 +269,7 @@ impl HarnessStore {
         let Some(pointer) = read_pointer(&self.pending)? else {
             return Ok(None);
         };
+        validate_candidate_version(&pointer.harness_version)?;
         let location = self.location_for_pointer(&pointer)?;
         smoke_candidate(&location, &pointer)?;
         self.finish_activation(&pointer)?;
@@ -602,7 +603,11 @@ impl HarnessUpdateManager {
                     let _ = fs::remove_file(&self.store.pending);
                 }
                 let _ = self.store.prune_versions();
-                self.publish(HarnessUpdatePhase::Failed, "smoke-failed")
+                if matches!(error, DesktopError::HarnessVersionIgnored(_)) {
+                    self.publish(HarnessUpdatePhase::Idle, "ignored-version")
+                } else {
+                    self.publish(HarnessUpdatePhase::Failed, "smoke-failed")
+                }
             }
         }
     }
@@ -661,6 +666,9 @@ impl HarnessUpdateManager {
         }
         let release = match self.fetch_release(&settings.harness_update_channel, &config) {
             Ok(release) => release,
+            Err(DesktopError::HarnessVersionIgnored(_)) => {
+                return self.publish(HarnessUpdatePhase::Idle, "ignored-version");
+            }
             Err(error) => {
                 self.diagnostics
                     .append("harness-update", &format!("update check failed: {error}"));
@@ -727,6 +735,10 @@ impl HarnessUpdateManager {
         };
         let pointer = match prepared {
             Ok(pointer) => pointer,
+            Err(DesktopError::HarnessVersionIgnored(_)) => {
+                *self.lock_available()? = None;
+                return self.publish(HarnessUpdatePhase::Idle, "ignored-version");
+            }
             Err(error) => {
                 self.diagnostics.append(
                     "harness-update",
@@ -1357,17 +1369,10 @@ fn validate_manifest_payload_at(
             "Harness manifest repository does not match the bundled Harness source".to_owned(),
         ));
     }
-    let version = Version::parse(&payload.harness_version).map_err(|error| {
-        DesktopError::InvalidConfiguration(format!("Harness version is invalid: {error}"))
-    })?;
+    validate_candidate_version(&payload.harness_version)?;
     if payload.channel != channel || !matches!(channel, "stable" | "preview") {
         return Err(DesktopError::InvalidConfiguration(
             "Harness update channel does not match settings".to_owned(),
-        ));
-    }
-    if channel == "stable" && !version.pre.is_empty() {
-        return Err(DesktopError::InvalidConfiguration(
-            "stable channel rejected a prerelease Harness".to_owned(),
         ));
     }
     let minimum = Version::parse(&payload.minimum_desktop_version).map_err(|error| {
@@ -1673,6 +1678,26 @@ fn repository_check_failure(error: &DesktopError) -> &'static str {
     } else {
         "check-failed"
     }
+}
+
+fn validate_candidate_version(version: &str) -> DesktopResult<()> {
+    let parsed = Version::parse(version).map_err(|error| {
+        DesktopError::InvalidConfiguration(format!("Harness version is invalid: {error}"))
+    })?;
+    let kind = parsed
+        .pre
+        .as_str()
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if ["alpha", "beta"].iter().any(|prefix| {
+        kind.strip_prefix(prefix)
+            .is_some_and(|suffix| suffix.chars().all(|c| c.is_ascii_digit()))
+    }) {
+        return Err(DesktopError::HarnessVersionIgnored(version.to_owned()));
+    }
+    Ok(())
 }
 
 fn repository_head(repository: &str) -> DesktopResult<String> {
@@ -2069,6 +2094,10 @@ fn deploy_repository_harness(
         include_str!("../../scripts/lib/harness-deployment.mjs"),
     )?;
     fs::write(
+        scripts.join("lib/harness-ref.mjs"),
+        include_str!("../../scripts/lib/harness-ref.mjs"),
+    )?;
+    fs::write(
         scripts.join("lib/desktop-patches.mjs"),
         include_str!("../../scripts/lib/desktop-patches.mjs"),
     )?;
@@ -2103,8 +2132,7 @@ fn deploy_repository_harness(
         return Err(error);
     }
     let deployment: RepositoryDeployment = serde_json::from_slice(&fs::read(result)?)?;
-    Version::parse(&deployment.version)
-        .map_err(|error| DesktopError::InvalidConfiguration(error.to_string()))?;
+    validate_candidate_version(&deployment.version)?;
     validate_relative_file(&deployment.entry)?;
     Ok(deployment)
 }
@@ -2922,32 +2950,48 @@ mod tests {
     }
 
     #[test]
-    fn verifies_signed_stable_and_preview_manifests() {
+    fn signed_channels_ignore_only_alpha_and_beta() {
         let key = SigningKey::from_bytes(&[7; 32]);
-        assert!(
-            verify_manifest(
-                &signed(&payload("stable", "1.1.0"), &key),
-                &config(&key),
-                "stable"
-            )
-            .is_ok()
-        );
-        assert!(
-            verify_manifest(
-                &signed(&payload("preview", "1.1.0-beta.1"), &key),
-                &config(&key),
-                "preview"
-            )
-            .is_ok()
-        );
-        assert!(
-            verify_manifest(
-                &signed(&payload("stable", "1.1.0-beta.1"), &key),
-                &config(&key),
-                "stable"
-            )
-            .is_err()
-        );
+        for channel in ["stable", "preview"] {
+            for version in [
+                "1.1.0",
+                "1.1.0-rc.1",
+                "1.1.0-preview.1",
+                "1.1.0-nightly.1",
+                "1.1.0-custom",
+                "1.1.0-1",
+                "1.1.0+build-alpha.2",
+            ] {
+                assert!(
+                    verify_manifest(
+                        &signed(&payload(channel, version), &key),
+                        &config(&key),
+                        channel
+                    )
+                    .is_ok(),
+                    "{channel}: {version}"
+                );
+            }
+            for version in [
+                "1.1.0-alpha.2",
+                "1.1.0-beta.1",
+                "1.1.0-ALPHA.1",
+                "1.1.0-beta2",
+            ] {
+                assert!(
+                    matches!(
+                        verify_manifest(
+                            &signed(&payload(channel, version), &key),
+                            &config(&key),
+                            channel
+                        ),
+                        Err(DesktopError::HarnessVersionIgnored(_))
+                    ),
+                    "{channel}: {version}"
+                );
+            }
+        }
+        assert!(validate_candidate_version("invalid").is_err());
     }
 
     #[test]
@@ -3164,6 +3208,17 @@ mod tests {
         store.prune_versions().unwrap();
         assert!(store.versions.join(&pointer.directory).is_dir());
         assert!(!orphan.exists());
+        for version in ["1.2.0-alpha.2", "1.2.0-beta.1"] {
+            let mut ignored = pointer.clone();
+            ignored.harness_version = version.to_owned();
+            ignored.directory = version_directory(version, &ignored.harness_commit).unwrap();
+            write_json_atomic(&store.pending, &ignored).unwrap();
+            assert!(matches!(
+                store.activate_pending(),
+                Err(DesktopError::HarnessVersionIgnored(_))
+            ));
+            assert_eq!(read_pointer(&store.current).unwrap(), Some(pointer.clone()));
+        }
         let mut next = pointer.clone();
         next.directory = "1.1.0-dddddddddddd".to_owned();
         next.harness_commit = "d".repeat(40);

@@ -60,9 +60,11 @@ README 面向安装与使用，开发、构建和架构细节集中到 `CONTRIBU
 
 - 插件配置、插件管理器和只读插件清单由当前官方 Harness 提供。DSH Market 仍是用户插件，不进入内置闭包；首次启动或 Harness commit 变化时，Desktop 用自己的 `DSH_HOME`、当前 Node/CLI 和随包 pnpm 执行 `dsh plugin --profile desktop-web add dshmarket@latest`。成功后按 commit 记账，失败提示并在下次普通启动重试；崩溃恢复及当次内置恢复不联网。CLI 管理依赖和 Bundle 声明，保留用户禁用状态，不改写市场代码。见 ADR-028。
 
+- Harness 自动标签选择、仓库候选准备与签名清单暂时只忽略 `alpha` / `beta`；`rc` 和其他类型继续接受，build metadata 不参与类型过滤。仓库模式保持默认分支 HEAD 契约，在 CLI 版本确认后、安装依赖前跳过被过滤的候选；已安装和内置审计 pin 不因过滤发生降级。
+
 ## 版本基线
 
-- 新发行体系使用四段公开版本：锁定 Harness `0.1.6` 对应 Desktop `0.1.6.<修订号>`，当前默认版本为 `0.1.6.2`；旧版本体系的 Release 与 Tag 已从 GitHub 清理，更新器只接受四段格式。
+- 新发行体系使用四段公开版本：锁定 Harness `0.1.6` 对应 Desktop `0.1.6.<修订号>`，当前默认版本为 `0.1.6.3`；旧版本体系的 Release 与 Tag 已从 GitHub 清理，更新器只接受四段格式。
 - Node：`24.20.0`（四平台精确锁定，module ABI `137`）
 - pnpm：`11.24.0`
 - npm：`11.19.0`（随固定 Node 官方归档提供）

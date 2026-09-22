@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, verify } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -126,6 +126,60 @@ test("creates a signed manifest only from a complete clean native target set", a
     ], { cwd: root, encoding: "utf8" });
     assert.notEqual(invalidRange.status, 0);
     assert.match(invalidRange.stderr, /must not exceed/u);
+
+    for (const version of ["1.1.0-alpha.2", "1.1.0-beta.1", "1.1.0-rc.1", "1.1.0-preview.1"]) {
+      for (const target of Object.values(supportedTargets)) {
+        const path = join(directory, `harness-update-descriptor.${target}.json`);
+        const descriptor = JSON.parse(await readFile(path, "utf8"));
+        descriptor.harnessVersion = version;
+        await writeFile(path, JSON.stringify(descriptor));
+      }
+      for (const channel of ["stable", "preview"]) {
+        const result = spawnSync(process.execPath, [
+          "scripts/harness-update/manifest.mjs", "--directory", directory,
+          "--signing-key", key, "--channel", channel, "--output", output
+        ], { cwd: root, encoding: "utf8" });
+        if (version.includes("alpha") || version.includes("beta")) {
+          assert.notEqual(result.status, 0);
+          assert.match(result.stderr, /alpha and beta Harness versions are ignored/u);
+        } else {
+          assert.equal(result.status, 0, result.stderr);
+          const signed = JSON.parse(await readFile(output, "utf8"));
+          const payload = JSON.parse(Buffer.from(signed.signedPayload, "base64").toString("utf8"));
+          assert.equal(payload.harnessVersion, version);
+          assert.equal(payload.channel, channel);
+        }
+      }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("repository preparation skips alpha and beta before dependency installation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "deepseek-version-filter-"));
+  try {
+    const source = join(directory, "source");
+    const destination = join(directory, "candidate");
+    const desktop = join(directory, "desktop");
+    const resultFile = join(directory, "result.json");
+    await mkdir(source);
+    for (const version of ["1.0.0-alpha.2", "1.0.0-beta.1", "1.0.0-rc.1"]) {
+      await writeFile(join(source, "package.json"), JSON.stringify({ name: "test-cli", version, bin: { dsh: "dist/cli.js" } }));
+      const result = spawnSync(process.execPath, [
+        "scripts/harness-update/prepare-repository.mjs", source, destination, desktop, resultFile
+      ], { cwd: root, encoding: "utf8" });
+      const prepared = JSON.parse(await readFile(resultFile, "utf8"));
+      if (version.includes("rc")) {
+        // RC reaches the toolchain check; the fixture intentionally has no pnpm.
+        assert.notEqual(result.status, 0);
+        assert.match(prepared.error, /ENOENT/u);
+      } else {
+        assert.equal(result.status, 0, result.stderr);
+        assert.deepEqual(prepared, { version, entry: "" });
+      }
+      await assert.rejects(access(destination));
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

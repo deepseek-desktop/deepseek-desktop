@@ -48,7 +48,7 @@ HARNESS_UPDATE_PUBLISHER=deepseek-desktop
 HARNESS_UPDATE_PUBLIC_KEY=
 ```
 
-内置默认值与上述示例保持一致，但不能通过读取 `.env.example` 获得默认值；默认值应由统一配置加载器持有，确保删除 `.env` 和 `.env.example` 后仍能正常开发、测试和打包。`DESKTOP_APP_REPOSITORY` 留空时，GitHub Actions 使用当前工作流仓库地址，本地开发读取公开的 Git `origin`；若 `origin` 只是本机路径，则继续读取 `package.json` 或项目内置仓库地址。`HARNESS_REF` 留空时，本地开发自动选择 Harness 仓库中最新的 SemVer 版本标签，社区版和正式发布则必须匹配 `harness/toolchain-lock.json` 中经过审计的固定仓库与 commit。
+内置默认值与上述示例保持一致，但不能通过读取 `.env.example` 获得默认值；默认值应由统一配置加载器持有，确保删除 `.env` 和 `.env.example` 后仍能正常开发、测试和打包。`DESKTOP_APP_REPOSITORY` 留空时，GitHub Actions 使用当前工作流仓库地址，本地开发读取公开的 Git `origin`；若 `origin` 只是本机路径，则继续读取 `package.json` 或项目内置仓库地址。`HARNESS_REF` 留空时，本地开发自动选择 Harness 仓库中最新的 SemVer 版本标签（暂时仅忽略 `alpha`、`beta`，允许 `rc` 及其他类型），社区版和正式发布则必须匹配 `harness/toolchain-lock.json` 中经过审计的固定仓库与 commit。
 
 `.env` 解析优先使用 Node.js 24 标准能力，不为简单键值配置新增 dotenv 运行依赖。配置加载器只读取已声明变量，忽略宿主环境中的无关变量，并对未知的 `DESKTOP_APP_*`、`HARNESS_*` 变量给出明确错误，防止拼写错误被静默忽略。
 
@@ -98,13 +98,13 @@ corepack pnpm@11.24.0 app:sync --check
 ### 字段校验
 
 - `DESKTOP_APP_NAME`：非空，不允许控制字符。
-- `DESKTOP_APP_VERSION`：必须是四段数字；前三段等于 `harness/toolchain-lock.json` 的 Harness 正式版本，第四段是从 `1` 开始的 Desktop 修订号。
+- `DESKTOP_APP_VERSION`：必须是四段数字；前三段等于 `harness/toolchain-lock.json` 的 Harness 三段基础版本，第四段是从 `1` 开始的 Desktop 修订号。
 - `DESKTOP_APP_IDENTIFIER`：必须符合反向域名格式；发布后修改会改变应用数据目录和升级识别，构建时应显示醒目提示。
 - `DESKTOP_APP_SLUG`：只允许小写字母、数字和连字符。
 - `DESKTOP_APP_ICON`：相对项目根目录解析，必须存在、为正方形 PNG，至少 `512 x 512`，建议使用 `1024 x 1024`。
 - `DESKTOP_APP_AUTHORS`：按逗号解析为作者列表，去除空白项。
 - `DESKTOP_APP_REPOSITORY`：可留空自动解析；显式填写时必须是无嵌入凭据的 HTTP(S) 或常见 Git 远程地址，并转换为公开访问链接。
-- `HARNESS_REF`：可留空自动选择最新 SemVer 版本标签；显式填写时允许 tag、commit 或开发分支。
+- `HARNESS_REF`：可留空自动选择最新 SemVer 版本标签（暂时仅忽略 `alpha`、`beta`，允许 `rc` 及其他类型）；显式填写时允许 tag、commit 或开发分支。
 
 源图是唯一人工维护的图标文件。`src-tauri/icons/` 中的多尺寸文件应改为生成产物，或者由构建脚本在打包前覆盖并验证，开发者不再手工维护 ICO、ICNS 和多份 PNG。
 
@@ -120,7 +120,7 @@ corepack pnpm@11.24.0 harness:sync --local /absolute/path/to/deepseek-harness
 
 `harness:sync` 让 `HARNESS_REPOSITORY` 真正决定打包内容，而不只是修改来源说明：
 
-1. 获取 `HARNESS_REPOSITORY` 指定仓库。`HARNESS_REF` 为空时从远程或本地镜像选择最新 SemVer 版本标签；显式填写时使用指定 tag、commit 或开发分支。远端暂时不可用时，只允许使用本地镜像中已经解析出的不可变来源。Tag CI 从 `harness/toolchain-lock.json` 导出固定仓库与 commit；社区版和正式发布会在解析后再次校验来源一致。
+1. 获取 `HARNESS_REPOSITORY` 指定仓库。`HARNESS_REF` 为空时从远程或本地镜像选择最新 SemVer 版本标签（暂时仅忽略 `alpha`、`beta`，允许 `rc` 及其他类型）；显式填写时使用指定 tag、commit 或开发分支。远端暂时不可用时，只允许使用本地镜像中已经解析出的不可变来源。Tag CI 从 `harness/toolchain-lock.json` 导出固定仓库与 commit；社区版和正式发布会在解析后再次校验来源一致。
 2. 将自动选择或显式指定的 ref 解析为不可变 commit，并同时记录 requested ref 与 resolved ref。
 3. 按 Harness 约定构建桌面生产 Harness 制品。
 4. 校验主包、CLI 入口、Web 工作台和桌面兼容契约。
@@ -266,7 +266,7 @@ corepack pnpm@11.24.0 tauri:build
 
 ### Harness 同步
 
-- 本地默认仓库和空 ref 能自动选择最新 SemVer 版本标签，并把实际 tag、commit 和哈希锁定到构建事实中；发布构建只接受经过审计的固定来源。
+- 本地默认仓库和空 ref 能自动选择最新 SemVer 版本标签（暂时仅忽略 `alpha`、`beta`，允许 `rc` 及其他类型），并把实际 tag、commit 和哈希锁定到构建事实中；发布构建只接受经过审计的固定来源。
 - 替换为测试 fork 后，安装包内确实运行 fork 的可识别版本，不能仍回退到官方 npm 制品。
 - 无效仓库、无效 ref、入口缺失和完整性不匹配均立即失败。
 - 本地模式可联调，但正式发布门禁拒绝不可追溯制品。

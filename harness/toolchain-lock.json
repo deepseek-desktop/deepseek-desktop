@@ -39,8 +39,8 @@
   "harnessSource": {
     "repository": "https://github.com/deepseek-desktop/deepseek-harness.git",
     "version": "0.1.6",
-    "ref": "ddefc45fbc7f8e46dd73185e68295696d1297887",
-    "commit": "ddefc45fbc7f8e46dd73185e68295696d1297887"
+    "ref": "303d39dab4a88bcd957221d88b663e72e03bf7ee",
+    "commit": "303d39dab4a88bcd957221d88b663e72e03bf7ee"
   },
   "bundledPackages": {
     "pnpm": {

@@ -38,7 +38,7 @@ corepack pnpm@11.24.0 desktop:package
 
 ## 创建版本
 
-发行版本的前三段来自锁定 Harness 的正式版本，第四段是 Desktop 修订号。支持带或不带 `v` 前缀：
+发行版本的前三段来自锁定 Harness 的前三段版本号，第四段是 Desktop 修订号。支持带或不带 `v` 前缀：
 
 ```text
 0.1.6.1

@@ -40,10 +40,20 @@ function compareVersions(left, right) {
     || left.tag.localeCompare(right.tag, "en");
 }
 
+function isIgnoredPrerelease(prerelease) {
+  return /^(?:alpha|beta)(?:[0-9]+)?$/iu.test(prerelease[0] || "");
+}
+
+export function isIgnoredHarnessVersion(version) {
+  const parsed = parseVersionTag(version);
+  if (!parsed) throw new Error("Harness version must be valid SemVer");
+  return isIgnoredPrerelease(parsed.prerelease);
+}
+
 export function selectLatestHarnessTag(tags) {
-  const versions = tags.map(parseVersionTag).filter(Boolean).sort(compareVersions);
+  const versions = tags.map(parseVersionTag).filter(version => version && !isIgnoredPrerelease(version.prerelease)).sort(compareVersions);
   if (versions.length === 0) {
-    throw new Error("HARNESS_REF is empty and the Harness repository has no SemVer release tags");
+    throw new Error("HARNESS_REF is empty and the Harness repository has no eligible SemVer release tags (alpha and beta are ignored)");
   }
   return versions.at(-1).tag;
 }
