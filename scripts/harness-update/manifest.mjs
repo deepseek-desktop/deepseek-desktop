@@ -99,6 +99,7 @@ const unexpectedTargets = descriptorTargets.filter(target => !expectedTargets.in
 if (missingTargets.length > 0 || unexpectedTargets.length > 0) {
   throw new Error(`Harness update target set mismatch; missing=${missingTargets.join(",") || "none"}; unexpected=${unexpectedTargets.join(",") || "none"}`);
 }
+assertSemVer(first.harnessVersion, "Harness version");
 if (isIgnoredHarnessVersion(first.harnessVersion)) {
   throw new Error("alpha and beta Harness versions are ignored");
 }

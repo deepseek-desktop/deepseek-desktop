@@ -127,7 +127,7 @@ test("creates a signed manifest only from a complete clean native target set", a
     assert.notEqual(invalidRange.status, 0);
     assert.match(invalidRange.stderr, /must not exceed/u);
 
-    for (const version of ["1.1.0-alpha.2", "1.1.0-beta.1", "1.1.0-rc.1", "1.1.0-preview.1"]) {
+    for (const version of ["1.1.0-alpha.2", "1.1.0-beta.1", "1.1.0-rc.1", "1.1.0-preview.1", "v1.1.0", "dsh-v1.1.0"]) {
       for (const target of Object.values(supportedTargets)) {
         const path = join(directory, `harness-update-descriptor.${target}.json`);
         const descriptor = JSON.parse(await readFile(path, "utf8"));
@@ -139,7 +139,10 @@ test("creates a signed manifest only from a complete clean native target set", a
           "scripts/harness-update/manifest.mjs", "--directory", directory,
           "--signing-key", key, "--channel", channel, "--output", output
         ], { cwd: root, encoding: "utf8" });
-        if (version.includes("alpha") || version.includes("beta")) {
+        if (!version.startsWith("1.")) {
+          assert.notEqual(result.status, 0);
+          assert.match(result.stderr, /Harness version must be valid SemVer/u);
+        } else if (version.includes("alpha") || version.includes("beta")) {
           assert.notEqual(result.status, 0);
           assert.match(result.stderr, /alpha and beta Harness versions are ignored/u);
         } else {
