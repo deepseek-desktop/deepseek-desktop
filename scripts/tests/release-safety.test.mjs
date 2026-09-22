@@ -8,6 +8,62 @@ import { contentCacheKey, createContentCacheManifest, makeContentTreeWritable, v
 import { artifactForbiddenRoots, scanArtifactPaths } from "../lib/artifact-scan.mjs";
 import { portableRustFlags } from "../lib/rust-flags.mjs";
 import { acquireToolchainLock } from "../lib/toolchain-lock.mjs";
+import { createBuildSession, createStageReporter } from "../lib/build-session.mjs";
+
+test("packaging shares one Harness build and stage across verification, E2E and smoke", async () => {
+  const commands = [];
+  const session = createBuildSession({
+    runPnpm: args => commands.push(args.join(" ")),
+    runNode: args => commands.push(args.join(" "))
+  });
+  await session.syncHarness();
+  await session.verify();
+  await session.e2e(["--project=webkit"]);
+  await session.smoke();
+  assert.equal(commands.filter(command => command === "harness:sync").length, 1);
+  assert.equal(commands.filter(command => command === "harness:stage").length, 1);
+  for (const required of ["test:config", "check:i18n", "test", "typecheck", "harness:test-locale", "harness:test-omlx", "harness:test-credentials", "harness:test-follow-model", "harness:verify", "rust:test", "rust:clippy", "node_modules/@playwright/test/cli.js test --project=webkit", "harness/scripts/smoke-harness.mjs --settings-ui"]) {
+    assert.ok(commands.includes(required), `missing gate: ${required}`);
+  }
+  assert.ok(commands.indexOf("harness:sync") < commands.indexOf("harness:test-credentials"));
+  assert.ok(commands.indexOf("harness:test-credentials") < commands.indexOf("harness:stage"));
+  assert.ok(commands.indexOf("harness:stage") < commands.indexOf("harness:verify"));
+});
+
+test("standalone checks prepare their own Harness and a failed preparation cannot be reused", async () => {
+  for (const check of ["verify", "e2e", "smoke"]) {
+    const commands = [];
+    const create = () => createBuildSession({
+      runPnpm: args => commands.push(args[0]), runNode: args => commands.push(args[0])
+    });
+    await create()[check]();
+    await create()[check]();
+    assert.equal(commands.filter(command => command === "harness:sync").length, 2, check);
+    const failed = createBuildSession({
+      runPnpm: args => { if (args[0] === "harness:sync") throw new Error("preparation failed"); },
+      runNode: () => assert.fail("must not execute tests against an incomplete Harness")
+    });
+    await assert.rejects(failed[check](), /preparation failed/u);
+    await assert.rejects(failed.e2e(), /preparation failed/u);
+  }
+});
+
+test("stage timing includes failures in Actions logs and summary", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "desktop-timing-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const summary = join(directory, "summary.md");
+  const timings = {};
+  const logs = [];
+  const stage = createStageReporter({ timings, env: { GITHUB_ACTIONS: "true", GITHUB_STEP_SUMMARY: summary }, log: line => logs.push(line) });
+  assert.equal(await stage("installMs", () => 42), 42);
+  await assert.rejects(stage("harnessSyncMs", () => { throw new Error("failed to build"); }), /failed to build/u);
+  assert.ok(timings.installMs >= 0 && timings.harnessSyncMs >= 0);
+  assert.equal(logs.filter(line => line === "::endgroup::").length, 2);
+  const report = await readFile(summary, "utf8");
+  assert.match(report, /install \| passed/u);
+  assert.match(report, /harnessSync \| failed/u);
+  assert.equal(report.match(/### 构建阶段耗时/gu)?.length, 1);
+});
 
 test("Rust commands wait for the active toolchain writer and release the lock", async t => {
   const root = await mkdtemp(join(tmpdir(), "desktop-rust-lock-"));
@@ -49,19 +105,11 @@ test("the standard build prepares Harness before Tauri compiles the frontend", a
   const tauriIndex = tauriBuild.indexOf("tauri build");
   assert.ok(appSyncIndex >= 0 && appSyncIndex < harnessSyncIndex);
   assert.ok(harnessSyncIndex < harnessStageIndex && harnessStageIndex < tauriIndex);
-  const verify = packageJson.scripts.verify;
-  const verifyHarnessSyncIndex = verify.indexOf("harness:sync");
-  const verifyCredentialsIndex = verify.indexOf("harness:test-credentials");
-  const verifyStageIndex = verify.indexOf("harness:stage");
-  assert.ok(verifyHarnessSyncIndex >= 0 && verifyHarnessSyncIndex < verifyCredentialsIndex);
-  assert.ok(verifyCredentialsIndex < verifyStageIndex);
   assert.equal(tauriConfig.build.beforeBuildCommand, "node scripts/with-pnpm.mjs frontend:build");
   assert.doesNotMatch(packageJson.scripts["frontend:build"], /app:sync|app-sync|harness:sync|harness-sync/u);
   const playwrightConfig = await readFile(resolve("playwright.config.ts"), "utf8");
   assert.match(playwrightConfig, /\$\{pnpm\} frontend:build/u);
   assert.doesNotMatch(playwrightConfig, /\$\{pnpm\} build &&/u);
-  const e2e = packageJson.scripts["test:e2e"];
-  assert.ok(e2e.indexOf("harness:sync") < e2e.indexOf("playwright test"));
 });
 
 test("target configuration maps only supported native hosts", async () => {

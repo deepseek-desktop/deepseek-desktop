@@ -10,6 +10,7 @@ import { artifactForbiddenRoots, scanArtifactPaths } from "./lib/artifact-scan.m
 import { prepareLinuxAppImageLdd } from "./lib/linux-appimage.mjs";
 import { portableRustFlags, RUST_PATH_REMAP_VERSION } from "./lib/rust-flags.mjs";
 import { restorePreparedRelease } from "./release-system/prepared-release.mjs";
+import { createBuildSession, createStageReporter } from "./lib/build-session.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -81,6 +82,8 @@ async function sha256(path) {
 
 const packageStartedAt = Date.now();
 const timings = {};
+const stage = createStageReporter({ timings });
+const checks = createBuildSession({ runPnpm, runNode: args => run(process.execPath, args), stage });
 const preparedRoot = process.env.DEEPSEEK_DESKTOP_PREPARED_ROOT?.trim() || "";
 const preparedDescriptorText = process.env.DEEPSEEK_DESKTOP_PREPARED_DESCRIPTOR?.trim() || "";
 const releasePlanText = process.env.DEEPSEEK_DESKTOP_RELEASE_PLAN?.trim() || "";
@@ -100,22 +103,22 @@ if (preparedMode) {
   });
   preparedReceiptSha256 = restored.descriptor.receiptSha256;
   timings.preparedRestoreMs = Date.now() - restoredAt;
-  timings.installMs = runPnpm(["install", "--frozen-lockfile"]);
-  timings.appSyncCheckMs = runPnpm(["app:sync", "--check"]);
-  timings.harnessSyncMs = runPnpm(["harness:sync"]);
-  timings.releaseGateMs = runPnpm(["release:check", channel]);
-  timings.harnessStageMs = runPnpm(["harness:stage"]);
-  timings.harnessVerifyMs = runPnpm(["harness:verify"]);
-  timings.harnessSmokeMs = runPnpm(["harness:smoke"]);
+  await stage("installMs", () => runPnpm(["install", "--frozen-lockfile"]));
+  await stage("appSyncCheckMs", () => runPnpm(["app:sync", "--check"]));
+  await checks.syncHarness();
+  await stage("releaseGateMs", () => runPnpm(["release:check", channel]));
+  await checks.stageHarness();
+  await stage("harnessVerifyMs", () => runPnpm(["harness:verify"]));
+  await checks.smoke();
 } else {
-  timings.installMs = runPnpm(["install", "--frozen-lockfile"]);
-  timings.playwrightInstallMs = runPnpm(["playwright:install"]);
-  timings.appSyncMs = runPnpm(["app:sync"]);
-  timings.harnessSyncMs = runPnpm(["harness:sync"]);
-  timings.releaseGateMs = runPnpm(["release:check", channel]);
-  timings.verifyMs = runPnpm(["verify"]);
-  timings.e2eMs = runPnpm(["test:e2e"]);
-  timings.harnessSmokeMs = runPnpm(["harness:smoke"]);
+  await stage("installMs", () => runPnpm(["install", "--frozen-lockfile"]));
+  await stage("playwrightInstallMs", () => runPnpm(["playwright:install"]));
+  await stage("appSyncMs", () => runPnpm(["app:sync"]));
+  await checks.syncHarness();
+  await stage("releaseGateMs", () => runPnpm(["release:check", channel]));
+  await checks.verify();
+  await checks.e2e();
+  await checks.smoke();
 }
 
 const config = JSON.parse(await readFile(join(root, "target/generated/app-config.json"), "utf8"));
@@ -188,9 +191,9 @@ if (process.platform === "linux" && process.env.GITHUB_ACTIONS === "true") {
   tauriBuildArguments.push("--verbose");
 }
 try {
-  timings.tauriBuildMs = run(process.execPath, tauriBuildArguments, {
+  await stage("tauriBuildMs", () => run(process.execPath, tauriBuildArguments, {
     env: { RUSTFLAGS: rustFlags, ...appImageLdd.environment }
-  });
+  }));
   await appImageLdd.verifyFinal();
 } catch (error) {
   await appImageLdd.reportFailure();
@@ -199,12 +202,12 @@ try {
   await appImageLdd.cleanup();
 }
 if (target.dmgArch) {
-  await createMacDmg({
+  await stage("dmgMs", () => createMacDmg({
     bundleRoot,
     productName: config.productName,
     version: config.version,
     architecture: target.dmgArch
-  });
+  }));
 }
 
 const artifacts = (await filesUnder(bundleRoot))
@@ -244,9 +247,9 @@ const scanRoots = [
   bundleRoot,
   ...await stat(primaryBinary).then(() => [primaryBinary], () => [])
 ];
-const artifactAudit = await scanArtifactPaths(scanRoots, {
+const artifactAudit = await stage("artifactAuditMs", () => scanArtifactPaths(scanRoots, {
   forbiddenRoots
-});
+}));
 
 const dirty = git(["status", "--porcelain", "--untracked-files=all"]).length > 0;
 let harnessCache = { hit: false, key: "unknown" };

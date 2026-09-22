@@ -36,7 +36,13 @@ git log --oneline --decorate -8
 git fetch --tags origin
 ```
 
-保护现有 WIP，不移动失败或已发布 Tag。完成代码修复后执行：
+保护现有 WIP，不移动失败或已发布 Tag。需要本机验收包时执行一次完整入口：
+
+```bash
+corepack pnpm@11.24.0 desktop:package
+```
+
+它包含完整 verify、E2E 和 Harness smoke，各自执行一次；同一源码没有新的失败或改动时，不要先串行重跑全部独立检查再打包。只验证源码或定位失败阶段时，按仓库验证要求使用对应的独立入口：
 
 ```bash
 corepack pnpm@11.24.0 app:sync --check
@@ -44,10 +50,9 @@ corepack pnpm@11.24.0 harness:sync --check
 corepack pnpm@11.24.0 verify
 corepack pnpm@11.24.0 test:e2e
 corepack pnpm@11.24.0 harness:smoke
-corepack pnpm@11.24.0 desktop:package
 ```
 
-尚未获准创建发行 Tag 时使用 `desktop:package` 生成本机验收包，它会记录源码 dirty 状态但不会伪装成社区发行。获准发布后，GitHub Tag 矩阵统一调用门禁更严格的 `package:community`。前面的独立命令用于缩短定位反馈，只报告实际运行过的结果。
+尚未获准创建发行 Tag 时使用 `desktop:package` 生成本机验收包，它会记录源码 dirty 状态但不会伪装成社区发行。获准发布后，GitHub Tag 矩阵统一调用门禁更严格的 `package:community`。独立命令用于缩短定位反馈；报告中区分独立执行与完整入口内部执行，只报告实际运行过的结果。
 
 macOS 本机至少检查：
 
@@ -84,6 +89,45 @@ macOS 本机至少检查：
 | Linux x64 | `ubuntu-22.04` | AppImage、DEB |
 
 四个 Job 全部成功后才能运行 `publish-release`。prerelease 标记由 `scripts/ci-release-prerelease.mjs` 决定：**制品未签名一律标记 prerelease**，已签名四段版本可成为正式 Release。GitHub 的 Latest release 是用户默认下载和 `/releases/latest` 的返回值，未签名制品不应占据该位置；签名接入后同一规则自动把正式版本提升为 Latest。
+
+## 免费 Runner 提速方案
+
+保持上面的四个平台及免费官方托管 Runner，不引入付费大机器、自托管维护或跨架构模拟构建。以下顺序先消除确定的重复工作，再按实测收益决定缓存范围。
+
+### 已实现：每个 Job 只准备一次 Harness
+
+原流程在打包入口、`verify`、`test:e2e` 各执行一次 `harness:sync`。同步会清理源码工作副本、按锁安装依赖、执行官方 `build:official` 并装配桌面闭包，因此后两次并不是廉价的版本检查；`harness:smoke` 还会重复暂存。
+
+`scripts/lib/build-session.mjs` 现在统一检查顺序：一次同步 → 完整 verify（含一次暂存）→ E2E → 对同一暂存树 smoke → 原生打包。`desktop:package`、`package:community`、前置 `ci:shell-quality` 和本地实验准备入口均复用它。每次进程调用独立建立会话，只有本会话成功完成的准备可供后续阶段使用；失败立即中止，不通过环境变量跳过准备，也不把磁盘旧目录当作成功凭据。
+
+- 四平台各由三次完整 Harness 同步降为一次；前置质量 Job 同样降为一次。完整矩阵合计由 15 次降为 5 次，**构建次数减少不等于总时间减少同样比例**。
+- 根目录和 Harness 的 `pnpm install --frozen-lockfile`、官方构建、扩展装配、Rust 测试/Clippy、E2E、smoke、发布身份核验与交付扫描全部保留。
+- 单独调用 `verify` 或 `test:e2e` 仍会自行同步；独立命令间不复用会话。`harness:smoke` 保持原有对当前生成结果重新暂存的独立验收行为。
+- Actions 为准备、各组检查、Tauri 编译、DMG 和扫描显示独立日志分组及耗时摘要；失败阶段也记入摘要，成功包的内部 `BUILD-INFO.performance.timings` 记录各阶段耗时。
+
+### 四平台关注点与验收
+
+以 [v0.1.5.1 原生矩阵](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/35702640615) 为优化前基线（整个 Job，含准备/上传等）：
+
+| 目标 | 优化前耗时 | 本次共同优化 | 后续按耗时决定的重点 |
+| --- | --- | --- | --- |
+| macOS x64 | 77 分 29 秒 | 同步 3 → 1、暂存 2 → 1 | 优先评估 Cargo 编译缓存；单列 DMG 耗时，保留 Intel 原生验收 |
+| Windows x64 | 59 分 20 秒 | 同上 | 缓存路径必须适配 `C:\d` 短检出；保留实际 NSIS 安装/工作台/退出/卸载门禁 |
+| macOS ARM64 | 32 分 22 秒 | 同上 | 独立 ARM64 缓存；保留 WebKit 与 Chromium 覆盖 |
+| Linux x64 | 27 分 44 秒 | 同上 | 缓存区分 Jammy 原生 Job 与 Noble 质量容器；保留 musl/glibc 原生载荷与 AppImage/DEB 检查 |
+
+前置质量 Job 原耗时 19 分 22 秒，同样受益。下一次正式发行记录各阶段与整条流水线耗时，比较相同 Runner/工具链及缓存状态。当前本机 ARM64 验证不能换算成 Intel、Windows、Linux 的提速百分比，不承诺固定完成分钟数。
+
+### 后续可选：有容量预算的依赖缓存
+
+本次没有新增远程缓存或预热工作流。现有 Playwright 缓存保留；先由下一次矩阵的分阶段数据判断是否值得增加以下缓存：
+
+1. 下载缓存优先：锁定版本的 pnpm store、Node 归档和 Cargo registry/git；始终重新执行按锁安装，不缓存 `node_modules` 作为安装替代品。Rust 使用仓库私有 `target/deepseek-desktop-toolchain/cargo`，只缓存 `~/.cargo` 不会命中实际依赖。
+2. Cargo 编译缓存按目标架构、Runner 系统、Rust 版本、Cargo.lock、构建 profile 与 RUSTFLAGS 隔离；只保留有收益的平台依赖产物，不缓存安装包/用户数据/凭据，也不混用 macOS ARM64 与 x64。先测量压缩、上传、恢复成本和容量，不能让缓存超过节约的编译时间。
+3. GitHub 缓存只能读当前 ref 和允许的默认分支等范围，**一个 Tag 创建的缓存不能供另一个 Tag 直接复用**。仅往 Tag 工作流加 `actions/cache` 主要帮助同 Tag 重跑。跨发行预热必须另行设计受信任默认分支的依赖预热任务，只准备缓存、不打包/发布；正式 Release 仍然只能由 Tag 触发。[GitHub 缓存范围说明](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)。
+4. 缓存是可丢弃优化，缺失或损坏时回退完整构建并校验；不得开启额外付费容量。通过限制保留项与淘汰旧键保持在仓库免费额度内，不能一次缓存四平台全部 `target` 目录。
+
+当前不跨平台共享生成的 Harness 或原生模块；也不通过删除平台测试、放宽门禁、增加超时时间解决性能问题。
 
 ## 公开资产
 

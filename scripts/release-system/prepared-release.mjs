@@ -7,6 +7,7 @@ import process from "node:process";
 import { atomicWriteJson, detectHostTarget, loadTargets, sha256File } from "./common.mjs";
 import { loadBuildConfig } from "../lib/build-config.mjs";
 import { parseDesktopVersion, parseReleaseTag } from "../lib/release-tag.mjs";
+import { createBuildSession, createStageReporter } from "../lib/build-session.mjs";
 
 const shaPattern = /^[0-9a-f]{64}$/u;
 const commitPattern = /^[0-9a-f]{40}$/u;
@@ -292,13 +293,20 @@ export async function prepareRelease({
     await rm(destination, { recursive: true, force: true });
   }
   if (runChecks) {
-    timings.installMs = await run(corepack, ["pnpm@11.24.0", "install", "--frozen-lockfile"], { cwd: workspace, env: environment });
-    timings.playwrightInstallMs = await run(corepack, ["pnpm@11.24.0", "playwright:install"], { cwd: workspace, env: environment });
-    timings.appSyncMs = await run(corepack, ["pnpm@11.24.0", "app:sync"], { cwd: workspace, env: environment });
-    timings.harnessSyncMs = await run(corepack, ["pnpm@11.24.0", "harness:sync"], { cwd: workspace, env: environment });
-    timings.releaseGateMs = await run(corepack, ["pnpm@11.24.0", "release:check", channel], { cwd: workspace, env: environment });
-    timings.verifyMs = await run(corepack, ["pnpm@11.24.0", "verify"], { cwd: workspace, env: environment });
-    timings.e2eMs = await run(corepack, ["pnpm@11.24.0", "test:e2e"], { cwd: workspace, env: environment });
+    const runPnpm = args => run(corepack, ["pnpm@11.24.0", ...args], { cwd: workspace, env: environment });
+    const stage = createStageReporter({ timings, env: environment });
+    const checks = createBuildSession({
+      runPnpm,
+      runNode: args => run(process.execPath, args, { cwd: workspace, env: environment }),
+      stage
+    });
+    await stage("installMs", () => runPnpm(["install", "--frozen-lockfile"]));
+    await stage("playwrightInstallMs", () => runPnpm(["playwright:install"]));
+    await stage("appSyncMs", () => runPnpm(["app:sync"]));
+    await checks.syncHarness();
+    await stage("releaseGateMs", () => runPnpm(["release:check", channel]));
+    await checks.verify();
+    await checks.e2e();
   }
   if (git(workspace, ["status", "--porcelain", "--untracked-files=all"])) {
     throw new Error("release preparation checks changed the Desktop worktree");
