@@ -1,4 +1,4 @@
-import { chromium, expect } from "@playwright/test";
+import { chromium, webkit, expect } from "@playwright/test";
 import { join } from "node:path";
 
 export async function verifySearchSettings(url, cookies, outputDirectory, seededProvider) {
@@ -28,7 +28,7 @@ export async function verifySearchSettings(url, cookies, outputDirectory, seeded
       entry: window.__DSH_BOOT__?.entries?.find(entry => entry.id === "@deepseek-ai/dsh-web-search-follow-model"),
     }));
     expect(pluginBoot.entry?.external).toContain("react");
-    expect(pluginBoot.entry?.inject).toContain("@deepseek-ai/dsh-client-ui-plugin-manager");
+    expect(pluginBoot.entry?.inject).toContain("@deepseek-ai/dsh-client-ui-settings-plugins");
     await expect.poll(() => page.evaluate(() => window.__ModuleLoader__?.mode)).toBe("live");
     async function expandSearchSettings() {
       const details = page.locator(".desktop-search-card details");
@@ -54,24 +54,16 @@ export async function verifySearchSettings(url, cookies, outputDirectory, seeded
       return dialog;
     }
     async function openSearchSettings() {
-      await page.getByText(/^(插件|Plugins)$/u).first().click();
-      const panel = page.locator("[data-plugin-panel]");
-      await expect(panel).toBeVisible();
-      const later = page.getByRole("button", { name: /^(稍后配置|稍後設定|Configure later)$/u });
-      await later.waitFor({ state: "visible", timeout: 3000 }).catch(error => {
-        if (error.name !== "TimeoutError") throw error;
-      });
-      if (await later.isVisible()) await later.click();
-      const item = panel.locator('[data-plugin-item="web-search-follow-model"]');
-      await expect(item).toBeVisible();
-      await item.locator("button").first().click();
-      await expect(panel.locator('[data-plugin-item-detail="web-search-follow-model"]')).toBeVisible();
+      const dialog = await openSettings();
+      await dialog.getByText(/^(插件|Plugins)$/u, { exact: true }).click();
+      await dialog.getByText(/^(插件配置|Plugin configuration)$/u, { exact: true }).click();
       await expandSearchSettings();
-      return panel;
+      return dialog;
     }
     try {
       const settingsDialog = await openSettings();
-      await settingsDialog.getByText(/^(内置插件|Built-in plugins)$/u).click();
+      await settingsDialog.getByText(/^(插件|Plugins)$/u, { exact: true }).click();
+      await settingsDialog.getByText(/^(插件列表|Plugin list)$/u, { exact: true }).click();
       const search = settingsDialog.getByPlaceholder(/^(搜索插件|Search plugins)$/u);
       await expect(search).toBeVisible();
       for (const name of ["@deepseek-ai/dsh-web-search-follow-model", "deepseek-desktop-credentials-vault"]) {
@@ -131,7 +123,8 @@ export async function verifySearchSettings(url, cookies, outputDirectory, seeded
         await page.setViewportSize({ width: 1120, height: 720 });
         // A reload drops back to the chat surface; while the dialog is open just switch tabs.
         const openModels = async () => {
-          const dialog = await openSettings();
+          const dialog = page.getByRole("dialog", { name: /^(设置|設定|Settings)$/u });
+          if (!await dialog.isVisible()) await openSettings();
           await dialog.getByText(/^(模型|Models)$/u).click();
         };
         await openModels();
@@ -194,5 +187,49 @@ export async function verifySearchSettings(url, cookies, outputDirectory, seeded
     }
   } finally {
     await browser.close();
+  }
+  if (process.platform === "darwin" && seededProvider !== undefined) {
+    const browser = await webkit.launch({ headless: true });
+    try {
+      const context = await browser.newContext();
+      await context.addCookies([...cookies].map(([name, value]) => ({ name, value, url: url.origin })));
+      const page = await context.newPage();
+      await page.goto(url.href);
+      for (const name of [/^(继续|Continue)$/u, /^(稍后配置|Configure later)$/u]) {
+        const button = page.getByRole("button", { name });
+        await button.waitFor({ state: "visible", timeout: 3000 }).catch(error => {
+          if (error.name !== "TimeoutError") throw error;
+        });
+        if (await button.isVisible()) await button.click();
+      }
+      await page.getByRole("button", { name: /^(新建会话|New session)$/u }).first().click();
+      await page.getByRole("button", { name: /^(选择工作区|Choose workspace)$/u }).click();
+      const picker = page.getByRole("dialog", { name: /^(选择工作区目录|Select Workspace Directory)$/u });
+      await picker.getByRole("button", { name: /^(编辑路径|Edit path)$/u }).click();
+      const path = picker.getByRole("textbox", { name: /^(编辑路径|Edit path)$/u });
+      await path.fill(outputDirectory);
+      await path.press("Enter");
+      await picker.getByRole("button", { name: /^(打开|Open)$/u, exact: true }).click();
+      await expect(picker).toBeHidden();
+      const trigger = page.getByRole("button", { name: /^(选择模型|Select model)/u });
+      // Focus starts in the composer, as it does before a real user clicks the menu.
+      await page.locator('[contenteditable="true"][role="textbox"]').first().focus();
+      await trigger.click();
+      const menu = page.getByRole("menu", { name: /^(模型与推理等级|Model and reasoning effort)$/u });
+      await menu.getByRole("menuitem", { name: /^(模型|Model)/u }).click();
+      await menu.getByRole("menuitemradio", { name: "smoke-model", exact: true }).click();
+      await expect(menu).toBeHidden();
+      await expect(trigger).toContainText("smoke-model");
+      await page.locator('[contenteditable="true"][role="textbox"]').first().focus();
+      await trigger.click();
+      await menu.getByRole("menuitem", { name: /^(推理等级|Effort)/u }).click();
+      await menu.getByRole("menuitemradio", { name: "Low", exact: true }).click();
+      await expect(menu).toBeHidden();
+      await expect(trigger).toContainText("Low");
+      await page.screenshot({ path: join(outputDirectory, "webkit-model-selection.png") });
+      console.log("WebKit model menu: model and reasoning selection succeed from focused composer");
+    } finally {
+      await browser.close();
+    }
   }
 }

@@ -1,0 +1,16 @@
+diff --git a/lib/client.js b/lib/client.js
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -583,4 +583,12 @@
+ 				onKeyDown: onRootKeyDown,
+ 				onBlur,
++				onMouseDown: (event) => {
++					if (event.button !== 0 || !(event.target instanceof Element)) return;
++					const button = event.target.closest("button");
++					if (button === null || button.disabled) return;
++					// WebKit does not focus clicked buttons; keep blur inside until click.
++					event.preventDefault();
++					button.focus();
++				},
+ 				children: [
+ 					(0, react_jsx_runtime.jsxs)("button", {

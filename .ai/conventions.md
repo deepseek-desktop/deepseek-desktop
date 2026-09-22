@@ -5,8 +5,8 @@
 - 优先级固定为：命令行环境变量 > `.env` > 内置默认值。
 - 只接受构建配置加载器声明的变量；未知项、非法格式和必填空值应直接失败。
 - Harness 来源变量统一使用 `HARNESS_REPOSITORY` / `HARNESS_REF`，按全新配置契约开发，不提供历史别名与迁移分支。
-- `HARNESS_REF` 本地为空时可解析最新 SemVer，暂时仅过滤 `alpha`、`beta`，`rc` 和其他类型不新增限制；社区版和正式发布必须命中 `harness/toolchain-lock.json` 的审计 commit。Tag CI 入口从该 lock 显式导出仓库与 ref，解析结果继续校验 commit；质量门禁及原生构建使用同一份来源，包括直接按 commit 锁定的官方 master 提交。
-- 公开版本固定为四段数字：前三段等于工具链 lock 的 Harness 三段基础版本，第四段是从 `1` 开始递增的 Desktop 修订号；当前默认示例为 `0.1.6.1`。
+- `HARNESS_REF` 本地为空时可解析最新 SemVer，暂时仅过滤 `alpha`、`beta`，`rc` 和其他类型不新增限制；社区版和正式发布必须命中 `harness/toolchain-lock.json` 的审计 commit。Tag CI 入口从该 lock 显式导出仓库与 ref，解析结果继续校验 commit；质量门禁及原生构建使用同一份来源，显式 pin 和本地源码在依赖安装前检查实际 CLI 版本，不能绕过 alpha/beta 排除规则。
+- 公开版本固定为四段数字：前三段等于工具链 lock 的 Harness 三段基础版本，第四段是从 `1` 开始递增的 Desktop 修订号；当前默认版本为 `0.1.5.1`。
 - 原生窗口、浏览器标题、更新提示、安装包名称与构建事实显示同一个四段公开版本；生成器负责转换 Tauri 所需的内部 SemVer 和平台版本字段。
 - 发行标签接受带或不带 `v` 前缀的四段数字，例如 `0.1.6.1`、`v0.1.6.2`；工作流入口必须同时校验格式和前三段 Harness 映射。
 - GitHub Actions 的应用仓库地址必须来自工作流仓库上下文，不能使用 Windows 短路径副本或其他本地 clone 的文件型 `origin`。
@@ -14,6 +14,8 @@
 - 普通用户只配置 Harness 仓库覆盖值；留空时使用构建时的 `HARNESS_REPOSITORY`。可选的预构建更新清单和制品可由 filesystem 或普通 HTTP 服务承载，并继续使用配置公钥验证 Ed25519 签名；`HARNESS_REF` 显式固定时默认关闭自动准备。
 
 ## 实现
+
+- Harness 更新频道采用临时分类：`alpha`、`beta`（含编号和大小写形式）归 `preview`，其余版本（含 RC）归 `stable`；构建元数据不参与分类。该分类不是官方稳定性承诺。社区安装包固定采用 stable 规则，显式 commit、本地源码和缓存闭包也不能绕过检查。仓库更新保持默认分支 HEAD 契约，在实际 CLI 版本确认后、安装依赖前筛选频道；签名清单与 pending 激活使用同一规则，切换频道清除旧候选，当前正在运行的内核不被强制替换。
 
 - 公共 IPC 必须在 Rust 与 TypeScript 两端保持类型一致。
 - 用户可见文案同步维护 `zh-CN`、`zh-TW`、`en-US`，禁止硬编码单语提示。

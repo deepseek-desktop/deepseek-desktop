@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 
 import { findInstalledPackages, listInstalledPackages, packageInventory } from "../../scripts/lib/installed-packages.mjs";
 import { verifyDesktopPatchAsset } from "../../scripts/lib/desktop-patches.mjs";
-import { assertPinnedHarnessSource } from "../../scripts/lib/harness-source-pin.mjs";
+import { assertPackagedHarnessVersion, assertPinnedHarnessSource } from "../../scripts/lib/harness-source-pin.mjs";
 import {
   assertNativeArtifactModes,
   assertPrebuildPlatform,
@@ -18,6 +18,7 @@ const harnessRoot = resolve(import.meta.dirname, "..");
 const desktopRoot = resolve(harnessRoot, "..");
 const generatedRoot = join(desktopRoot, "target", "generated");
 const lock = JSON.parse(await readFile(join(generatedRoot, "harness-lock.json"), "utf8"));
+await assertPackagedHarnessVersion(join(generatedRoot, "harness", "prepared"), lock.harness);
 const toolchain = JSON.parse(await readFile(join(harnessRoot, "toolchain-lock.json"), "utf8"));
 
 function hostTarget() {
@@ -402,6 +403,7 @@ await verifyPermissionPresetLocalization(join(prepared, "node_modules"));
 const requested = process.argv[2] || hostTarget();
 if (requested) {
   const root = join(harnessRoot, "staging", requested);
+  await assertPackagedHarnessVersion(root, lock.harness);
   const nativeAssets = lock.nativeAssets[requested];
   const stagedNodeModules = join(root, "node_modules");
   const stagedModuleRoots = [

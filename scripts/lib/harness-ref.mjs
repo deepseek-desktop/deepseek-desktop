@@ -44,10 +44,26 @@ function isIgnoredPrerelease(prerelease) {
   return /^(?:alpha|beta)(?:[0-9]+)?$/iu.test(prerelease[0] || "");
 }
 
-export function isIgnoredHarnessVersion(version) {
+export function isPreviewHarnessVersion(version) {
   const parsed = parseVersionTag(version);
   if (!parsed) throw new Error("Harness version must be valid SemVer");
   return isIgnoredPrerelease(parsed.prerelease);
+}
+
+// Temporary Desktop policy: only alpha/beta belong to preview; RC and all other types are stable.
+export function harnessVersionChannel(version) {
+  return isPreviewHarnessVersion(version) ? "preview" : "stable";
+}
+
+export function matchesHarnessChannel(version, channel) {
+  if (!["stable", "preview"].includes(channel)) throw new Error("unknown Harness channel");
+  return harnessVersionChannel(version) === channel;
+}
+
+export function assertStableHarnessVersion(version) {
+  if (isPreviewHarnessVersion(version)) {
+    throw new Error(`Harness ${version} is not allowed: alpha and beta cannot be packaged in the stable channel`);
+  }
 }
 
 export function selectLatestHarnessTag(tags) {

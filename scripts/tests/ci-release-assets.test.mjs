@@ -15,7 +15,7 @@ const toolchainLock = {
   harnessSource: {
     repository: "https://example.invalid/harness.git",
     version: "0.1.6",
-    ref: "dsh-v0.1.6-alpha.2",
+    ref: "dsh-v0.1.6-rc.2",
     commit: "89abcdef0123456789abcdef0123456789abcdef"
   }
 };
@@ -61,7 +61,7 @@ async function fixture(root, mutate = value => value) {
         resolvedRef: toolchainLock.harnessSource.ref,
         commit: toolchainLock.harnessSource.commit,
         packageName: "@deepseek-ai/dsh",
-        version: "1.0.0",
+        version: "0.1.6-rc.2",
         sha256: hash(`harness-${target}`)
       },
       target,
@@ -176,4 +176,16 @@ test("rejects a target built from another Desktop commit", async t => {
     prepareCiReleaseAssets({ inputRoot: root, outputRoot: join(root, "publish"), version, commit, toolchainLock }),
     /source mismatch/u
   );
+});
+
+test("refuses alpha or beta installers even if all targets and the source pin agree", async t => {
+  for (const harnessVersion of ["0.1.6-alpha.2", "0.1.6-beta.1"]) {
+    const root = await mkdtemp(join(tmpdir(), "deepseek-ci-release-filter-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    await fixture(root, info => ({ ...info, harness: { ...info.harness, version: harnessVersion } }));
+    await assert.rejects(
+      prepareCiReleaseAssets({ inputRoot: root, outputRoot: join(root, "publish"), version, commit, toolchainLock }),
+      /alpha and beta cannot be packaged in the stable channel/u
+    );
+  }
 });

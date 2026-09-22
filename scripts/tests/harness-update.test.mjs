@@ -142,9 +142,9 @@ test("creates a signed manifest only from a complete clean native target set", a
         if (!version.startsWith("1.")) {
           assert.notEqual(result.status, 0);
           assert.match(result.stderr, /Harness version must be valid SemVer/u);
-        } else if (version.includes("alpha") || version.includes("beta")) {
+        } else if ((version.includes("alpha") || version.includes("beta")) !== (channel === "preview")) {
           assert.notEqual(result.status, 0);
-          assert.match(result.stderr, /alpha and beta Harness versions are ignored/u);
+          assert.match(result.stderr, /does not match the selected channel/u);
         } else {
           assert.equal(result.status, 0, result.stderr);
           const signed = JSON.parse(await readFile(output, "utf8"));
@@ -159,7 +159,7 @@ test("creates a signed manifest only from a complete clean native target set", a
   }
 });
 
-test("repository preparation skips alpha and beta before dependency installation", async () => {
+test("repository preparation filters each channel before dependency installation", async () => {
   const directory = await mkdtemp(join(tmpdir(), "deepseek-version-filter-"));
   try {
     const source = join(directory, "source");
@@ -167,14 +167,14 @@ test("repository preparation skips alpha and beta before dependency installation
     const desktop = join(directory, "desktop");
     const resultFile = join(directory, "result.json");
     await mkdir(source);
-    for (const version of ["1.0.0-alpha.2", "1.0.0-beta.1", "1.0.0-rc.1"]) {
+    for (const [version, channel] of [["1.0.0-alpha.2", "stable"], ["1.0.0-beta.1", "stable"], ["1.0.0-rc.1", "stable"], ["1.0.0-alpha.2", "preview"], ["1.0.0-rc.1", "preview"]]) {
       await writeFile(join(source, "package.json"), JSON.stringify({ name: "test-cli", version, bin: { dsh: "dist/cli.js" } }));
       const result = spawnSync(process.execPath, [
-        "scripts/harness-update/prepare-repository.mjs", source, destination, desktop, resultFile
+        "scripts/harness-update/prepare-repository.mjs", source, destination, desktop, resultFile, channel
       ], { cwd: root, encoding: "utf8" });
       const prepared = JSON.parse(await readFile(resultFile, "utf8"));
-      if (version.includes("rc")) {
-        // RC reaches the toolchain check; the fixture intentionally has no pnpm.
+      if (version.includes("rc") === (channel === "stable")) {
+        // Matching candidates reach the toolchain check; the fixture intentionally has no pnpm.
         assert.notEqual(result.status, 0);
         assert.match(prepared.error, /ENOENT/u);
       } else {

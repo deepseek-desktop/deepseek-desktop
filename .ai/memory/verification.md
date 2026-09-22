@@ -2,7 +2,27 @@
 
 ## 当前发布验收
 
-2026-09-22：[v0.1.6.3](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v0.1.6.3) 已发布。annotated Tag 对象 `91fc56267713f504cd2f83a7a3553d2b6c7ef3ac` 指向 `850a88a6827d3758ddcadb7834263aa5a941ccec`，与实际构建源码一致；发布后的文档提交不移动 Tag。
+`v0.1.6.1`、`v0.1.6.2`、`v0.1.6.3` 因包含 alpha 内核，已按用户要求删除 GitHub Release 和对应 Tag，源码历史保留。原 `v0.1.6.3` Run `35688432896` 的构建、资产和安装记录是历史证据，不满足新的 RC 发行要求。
+
+当前候选为 Desktop `0.1.5.1` / Harness `0.1.5-rc.2`，来源为真实 RC 标签 commit `fb2c4b9e698e30edb738bca4cf0618587db7d203`，未发布。用户已将打包发布交给另一位 AI，本任务只交付社区代码；未创建新 Tag、安装包或 Release，也未替换本机应用。
+
+频道临时分类为 alpha/beta 预览版，其余稳定版（包括 RC），不代表官方稳定性承诺。社区安装包不接受 alpha/beta；运行时仅显式选择预览频道时接受这两种版本。
+
+2026-09-22，当前 RC 社区代码在 macOS arm64 的验证结果：
+
+- 根目录与 Harness 均按锁安装依赖，执行官方 `build:official` 后装配桌面闭包；`harness:sync --check` 和最终完整 `verify` 通过。配置/发行测试 139 项、前端 33 项、搜索 45 项、Rust 113 项通过（2 项显式联网测试默认忽略），三语 157 个 key、类型检查和 Clippy 通过。
+- `test:e2e` 6 项通过；最终样式调整后，针对同一 RC 暂存结果再次执行 Playwright，6 项通过。`release:smoke` 26 项通过。
+- 真实暂存 RC 的 `harness:smoke` 通过：插件列表、搜索保存/重载/恢复、小窗布局、流空闲超时字段和父进程退出清理正常。macOS WebKit 从已聚焦输入框点击模型及推理等级后均能生效；隔离测试 profile 用官方 browse 目录选择器完成工作区选择，产品仍保留默认 auto 选择器。
+- 单独执行联网用例 `market_sync_live_install_upgrade_and_service_boot`：官方 CLI 在隔离 profile 安装市场，再从 `1.45.1` 升到当时 registry 的 `1.52.0`，保留用户字段、同 commit 跳过重复安装，随后 RC 服务启动与认证探活通过。凭据 helper 使用已安装的 Desktop 主程序，未操作用户 profile；这不是新安装包验收。
+- 私有 Rust 工具链增加进程锁，并检查 cargo 是否完整，避免并发初始化相互覆盖；锁的等待与释放回归通过。
+
+交给发布任务的边界：以最终干净提交构建 `v0.1.5.1`，重新完成本机安装、真实模型测试、四平台原生矩阵与公开资产核验。上述源码/隔离服务结果不替代安装包验收，也不沿用旧 alpha 的推理记录。
+
+## 已撤下 v0.1.6.3 的历史验收
+
+以下仅归档当时结果；旧版本过滤规则已被本页顶部的当前规则取代，不作为 RC 验收。
+
+2026-09-22：`v0.1.6.3` 曾发布，现已撤下。annotated Tag 对象 `91fc56267713f504cd2f83a7a3553d2b6c7ef3ac` 指向 `850a88a6827d3758ddcadb7834263aa5a941ccec`，与实际构建源码一致；发布后的文档提交不移动 Tag。
 
 - [GitHub Run 35688432896](https://github.com/deepseek-desktop/deepseek-desktop/actions/runs/35688432896) 六个 Job 全部成功：质量门禁 22 分 25 秒、Windows x64 61 分 20 秒、Linux x64 30 分 21 秒、macOS ARM64 32 分 02 秒、macOS x64 87 分钟、汇总发布 1 分 17 秒。Windows 包另通过真实 NSIS 安装、工作台与设置交互、退出清理及卸载自动门禁。
 - Release 为 `draft=false`、`prerelease=true`，恰好五个安装包及 `SHA256SUMS`，正文六条直接下载链接逐项一致。六个公开文件已实际下载，大小和 SHA-256 与 GitHub 元数据一致，五个安装包同时通过同版校验清单。

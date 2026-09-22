@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import process from "node:process";
 
 import { ARTIFACT_SCANNER_VERSION } from "./lib/artifact-scan.mjs";
+import { assertStableHarnessVersion } from "./lib/harness-ref.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -88,6 +89,10 @@ function validateBuildIdentity(buildInfo, target, toolchainLock) {
     || !isText(harness.version) || !SHA256.test(harness.sha256 || "")
     || !(harness.requestedRef === null || isText(harness.requestedRef))) {
     throw new Error(`release Harness identity is invalid for ${target}`);
+  }
+  assertStableHarnessVersion(harness.version);
+  if (harness.version.split(/[+-]/u)[0] !== toolchainLock.harnessSource?.version) {
+    throw new Error(`release Harness version does not match the toolchain lock for ${target}`);
   }
   if (harness.repository !== toolchainLock.harnessSource?.repository
     || harness.resolvedRef !== toolchainLock.harnessSource?.ref

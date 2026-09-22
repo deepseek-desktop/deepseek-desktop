@@ -4,7 +4,7 @@ DeepSeek Desktop 是内置锁定版本本地 Harness 的独立、非官方社区
 
 桌面 Shell、应用程序和安装包统一使用固定上游提交中的侧边栏鱼形标识及其深色品牌墨色，仅用于识别内置 Harness，不代表官方发行或品牌授权。
 
-公开版本使用四段数字：前三段对应锁定 Harness 的前三段版本号，第四段是 Desktop 修订号，当前默认版本为 `0.1.6.3`。实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，桌面安装包自动更新也未启用，因此不能作为已认证 Stable 版本宣传。Harness 与 Desktop 外壳独立，用户可以在设置中只更换 Harness 仓库地址。
+公开版本使用四段数字：前三段对应锁定 Harness 的前三段版本号，第四段是 Desktop 修订号，当前默认版本为 `0.1.5.1`。实际发行版本以 GitHub Releases 为准。社区版可在本地完整使用；macOS 使用不关联开发者身份的 ad-hoc 完整签名，尚未完成 Apple Developer ID 签名、公证或 Windows Authenticode 签名，桌面安装包自动更新也未启用，因此不能作为已认证 Stable 版本宣传。Harness 与 Desktop 外壳独立，用户可以在设置中只更换 Harness 仓库地址。
 
 工程源码位于仓库根目录。`harness/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Harness 来源；`harness:sync` 在本地开发且 `HARNESS_REF` 为空时自动选择 Harness 仓库最新的 SemVer 版本标签（暂时仅忽略 `alpha`、`beta`，允许 `rc` 及其他类型），显式填写时使用指定来源，随后统一解析为不可变 commit。社区版和正式发布还必须匹配仓库内经过审计的固定 Harness 提交，避免可变标签在无人复核时改变发行内容。同步结果写入当前构建专用的 `target/generated/harness-lock.json`。Harness 使用该 lock 组装生产依赖闭包、下载并校验 Node.js 官方归档后生成 sidecar；每个平台制品同时包含确定性 Harness manifest、完整许可证清单和 SPDX 2.3 SBOM。
 
@@ -77,7 +77,7 @@ open "/Applications/DeepSeek Desktop.app"
 
 社区版采用官方 Harness 的插件配置和只读插件列表，可查看全局与 Agent 预设的插件组合、启停状态及加载失败原因。[DSH Market](https://github.com/dsh-market/dsh-market) 是独立的社区插件市场，安装后会在设置侧栏提供“插件市场”入口；官方插件列表不承担市场安装、更新或卸载功能。市场按其官方方式作为用户插件安装，不改写市场代码或官方 CLI 依赖。
 
-**适用版本：** 以下自动同步行为自 `v0.1.6.3` 起随安装包提供；较早版本仍可按下文命令手动安装市场。
+当前安装包通过以下机制同步市场，也可按下文命令手动安装。
 
 Desktop 首次启动或开始使用不同 commit 的 Harness 时，会在工作台启动前调用当前内核的官方 CLI，自动安装或更新市场。独立内核更新和桌面安装包带来的内核升级都走这一流程；同一 commit 同步成功后，普通重启不会重复联网安装。
 

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertPinnedHarnessSource } from "../lib/harness-source-pin.mjs";
-import { isIgnoredHarnessVersion, selectLatestHarnessTag } from "../lib/harness-ref.mjs";
+import { assertPackagedHarnessVersion, assertPinnedHarnessSource } from "../lib/harness-source-pin.mjs";
+import { assertStableHarnessVersion, isPreviewHarnessVersion, selectLatestHarnessTag } from "../lib/harness-ref.mjs";
 import { cleanCachedCheckout } from "../lib/cached-checkout-clean.mjs";
 
 const pin = {
   repository: "https://github.com/deepseek-desktop/deepseek-harness.git",
-  ref: "ddefc45fbc7f8e46dd73185e68295696d1297887",
-  commit: "ddefc45fbc7f8e46dd73185e68295696d1297887"
+  ref: "dsh-v0.1.5-rc.2",
+  commit: "fb2c4b9e698e30edb738bca4cf0618587db7d203"
 };
 
 test("accepts the pinned Harness repository and commit", () => {
@@ -35,7 +35,6 @@ test("rejects an invalid committed source pin", () => {
   }, { ...pin, commit: "latest" }), /immutable harnessSource pin/u);
 });
 
-
 test("desktop patches never embed a build-machine path", async () => {
   const { readFile, readdir } = await import("node:fs/promises");
   const { join } = await import("node:path");
@@ -62,7 +61,6 @@ test("desktop patches never embed a build-machine path", async () => {
   }
 });
 
-
 test("selects the newest Harness tag while ignoring only alpha and beta", () => {
   assert.equal(selectLatestHarnessTag([
     "dsh-v0.1.5", "v0.1.6", "0.1.10",
@@ -72,7 +70,7 @@ test("selects the newest Harness tag while ignoring only alpha and beta", () => 
   ]), "v1.0.0-rc.10");
   assert.equal(selectLatestHarnessTag(["v1.0.0-rc.2", "v1.0.0-rc.10"]), "v1.0.0-rc.10");
   for (const suffix of ["alpha.2", "beta.1", "ALPHA.1", "beta2"]) {
-    assert.equal(isIgnoredHarnessVersion(`1.0.0-${suffix}`), true);
+    assert.equal(isPreviewHarnessVersion(`1.0.0-${suffix}`), true);
   }
   for (const suffix of ["rc.1", "preview.1", "nightly.1", "custom", "1"]) {
     assert.equal(selectLatestHarnessTag([`v1.0.0-${suffix}`]), `v1.0.0-${suffix}`);
@@ -90,6 +88,33 @@ test("never falls back to alpha, beta or a branch when no eligible tag exists", 
   }
 });
 
+test("packaging rejects alpha and beta even for explicitly pinned sources", () => {
+  for (const version of ["0.1.6-alpha.2", "0.1.6-beta.1", "0.1.6-ALPHA1"]) {
+    assert.throws(() => assertStableHarnessVersion(version), /cannot be packaged/u);
+  }
+  for (const version of ["0.1.5-rc.2", "0.1.5", "0.1.5-preview.1", "0.1.5+alpha.1"]) {
+    assert.doesNotThrow(() => assertStableHarnessVersion(version));
+  }
+});
+
+test("packaging checks the actual payload as well as its lock", async t => {
+  const { mkdir, mkdtemp, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = await mkdtemp(join(tmpdir(), "harness-version-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = join(root, "node_modules/@deepseek-ai/dsh");
+  await mkdir(directory, { recursive: true });
+  const harness = { packageName: "@deepseek-ai/dsh", version: "0.1.5-rc.2" };
+  const write = version => writeFile(join(directory, "package.json"), JSON.stringify({ version }));
+  await write(harness.version);
+  await assertPackagedHarnessVersion(root, harness);
+  await assert.rejects(assertPackagedHarnessVersion(root, { ...harness, version: "0.1.6-alpha.2" }), /cannot be packaged/u);
+  await write("0.1.6-beta.1");
+  await assert.rejects(assertPackagedHarnessVersion(root, harness), /cannot be packaged/u);
+  await write("0.1.5-rc.1");
+  await assert.rejects(assertPackagedHarnessVersion(root, harness), /does not match lock/u);
+});
 
 test("retries a transient cached checkout cleanup failure", async () => {
   let cleanAttempts = 0;

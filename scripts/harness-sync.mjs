@@ -18,7 +18,7 @@ import { loadBuildConfig } from "./lib/build-config.mjs";
 import { artifactForbiddenRoots } from "./lib/artifact-scan.mjs";
 import { cleanCachedCheckout } from "./lib/cached-checkout-clean.mjs";
 import { applyDesktopCompatibilityPatches } from "./lib/desktop-patches.mjs";
-import { selectLatestHarnessTag } from "./lib/harness-ref.mjs";
+import { assertStableHarnessVersion, selectLatestHarnessTag } from "./lib/harness-ref.mjs";
 import { assertPinnedHarnessSource } from "./lib/harness-source-pin.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -290,6 +290,14 @@ if (releaseBuild && (source.mode !== "remote" || source.dirty || source.kind ===
 }
 if (releaseBuild) assertPinnedHarnessSource(source, toolchain.harnessSource);
 
+// Check the actual CLI manifest for every source, including explicit commits and local checkouts.
+const workspacePackages = await findWorkspacePackages(source.sourceRoot);
+const cli = findCliPackage(workspacePackages);
+assertStableHarnessVersion(cli.manifest.version);
+if (cli.manifest.version.split(/[+-]/u)[0] !== config.coreVersion) {
+  throw new Error(`Harness ${cli.manifest.version} does not match Desktop core version ${config.coreVersion}`);
+}
+
 const workRoot = check
   ? await mkdtemp(join(tmpdir(), "deepseek-desktop-harness-sync-"))
   : join(generatedRoot, "harness");
@@ -300,8 +308,6 @@ try {
   const sourcePackage = JSON.parse(await readFile(join(source.sourceRoot, "package.json"), "utf8"));
   if (!sourcePackage.scripts?.["build:official"]) throw new Error("Harness repository does not provide build:official");
   runHarnessPnpm(["build:official"], source.sourceRoot);
-  const workspacePackages = await findWorkspacePackages(source.sourceRoot);
-  const cli = findCliPackage(workspacePackages);
   await stat(join(cli.directory, cli.entry));
 
   runPnpm(["install", "--frozen-lockfile"], harnessRoot);

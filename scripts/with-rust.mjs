@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import process from "node:process";
+import { acquireToolchainLock } from "./lib/toolchain-lock.mjs";
 
 const desktopRoot = resolve(import.meta.dirname, "..");
 const toolchainRoot = resolve(process.env.DEEPSEEK_DESKTOP_TOOLCHAIN_DIR || join(desktopRoot, "target/deepseek-desktop-toolchain"));
@@ -119,67 +120,74 @@ async function prefetchWindowsToolchain(components = ["cargo", "rust-std", "rust
   }
 }
 
-if (!await exists(rustup)) {
-  await mkdir(toolchainRoot, { recursive: true });
-  const installer = join(toolchainRoot, `rustup-init${executableSuffix}`);
-  const url = `https://static.rust-lang.org/rustup/dist/${triple}/rustup-init${executableSuffix}`;
-  const checksum = `${installer}.sha256`;
-  await downloadWithCurl(`${url}.sha256`, checksum);
-  const checksumText = await readFile(checksum, "utf8");
-  const expectedHash = checksumText.match(/\b([0-9a-f]{64})\b/iu)?.[1]?.toLowerCase();
-  if (!expectedHash) throw new Error(`rustup-init checksum response is invalid for ${triple}`);
-  await downloadWithCurl(url, installer);
-  const actualHash = await sha256(installer);
-  await rm(checksum, { force: true });
-  if (actualHash !== expectedHash) {
-    await rm(installer, { force: true });
-    throw new Error(`rustup-init checksum mismatch: expected ${expectedHash}, got ${actualHash}`);
+const releaseToolchainLock = await acquireToolchainLock(toolchainRoot);
+try {
+  if (!await exists(rustup)) {
+    await mkdir(toolchainRoot, { recursive: true });
+    const installer = join(toolchainRoot, `rustup-init${executableSuffix}`);
+    const url = `https://static.rust-lang.org/rustup/dist/${triple}/rustup-init${executableSuffix}`;
+    const checksum = `${installer}.sha256`;
+    await downloadWithCurl(`${url}.sha256`, checksum);
+    const checksumText = await readFile(checksum, "utf8");
+    const expectedHash = checksumText.match(/\b([0-9a-f]{64})\b/iu)?.[1]?.toLowerCase();
+    if (!expectedHash) throw new Error(`rustup-init checksum response is invalid for ${triple}`);
+    await downloadWithCurl(url, installer);
+    const actualHash = await sha256(installer);
+    await rm(checksum, { force: true });
+    if (actualHash !== expectedHash) {
+      await rm(installer, { force: true });
+      throw new Error(`rustup-init checksum mismatch: expected ${expectedHash}, got ${actualHash}`);
+    }
+    if (process.platform === "win32") {
+      await prefetchWindowsToolchain();
+    } else {
+      await chmod(installer, 0o755);
+    }
+    runWithRetry(installer, [
+      "-y",
+      "--no-modify-path",
+      "--profile", "minimal",
+      "--default-host", triple,
+      "--default-toolchain", rustToolchain,
+      "--component", "clippy"
+    ]);
   }
+
+  let installed = spawnSync(rustup, ["run", rustToolchain, "rustc", "--version"], { env: environment, encoding: "utf8" });
+  const cargoReady = spawnSync(rustup, ["run", rustToolchain, "cargo", "--version"], { env: environment, encoding: "utf8" }).status === 0;
+  if (installed.status !== 0 || !cargoReady) {
+    runWithRetry(rustup, ["toolchain", "install", rustToolchain, "--profile", "minimal"]);
+    runWithRetry(rustup, ["component", "add", "--toolchain", rustToolchain, "rustc", "cargo", "rust-std"]);
+    installed = spawnSync(rustup, ["run", rustToolchain, "rustc", "--version"], { env: environment, encoding: "utf8" });
+  }
+  if (installed.error) throw installed.error;
+  if (installed.status !== 0 || !installed.stdout.trim().startsWith(`rustc ${rustVersion} `)) {
+    throw new Error(`installed Rust toolchain does not match lock: expected ${rustVersion}, got ${installed.stdout.trim() || installed.stderr.trim() || "unavailable"}`);
+  }
+
+  const [command, ...args] = process.argv.slice(2);
+  if (!command) throw new Error("a command is required");
+  if (process.platform === "win32" && command === "rustup" && args.includes("clippy")) {
+    const componentList = spawnSync(rustup, ["component", "list", "--installed", "--toolchain", rustToolchain], {
+      env: environment,
+      encoding: "utf8"
+    });
+    if (componentList.status !== 0 || !componentList.stdout.split(/\r?\n/u).some(value => value.startsWith("clippy-"))) {
+      await prefetchWindowsToolchain(["clippy"]);
+    }
+  }
+
+  let executable = command;
+  let commandArgs = args;
   if (process.platform === "win32") {
-    await prefetchWindowsToolchain();
-  } else {
-    await chmod(installer, 0o755);
+    if (command === "cargo") executable = join(cargoHome, "bin", "cargo.exe");
+    else if (command === "rustup") executable = rustup;
+    else if (command === "tauri") {
+      executable = process.execPath;
+      commandArgs = [require.resolve("@tauri-apps/cli/tauri.js"), ...args];
+    }
   }
-  runWithRetry(installer, [
-    "-y",
-    "--no-modify-path",
-    "--profile", "minimal",
-    "--default-host", triple,
-    "--default-toolchain", rustToolchain,
-    "--component", "clippy"
-  ]);
+  run(executable, commandArgs);
+} finally {
+  await releaseToolchainLock();
 }
-
-let installed = spawnSync(rustup, ["run", rustToolchain, "rustc", "--version"], { env: environment, encoding: "utf8" });
-if (installed.status !== 0) {
-  runWithRetry(rustup, ["toolchain", "install", rustToolchain, "--profile", "minimal"]);
-  installed = spawnSync(rustup, ["run", rustToolchain, "rustc", "--version"], { env: environment, encoding: "utf8" });
-}
-if (installed.error) throw installed.error;
-if (installed.status !== 0 || !installed.stdout.trim().startsWith(`rustc ${rustVersion} `)) {
-  throw new Error(`installed Rust toolchain does not match lock: expected ${rustVersion}, got ${installed.stdout.trim() || installed.stderr.trim() || "unavailable"}`);
-}
-
-const [command, ...args] = process.argv.slice(2);
-if (!command) throw new Error("a command is required");
-if (process.platform === "win32" && command === "rustup" && args.includes("clippy")) {
-  const componentList = spawnSync(rustup, ["component", "list", "--installed", "--toolchain", rustToolchain], {
-    env: environment,
-    encoding: "utf8"
-  });
-  if (componentList.status !== 0 || !componentList.stdout.split(/\r?\n/u).some(value => value.startsWith("clippy-"))) {
-    await prefetchWindowsToolchain(["clippy"]);
-  }
-}
-
-let executable = command;
-let commandArgs = args;
-if (process.platform === "win32") {
-  if (command === "cargo") executable = join(cargoHome, "bin", "cargo.exe");
-  else if (command === "rustup") executable = rustup;
-  else if (command === "tauri") {
-    executable = process.execPath;
-    commandArgs = [require.resolve("@tauri-apps/cli/tauri.js"), ...args];
-  }
-}
-run(executable, commandArgs);

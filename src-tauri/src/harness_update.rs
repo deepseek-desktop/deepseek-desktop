@@ -153,6 +153,7 @@ struct VerifiedRelease {
 
 #[derive(Clone, Debug)]
 struct RepositoryRelease {
+    channel: String,
     source_fingerprint: [u8; 32],
     repository: String,
     commit: String,
@@ -182,7 +183,7 @@ impl AvailableHarness {
     fn matches_channel(&self, channel: &str) -> bool {
         match self {
             Self::Manifest(release) => release.payload.channel == channel,
-            Self::Repository(_) => true,
+            Self::Repository(release) => release.channel == channel,
         }
     }
 
@@ -265,11 +266,11 @@ impl HarnessStore {
         })
     }
 
-    fn activate_pending(&self) -> DesktopResult<Option<HarnessPointer>> {
+    fn activate_pending(&self, channel: &str) -> DesktopResult<Option<HarnessPointer>> {
         let Some(pointer) = read_pointer(&self.pending)? else {
             return Ok(None);
         };
-        validate_candidate_version(&pointer.harness_version)?;
+        validate_candidate_version(&pointer.harness_version, channel)?;
         let location = self.location_for_pointer(&pointer)?;
         smoke_candidate(&location, &pointer)?;
         self.finish_activation(&pointer)?;
@@ -557,16 +558,20 @@ impl HarnessUpdateManager {
         let mut settings = previous.clone();
         patch.change.clone().apply(&mut settings);
         let settings = SettingsStore::validated(settings)?;
-        if previous.harness_update_repository == settings.harness_update_repository {
+        if previous.harness_update_repository == settings.harness_update_repository
+            && previous.harness_update_channel == settings.harness_update_channel
+        {
             return self.settings.patch(patch);
         }
 
         self.store.discard_pending()?;
         *self.lock_available()? = None;
         let settings = self.settings.patch(patch)?;
-        self.set_status(repository_changed_status(self.status()?))?;
-        self.diagnostics
-            .append("harness-update", "Harness repository selection changed");
+        self.set_status(update_source_changed_status(self.status()?))?;
+        self.diagnostics.append(
+            "harness-update",
+            "Harness repository or channel selection changed",
+        );
         Ok(settings)
     }
 
@@ -582,7 +587,10 @@ impl HarnessUpdateManager {
             return self.status();
         }
         self.publish(HarnessUpdatePhase::Applying, "applying")?;
-        match self.store.activate_pending() {
+        match self
+            .store
+            .activate_pending(&settings.harness_update_channel)
+        {
             Ok(Some(pointer)) => {
                 self.diagnostics.append(
                     "harness-update",
@@ -654,6 +662,7 @@ impl HarnessUpdateManager {
                 return self.publish(HarnessUpdatePhase::Idle, "up-to-date");
             }
             let release = AvailableHarness::Repository(RepositoryRelease {
+                channel: settings.harness_update_channel.clone(),
                 source_fingerprint: config.source_fingerprint(),
                 repository,
                 commit,
@@ -1020,6 +1029,7 @@ impl HarnessUpdateManager {
                 current,
                 &tools,
                 &build_toolchain.node,
+                &release.channel,
             )?;
             let harness_version = prepared.version;
 
@@ -1369,7 +1379,7 @@ fn validate_manifest_payload_at(
             "Harness manifest repository does not match the bundled Harness source".to_owned(),
         ));
     }
-    validate_candidate_version(&payload.harness_version)?;
+    validate_candidate_version(&payload.harness_version, channel)?;
     if payload.channel != channel || !matches!(channel, "stable" | "preview") {
         return Err(DesktopError::InvalidConfiguration(
             "Harness update channel does not match settings".to_owned(),
@@ -1680,7 +1690,7 @@ fn repository_check_failure(error: &DesktopError) -> &'static str {
     }
 }
 
-fn validate_candidate_version(version: &str) -> DesktopResult<()> {
+fn validate_candidate_version(version: &str, channel: &str) -> DesktopResult<()> {
     let parsed = Version::parse(version).map_err(|error| {
         DesktopError::InvalidConfiguration(format!("Harness version is invalid: {error}"))
     })?;
@@ -1691,10 +1701,16 @@ fn validate_candidate_version(version: &str) -> DesktopResult<()> {
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if ["alpha", "beta"].iter().any(|prefix| {
+    let preview = ["alpha", "beta"].iter().any(|prefix| {
         kind.strip_prefix(prefix)
             .is_some_and(|suffix| suffix.chars().all(|c| c.is_ascii_digit()))
-    }) {
+    });
+    if !matches!(channel, "stable" | "preview") {
+        return Err(DesktopError::InvalidConfiguration(
+            "unknown Harness channel".to_owned(),
+        ));
+    }
+    if preview != (channel == "preview") {
         return Err(DesktopError::HarnessVersionIgnored(version.to_owned()));
     }
     Ok(())
@@ -2080,6 +2096,7 @@ fn deploy_repository_harness(
     current: &HarnessLocation,
     tools: &Path,
     build_node: &Path,
+    channel: &str,
 ) -> DesktopResult<RepositoryDeployment> {
     let scripts = staging.join("scripts");
     fs::create_dir_all(scripts.join("lib"))?;
@@ -2118,6 +2135,7 @@ fn deploy_repository_harness(
             &destination.to_string_lossy(),
             &current.harness_dir.to_string_lossy(),
             &result.to_string_lossy(),
+            channel,
         ],
         Some(source),
         REPOSITORY_COMMAND_TIMEOUT,
@@ -2132,7 +2150,7 @@ fn deploy_repository_harness(
         return Err(error);
     }
     let deployment: RepositoryDeployment = serde_json::from_slice(&fs::read(result)?)?;
-    validate_candidate_version(&deployment.version)?;
+    validate_candidate_version(&deployment.version, channel)?;
     validate_relative_file(&deployment.entry)?;
     Ok(deployment)
 }
@@ -2389,7 +2407,7 @@ fn read_pointer(path: &Path) -> DesktopResult<Option<HarnessPointer>> {
     }
 }
 
-fn repository_changed_status(current: HarnessUpdateStatus) -> HarnessUpdateStatus {
+fn update_source_changed_status(current: HarnessUpdateStatus) -> HarnessUpdateStatus {
     HarnessUpdateStatus {
         phase: if current.pinned_version.is_some() {
             HarnessUpdatePhase::Pinned
@@ -2597,9 +2615,9 @@ mod tests {
     }
 
     #[test]
-    fn repository_change_clears_candidate_ui_without_changing_the_running_version() {
+    fn source_or_channel_change_clears_candidate_ui_without_changing_the_running_version() {
         for phase in [HarnessUpdatePhase::Available, HarnessUpdatePhase::Staged] {
-            let status = repository_changed_status(HarnessUpdateStatus {
+            let status = update_source_changed_status(HarnessUpdateStatus {
                 phase,
                 current_version: "1.0.0".to_owned(),
                 current_commit: "a".repeat(40),
@@ -2618,7 +2636,7 @@ mod tests {
             assert!(status.pending_version.is_none());
             assert_eq!(status.downloaded_bytes, 0);
             assert!(status.total_bytes.is_none());
-            let pinned = repository_changed_status(HarnessUpdateStatus {
+            let pinned = update_source_changed_status(HarnessUpdateStatus {
                 pinned_version: Some("1.0.0".to_owned()),
                 ..status
             });
@@ -2950,48 +2968,39 @@ mod tests {
     }
 
     #[test]
-    fn signed_channels_ignore_only_alpha_and_beta() {
+    fn channels_classify_only_alpha_and_beta_as_preview() {
         let key = SigningKey::from_bytes(&[7; 32]);
-        for channel in ["stable", "preview"] {
-            for version in [
-                "1.1.0",
-                "1.1.0-rc.1",
-                "1.1.0-preview.1",
-                "1.1.0-nightly.1",
-                "1.1.0-custom",
-                "1.1.0-1",
-                "1.1.0+build-alpha.2",
-            ] {
-                assert!(
-                    verify_manifest(
-                        &signed(&payload(channel, version), &key),
-                        &config(&key),
-                        channel
-                    )
-                    .is_ok(),
-                    "{channel}: {version}"
+        for (version, expected) in [
+            ("1.1.0", "stable"),
+            ("1.1.0-rc.1", "stable"),
+            ("1.1.0-preview.1", "stable"),
+            ("1.1.0-nightly.1", "stable"),
+            ("1.1.0-custom", "stable"),
+            ("1.1.0-1", "stable"),
+            ("1.1.0+build-alpha.2", "stable"),
+            ("1.1.0-alpha.2", "preview"),
+            ("1.1.0-beta.1", "preview"),
+            ("1.1.0-ALPHA.1", "preview"),
+            ("1.1.0-beta2", "preview"),
+        ] {
+            for channel in ["stable", "preview"] {
+                let result = verify_manifest(
+                    &signed(&payload(channel, version), &key),
+                    &config(&key),
+                    channel,
                 );
-            }
-            for version in [
-                "1.1.0-alpha.2",
-                "1.1.0-beta.1",
-                "1.1.0-ALPHA.1",
-                "1.1.0-beta2",
-            ] {
-                assert!(
-                    matches!(
-                        verify_manifest(
-                            &signed(&payload(channel, version), &key),
-                            &config(&key),
-                            channel
-                        ),
-                        Err(DesktopError::HarnessVersionIgnored(_))
-                    ),
-                    "{channel}: {version}"
-                );
+                if channel == expected {
+                    assert!(result.is_ok(), "{channel}: {version}");
+                } else {
+                    assert!(
+                        matches!(result, Err(DesktopError::HarnessVersionIgnored(_))),
+                        "{channel}: {version}"
+                    );
+                }
             }
         }
-        assert!(validate_candidate_version("invalid").is_err());
+        assert!(validate_candidate_version("invalid", "stable").is_err());
+        assert!(validate_candidate_version("1.1.0", "unknown").is_err());
     }
 
     #[test]
@@ -3214,7 +3223,7 @@ mod tests {
             ignored.directory = version_directory(version, &ignored.harness_commit).unwrap();
             write_json_atomic(&store.pending, &ignored).unwrap();
             assert!(matches!(
-                store.activate_pending(),
+                store.activate_pending("stable"),
                 Err(DesktopError::HarnessVersionIgnored(_))
             ));
             assert_eq!(read_pointer(&store.current).unwrap(), Some(pointer.clone()));

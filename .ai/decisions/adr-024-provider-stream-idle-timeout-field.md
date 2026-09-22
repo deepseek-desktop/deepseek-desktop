@@ -12,7 +12,7 @@
 
 ## 决策
 
-- 补丁 `@deepseek-ai/dsh-client-ui-settings-models@0.1.6-alpha.1` 的 `lib/client.js`，把 `streamIdleTimeoutMs` 加成原生字段：
+- 补丁目标版本以 `harness/toolchain-lock.json` 为准，当前为 `@deepseek-ai/dsh-client-ui-settings-models@0.1.5-rc.2` 的 `lib/client.js`，把 `streamIdleTimeoutMs` 加成原生字段：
   - `CustomProviderCard`（新建）：草稿 state、模型目录下方的输入框、并入提交的 profile 对象、无法解析时阻止「创建提供方」。
   - `ProviderEditor`（编辑）：同一字段，写入草稿 profile，无法解析时阻止「保存」。位置与 `API 协议`、`模型目录` 同在「自定义设置」折叠区内。
   - 共享 `parseTimeoutMs` / `timeoutInvalid` 两个解析函数，范围取上游自己的上限 2147483647。

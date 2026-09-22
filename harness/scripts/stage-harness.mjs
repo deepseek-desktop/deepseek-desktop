@@ -12,6 +12,7 @@ import {
   scanArtifactPaths
 } from "../../scripts/lib/artifact-scan.mjs";
 import { verifyDesktopPatchAsset } from "../../scripts/lib/desktop-patches.mjs";
+import { assertPackagedHarnessVersion } from "../../scripts/lib/harness-source-pin.mjs";
 import { atomicWriteJson } from "../../scripts/release-system/common.mjs";
 import {
   contentCacheKey,
@@ -26,6 +27,7 @@ const generatedRoot = join(desktopRoot, "target", "generated");
 const preparedHarness = join(generatedRoot, "harness", "prepared");
 const generatedLock = join(generatedRoot, "harness-lock.json");
 const lock = JSON.parse(await readFile(generatedLock, "utf8"));
+await assertPackagedHarnessVersion(preparedHarness, lock.harness);
 const harnessCacheRoot = resolve(process.env.DEEPSEEK_DESKTOP_HARNESS_TARGET_CACHE_ROOT?.trim()
   || join(desktopRoot, "target", "local-release", "harness-target-cache"));
 

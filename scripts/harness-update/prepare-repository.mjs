@@ -4,10 +4,11 @@ import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { deployHarnessClosure, DESKTOP_EXTENSION_ROOTS, findCliPackage, findWorkspacePackages, mergeDesktopClosure } from "../lib/harness-deployment.mjs";
 import { applyDesktopCompatibilityPatches } from "../lib/desktop-patches.mjs";
-import { isIgnoredHarnessVersion } from "../lib/harness-ref.mjs";
+import { matchesHarnessChannel } from "../lib/harness-ref.mjs";
 
-const [source, destination, desktop, resultFile] = process.argv.slice(2).map(value => resolve(value));
+const [source, destination, desktop, resultFile] = process.argv.slice(2, 6).map(value => resolve(value));
 if (!source || !destination || !desktop || !resultFile) throw new Error("Repository preparation requires four paths");
+const channel = process.argv[6] || "stable";
 const pnpm = join(desktop, "node_modules/pnpm/bin/pnpm.cjs");
 const npm = join(desktop, "toolchain/node/npm/bin/npm-cli.js");
 
@@ -52,7 +53,7 @@ function runNpm(args, cwd = source) {
 async function prepare() {
   const workspace = await findWorkspacePackages(source);
   const cli = findCliPackage(workspace);
-  if (isIgnoredHarnessVersion(cli.manifest.version)) {
+  if (!matchesHarnessChannel(cli.manifest.version, channel)) {
     await writeFile(resultFile, `${JSON.stringify({ version: cli.manifest.version, entry: "" })}\n`);
     return;
   }

@@ -2,15 +2,13 @@
 
 ## Harness 与市场联动的发行验收
 
-- Harness 与市场联动已随 `v0.1.6.3` 发布并安装到本机；此前隔离 profile 的官方 CLI 安装、升级与服务启动验收继续有效。Windows/Linux 真机的内核切换与市场联动更新仍需独立验证，四平台构建成功不替代此项。
+- RC 基线已在 macOS arm64 隔离 profile 验证官方 CLI 安装、升级与服务启动；最终安装包，以及 Windows/Linux 真机的内核切换与市场联动更新仍需独立验证，源码测试和四平台构建成功不替代此项。
 
 ## 验收范围
 
 当前发布及已解决门禁见 [验证基线](memory/verification.md#当前发布验收)；本文件只列未验证范围与外部条件，不再保留旧失败版本为待发布候选。F01–F24 各自的实测、Mock 和平台边界以 [审计修复验收](memory/audit-remediation.md) 为准，不能用发行成功统一标记全平台全功能通过。
 
-Harness 默认来源为 `deepseek-desktop/deepseek-harness`，采用 `0.1.6.<Desktop 修订号>` 四段版本。当前 `v0.1.6.3` 已完成 GitHub 四平台 Tag 矩阵、全部公开资产下载重算、本机 ARM64 安装及真实 oMLX 对话；安装前验收的 CI 制品与最终公开 DMG 摘要一致。
-
-Harness `0.1.6-alpha.2` 的已审计基线不因更新过滤而降级，当前内置 pin 为 `303d39d`；自动标签和更新候选暂时只过滤 alpha/beta。旧版本体系的 Release 与 Tag 已全部清理，历史成功或失败记录不再作为候选或远端状态。
+Harness 默认来源为 `deepseek-desktop/deepseek-harness`，当前 RC 基线使用 `0.1.5.<Desktop 修订号>`。用户已将打包发布交给另一位 AI，本任务只交付并推送社区代码，不创建 Tag 或 Release。接手者需以最终提交打包 `0.1.5.1`，完成本机安装、GitHub 四平台矩阵和公开资产校验；源码验证结果见验证基线，旧 alpha 发布版与标签已撤下，历史验收不替代本次验收。
 
 ## 独立搜索扩展的外部验收
 

@@ -16,7 +16,7 @@ test("tagged CI pins the same Harness commit through the configuration entry poi
   const envFile = join(directory, "environment");
   const result = spawnSync(process.execPath, ["scripts/ci-release-version.mjs"], {
     cwd: root,
-    env: { ...process.env, GITHUB_REF_TYPE: "tag", GITHUB_REF_NAME: "v0.1.6.1", GITHUB_ENV: envFile },
+    env: { ...process.env, GITHUB_REF_TYPE: "tag", GITHUB_REF_NAME: "v0.1.5.1", GITHUB_ENV: envFile },
     encoding: "utf8"
   });
   assert.equal(result.status, 0, result.stderr);
@@ -24,7 +24,7 @@ test("tagged CI pins the same Harness commit through the configuration entry poi
   const { harnessSource } = JSON.parse(await readFile(new URL("harness/toolchain-lock.json", root), "utf8"));
   const { fileURLToPath } = await import("node:url");
   const config = await loadBuildConfig(fileURLToPath(root), { environment: { ...environment, RELEASE_CHANNEL: "community" } });
-  assert.equal(config.version, "0.1.6.1");
+  assert.equal(config.version, "0.1.5.1");
   assert.equal(config.harness.repository, harnessSource.repository);
   assert.equal(config.harness.ref, harnessSource.ref);
 });
@@ -44,7 +44,7 @@ test("tagged CI preserves a locked Harness tag for release asset identity checks
   const envFile = join(directory, "environment");
   const result = spawnSync(process.execPath, ["scripts/ci-release-version.mjs"], {
     cwd: directory,
-    env: { ...process.env, GITHUB_REF_TYPE: "tag", GITHUB_REF_NAME: "v0.1.6.1", GITHUB_ENV: envFile },
+    env: { ...process.env, GITHUB_REF_TYPE: "tag", GITHUB_REF_NAME: "v0.1.5.1", GITHUB_ENV: envFile },
     encoding: "utf8"
   });
   assert.equal(result.status, 0, result.stderr);

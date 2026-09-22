@@ -25,9 +25,9 @@ test("uses built-in defaults without an env file", async () => {
   const config = await loadBuildConfig(root, { environment: {}, envFile: resolve(root, "target/missing.env") });
   assert.equal(config.productName, DEFAULT_CONFIG.DESKTOP_APP_NAME);
   assert.equal(config.version, DEFAULT_CONFIG.DESKTOP_APP_VERSION);
-  assert.equal(config.coreVersion, "0.1.6");
-  assert.equal(config.revision, 3);
-  assert.equal(config.bundleVersion, "0.1.6+3");
+  assert.equal(config.coreVersion, "0.1.5");
+  assert.equal(config.revision, 1);
+  assert.equal(config.bundleVersion, "0.1.5+1");
   assert.equal(config.displayVersion, `v${DEFAULT_CONFIG.DESKTOP_APP_VERSION}`);
   assert.equal(config.windowTitle, `${DEFAULT_CONFIG.DESKTOP_APP_NAME} v${DEFAULT_CONFIG.DESKTOP_APP_VERSION}`);
   assert.equal(config.repository, "https://github.com/deepseek-desktop/deepseek-desktop");
@@ -79,7 +79,7 @@ test("loads every declared value from an env file before applying environment ov
   const envFile = join(directory, ".env");
   await writeFile(envFile, [
     "DESKTOP_APP_NAME=定制桌面",
-    "DESKTOP_APP_VERSION=0.1.6.5",
+    "DESKTOP_APP_VERSION=0.1.5.5",
     "DESKTOP_APP_IDENTIFIER=example.custom.desktop",
     "DESKTOP_APP_SLUG=custom-desktop",
     "DESKTOP_APP_DESCRIPTION=Custom agent workspace",
@@ -102,12 +102,12 @@ test("loads every declared value from an env file before applying environment ov
       envFile
     });
     assert.equal(config.productName, "命令行桌面");
-    assert.equal(config.version, "0.1.6.5");
-    assert.equal(config.coreVersion, "0.1.6");
+    assert.equal(config.version, "0.1.5.5");
+    assert.equal(config.coreVersion, "0.1.5");
     assert.equal(config.revision, 5);
-    assert.equal(config.bundleVersion, "0.1.6+5");
-    assert.equal(config.displayVersion, "v0.1.6.5");
-    assert.equal(config.windowTitle, "命令行桌面 v0.1.6.5");
+    assert.equal(config.bundleVersion, "0.1.5+5");
+    assert.equal(config.displayVersion, "v0.1.5.5");
+    assert.equal(config.windowTitle, "命令行桌面 v0.1.5.5");
     assert.equal(config.identifier, "example.custom.desktop");
     assert.equal(config.slug, "custom-desktop");
     assert.deepEqual(config.authors, ["Alice", "Bob"]);
@@ -147,9 +147,9 @@ test("validates explicit release metadata", async () => {
 
 test("requires the public version to match the locked Harness core", async () => {
   await assert.rejects(loadBuildConfig(root, {
-    environment: { DESKTOP_APP_VERSION: "0.1.5.1" },
+    environment: { DESKTOP_APP_VERSION: "0.1.6.1" },
     envFile: resolve(root, "target/missing.env")
-  }), /must use locked Harness version 0\.1\.6/u);
+  }), /must use locked Harness version 0\.1\.5/u);
 });
 
 test("validates Harness update configuration and disables automatic updates for a fixed ref", async () => {

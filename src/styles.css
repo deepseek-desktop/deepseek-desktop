@@ -186,6 +186,7 @@ dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
 .compact-list { margin-top: 32px; }
 .setting-select, .setting-input { width: min(520px, 100%); height: 36px; padding: 0 10px; border: 1px solid #ccd6da; border-radius: 5px; background: #fff; color: inherit; }
 .setting-select { width: min(320px, 100%); }
+.harness-channel-help { grid-column: 1 / -1; font-size: 13px; line-height: 1.5; padding: 10px 0; }
 .harness-source-save span { font-size: 13px; line-height: 1.5; }
 .toggle-label { display: inline-flex; align-items: center; gap: 8px; }
 .toggle-label input { width: 16px; height: 16px; accent-color: #137f70; }

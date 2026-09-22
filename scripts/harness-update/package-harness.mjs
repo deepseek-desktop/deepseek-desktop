@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
 import { artifactName, hostTarget, parseArguments, sha256 } from "./common.mjs";
+import { assertPackagedHarnessVersion } from "../lib/harness-source-pin.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const args = parseArguments(process.argv.slice(2));
@@ -13,6 +14,7 @@ if (target !== hostTarget()) throw new Error(`Harness update artifacts require a
 const app = JSON.parse(await readFile(join(root, "target/generated/app-config.json"), "utf8"));
 const lock = JSON.parse(await readFile(join(root, "target/generated/harness-lock.json"), "utf8"));
 const harness = join(root, "harness/staging", target);
+await assertPackagedHarnessVersion(harness, lock.harness, args.get("channel") || "stable");
 const suffix = process.platform === "win32" ? ".exe" : "";
 const sidecar = join(root, "src-tauri/binaries", `node-${target}${suffix}`);
 await Promise.all([stat(harness), stat(sidecar), stat(join(harness, lock.harness.entry))]);

@@ -142,9 +142,8 @@ test("slot registration is owned by follow-model and cleans subscriptions on unl
   };
   client.apply(context);
   assert.equal(registrations.length, 1);
-  assert.equal(registrations[0].options.id, "web-search-follow-model");
-  assert.equal(registrations[0].options.name, "plugins.item");
-  assert.equal(registrations[0].options.label(), "Web search");
+  assert.equal(registrations[0].options.key, "web-search-follow-model");
+  assert.equal(registrations[0].options.name, "settings.plugin.item");
   assert.equal(registrations[0].options.inject().hooks.searchSettings.getSnapshot().mode, "follow-model");
   assert.equal(listeners.size, 1);
   for (const dispose of disposers.reverse()) dispose?.();

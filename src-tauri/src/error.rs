@@ -19,7 +19,7 @@ pub enum DesktopError {
     HarnessNotReady,
     #[error("Harness repository command timed out")]
     RepositoryCommandTimedOut,
-    #[error("alpha and beta Harness versions are ignored: {0}")]
+    #[error("Harness version does not match the selected channel: {0}")]
     HarnessVersionIgnored(String),
     #[error("configuration is invalid: {0}")]
     InvalidConfiguration(String),

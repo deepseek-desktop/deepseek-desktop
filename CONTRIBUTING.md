@@ -44,7 +44,7 @@ corepack pnpm@11.24.0 install --frozen-lockfile
 
 `pnpm install` 按根目录 lock 安装固定依赖；标准 `pnpm run build` 会依次生成应用配置、从当前 Harness lock 安装依赖并执行官方 `build:official`、组装生产闭包、暂存目标平台 Harness，再调用 Tauri 构建。`verify` 和 `test:e2e` 也会在消费 Harness 前重新同步，因此不会读取历史 `target/generated` 中可能过期、损坏或不完整的依赖树；Playwright 启动预览时只调用 `frontend:build`，避免在服务器启动时重复触发完整桌面打包。
 
-`harness/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Harness 来源。`HARNESS_REF` 留空时，本地 `harness:sync` 自动选择仓库中最新的 SemVer 版本标签（暂时仅忽略 `alpha`、`beta`，允许 `rc` 及其他类型）；显式填写时则使用指定 tag、commit 或开发分支。两种方式都会解析并锁定不可变 commit，并把请求 ref、最终 ref、commit、动态 CLI 入口和 Harness 哈希写入不提交 Git 的 `target/generated/harness-lock.json`。社区版和正式发布额外要求解析结果匹配 `harness/toolchain-lock.json` 中经过审计的固定仓库与提交；上游出现新版本时必须先复核并更新固定来源，不能在无人审查时自动改变安装包内容。Harness staging 只消费该生成 lock，并且只保留当前原生目标。
+`harness/toolchain-lock.json` 固定 Node、Rust、原生依赖、桌面补丁和发布允许的 Harness 来源。`HARNESS_REF` 留空时，本地 `harness:sync` 自动选择仓库中最新的 SemVer 版本标签（暂时仅忽略 `alpha`、`beta`，允许 `rc` 及其他类型）；显式填写时则使用指定 tag、commit 或开发分支。两种方式都在依赖安装和构建前检查实际 CLI 版本，拒绝 `alpha`、`beta`，显式 pin 和本地源码也不例外；随后解析并锁定不可变 commit，并把请求 ref、最终 ref、commit、动态 CLI 入口和 Harness 哈希写入不提交 Git 的 `target/generated/harness-lock.json`。社区版和正式发布额外要求解析结果匹配 `harness/toolchain-lock.json` 中经过审计的固定仓库与提交；上游出现新版本时必须先复核并更新固定来源，不能在无人审查时自动改变安装包内容。Harness staging 只消费该生成 lock，并且只保留当前原生目标。
 
 复验当前发行基线时，显式将 `HARNESS_REF` 设为工具链 lock 的 `harnessSource.ref`。过滤后最新候选可能早于内置基线；不要为了匹配候选标签自动回退内核、扩展 peer 或兼容补丁。
 

@@ -7,6 +7,21 @@ import { assertSourceRepository, detectHostTarget, loadTargets, redactError } fr
 import { contentCacheKey, createContentCacheManifest, makeContentTreeWritable, verifyContentCache } from "../release-system/content-cache.mjs";
 import { artifactForbiddenRoots, scanArtifactPaths } from "../lib/artifact-scan.mjs";
 import { portableRustFlags } from "../lib/rust-flags.mjs";
+import { acquireToolchainLock } from "../lib/toolchain-lock.mjs";
+
+test("Rust commands wait for the active toolchain writer and release the lock", async t => {
+  const root = await mkdtemp(join(tmpdir(), "desktop-rust-lock-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const release = await acquireToolchainLock(root);
+  await assert.rejects(acquireToolchainLock(root, 0), /waiting for the Rust toolchain lock/u);
+  let acquired = false;
+  const waiting = acquireToolchainLock(root).then(unlock => { acquired = true; return unlock; });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(acquired, false);
+  await release();
+  await (await waiting)();
+  await (await acquireToolchainLock(root, 0))();
+});
 
 const harnessCommit = "b".repeat(40);
 

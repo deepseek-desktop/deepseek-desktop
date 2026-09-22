@@ -209,8 +209,8 @@ window.__ModuleLoader__.load({
         return response.json();
       });
       ctx.effect(() => controller.dispose, "web-search: settings scope");
-      ctx.slots.inject("plugins.item", () => ctx.slots.register({
-        name: "plugins.item", id: namespace, order: 40, label: () => t("title"), locale: localeNamespace,
+      ctx.slots.inject("settings.plugin.item", () => ctx.slots.register({
+        name: "settings.plugin.item", key: namespace, locale: localeNamespace,
         inject: () => controller.inject()
       }, SearchSettingsCard));
     }

@@ -83,9 +83,9 @@ Get-FileHash ".\安装包文件名.exe" -Algorithm SHA256
 
 两条更新链路相互独立。只更新 Harness 不会更新 Desktop 外壳；替换 Harness 仓库也不会替换模型配置、对话或项目数据。源码更新所需工具、失败恢复与自定义仓库说明见 [Harness 更新指南](docs/zh-CN/harness-updates.md)。
 
-**版本规则：** 使用 `v主版本.次版本.修订版本.Desktop修订号`。前三段取自 Harness 版本，第四段从 `1` 开始，例如 Harness `v0.1.6` 对应 Desktop `v0.1.6.1`、`v0.1.6.2`。实际内核的完整版本及 commit 由 [工具链 lock](harness/toolchain-lock.json)记录，具体发行以对应 Tag 的 lock 为准。
+**版本规则：** 使用 `v主版本.次版本.修订版本.Desktop修订号`。前三段取自 Harness 版本，第四段从 `1` 开始，例如 Harness `v0.1.6` 对应 Desktop `v0.1.6.1`、`v0.1.6.2`。社区安装包排除 `alpha`、`beta`。内核更新频道暂按 `alpha`、`beta` 归预览版，其余（含 `rc`）归稳定版；此分类不代表官方稳定性承诺。当前基线为 Harness `0.1.5-rc.2`，对应 Desktop `0.1.5.1`。实际内核的完整版本及 commit 由 [工具链 lock](harness/toolchain-lock.json)记录，具体发行以对应 Tag 的 lock 为准。
 
-> 自 [v0.1.6.3](https://github.com/deepseek-desktop/deepseek-desktop/releases/tag/v0.1.6.3) 起，首次使用新 Harness commit 时会通过官方 CLI 安装或更新 DSH Market；普通重启不重复安装。详见[插件安装说明](docs/zh-CN/getting-started.md#模型与插件)。
+> 首次使用新 Harness commit 时会通过官方 CLI 安装或更新 DSH Market；普通重启不重复安装。详见[插件安装说明](docs/zh-CN/getting-started.md#模型与插件)。
 
 ## 常见问题
 

@@ -658,11 +658,12 @@ onBeforeUnmount(() => {
             </div>
             <div>
               <label for="harness-update-channel">{{ t("harnessUpdate.channel") }}</label>
-              <select id="harness-update-channel" class="setting-select" :value="settings.harnessUpdateChannel" :disabled="busy" @change="selectHarnessUpdateChannel">
+              <select id="harness-update-channel" class="setting-select" aria-describedby="harness-channel-help" :value="settings.harnessUpdateChannel" :disabled="busy" @change="selectHarnessUpdateChannel">
                 <option value="stable">{{ t("harnessUpdate.channels.stable") }}</option>
                 <option value="preview">{{ t("harnessUpdate.channels.preview") }}</option>
               </select>
             </div>
+            <div><span id="harness-channel-help" class="harness-channel-help">{{ t("harnessUpdate.channelHelp") }}</span></div>
             <div>
               <span>{{ t("harnessUpdate.pin") }}</span>
               <label class="toggle-label"><input type="checkbox" :checked="Boolean(settings.harnessPinnedVersion)" :disabled="busy" @change="toggleHarnessPin" />{{ t("harnessUpdate.pinCurrent") }}</label>

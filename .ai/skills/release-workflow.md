@@ -8,6 +8,7 @@
 - Pull Request 和普通分支 push 不触发发布工作流。
 - 只有带或不带 `v` 的四段数字 Tag 才运行质量门禁、构建安装包和创建 Release；前三段必须等于工具链 lock 的 Harness 三段基础版本，第四段是 Desktop 修订号。
 - Tag 必须是 annotated Tag，并指向实际构建 commit；质量门禁记录 Tag 对象，原生构建及发布前与远端 Tag / peeled commit 再次比对，任何漂移立即失败。不得重建、移动或覆盖旧 Tag。
+- 社区安装包排除 alpha/beta，RC 与其他类型按临时 stable 规则接受；实际 CLI manifest、暂存闭包和发布汇总均校验，显式 pin 不例外。
 - 四个平台都调用现有 `package:community`，禁止复制第二套打包逻辑。
 - 本机只验证源码、E2E、Harness smoke 和当前 macOS 架构安装包。
 - 不把 Parallels、Rosetta、Docker、本地 Controller/Worker 或自托管 Runner 当作正式发布前提。
@@ -143,6 +144,7 @@ Release 只保留 5 个安装包和 `SHA256SUMS`。矩阵内部可上传 `BUILD-
 | 汇总报 `release identity mismatch` | 报错已带字段名。`harness.sha256` 因平台而异属正常（native prebuild 由各主机编译），不参与跨平台比对；其余字段不一致说明四个目标并非同一次发布，必须查明来源而不是放宽比对 |
 | `harness:sync` 报 `hardlink different from source` | 本地 clone 默认硬链接 `.git/objects`，与镜像自身的 commit-graph 维护竞争。`harness-sync.mjs` 的缓存检出必须带 `--no-hardlinks`；该失败与平台无关，不要当作单个 Runner 的抖动重试了事 |
 | Linux 原生平台包 prepack 报缺少 `landlock-run` 或安装后无法执行 | `build:official` 只生成当前 libc 的 host addon；在打包当前平台包前执行原生 workspace 的完整 `build:native`，Linux Runner 安装 `musl-tools`。平台包沿用官方 `npm pack` 保留执行位，其余 workspace 包使用 pnpm；安装后复核声明载荷与权限，不能跳过 prepack 或删除 optional 平台包。 |
+| Rust 初始化并行导致组件丢失 | `with-rust.mjs` 用仓库私有工具链锁串行执行；确认无残留构建进程后恢复不完整工具链，不能并发重复运行 rustup。 |
 | 上传失败 | 不修改已有 Tag；确认权限和资产后用新版本重新闭环 |
 
 ## 防止错误经验固化

@@ -279,7 +279,16 @@ if (userDisabledDump.status !== 0 || officialSearchRow(userDisabledDump.stdout)?
   || !userDisabledDump.stdout.includes("webSearchSelection")) {
   throw new Error("Desktop must let the user disable the official plugin without changing search routing");
 }
-await writeFile(join(profile, "cordis.patch.yml"), "[]\n");
+// Keep the browser smoke independent of an interactive OS folder chooser. This
+// uses the official profile overlay; the installed Desktop keeps its auto picker.
+await writeFile(join(profile, "cordis.patch.yml"), `- id: directory-picker
+  disabled: true
+- insert:
+    - id: smoke-directory-picker
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: smoke-directory-picker-ui
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
+`);
 if (!/locale:\s+preference: zh/u.test(await readFile(join(dshHome, "settings.yaml"), "utf8"))) {
   throw new Error("desktop locale bridge did not persist the mapped Harness locale");
 }
@@ -295,6 +304,9 @@ llm-pi-ai:
       models:
         - id: smoke-model
           name: smoke-model
+          reasoningEfforts:
+            off:
+            low: low
 `);
 
 const cycles = Number.parseInt(process.env.DEEPSEEK_DESKTOP_SMOKE_CYCLES || "1", 10);

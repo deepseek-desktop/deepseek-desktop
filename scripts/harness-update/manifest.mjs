@@ -2,7 +2,7 @@ import { createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { isIgnoredHarnessVersion } from "../lib/harness-ref.mjs";
+import { matchesHarnessChannel } from "../lib/harness-ref.mjs";
 import { assertSemVer, compareSemVer, parseArguments, sha256, supportedTargets } from "./common.mjs";
 
 function normalizeBaseUrl(value) {
@@ -100,8 +100,8 @@ if (missingTargets.length > 0 || unexpectedTargets.length > 0) {
   throw new Error(`Harness update target set mismatch; missing=${missingTargets.join(",") || "none"}; unexpected=${unexpectedTargets.join(",") || "none"}`);
 }
 assertSemVer(first.harnessVersion, "Harness version");
-if (isIgnoredHarnessVersion(first.harnessVersion)) {
-  throw new Error("alpha and beta Harness versions are ignored");
+if (!matchesHarnessChannel(first.harnessVersion, channel)) {
+  throw new Error("Harness version does not match the selected channel");
 }
 const artifacts = {};
 for (const descriptor of descriptors) {
