@@ -1,5 +1,13 @@
 # 验证基线
 
+## Harness 版本过滤与 0.1.6.3 本机验收
+
+- 自动标签选择和独立更新候选暂时只过滤 `alpha`、`beta`，包括编号与大小写形式；`rc`、其他预发布类型和构建元数据继续使用原有规则。签名清单仍要求裸 SemVer，不接受带 `v` / `dsh-v` 的 Git 标签。仓库更新保留默认分支 HEAD 契约，在依赖安装前检查 CLI 版本；被过滤的待安装候选不能激活，当前内核不因此降级。
+- 内置审计来源为社区 Harness `303d39dab4a88bcd957221d88b663e72e03bf7ee`，相对原基线只增加 WebKit 模型菜单点击前聚焦修复和对应文档/回归；CLI 仍是 `0.1.6-alpha.2`，不能称为稳定内核。显式发行 pin 与自动选版规则分开管理。
+- 本机完整 `verify`、`app:sync --check`、`harness:sync --check`、6 项 E2E、真实 Harness smoke 和 `desktop:package` 通过；配置 135 项、前端 33 项、搜索 45 项、Rust 113 项通过（2 项显式联网测试默认忽略），三语 156 个 key、Clippy 通过。正式发布脚本回归 25 项通过；追加签名清单格式校验后，所在脚本回归 6 项通过。
+- 本机 ARM64 DMG 的 BUILD-INFO 记录 Desktop `850a88a6827d3758ddcadb7834263aa5a941ccec`、`dirty=false`、版本 `0.1.6.3` 和上述 Harness pin。DMG SHA-256 为 `4e130ea5cbf71bad91b70cded82e53656997286a0dd56268913c8883c1ee39a7`，校验清单、`hdiutil verify` 和 `codesign --verify --deep --strict` 均通过；该本机 local channel 包不冒充 GitHub 正式发布资产。
+- 包内应用实际启动后，原生辅助功能树显示 `DeepSeek Desktop v0.1.6.3`、两个 WebView、新建会话/插件/发送消息按钮和文本输入框。实际运行的是包内 Harness，服务仅监听 loopback，未认证访问返回 401；按精确应用路径退出后，主进程、Harness 子进程和端口监听均已消失。本次未据此扩展为真实模型推理或其他平台人工验收。
+
 ## README 与发布说明
 
 - README 的导航与表格已通过 GitHub Markdown 渲染检查；本地文档链接及锚点可解析。`docs/releases/` 的两份历史正文与对应 Release 的六个资产链接逐项一致，并能由 Desktop 实际摘要渲染器展示下载表格。
